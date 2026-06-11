@@ -38,7 +38,7 @@ export function ItemView({
         onCopy={onCopy}
         onRollback={onRollback}
       >
-        <article className="message user">{item.text}</article>
+        <article className="message user"><RichMessageText text={item.text ?? ''} onCopy={onCopy} /></article>
       </MessageFrame>
     );
   }
@@ -53,7 +53,7 @@ export function ItemView({
         onBranch={onBranch}
         onCopy={onCopy}
       >
-        <article className="message agent">{item.text}</article>
+        <article className="message agent"><RichMessageText text={item.text ?? ''} onCopy={onCopy} /></article>
       </MessageFrame>
     );
   }
@@ -141,7 +141,7 @@ export function AssistantTurnView({
       <article className="message agent assistantTurnBubble">
         {group.items.map((item) => {
           if (item.type === 'agent_message') {
-            return item.text ? <p className="assistantTurnText" key={item.id}>{item.text}</p> : null;
+            return item.text ? <RichMessageText className="assistantTurnText" key={item.id} text={item.text} onCopy={onCopy} /> : null;
           }
           if (
             item.type === 'tool_call'
@@ -169,6 +169,88 @@ export function AssistantTurnView({
       </article>
     </MessageFrame>
   );
+}
+
+function RichMessageText({
+  className,
+  onCopy,
+  text,
+}: {
+  className?: string;
+  onCopy?: (text: string) => void;
+  text: string;
+}) {
+  const parts = splitFencedCode(text);
+  if (parts.length === 1 && parts[0]?.kind === 'text') {
+    return <p className={className ?? 'messageText'}>{text}</p>;
+  }
+  return (
+    <div className={className ? `${className} richMessageText` : 'richMessageText'}>
+      {parts.map((part, index) => {
+        if (part.kind === 'code') {
+          return (
+            <CodeBlock
+              code={part.code}
+              key={`${part.kind}-${index}`}
+              language={part.language}
+              onCopy={onCopy}
+            />
+          );
+        }
+        return part.text ? <p className="messageText" key={`${part.kind}-${index}`}>{part.text}</p> : null;
+      })}
+    </div>
+  );
+}
+
+function CodeBlock({
+  code,
+  language,
+  onCopy,
+}: {
+  code: string;
+  language: string;
+  onCopy?: (text: string) => void;
+}) {
+  return (
+    <figure className="codeBlock">
+      <figcaption>
+        <span>{language || 'code'}</span>
+        <button
+          className="codeCopyButton"
+          type="button"
+          title="Copy code"
+          aria-label="Copy code"
+          onClick={() => onCopy?.(code)}
+        >
+          <Icon name="copy" />
+        </button>
+      </figcaption>
+      <pre><code>{code}</code></pre>
+    </figure>
+  );
+}
+
+function splitFencedCode(text: string): Array<{ kind: 'text'; text: string } | { kind: 'code'; language: string; code: string }> {
+  const parts: Array<{ kind: 'text'; text: string } | { kind: 'code'; language: string; code: string }> = [];
+  const pattern = /```([^\n`]*)\n([\s\S]*?)```/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push({ kind: 'text', text: text.slice(lastIndex, match.index).trimEnd() });
+    }
+    parts.push({
+      kind: 'code',
+      language: match[1]?.trim() ?? '',
+      code: match[2]?.replace(/\n$/, '') ?? '',
+    });
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) {
+    parts.push({ kind: 'text', text: text.slice(lastIndex).trimStart() });
+  }
+  return parts.length > 0 ? parts : [{ kind: 'text', text }];
 }
 
 export interface ToolSummary {

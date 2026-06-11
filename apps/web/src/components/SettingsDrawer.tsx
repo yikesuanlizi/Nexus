@@ -79,9 +79,18 @@ export function SettingsDrawer({
   const [editingMcpId, setEditingMcpId] = useState('');
   const [mcpPanelOpen, setMcpPanelOpen] = useState(false);
   const [apiKeyDraft, setApiKeyDraft] = useState('');
+  const [activeSection, setActiveSection] = useState('agent');
   const selectedProvider = providers.find((provider) => provider.id === config.provider);
   const selectedKeyState = keyStates.find((state) => state.providerId === config.provider);
   const mcpPanelTitle = editingMcpId ? t(locale, 'editMcp') : t(locale, 'addMcp');
+  const settingsTabs = [
+    { id: 'agent', label: t(locale, 'agentSettings') },
+    { id: 'presets', label: t(locale, 'modelPresets') },
+    { id: 'plugins', label: locale === 'zh' ? '插件中心' : 'Plugins' },
+    { id: 'skills', label: t(locale, 'skills') },
+    { id: 'mcp', label: t(locale, 'mcp') },
+    { id: 'remote', label: locale === 'zh' ? '远程助手' : 'Remote bots' },
+  ];
 
   useEffect(() => {
     setSkillsRootDraft(config.skillsRoot);
@@ -167,16 +176,21 @@ export function SettingsDrawer({
 
         <div className="settingsBody">
           <nav className="settingsNav" aria-label={t(locale, 'settings')}>
-            <a href="#settings-agent">{t(locale, 'agentSettings')}</a>
-            <a href="#settings-presets">{t(locale, 'modelPresets')}</a>
-            <a href="#settings-plugins">{locale === 'zh' ? '插件中心' : 'Plugins'}</a>
-            <a href="#settings-skills">{t(locale, 'skills')}</a>
-            <a href="#settings-mcp">{t(locale, 'mcp')}</a>
-            <a href="#settings-remote">{locale === 'zh' ? '远程助手' : 'Remote bots'}</a>
+            {settingsTabs.map((tab) => (
+              <button
+                className={activeSection === tab.id ? 'active' : ''}
+                key={tab.id}
+                onClick={() => setActiveSection(tab.id)}
+                type="button"
+              >
+                {tab.label}
+              </button>
+            ))}
           </nav>
 
           <div className="settingsContent">
-            <section className="settingsSection" id="settings-agent">
+            {activeSection === 'agent' ? (
+            <section className="settingsSection settingsHero" id="settings-agent">
               <h3>{t(locale, 'agentSettings')}</h3>
               <div className="formGrid">
                 <label>
@@ -256,7 +270,9 @@ export function SettingsDrawer({
                 )}
               </div>
             </section>
+            ) : null}
 
+            {activeSection === 'presets' ? (
             <section className="settingsSection" id="settings-presets">
               <div className="presetHeader">
                 <div>
@@ -298,7 +314,9 @@ export function SettingsDrawer({
                 </div>
               )}
             </section>
+            ) : null}
 
+            {activeSection === 'plugins' ? (
             <section className="settingsSection pluginHub" id="settings-plugins">
               <div className="presetHeader">
                 <div>
@@ -307,21 +325,23 @@ export function SettingsDrawer({
                 </div>
               </div>
               <div className="pluginCards">
-                <a className="pluginCard" href="#settings-skills">
+                <button className="pluginCard" onClick={() => setActiveSection('skills')} type="button">
                   <strong>{t(locale, 'skills')}</strong>
                   <span>{locale === 'zh' ? `${skillsList.length} 个已安装技能` : `${skillsList.length} installed skills`}</span>
-                </a>
-                <a className="pluginCard" href="#settings-mcp">
+                </button>
+                <button className="pluginCard" onClick={() => setActiveSection('mcp')} type="button">
                   <strong>{t(locale, 'mcp')}</strong>
                   <span>{locale === 'zh' ? `${mcps.filter((item) => item.enabled).length}/${mcps.length} 个已启用` : `${mcps.filter((item) => item.enabled).length}/${mcps.length} enabled`}</span>
-                </a>
-                <a className="pluginCard" href="#settings-remote">
+                </button>
+                <button className="pluginCard" onClick={() => setActiveSection('remote')} type="button">
                   <strong>{locale === 'zh' ? '远程助手' : 'Remote bots'}</strong>
                   <span>{locale === 'zh' ? '飞书 / 微信 / QQ / 钉钉' : 'Feishu / WeChat / QQ / DingTalk'}</span>
-                </a>
+                </button>
               </div>
             </section>
+            ) : null}
 
+            {activeSection === 'skills' ? (
             <section className="settingsSection" id="settings-skills">
               <div className="presetHeader">
                 <div>
@@ -354,7 +374,9 @@ export function SettingsDrawer({
                 </div>
               )}
             </section>
+            ) : null}
 
+            {activeSection === 'mcp' ? (
             <McpSection
               addLabel={t(locale, 'addMcp')}
               id="settings-mcp"
@@ -370,7 +392,9 @@ export function SettingsDrawer({
               onRefresh={() => void refreshMcpStatus()}
               title={t(locale, 'mcp')}
             />
+            ) : null}
 
+            {activeSection === 'remote' ? (
             <section className="settingsSection remoteBots" id="settings-remote">
               <div className="presetHeader">
                 <div>
@@ -439,6 +463,7 @@ export function SettingsDrawer({
                 ))}
               </div>
             </section>
+            ) : null}
           </div>
         </div>
       </aside>

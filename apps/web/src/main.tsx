@@ -9,6 +9,7 @@ import { WeixinConnectDialog } from './components/WeixinConnectDialog.js';
 import { AgentStagePanel } from './components/AgentStagePanel.js';
 import { WorkspaceThreadList } from './components/WorkspaceThreadList.js';
 import { useBotControls, type WeixinLoginState } from './botClient.js';
+import { resizeTextareaToContent } from './composer.js';
 import { defaultConfig, defaultMcps } from './defaults.js';
 import { t } from './i18n.js';
 import { mcpFromCommandText, normalizeStoredMcps } from './mcpConfig.js';
@@ -480,6 +481,8 @@ function App() {
     if (!transcript) return;
     transcript.scrollTo({ top: transcript.scrollHeight, behavior: 'smooth' });
   }, [lastItemSignature]);
+
+  useEffect(() => { resizeTextareaToContent(composerInputRef.current); }, [activeSlashOption, images.length, input]);
 
   async function createConversation(workspaceRoot = config.workspaceRoot, conversationKind: 'chat' | 'project' = 'project') {
     setBusy(true);
@@ -1310,7 +1313,9 @@ function App() {
                 <textarea
                   ref={composerInputRef}
                   value={input}
-                  onChange={(event) => setInput(event.target.value)}
+                  rows={1}
+                  onChange={(event) => { setInput(event.target.value); window.requestAnimationFrame(() => resizeTextareaToContent(composerInputRef.current)); }}
+                  onInput={() => resizeTextareaToContent(composerInputRef.current)}
                   onPaste={handlePaste}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' && !event.shiftKey) {

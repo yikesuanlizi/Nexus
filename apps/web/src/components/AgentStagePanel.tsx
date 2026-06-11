@@ -11,27 +11,35 @@ export function AgentStagePanel({
   rows: AgentStageRow[];
 }) {
   if (rows.length === 0) return null;
-  const runningCount = rows.filter((row) => row.tone === 'running').length;
-  const doneCount = rows.filter((row) => row.tone === 'success').length;
-  const issueCount = rows.filter((row) => row.tone === 'warning' || row.tone === 'danger').length;
+  const mainRow = rows.find((row) => row.kind === 'main') ?? rows[0];
+  const childRows = rows.filter((row) => row.kind === 'child');
+  const statRows = childRows.length > 0 ? childRows : rows;
+  const runningCount = statRows.filter((row) => row.tone === 'running').length;
+  const doneCount = statRows.filter((row) => row.tone === 'success').length;
+  const issueCount = statRows.filter((row) => row.tone === 'warning' || row.tone === 'danger').length;
+  const gridRows = childRows.length > 0 ? childRows : [mainRow];
   return (
     <section className="agentStage" aria-label={locale === 'zh' ? 'Agent 舞台' : 'Agent stage'}>
       <div className="agentStageHeader">
         <div>
           <h2>{locale === 'zh' ? '智能体状态' : 'Agent Status'}</h2>
-          <p>{locale === 'zh' ? '当前任务协作态势' : 'Live collaboration state'}</p>
+          <p>{childRows.length > 0
+            ? (locale === 'zh' ? '子 Agent 协作状态' : 'Child agent collaboration')
+            : (locale === 'zh' ? '当前主 Agent 状态' : 'Current main agent state')}</p>
         </div>
-        <span>{rows.length}</span>
+        <span>{childRows.length > 0 ? childRows.length : 1}</span>
       </div>
-      <div className="agentStageStats" aria-hidden="true">
-        <span>{locale === 'zh' ? '运行' : 'Run'} <strong>{runningCount}</strong></span>
-        <span>{locale === 'zh' ? '完成' : 'Done'} <strong>{doneCount}</strong></span>
-        <span>{locale === 'zh' ? '注意' : 'Watch'} <strong>{issueCount}</strong></span>
-      </div>
+      {childRows.length > 0 ? (
+        <div className="agentStageStats" aria-hidden="true">
+          <span>{locale === 'zh' ? '运行' : 'Run'} <strong>{runningCount}</strong></span>
+          <span>{locale === 'zh' ? '完成' : 'Done'} <strong>{doneCount}</strong></span>
+          <span>{locale === 'zh' ? '注意' : 'Watch'} <strong>{issueCount}</strong></span>
+        </div>
+      ) : null}
       <div className="agentStageGrid">
-        {rows.map((row) => (
+        {gridRows.map((row) => (
           <article
-            className={['agentStageCard', row.kind, row.tone].join(' ')}
+            className={['agentStageCard', row.kind, row.tone, childRows.length === 0 ? 'solo' : ''].join(' ')}
             key={row.threadId}
             style={{ '--agent-depth': row.depth } as CSSProperties}
           >
@@ -56,6 +64,11 @@ export function AgentStagePanel({
           </article>
         ))}
       </div>
+      {childRows.length === 0 ? (
+        <p className="agentStageHint">
+          {locale === 'zh' ? '复杂任务触发多 Agent 后，会在这里显示子 Agent 状态。' : 'Child agent status appears here when a task spawns collaborators.'}
+        </p>
+      ) : null}
     </section>
   );
 }
