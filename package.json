@@ -12,6 +12,8 @@
   "scripts": {
     "start": "node scripts/start.mjs",
     "build": "tsc -b",
+    "desktop:dev": "npm --workspace @nexus/desktop run dev",
+    "desktop:build": "npm --workspace @nexus/desktop run build",
     "clean": "tsc -b --clean",
     "test": "vitest run",
     "test:watch": "vitest",
