@@ -1,0 +1,21 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "tsBuildInfoFile": "dist/.tsbuildinfo"
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../../packages/protocol" },
+    { "path": "../../packages/model-gateway" },
+    { "path": "../../packages/sandbox" },
+    { "path": "../../packages/storage" },
+    { "path": "../../packages/memory" },
+    { "path": "../../packages/extensions" },
+    { "path": "../../packages/bot" },
+    { "path": "../../packages/runtime" },
+    { "path": "../../packages/i18n" },
+    { "path": "../../packages/tools" }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "name": "nexus",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Nexus — local-first TypeScript Agent OS runtime",
+  "packageManager": "npm@10.9.0",
+  "workspaces": [
+    "packages/*",
+    "apps/*",
+    "tests"
+  ],
+  "scripts": {
+    "start": "node scripts/start.mjs",
+    "build": "tsc -b",
+    "clean": "tsc -b --clean",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint packages/ apps/ --ext .ts",
+    "format": "prettier --write \"packages/**/*.ts\" \"apps/**/*.ts\""
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.5.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

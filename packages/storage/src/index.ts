@@ -1,0 +1,534 @@
+import * as path from 'node:path';
+import * as fs from 'node:fs';
+import { createRequire } from 'node:module';
+import { LocalThreadStore } from './store.js';
+import type { ThreadStore } from './store.js';
+
+export { LocalThreadStore };
+export type { ThreadStore };
+
+/**
+ * Create a LocalThreadStore backed by SQLite + JSONL in `dataDir`.
+ *
+ * Callers should inject a real better-sqlite3 Database instance:
+ *   import Database from 'better-sqlite3';
+ *   const db = new Database(path.join(dataDir, 'threads.db'));
+ *   db.pragma('journal_mode = WAL');
+ *   const store = new LocalThreadStore(db as any, dataDir);
+ *
+ * For testing, `createStore` returns a stub when no dbFactory is given.
+ */
+export function createStore(
+  dataDir: string,
+  db?: unknown,
+): { store: LocalThreadStore; db: unknown } {
+  fs.mkdirSync(dataDir, { recursive: true });
+  if (!db) {
+    try {
+      const Database = loadBetterSqlite();
+      db = new Database(path.join(dataDir, 'threads.db'));
+      (db as { pragma(sql: string): void }).pragma('journal_mode = WAL');
+      console.log('[storage] Using SQLite backend');
+    } catch (_err) {
+      console.warn(
+        '[storage] better-sqlite3 unavailable, falling back to JSON file backend.\n' +
+        '  Install better-sqlite3 for better concurrent-write safety:\n' +
+        '  npm install --workspace @nexus/storage better-sqlite3',
+      );
+      db = createFileBackedDb(dataDir);
+    }
+  }
+  const store = new LocalThreadStore(db as never, dataDir);
+  recoverMissingMetadataFromRollouts(db as DbLike, dataDir);
+  return { store, db };
+}
+
+function loadBetterSqlite(): new (filename: string) => unknown {
+  const require = createRequire(__filename);
+  const mod = require('better-sqlite3') as { default?: new (filename: string) => unknown } | (new (filename: string) => unknown);
+  return typeof mod === 'function' ? mod : mod.default!;
+}
+
+interface BackendStore {
+  threads: Array<Record<string, unknown>>;
+  turns: Array<Record<string, unknown>>;
+  settings: Array<Record<string, unknown>>;
+  thread_spawn_edges: Array<Record<string, unknown>>;
+}
+
+interface DbLike {
+  prepare(sql: string): {
+    run(...params: unknown[]): void;
+    get(...params: unknown[]): unknown;
+    all(...params: unknown[]): unknown[];
+  };
+}
+
+interface RolloutCheckpoint {
+  type: '__checkpoint__';
+  threadId?: string;
+  turnId?: string;
+  itemIndex?: number;
+  timestamp?: string;
+}
+
+interface RolloutItem {
+  type?: string;
+  turnId?: string;
+  text?: string;
+}
+
+interface RecoveredTurn {
+  turnId: string;
+  userText: string;
+  status: 'completed' | 'failed';
+  startedAt: string;
+  completedAt: string;
+  firstSeen: number;
+}
+
+function recoverMissingMetadataFromRollouts(db: DbLike, dataDir: string): void {
+  const rolloutDir = path.join(dataDir, 'rollouts');
+  if (!fs.existsSync(rolloutDir)) return;
+
+  const files = fs
+    .readdirSync(rolloutDir)
+    .filter((name) => name.endsWith('.jsonl'))
+    .sort();
+  if (files.length === 0) return;
+
+  let recovered = 0;
+  for (const file of files) {
+    const threadId = file.slice(0, -'.jsonl'.length);
+    const existing = db
+      .prepare('SELECT * FROM threads WHERE thread_id = ?')
+      .get(threadId);
+    if (existing) continue;
+
+    const recoveredThread = recoverThreadFromRollout(
+      threadId,
+      path.join(rolloutDir, file),
+    );
+    if (!recoveredThread) continue;
+
+    db
+      .prepare(
+        `INSERT INTO threads (thread_id, title, workspace_root, status, turn_count, created_at, updated_at, archived_at, ephemeral, tags)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        recoveredThread.thread.thread_id,
+        recoveredThread.thread.title,
+        recoveredThread.thread.workspace_root,
+        recoveredThread.thread.status,
+        recoveredThread.thread.turn_count,
+        recoveredThread.thread.created_at,
+        recoveredThread.thread.updated_at,
+        recoveredThread.thread.archived_at,
+        recoveredThread.thread.ephemeral,
+        recoveredThread.thread.tags,
+      );
+
+    for (const turn of recoveredThread.turns) {
+      db
+        .prepare(
+          `INSERT OR REPLACE INTO turns (turn_id, thread_id, turn_index, user_input, status, started_at, completed_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          turn.turn_id,
+          turn.thread_id,
+          turn.turn_index,
+          turn.user_input,
+          turn.status,
+          turn.started_at,
+          turn.completed_at,
+        );
+    }
+    recovered++;
+  }
+
+  if (recovered > 0) {
+    console.log(`[storage] Recovered ${recovered} thread(s) from rollout JSONL`);
+  }
+}
+
+function recoverThreadFromRollout(threadId: string, rolloutPath: string): {
+  thread: Record<string, unknown>;
+  turns: Array<Record<string, unknown>>;
+} | null {
+  let content: string;
+  try {
+    content = fs.readFileSync(rolloutPath, 'utf-8');
+  } catch {
+    return null;
+  }
+
+  const stats = fs.statSync(rolloutPath);
+  const fallbackTime = stats.mtime.toISOString();
+  const turns = new Map<string, RecoveredTurn>();
+  const checkpointTimes = new Map<string, { first: string; last: string }>();
+  let firstUserText = '';
+  let firstTimestamp = '';
+  let lastTimestamp = '';
+  let firstSeen = 0;
+
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    let parsed: RolloutCheckpoint | RolloutItem;
+    try {
+      parsed = JSON.parse(trimmed) as RolloutCheckpoint | RolloutItem;
+    } catch {
+      continue;
+    }
+
+    if (parsed.type === '__checkpoint__') {
+      const checkpoint = parsed as RolloutCheckpoint;
+      if (checkpoint.timestamp) {
+        firstTimestamp ||= checkpoint.timestamp;
+        lastTimestamp = checkpoint.timestamp;
+      }
+      if (checkpoint.turnId && checkpoint.timestamp) {
+        const times = checkpointTimes.get(checkpoint.turnId);
+        checkpointTimes.set(checkpoint.turnId, {
+          first: times?.first ?? checkpoint.timestamp,
+          last: checkpoint.timestamp,
+        });
+      }
+      continue;
+    }
+
+    const item = parsed as RolloutItem;
+    if (!item.turnId) continue;
+
+    const checkpoint = checkpointTimes.get(item.turnId);
+    const startedAt = checkpoint?.first ?? (firstTimestamp || fallbackTime);
+    const completedAt = checkpoint?.last ?? (lastTimestamp || fallbackTime);
+    const turn = turns.get(item.turnId) ?? {
+      turnId: item.turnId,
+      userText: '',
+      status: 'completed',
+      startedAt,
+      completedAt,
+      firstSeen: firstSeen++,
+    };
+    turn.startedAt = earliestIso(turn.startedAt, startedAt);
+    turn.completedAt = latestIso(turn.completedAt, completedAt);
+
+    if (item.type === 'user_message' && typeof item.text === 'string') {
+      turn.userText ||= item.text;
+      firstUserText ||= item.text;
+    }
+    if (item.type === 'error') {
+      turn.status = 'failed';
+    }
+    turns.set(item.turnId, turn);
+  }
+
+  const recoveredTurns = [...turns.values()]
+    .filter((turn) => turn.userText)
+    .sort((a, b) => a.firstSeen - b.firstSeen);
+  if (recoveredTurns.length === 0) return null;
+
+  const createdAt = firstTimestamp || recoveredTurns[0].startedAt || fallbackTime;
+  const updatedAt = lastTimestamp || recoveredTurns.at(-1)?.completedAt || fallbackTime;
+  const title = makeRecoveredTitle(firstUserText || threadId);
+
+  return {
+    thread: {
+      thread_id: threadId,
+      title,
+      workspace_root: process.cwd(),
+      status: 'active',
+      turn_count: recoveredTurns.length,
+      created_at: createdAt,
+      updated_at: updatedAt,
+      archived_at: null,
+      ephemeral: 0,
+      tags: '{}',
+    },
+    turns: recoveredTurns.map((turn, index) => ({
+      turn_id: turn.turnId,
+      thread_id: threadId,
+      turn_index: index,
+      user_input: JSON.stringify({ type: 'text', text: turn.userText }),
+      status: turn.status,
+      started_at: turn.startedAt,
+      completed_at: turn.completedAt,
+    })),
+  };
+}
+
+function makeRecoveredTitle(text: string): string {
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= 40) return normalized || 'Recovered thread';
+  return `${normalized.slice(0, 40)}...`;
+}
+
+function earliestIso(left: string, right: string): string {
+  return left <= right ? left : right;
+}
+
+function latestIso(left: string, right: string): string {
+  return left >= right ? left : right;
+}
+
+/**
+ * Create an in-process DB backed by a JSON file in `dataDir/threads.json`.
+ * Persists synchronously on every mutation (write-through).
+ * Not safe for concurrent processes, but survives restarts.
+ */
+function createFileBackedDb(dataDir: string) {
+  const filePath = path.join(dataDir, 'threads.json');
+
+  // Load existing data or start fresh
+  let store: BackendStore;
+  try {
+    const raw = fs.readFileSync(filePath, 'utf-8');
+    const parsed = JSON.parse(raw) as BackendStore;
+    store = {
+      threads: Array.isArray(parsed.threads) ? parsed.threads : [],
+      turns: Array.isArray(parsed.turns) ? parsed.turns : [],
+      settings: Array.isArray(parsed.settings) ? parsed.settings : [],
+      thread_spawn_edges: Array.isArray(parsed.thread_spawn_edges) ? parsed.thread_spawn_edges : [],
+    };
+    console.log(
+      `[storage] Loaded ${store.threads.length} thread(s), ${store.turns.length} turn(s) from ${filePath}`,
+    );
+  } catch {
+    store = { threads: [], turns: [], settings: [], thread_spawn_edges: [] };
+  }
+
+  // Thread lookup by ID for fast access
+  const threadById = new Map<string, Record<string, unknown>>();
+  for (const row of store.threads) {
+    threadById.set(String(row.thread_id), row);
+  }
+  const settingsByKey = new Map<string, Record<string, unknown>>();
+  for (const row of store.settings) {
+    settingsByKey.set(String(row.key), row);
+  }
+  const edgeKey = (parentThreadId: unknown, childThreadId: unknown) => `${String(parentThreadId)}\n${String(childThreadId)}`;
+  const edgeByKey = new Map<string, Record<string, unknown>>();
+  for (const row of store.thread_spawn_edges) {
+    edgeByKey.set(edgeKey(row.parent_thread_id, row.child_thread_id), row);
+  }
+
+  function persist(): void {
+    store.threads = [...threadById.values()];
+    store.settings = [...settingsByKey.values()];
+    store.thread_spawn_edges = [...edgeByKey.values()];
+    try {
+      fs.writeFileSync(filePath, JSON.stringify(store, null, 2), 'utf-8');
+    } catch (err) {
+      console.error('[storage] Failed to persist threads.json:', err);
+    }
+  }
+
+  return {
+    exec(_sql: string) {},
+    prepare(sql: string) {
+      const normalized = sql.replace(/\s+/g, ' ').trim();
+
+      return {
+        run(...params: unknown[]) {
+          if (normalized.startsWith('INSERT INTO threads')) {
+            const row: Record<string, unknown> = {
+              thread_id: params[0],
+              title: params[1],
+              workspace_root: params[2],
+              status: params[3],
+              turn_count: params[4],
+              created_at: params[5],
+              updated_at: params[6],
+              archived_at: params[7],
+              ephemeral: params[8],
+              tags: params[9],
+              parent_thread_id: params[10] ?? null,
+              agent_nickname: params[11] ?? null,
+              agent_role: params[12] ?? null,
+            };
+            threadById.set(String(params[0]), row);
+            persist();
+            return;
+          }
+
+          if (normalized.startsWith('UPDATE threads SET')) {
+            const threadId = String(params[params.length - 1]);
+            const row = threadById.get(threadId);
+            if (!row) return;
+            const setClause = normalized.slice(
+              'UPDATE threads SET '.length,
+              normalized.indexOf(' WHERE thread_id'),
+            );
+            const columns = setClause
+              .split(',')
+              .map((part) => part.trim().split(' = ')[0]);
+            for (let i = 0; i < columns.length; i++) {
+              row[columns[i]] = params[i];
+            }
+            persist();
+            return;
+          }
+
+          if (normalized.startsWith('INSERT OR REPLACE INTO turns')) {
+            const row: Record<string, unknown> = {
+              turn_id: params[0],
+              thread_id: params[1],
+              turn_index: params[2],
+              user_input: params[3],
+              status: params[4],
+              started_at: params[5],
+              completed_at: params[6],
+            };
+            // replace or append
+            const idx = store.turns.findIndex(
+              (t) => String(t.turn_id) === String(params[0]),
+            );
+            if (idx >= 0) {
+              store.turns[idx] = row;
+            } else {
+              store.turns.push(row);
+            }
+            persist();
+            return;
+          }
+
+          if (normalized.startsWith('DELETE FROM turns WHERE thread_id = ?')) {
+            store.turns = store.turns.filter(
+              (row) => row.thread_id !== params[0],
+            );
+            persist();
+            return;
+          }
+
+          if (normalized.startsWith('DELETE FROM thread_spawn_edges WHERE parent_thread_id = ? OR child_thread_id = ?')) {
+            const parent = String(params[0]);
+            const child = String(params[1]);
+            for (const [key, row] of edgeByKey) {
+              if (String(row.parent_thread_id) === parent || String(row.child_thread_id) === child) {
+                edgeByKey.delete(key);
+              }
+            }
+            persist();
+            return;
+          }
+
+          if (normalized.startsWith('DELETE FROM threads WHERE thread_id = ?')) {
+            const tid = String(params[0]);
+            threadById.delete(tid);
+            store.turns = store.turns.filter((row) => row.thread_id !== tid);
+            persist();
+            return;
+          }
+
+          if (normalized.startsWith('INSERT OR REPLACE INTO settings')) {
+            const row: Record<string, unknown> = {
+              key: params[0],
+              value: params[1],
+              updated_at: params[2],
+            };
+            settingsByKey.set(String(params[0]), row);
+            persist();
+            return;
+          }
+
+          if (normalized.startsWith('INSERT INTO thread_spawn_edges')) {
+            const row: Record<string, unknown> = {
+              parent_thread_id: params[0],
+              child_thread_id: params[1],
+              status: params[2],
+              created_at: params[3],
+              updated_at: params[4],
+            };
+            edgeByKey.set(edgeKey(params[0], params[1]), row);
+            persist();
+            return;
+          }
+
+          if (normalized.startsWith('UPDATE thread_spawn_edges SET status = ?')) {
+            const key = edgeKey(params[2], params[3]);
+            const row = edgeByKey.get(key);
+            if (!row) return;
+            row.status = params[0];
+            row.updated_at = params[1];
+            persist();
+          }
+        },
+        get(...params: unknown[]) {
+          if (
+            normalized.startsWith('SELECT * FROM threads WHERE thread_id = ?')
+          ) {
+            return threadById.get(String(params[0]));
+          }
+          if (
+            normalized.startsWith('SELECT value FROM settings WHERE key = ?')
+          ) {
+            return settingsByKey.get(String(params[0]));
+          }
+          return undefined;
+        },
+        all(...params: unknown[]) {
+          if (normalized.startsWith('PRAGMA table_info(threads)')) {
+            return [
+              'thread_id',
+              'title',
+              'workspace_root',
+              'status',
+              'turn_count',
+              'created_at',
+              'updated_at',
+              'archived_at',
+              'ephemeral',
+              'tags',
+              'parent_thread_id',
+              'agent_nickname',
+              'agent_role',
+            ].map((name) => ({ name }));
+          }
+
+          if (
+            normalized.startsWith('SELECT * FROM turns WHERE thread_id = ?')
+          ) {
+            return store.turns
+              .filter((row) => row.thread_id === params[0])
+              .sort(
+                (a, b) =>
+                  Number(a.turn_index) - Number(b.turn_index),
+              );
+          }
+
+          if (normalized.startsWith('SELECT * FROM threads')) {
+            let rows = [...threadById.values()];
+            if (normalized.includes('WHERE status = ?')) {
+              rows = rows.filter((row) => row.status === params[0]);
+            }
+            rows.sort((a, b) =>
+              String(b.updated_at).localeCompare(String(a.updated_at)),
+            );
+            if (normalized.includes('LIMIT ?')) {
+              const limit = Number(params[params.length - 1]);
+              rows = rows.slice(0, limit);
+            }
+            return rows;
+          }
+
+          if (normalized.startsWith('SELECT * FROM thread_spawn_edges WHERE parent_thread_id = ?')) {
+            let rows = [...edgeByKey.values()].filter((row) => row.parent_thread_id === params[0]);
+            if (normalized.includes('AND status = ?')) {
+              rows = rows.filter((row) => row.status === params[1]);
+            }
+            rows.sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+            return rows;
+          }
+
+          return [];
+        },
+      };
+    },
+  };
+}
+
+export const STORAGE_VERSION = '0.1.0';

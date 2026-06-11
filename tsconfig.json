@@ -1,0 +1,17 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/protocol" },
+    { "path": "packages/model-gateway" },
+    { "path": "packages/sandbox" },
+    { "path": "packages/storage" },
+    { "path": "packages/tools" },
+    { "path": "packages/memory" },
+    { "path": "packages/extensions" },
+    { "path": "packages/i18n" },
+    { "path": "packages/bot" },
+    { "path": "packages/runtime" },
+    { "path": "apps/api" },
+    { "path": "apps/web" }
+  ]
+}

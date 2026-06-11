@@ -1,0 +1,196 @@
+import type { AppDialogState } from './components/Dialogs.js';
+import type { Locale } from './config.js';
+import type { ThreadMeta } from './types.js';
+
+export const WORKSPACE_ROOTS_STORAGE_KEY = 'nexus.workspaceRoots.v1';
+export const MAX_REMEMBERED_WORKSPACE_ROOTS = 30;
+
+export type ThreadActivityState = 'idle' | 'running' | 'unread';
+
+export interface WorkspaceThreadGroup {
+  context: string;
+  label: string;
+  threads: ThreadMeta[];
+  workspaceRoot: string;
+}
+
+export interface PlainChatThreadGroup {
+  threads: ThreadMeta[];
+}
+
+export async function pickWorkspaceRoot(): Promise<string | null> {
+  const response = await fetch('/api/workspaces/pick', { method: 'POST' });
+  const data = (await response.json().catch(() => ({}))) as {
+    cancelled?: boolean;
+    error?: string;
+    workspaceRoot?: string;
+  };
+  if (!response.ok) {
+    throw new Error(data.error ?? 'No native directory picker is available in this environment.');
+  }
+  const workspaceRoot = data.workspaceRoot?.trim();
+  return data.cancelled || !workspaceRoot ? null : workspaceRoot;
+}
+
+export function workspacePickerStatus(locale: Locale): string {
+  return locale === 'zh' ? '选择工作目录' : 'Selecting workspace';
+}
+
+export function workspacePickerNotice(locale: Locale, error: unknown): AppDialogState {
+  return {
+    kind: 'decision',
+    title: locale === 'zh' ? '无法选择目录' : 'Cannot select directory',
+    message: error instanceof Error ? error.message : String(error),
+    actionLabel: locale === 'zh' ? '知道了' : 'OK',
+    cancelLabel: locale === 'zh' ? '关闭' : 'Close',
+    resolve: () => {},
+  };
+}
+
+export function normalizeWorkspaceRoot(value?: string | null): string {
+  const trimmed = value?.trim() ?? '';
+  if (!trimmed) return '';
+  const stripped = trimmed.replace(/[\\/]+$/, '');
+  if (!stripped && /^[\\/]+$/.test(trimmed)) return trimmed[0] === '\\' ? '\\' : '/';
+  if (/^[A-Za-z]:$/.test(stripped)) return `${stripped}\\`;
+  return stripped || trimmed;
+}
+
+function workspaceKey(value: string): string {
+  return normalizeWorkspaceRoot(value).replace(/\\/g, '/').toLowerCase();
+}
+
+export function workspaceLabelFromPath(value: string, locale: Locale = 'zh'): string {
+  const normalized = normalizeWorkspaceRoot(value);
+  if (!normalized) return locale === 'zh' ? '对话' : 'Chats';
+  const parts = normalized.split(/[\\/]/).filter(Boolean);
+  return parts.at(-1) ?? normalized;
+}
+
+export function workspaceContextLabel(value: string): string {
+  const normalized = normalizeWorkspaceRoot(value);
+  if (!normalized) return '';
+  const parts = normalized.split(/[\\/]/).filter(Boolean);
+  if (parts.length <= 1) return normalized;
+  return parts.at(-2) ?? '';
+}
+
+export function compactWorkspaceRoots(values: readonly (string | null | undefined)[]): string[] {
+  const seen = new Set<string>();
+  const roots: string[] = [];
+  for (const value of values) {
+    const normalized = normalizeWorkspaceRoot(value);
+    if (!normalized) continue;
+    const key = workspaceKey(normalized);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    roots.push(normalized);
+  }
+  return roots.slice(0, MAX_REMEMBERED_WORKSPACE_ROOTS);
+}
+
+export function readRememberedWorkspaceRoots(): string[] {
+  try {
+    const raw = globalThis.localStorage?.getItem(WORKSPACE_ROOTS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? compactWorkspaceRoots(parsed.filter((item): item is string => typeof item === 'string')) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveRememberedWorkspaceRoots(roots: readonly string[]): string[] {
+  const compacted = compactWorkspaceRoots(roots);
+  globalThis.localStorage?.setItem(WORKSPACE_ROOTS_STORAGE_KEY, JSON.stringify(compacted));
+  return compacted;
+}
+
+export function rememberWorkspaceRoots(current: readonly string[], roots: readonly (string | null | undefined)[]): string[] {
+  return saveRememberedWorkspaceRoots(compactWorkspaceRoots([...roots, ...current]));
+}
+
+export function forgetWorkspaceRoot(current: readonly string[], root: string): string[] {
+  const key = workspaceKey(root);
+  return saveRememberedWorkspaceRoots(current.filter((item) => workspaceKey(item) !== key));
+}
+
+export function isPlainChatThread(thread: ThreadMeta): boolean {
+  return !thread.parentThreadId && (!normalizeWorkspaceRoot(thread.workspaceRoot) || thread.tags?.conversationKind === 'chat');
+}
+
+export function buildPlainChatThreads(options: {
+  searchQuery?: string;
+  threads: ThreadMeta[];
+}): ThreadMeta[] {
+  const query = (options.searchQuery ?? '').trim().toLowerCase();
+  return options.threads
+    .filter(isPlainChatThread)
+    .filter((thread) => {
+      if (!query) return true;
+      return [thread.title, thread.threadId, thread.status].join('\n').toLowerCase().includes(query);
+    })
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+export function buildWorkspaceThreadGroups(options: {
+  currentWorkspaceRoot?: string;
+  locale?: Locale;
+  rememberedRoots?: string[];
+  searchQuery?: string;
+  threads: ThreadMeta[];
+}): WorkspaceThreadGroup[] {
+  const locale = options.locale ?? 'zh';
+  const currentRoot = normalizeWorkspaceRoot(options.currentWorkspaceRoot);
+  const query = (options.searchQuery ?? '').trim().toLowerCase();
+  const map = new Map<string, WorkspaceThreadGroup>();
+  const ensureGroup = (workspaceRoot: string): WorkspaceThreadGroup => {
+    const normalized = normalizeWorkspaceRoot(workspaceRoot);
+    const key = workspaceKey(normalized);
+    const existing = map.get(key);
+    if (existing) return existing;
+    const group = {
+      workspaceRoot: normalized,
+      label: workspaceLabelFromPath(normalized, locale),
+      context: workspaceContextLabel(normalized),
+      threads: [],
+    };
+    map.set(key, group);
+    return group;
+  };
+
+  for (const thread of options.threads) {
+    if (thread.parentThreadId) continue;
+    if (isPlainChatThread(thread)) continue;
+    const root = normalizeWorkspaceRoot(thread.workspaceRoot) || currentRoot;
+    ensureGroup(root).threads.push(thread);
+  }
+
+  for (const root of compactWorkspaceRoots([currentRoot, ...(options.rememberedRoots ?? [])])) {
+    ensureGroup(root);
+  }
+
+  for (const group of map.values()) {
+    group.threads.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
+
+  const groups = Array.from(map.values()).filter((group) => {
+    if (!query) return true;
+    const groupHaystack = [group.workspaceRoot, group.label, group.context].join('\n').toLowerCase();
+    const matchingThreads = group.threads.filter((thread) => [
+      thread.title,
+      thread.threadId,
+      thread.status,
+    ].join('\n').toLowerCase().includes(query));
+    if (groupHaystack.includes(query)) return true;
+    group.threads = matchingThreads;
+    return matchingThreads.length > 0;
+  });
+
+  return groups.sort((a, b) => {
+    const aCurrent = workspaceKey(a.workspaceRoot) === workspaceKey(currentRoot);
+    const bCurrent = workspaceKey(b.workspaceRoot) === workspaceKey(currentRoot);
+    if (aCurrent !== bCurrent) return aCurrent ? -1 : 1;
+    return a.label.localeCompare(b.label);
+  });
+}

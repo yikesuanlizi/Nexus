@@ -1,0 +1,18 @@
+{
+  "name": "@nexus/tests",
+  "version": "0.1.0",
+  "private": true,
+  "devDependencies": {
+    "@nexus/protocol": "0.1.0",
+    "@nexus/model-gateway": "0.1.0",
+    "@nexus/tools": "0.1.0",
+    "@nexus/sandbox": "0.1.0",
+    "@nexus/storage": "0.1.0",
+    "@nexus/runtime": "0.1.0",
+    "@nexus/memory": "0.1.0",
+    "@nexus/extensions": "0.1.0",
+    "@nexus/i18n": "0.1.0",
+    "vitest": "^3.0.0"
+  }
+}
+
