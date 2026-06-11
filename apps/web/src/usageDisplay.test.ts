@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatCacheDiagnostics, formatCompactionPressure, formatTokenSummary } from './usageDisplay.js';
+import { formatCacheDiagnostics, formatCompactionPressure, formatThreadTokenSummary, formatTokenSummary } from './usageDisplay.js';
 
 describe('formatTokenSummary', () => {
   it('shows cached input tokens and hit rate in Chinese', () => {
@@ -28,6 +28,44 @@ describe('formatTokenSummary', () => {
       outputTokens: 10,
       reasoningOutputTokens: 0,
     }, 'en')).toBe('Tokens: input 50, cache 0, hit 0%, output 10');
+  });
+
+  it('separates latest turn cache hit rate from cumulative usage', () => {
+    expect(formatThreadTokenSummary({
+      threadId: 'thread-1',
+      turns: [
+        {
+          turnId: 'turn-1',
+          timestamp: '2026-06-11T00:00:00.000Z',
+          usage: {
+            inputTokens: 100,
+            cachedInputTokens: 50,
+            outputTokens: 10,
+            reasoningOutputTokens: 0,
+            cacheStrategy: 'deepseek-native',
+          },
+        },
+        {
+          turnId: 'turn-2',
+          timestamp: '2026-06-11T00:01:00.000Z',
+          usage: {
+            inputTokens: 100,
+            cachedInputTokens: 90,
+            outputTokens: 12,
+            reasoningOutputTokens: 0,
+            cacheStrategy: 'deepseek-native',
+          },
+        },
+      ],
+      total: {
+        inputTokens: 200,
+        cachedInputTokens: 140,
+        outputTokens: 22,
+        reasoningOutputTokens: 0,
+        cacheStrategy: 'deepseek-native',
+      },
+      updatedAt: '2026-06-11T00:01:00.000Z',
+    }, 'zh')).toBe('Token：本轮 输入 100，DeepSeek 缓存 90，命中率 90%，输出 12；累计 输入 200，缓存 140，命中率 70%，输出 22');
   });
 
   it('formats cache diagnostics without exposing long hashes', () => {

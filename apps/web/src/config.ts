@@ -3,6 +3,7 @@ export type Locale = 'zh' | 'en';
 export type WebSearchMode = 'auto' | 'on' | 'off';
 export type ReasoningEffort = 'low' | 'medium' | 'high';
 export type ThemeMode = 'dark' | 'light' | 'system';
+export type RunProfile = 'cache_first' | 'runtime_os';
 
 export interface RunConfig {
   workspaceRoot: string;
@@ -14,6 +15,7 @@ export interface RunConfig {
   skillsRoot: string;
   webSearchMode: WebSearchMode;
   reasoningEffort: ReasoningEffort;
+  runProfile: RunProfile;
   themeMode: ThemeMode;
   locale: Locale;
 }
@@ -31,6 +33,7 @@ const USER_FIELDS: Array<keyof RunConfig> = [
   'skillsRoot',
   'webSearchMode',
   'reasoningEffort',
+  'runProfile',
   'themeMode',
 ];
 

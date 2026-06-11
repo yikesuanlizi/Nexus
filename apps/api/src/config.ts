@@ -9,6 +9,7 @@ import { MCP_SERVERS_KEY, normalizeMcpServers, type McpServerConfig } from './mc
 
 export type WebSearchMode = 'auto' | 'on' | 'off';
 export type ReasoningEffort = 'low' | 'medium' | 'high';
+export type RunProfile = 'cache_first' | 'runtime_os';
 
 export interface AgentRunConfig {
   workspaceRoot: string;
@@ -25,6 +26,8 @@ export interface AgentRunConfig {
   webSearchMode: WebSearchMode;
   /** Simplified reasoning effort selector shown in the composer. */
   reasoningEffort: ReasoningEffort;
+  /** Runtime trade-off profile: cache hit stability or long-running traceability. */
+  runProfile: RunProfile;
   locale?: Locale;
 }
 
@@ -64,6 +67,7 @@ export const defaultConfig: AgentRunConfig = {
   skillsRoot: path.join(os.homedir(), '.nexus', 'skills'),
   webSearchMode: 'auto',
   reasoningEffort: 'medium',
+  runProfile: 'runtime_os',
 };
 
 export function hiddenChatWorkspaceRoot(dataDir: string): string {
@@ -84,6 +88,9 @@ export function resolveConfig(patch: Partial<AgentRunConfig> = {}): AgentRunConf
   if (!['low', 'medium', 'high'].includes(merged.reasoningEffort)) {
     merged.reasoningEffort = defaultConfig.reasoningEffort;
   }
+  if (!['cache_first', 'runtime_os'].includes(merged.runProfile)) {
+    merged.runProfile = defaultConfig.runProfile;
+  }
   return merged;
 }
 
@@ -101,6 +108,7 @@ export function createConfigRepository(store: ThreadStore) {
     if (config.permissions !== undefined) next.permissions = config.permissions;
     if (config.webSearchMode !== undefined) next.webSearchMode = config.webSearchMode;
     if (config.reasoningEffort !== undefined) next.reasoningEffort = config.reasoningEffort;
+    if (config.runProfile !== undefined) next.runProfile = config.runProfile;
     if (config.locale !== undefined) next.locale = config.locale;
     return next;
   }

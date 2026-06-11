@@ -11,6 +11,7 @@ export const defaultConfig: RunConfig = {
   skillsRoot: '',
   webSearchMode: 'auto',
   reasoningEffort: 'medium',
+  runProfile: 'runtime_os',
   themeMode: 'dark',
   locale: 'zh',
 };

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import type { Locale, RunConfig, ThemeMode, WebSearchMode } from '../config.js';
+import type { Locale, RunConfig, RunProfile, ThemeMode, WebSearchMode } from '../config.js';
 import { Icon } from './Icon.js';
 import { emptyMcp } from '../defaults.js';
 import { formatTimestamp, t } from '../i18n.js';
@@ -230,6 +230,31 @@ export function SettingsDrawer({
                     <option value="off">{t(locale, 'webSearchOff')}</option>
                   </select>
                 </label>
+                <label className="wideField">
+                  {locale === 'zh' ? '运行模式' : 'Run profile'}
+                  <select value={config.runProfile} onChange={(event) => setConfig({ ...config, runProfile: event.target.value as RunProfile })}>
+                    <option value="cache_first">{locale === 'zh' ? '缓存优先' : 'Cache first'}</option>
+                    <option value="runtime_os">{locale === 'zh' ? '长运行' : 'Long-running'}</option>
+                  </select>
+                </label>
+              </div>
+              <div className="runProfileInfoGrid">
+                <div className={config.runProfile === 'cache_first' ? 'active' : ''}>
+                  <strong>{locale === 'zh' ? '缓存优先' : 'Cache first'}</strong>
+                  <span>
+                    {locale === 'zh'
+                      ? '保持 system prompt、Skills 和工具 schema 稳定，尽量延迟自动压缩，提高 DeepSeek / OpenAI 兼容模型的缓存命中。适合连续问答、阅读项目和成本敏感任务；编码也可使用，但上下文接近极限时仍会自动压缩。'
+                      : 'Keeps the system prompt, Skills, and tool schemas stable, delaying automatic compaction to improve DeepSeek/OpenAI-compatible cache hits. Good for continuous chat, project reading, and cost-sensitive work; coding can use it too, but it still compacts near the context limit.'}
+                  </span>
+                </div>
+                <div className={config.runProfile === 'runtime_os' ? 'active' : ''}>
+                  <strong>{locale === 'zh' ? '长运行' : 'Long-running'}</strong>
+                  <span>
+                    {locale === 'zh'
+                      ? '使用 Nexus Runtime OS 策略，优先保证长任务、多智能体、工具调用、上下文压缩、检查点和中断恢复可追踪。适合代码修改、复杂任务和多 Agent 协作；缓存命中会因压缩和运行状态变化而波动。'
+                      : 'Uses the Nexus Runtime OS strategy for traceable long tasks, multi-agent work, tool calls, context compaction, checkpoints, and interruption recovery. Best for code changes and complex tasks; cache hits may fluctuate when compaction or runtime state changes.'}
+                  </span>
+                </div>
               </div>
               <div className="providerCard">
                 <div>

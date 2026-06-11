@@ -8,6 +8,7 @@ import type {
   UserInput,
 } from '@nexus/protocol';
 import { AgentLoop } from './agent.js';
+import { compactionOptionsForRunProfile } from './runProfile.js';
 import { ThreadStateManager } from './state.js';
 import type { ThreadStore } from '@nexus/storage';
 import { LocalSkillRegistry } from '@nexus/extensions';
@@ -558,6 +559,38 @@ describe('AgentLoop message history', () => {
       message.role === 'system'
       && typeof message.content === 'string'
       && message.content.includes('Use the frontend-design body')
+    ))).toBe(false);
+    expect(model.messages[0]?.some((message) => (
+      message.role === 'user'
+      && typeof message.content === 'string'
+      && message.content.includes('Use the frontend-design body')
+    ))).toBe(true);
+  });
+
+  it('keeps one-shot mode instructions out of the stable system prefix', async () => {
+    const model = new MessageCapturingModel();
+    const agent = new AgentLoop({
+      workspaceRoot: process.cwd(),
+      sandbox: { level: 'workspace_write', workspaceRoot: process.cwd() },
+      model: model as never,
+      store: new FakeStore('thread-mode-instruction', 'previous-turn'),
+    });
+
+    await agent.runTurn('thread-mode-instruction', {
+      type: 'text',
+      text: '检查这个模块',
+      modeInstruction: 'Review mode: list bugs first.',
+    });
+
+    expect(model.messages[0]?.some((message) => (
+      message.role === 'system'
+      && typeof message.content === 'string'
+      && message.content.includes('Review mode')
+    ))).toBe(false);
+    expect(model.messages[0]?.some((message) => (
+      message.role === 'user'
+      && typeof message.content === 'string'
+      && message.content.includes('Review mode')
     ))).toBe(true);
   });
 
@@ -697,8 +730,23 @@ describe('AgentLoop usage accounting', () => {
   });
 });
 
+describe('AgentLoop run profiles', () => {
+  it('uses a later hard compaction threshold for cache-first mode', () => {
+    expect(compactionOptionsForRunProfile('runtime_os')).toMatchObject({
+      softCompactRatio: 0.5,
+      hardCompactRatio: 0.8,
+      strategy: 'llm',
+    });
+    expect(compactionOptionsForRunProfile('cache_first')).toMatchObject({
+      softCompactRatio: 0.72,
+      hardCompactRatio: 0.92,
+      strategy: 'local',
+    });
+  });
+});
+
 describe('AgentLoop web search tool policy', () => {
-  it('only exposes web_search when the configured policy enables it', async () => {
+  it('keeps web_search schema stable for auto/on modes and hides it only when disabled', async () => {
     const offModel = new ToolListModel();
     const offAgent = new AgentLoop({
       workspaceRoot: process.cwd(),
@@ -726,6 +774,20 @@ describe('AgentLoop web search tool policy', () => {
       text: '普通问题',
     });
     expect(onModel.toolNames[0]).toContain('web_search');
+
+    const autoLocalModel = new ToolListModel();
+    const autoLocalAgent = new AgentLoop({
+      workspaceRoot: process.cwd(),
+      sandbox: { level: 'workspace_write', workspaceRoot: process.cwd() },
+      model: autoLocalModel as never,
+      store: new FakeStore('thread-web-search-auto-local', 'previous-turn'),
+      webSearchMode: 'auto',
+    });
+    await autoLocalAgent.runTurn('thread-web-search-auto-local', {
+      type: 'text',
+      text: '检查本地文件',
+    });
+    expect(autoLocalModel.toolNames[0]).toContain('web_search');
 
     const autoModel = new ToolListModel();
     const autoAgent = new AgentLoop({

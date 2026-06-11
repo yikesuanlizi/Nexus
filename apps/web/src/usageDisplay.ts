@@ -1,8 +1,24 @@
 import type { Locale } from './config.js';
-import type { Usage } from './types.js';
+import type { ThreadUsage, Usage } from './types.js';
 
 export function formatTokenSummary(total: Usage | undefined | null, locale: Locale): string {
   if (!total) return '';
+  return formatUsageLine(total, locale);
+}
+
+export function formatThreadTokenSummary(threadUsage: ThreadUsage | undefined | null, locale: Locale): string {
+  if (!threadUsage) return '';
+  const last = threadUsage.turns.at(-1)?.usage;
+  const total = threadUsage.total;
+  if (!last) return formatUsageLine(total, locale);
+  const lastText = formatUsageNumbers(last, locale);
+  const totalText = formatUsageNumbers(total, locale, { omitCacheLabel: true });
+  return locale === 'zh'
+    ? `Token：本轮 ${lastText}；累计 ${totalText}`
+    : `Tokens: turn ${lastText}; total ${totalText}`;
+}
+
+function formatUsageLine(total: Usage, locale: Locale): string {
   const inputTokens = Number(total.inputTokens ?? 0);
   const cachedInputTokens = Number(total.cachedInputTokens ?? 0);
   const outputTokens = Number(total.outputTokens ?? 0);
@@ -14,6 +30,25 @@ export function formatTokenSummary(total: Usage | undefined | null, locale: Loca
   return locale === 'zh'
     ? `Token：输入 ${inputTokens}，${cacheLabel} ${cachedInputTokens}，命中率 ${hitRate}%，输出 ${outputTokens}`
     : `Tokens: input ${inputTokens}, ${cacheLabel} ${cachedInputTokens}, hit ${hitRate}%, output ${outputTokens}`;
+}
+
+function formatUsageNumbers(
+  usage: Usage,
+  locale: Locale,
+  options: { omitCacheLabel?: boolean } = {},
+): string {
+  const inputTokens = Number(usage.inputTokens ?? 0);
+  const cachedInputTokens = Number(usage.cachedInputTokens ?? 0);
+  const outputTokens = Number(usage.outputTokens ?? 0);
+  const hitRate = inputTokens > 0 ? Math.round((cachedInputTokens / inputTokens) * 100) : 0;
+  const cacheLabel = options.omitCacheLabel
+    ? (locale === 'zh' ? '缓存' : 'cache')
+    : usage.cacheStrategy === 'deepseek-native'
+      ? (locale === 'zh' ? 'DeepSeek 缓存' : 'DeepSeek cache')
+      : (locale === 'zh' ? '缓存' : 'cache');
+  return locale === 'zh'
+    ? `输入 ${inputTokens}，${cacheLabel} ${cachedInputTokens}，命中率 ${hitRate}%，输出 ${outputTokens}`
+    : `input ${inputTokens}, ${cacheLabel} ${cachedInputTokens}, hit ${hitRate}%, output ${outputTokens}`;
 }
 
 export function formatCacheDiagnostics(

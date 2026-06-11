@@ -118,6 +118,25 @@ describe('compactThread', () => {
     })).toBe(true);
   });
 
+  it('auto-compacts once the hard threshold is reached even when below the absolute max', async () => {
+    const store = new MemoryStore('thread-auto-hard-threshold');
+
+    const result = await compactThread('thread-auto-hard-threshold', store, new SummaryModel() as never, {
+      trigger: 'auto',
+      maxTokens: 170,
+      softCompactRatio: 0.5,
+      hardCompactRatio: 0.8,
+      keepRecentTurns: 3,
+    });
+
+    expect(result.compactedTurns).toBe(2);
+    expect(store.appended[0]).toMatchObject({
+      type: 'context_compaction',
+      trigger: 'auto',
+      compactedTurnIds: ['turn-0', 'turn-1'],
+    });
+  });
+
   it('persists a visible context_compaction item with structured summary and preserved tail turns', async () => {
     const store = new MemoryStore('thread-compact-visible');
 

@@ -20,17 +20,7 @@ import { shouldRetitleThread, titleFromInput } from './threadTitle.js';
 import { buildThreadChildInfos } from './threadChildren.js';
 import { buildUserInputFromTurnRequest } from './turnInput.js';
 import { usageForThreadTree, usageFromThread } from './usage.js';
-import {
-  DEFAULT_RUN_CONFIG_KEY,
-  createConfigRepository,
-  defaultConfig,
-  hiddenChatWorkspaceRoot,
-  publicRunConfig,
-  resolveConfig,
-  type AgentRunConfig,
-  type ApiKeyState,
-  type TurnRequest,
-} from './config.js';
+import { DEFAULT_RUN_CONFIG_KEY, createConfigRepository, defaultConfig, hiddenChatWorkspaceRoot, publicRunConfig, resolveConfig, type AgentRunConfig, type ApiKeyState, type TurnRequest } from './config.js';
 
 const { store } = createStore(defaultConfig.dataDir);
 const configRepo = createConfigRepository(store);
@@ -114,6 +104,7 @@ async function createAgent(configPatch: Partial<AgentRunConfig> = {}): Promise<{
     hooks,
     locale: config.locale ?? 'zh',
     webSearchMode: config.webSearchMode,
+    runProfile: config.runProfile,
     mcpTools: mcpManager.toolDefinitions(),
   });
   agent.onEvent((event) => publishEvent(event));

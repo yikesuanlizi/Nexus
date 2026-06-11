@@ -52,13 +52,13 @@ export class LocalSkillRegistry implements SkillRegistry {
   }
 
   list(): SkillDefinition[] {
-    return [...this.skills.values()];
+    return [...this.skills.values()].sort((a, b) => a.name.localeCompare(b.name));
   }
 
   toPromptText(): string {
     if (this.skills.size === 0) return '';
     const lines: string[] = ['## Available Skills'];
-    for (const skill of this.skills.values()) {
+    for (const skill of this.list()) {
       lines.push(`- **${skill.name}**: ${skill.description}`);
     }
     return lines.join('\n');
@@ -71,7 +71,8 @@ export class LocalSkillRegistry implements SkillRegistry {
   async loadFromDirectory(skillsDir: string): Promise<number> {
     let loaded = 0;
     try {
-      const entries = await fs.readdir(skillsDir, { withFileTypes: true });
+      const entries = (await fs.readdir(skillsDir, { withFileTypes: true }))
+        .sort((a, b) => a.name.localeCompare(b.name));
       for (const entry of entries) {
         if (!entry.isDirectory()) continue;
         const skillMdPath = path.join(skillsDir, entry.name, 'SKILL.md');

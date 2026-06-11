@@ -18,3 +18,14 @@ describe('AgentRunConfig skillsRoot', () => {
     expect(resolveConfig({ skillsRoot: '' }).skillsRoot).toBe(defaultConfig.skillsRoot);
   });
 });
+
+describe('AgentRunConfig runProfile', () => {
+  it('defaults to the long-running Runtime OS profile', () => {
+    expect(defaultConfig.runProfile).toBe('runtime_os');
+  });
+
+  it('accepts cache_first and falls back invalid values to runtime_os', () => {
+    expect(resolveConfig({ runProfile: 'cache_first' }).runProfile).toBe('cache_first');
+    expect(resolveConfig({ runProfile: 'bad-value' as never }).runProfile).toBe('runtime_os');
+  });
+});

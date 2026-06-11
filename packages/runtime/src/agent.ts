@@ -35,6 +35,7 @@ import type { Checkpoint } from '@nexus/protocol';
 import { shouldEnableWebSearch, type WebSearchMode } from './webSearchPolicy.js';
 import { parseMcpNamespacedToolName } from './mcpClient.js';
 import { buildPromptCacheShape, comparePromptCacheShape, type PromptCacheShape } from './cacheShape.js';
+import { compactionOptionsForRunProfile, normalizeRunProfile, type RunProfile } from './runProfile.js';
 
 const RUNNING_CHECKPOINT_TTL_MS = 30 * 60 * 1000;
 
@@ -66,6 +67,8 @@ export interface AgentConfig {
   locale?: Locale;
   /** Controls when web_search should be offered once a provider extension is available. */
   webSearchMode?: WebSearchMode;
+  /** Runtime trade-off profile: cache hit stability or long-running traceability. */
+  runProfile?: RunProfile;
   /** Maximum open spawned subagents below a parent thread. */
   maxSubagents?: number;
 }
@@ -103,6 +106,7 @@ export class AgentLoop {
       hooks: config.hooks ?? new LocalHookRegistry(),
       locale,
       webSearchMode: config.webSearchMode ?? 'auto',
+      runProfile: normalizeRunProfile(config.runProfile),
       maxSubagents: config.maxSubagents ?? 4,
     };
     this.tools = this.config.tools;
@@ -235,9 +239,9 @@ export class AgentLoop {
       turnIndex: thread.turnCount,
     });
 
-    const messages = await this.buildMessages(threadId, userInput, thread);
-    const webSearchEnabled = shouldEnableWebSearch(this.config.webSearchMode, userInput);
-    this.applyWebSearchTimingHint(messages, webSearchEnabled);
+    const webSearchRecommended = shouldEnableWebSearch(this.config.webSearchMode, userInput);
+    const webSearchToolAvailable = this.shouldOfferWebSearchTool();
+    const messages = await this.buildMessages(threadId, userInput, thread, webSearchRecommended);
     const updatedCkpt: Checkpoint = this.withCheckpointState(threadId, turnId, ckpt.itemIndex, 'running');
 
     try {
@@ -248,7 +252,7 @@ export class AgentLoop {
         collectedItems,
         effectiveSignal,
         updatedCkpt,
-        webSearchEnabled,
+        webSearchToolAvailable,
       );
       const turns = await this.config.store.getTurns(threadId);
       const turn = turns.find((candidate) => candidate.turnId === turnId);
@@ -451,9 +455,9 @@ export class AgentLoop {
     const refreshedThread = await this.config.store.getThread(threadId) ?? thread;
 
     // Build messages
-    const messages = await this.buildMessages(threadId, userInput, refreshedThread);
-    const webSearchEnabled = shouldEnableWebSearch(this.config.webSearchMode, userInput);
-    this.applyWebSearchTimingHint(messages, webSearchEnabled);
+    const webSearchRecommended = shouldEnableWebSearch(this.config.webSearchMode, userInput);
+    const webSearchToolAvailable = this.shouldOfferWebSearchTool();
+    const messages = await this.buildMessages(threadId, userInput, refreshedThread, webSearchRecommended);
     const userItem: ThreadItem = {
       id: generateItemId(turnId, 0),
       type: 'user_message',
@@ -476,7 +480,7 @@ export class AgentLoop {
         collectedItems,
         effectiveSignal,
         checkpoint,
-        webSearchEnabled,
+        webSearchToolAvailable,
       );
       turn.status = 'completed';
       turn.completedAt = new Date().toISOString();
@@ -548,7 +552,7 @@ export class AgentLoop {
     collectedItems: ThreadItem[],
     signal: AbortSignal,
     checkpoint: Checkpoint,
-    webSearchEnabled: boolean,
+    webSearchToolAvailable: boolean,
   ): Promise<{ items: ThreadItem[]; usage: Usage | null }> {
     let iteration = 0;
     let usage: Usage | null = null;
@@ -562,7 +566,7 @@ export class AgentLoop {
         turnId,
         collectedItems,
         messages,
-        webSearchEnabled,
+        webSearchToolAvailable,
       );
       usage = streamed.usage;
       const message = streamed.message;
@@ -609,7 +613,7 @@ export class AgentLoop {
     turnId: TurnId,
     collectedItems: ThreadItem[],
     messages: ChatMessage[],
-    webSearchEnabled: boolean,
+    webSearchToolAvailable: boolean,
   ): Promise<{ message: ChatMessage; usage: Usage | null }> {
     let content = '';
     let usage: Usage | null = null;
@@ -618,7 +622,7 @@ export class AgentLoop {
 
     const tools = this.tools
       .toOpenAITools()
-      .filter((tool) => webSearchEnabled || tool.function.name !== 'web_search');
+      .filter((tool) => webSearchToolAvailable || tool.function.name !== 'web_search');
     const cacheShape = buildPromptCacheShape(messages, tools);
     const cacheComparison = comparePromptCacheShape(this.promptCacheShapes.get(threadId), cacheShape);
     this.promptCacheShapes.set(threadId, cacheShape);
@@ -1375,6 +1379,7 @@ export class AgentLoop {
         hooks: this.config.hooks,
         locale: this.config.locale,
         webSearchMode: this.config.webSearchMode,
+        runProfile: this.config.runProfile,
         maxSubagents: this.config.maxSubagents,
       },
       this.stateManager,
@@ -1386,23 +1391,14 @@ export class AgentLoop {
     threadId: ThreadId,
     userInput: UserInput,
     thread: ThreadMeta,
+    webSearchRecommended = false,
   ): Promise<ChatMessage[]> {
     const messages: ChatMessage[] = [];
 
     // System prompt
     const systemPrompt = await this.buildSystemPrompt(thread);
     messages.push({ role: 'system', content: systemPrompt });
-    const activeSkillsPrompt = this.buildActiveSkillsPrompt(userInput);
-    if (activeSkillsPrompt) {
-      messages.push({ role: 'system', content: activeSkillsPrompt });
-    }
-    const modeInstruction = userInputModeInstruction(userInput);
-    if (modeInstruction) {
-      messages.push({
-        role: 'system',
-        content: `One-time instruction for this turn only:\n${modeInstruction}`,
-      });
-    }
+    const turnInstruction = this.buildTurnInstructionPrompt(userInput, webSearchRecommended);
 
     // Recent history
     const recentItems = await this.config.store.getRecentItems(threadId, 50);
@@ -1426,23 +1422,37 @@ export class AgentLoop {
           contentParts.push({ type: 'image_url', image_url: { url: part.image_url.url } });
         }
       }
+      if (turnInstruction) {
+        contentParts.push({ type: 'text', text: turnInstruction });
+      }
       messages.push({ role: 'user', content: contentParts });
     } else {
-      messages.push({ role: 'user', content: userInput.text });
+      messages.push({ role: 'user', content: appendTurnInstruction(userInput.text, turnInstruction) });
     }
 
     return messages;
   }
 
-  private applyWebSearchTimingHint(messages: ChatMessage[], webSearchEnabled: boolean): void {
-    if (!webSearchEnabled) return;
-    messages.splice(1, 0, {
-      role: 'system',
-      content: [
-        'Web search is enabled for this turn through the web_search tool.',
+  private shouldOfferWebSearchTool(): boolean {
+    return this.config.webSearchMode !== 'off';
+  }
+
+  private buildTurnInstructionPrompt(userInput: UserInput, webSearchRecommended: boolean): string {
+    const sections: string[] = [];
+    const activeSkillsPrompt = this.buildActiveSkillsPrompt(userInput);
+    if (activeSkillsPrompt) sections.push(activeSkillsPrompt);
+    const modeInstruction = userInputModeInstruction(userInput);
+    if (modeInstruction) {
+      sections.push(`One-time instruction for this turn only:\n${modeInstruction}`);
+    }
+    if (webSearchRecommended) {
+      sections.push([
+        'Web search is recommended for this turn through the web_search tool.',
         'Use it for current, external, or explicitly requested online information; avoid it for local repository work.',
-      ].join(' '),
-    });
+      ].join(' '));
+    }
+    if (sections.length === 0) return '';
+    return `<turn_instructions>\n${sections.join('\n\n')}\n</turn_instructions>`;
   }
 
   private async buildSystemPrompt(thread: ThreadMeta): Promise<string> {
@@ -1470,7 +1480,8 @@ export class AgentLoop {
 
   private async maybeAutoCompact(threadId: ThreadId, turnId: TurnId): Promise<void> {
     const recentItems = await this.config.store.getRecentItems(threadId, 200);
-    const pressure = getCompactionPressure(recentItems);
+    const compactionOptions = compactionOptionsForRunProfile(this.config.runProfile);
+    const pressure = getCompactionPressure(recentItems, compactionOptions);
     if (pressure.status === 'soft') {
       this.emit({ type: 'context.compaction_pressure', threadId, turnId, pressure });
       return;
@@ -1484,6 +1495,7 @@ export class AgentLoop {
     const result = await compactThread(threadId, this.config.store, this.config.model, {
       trigger: 'auto',
       compactionTurnId: turnId,
+      ...compactionOptions,
     });
     if (result.item) {
       this.emit({ type: 'item.started', threadId, turnId, item: result.item });
@@ -1902,6 +1914,12 @@ function userInputToText(input: UserInput): string {
 function userInputModeInstruction(input: UserInput): string {
   const value = input.modeInstruction;
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function appendTurnInstruction(text: string, instruction: string): string {
+  const trimmed = instruction.trim();
+  if (!trimmed) return text;
+  return `${text}\n\n${trimmed}`;
 }
 
 function generateId(): string {

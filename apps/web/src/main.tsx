@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { RUN_CONFIG_STORAGE_KEY, mergeRunConfigDefaults, type PermissionPresetId, type ReasoningEffort, type RunConfig, type WebSearchMode } from './config.js';
+import { RUN_CONFIG_STORAGE_KEY, mergeRunConfigDefaults, type PermissionPresetId, type ReasoningEffort, type RunConfig, type RunProfile, type WebSearchMode } from './config.js';
 import { Icon } from './components/Icon.js';
 import { AppDialog, SkillDraftDialog, type AppDialogState } from './components/Dialogs.js';
 import { AssistantTurnView, ItemView } from './components/ItemView.js';
@@ -19,7 +19,8 @@ import { readStored } from './storage.js';
 import { buildChildActivityByThread } from './subagentActivity.js';
 import { buildAgentStageRows, buildSubagentStatusRows } from './subagents.js';
 import { modeInstructionFor } from './taskModes.js';
-import { formatCacheDiagnostics, formatCompactionPressure, formatTokenSummary } from './usageDisplay.js';
+import { formatCacheDiagnostics, formatCompactionPressure, formatThreadTokenSummary } from './usageDisplay.js';
+import { runProfileDescription, runProfileLabel } from './runProfiles.js';
 import { actionDetail, actionTitle, completeLocalSkillDraftItem, createLocalSkillDraftItems, mergeIncomingItems } from './threadItems.js';
 import { optimisticDeleteThread } from './threads.js';
 import { forgetWorkspaceRoot, pickWorkspaceRoot, readRememberedWorkspaceRoots, rememberWorkspaceRoots, workspacePickerNotice, workspacePickerStatus } from './workspaces.js';
@@ -130,7 +131,7 @@ function App() {
   }), [activeThread?.title, busy, config.locale, subagentRows, threadId]);
   const childActivityByThread = useMemo(() => buildChildActivityByThread(threadChildren), [threadChildren]);
   const tokenSummary = useMemo(() => {
-    return formatTokenSummary(threadUsage?.total, config.locale);
+    return formatThreadTokenSummary(threadUsage, config.locale);
   }, [config.locale, threadUsage]);
   const cacheSummary = useMemo(() => formatCacheDiagnostics(cacheDiagnostics, config.locale), [cacheDiagnostics, config.locale]);
   const pressureSummary = useMemo(() => formatCompactionPressure(compactionPressure, config.locale), [compactionPressure, config.locale]);
@@ -1354,6 +1355,7 @@ function App() {
               <label className="modeSelect reasoningSelect" title={config.locale === 'zh' ? '思考程度' : 'Reasoning effort'} aria-label={config.locale === 'zh' ? '思考程度' : 'Reasoning effort'}>
                 <select value={config.reasoningEffort} onChange={(event) => setConfig({ ...config, reasoningEffort: event.target.value as ReasoningEffort })}><option value="low">{config.locale === 'zh' ? '快速' : 'Fast'}</option><option value="medium">{config.locale === 'zh' ? '均衡' : 'Balanced'}</option><option value="high">{config.locale === 'zh' ? '深度' : 'Deep'}</option></select>
               </label>
+              <label className="modeSelect runProfileSelect" title={runProfileDescription(config.runProfile, config.locale)} aria-label={config.locale === 'zh' ? '运行模式' : 'Run profile'}><select value={config.runProfile} onChange={(event) => setConfig({ ...config, runProfile: event.target.value as RunProfile })}><option value="cache_first">{runProfileLabel('cache_first', config.locale)}</option><option value="runtime_os">{runProfileLabel('runtime_os', config.locale)}</option></select></label>
             </div>
           </div>
         </footer>

@@ -56,6 +56,7 @@ const runConfig: AgentRunConfig = {
   skillsRoot: 'C:\\Users\\test\\.nexus\\skills',
   webSearchMode: 'auto',
   reasoningEffort: 'medium',
+  runProfile: 'runtime_os',
   locale: 'zh',
 };
 

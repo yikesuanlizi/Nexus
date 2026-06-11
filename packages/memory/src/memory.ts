@@ -146,8 +146,9 @@ export async function compactThread(
 
   const totalChars = items.reduce((sum, i) => sum + extractItemText(i).length, 0);
   const tokensBefore = totalChars * resolved.tokensPerChar;
+  const pressure = getCompactionPressure(items, resolved);
 
-  if (tokensBefore <= resolved.maxTokens) {
+  if (resolved.trigger === 'auto' ? pressure.status !== 'hard' : tokensBefore <= resolved.maxTokens) {
     return { compactedTurns: 0, summary: '', tokensBefore, tokensAfter: tokensBefore };
   }
 
