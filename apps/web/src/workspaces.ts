@@ -63,16 +63,7 @@ function workspaceKey(value: string): string {
 export function workspaceLabelFromPath(value: string, locale: Locale = 'zh'): string {
   const normalized = normalizeWorkspaceRoot(value);
   if (!normalized) return locale === 'zh' ? '对话' : 'Chats';
-  const parts = normalized.split(/[\\/]/).filter(Boolean);
-  return parts.at(-1) ?? normalized;
-}
-
-export function workspaceContextLabel(value: string): string {
-  const normalized = normalizeWorkspaceRoot(value);
-  if (!normalized) return '';
-  const parts = normalized.split(/[\\/]/).filter(Boolean);
-  if (parts.length <= 1) return normalized;
-  return parts.at(-2) ?? '';
+  return normalized;
 }
 
 export function compactWorkspaceRoots(values: readonly (string | null | undefined)[]): string[] {
@@ -152,7 +143,7 @@ export function buildWorkspaceThreadGroups(options: {
     const group = {
       workspaceRoot: normalized,
       label: workspaceLabelFromPath(normalized, locale),
-      context: workspaceContextLabel(normalized),
+      context: '',
       threads: [],
     };
     map.set(key, group);

@@ -347,7 +347,6 @@ function WorkspaceGroupView({
         <button className="workspaceGroupMain" type="button" onClick={onToggleCollapsed}>
           <Icon name="folder" />
           <span>{group.label}</span>
-          {group.context ? <small>{group.context}</small> : null}
         </button>
         <div className="workspaceGroupActions">
           <button type="button" title={locale === 'zh' ? '新建对话' : 'New chat'} onClick={() => onCreateInWorkspace(group.workspaceRoot)}>

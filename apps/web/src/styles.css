@@ -359,7 +359,7 @@
   }
 
   .workspaceGroupMain {
-    @apply grid min-w-0 grid-cols-[16px_minmax(0,1fr)_auto] items-center gap-2 border-0 bg-transparent px-2.5 py-1.5 text-left shadow-none;
+    @apply grid min-w-0 grid-cols-[16px_minmax(0,1fr)] items-center gap-2 border-0 bg-transparent px-2.5 py-1.5 text-left shadow-none;
   }
 
   .workspaceGroupMain span {
