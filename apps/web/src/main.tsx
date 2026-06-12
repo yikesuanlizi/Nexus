@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client';
 import { RUN_CONFIG_STORAGE_KEY, mergeRunConfigDefaults, type PermissionPresetId, type ReasoningEffort, type RunConfig, type RunProfile, type WebSearchMode } from './config.js';
 import { Icon } from './components/Icon.js';
-import { AppDialog, SkillDraftDialog, type AppDialogState } from './components/Dialogs.js';
+import { AppDialog, SettingsHelpDialog, SkillDraftDialog, type AppDialogState } from './components/Dialogs.js';
 import { AssistantTurnView, ItemView } from './components/ItemView.js';
 import { SettingsDrawer } from './components/SettingsDrawer.js';
 import { WeixinConnectDialog } from './components/WeixinConnectDialog.js';
@@ -90,6 +90,7 @@ function App() {
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('Idle');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsHelpOpen, setSettingsHelpOpen] = useState(false);
   const [pendingApprovals, setPendingApprovals] = useState<ApprovalRequest[]>([]);
   const [providers, setProviders] = useState<ProviderEntry[]>([]);
   const [keyStates, setKeyStates] = useState<ApiKeyState[]>([]);
@@ -1191,9 +1192,8 @@ function App() {
           {cacheSummary ? <span className="tokenPill cache">{cacheSummary}</span> : null}
           {pressureSummary ? <span className="tokenPill warn">{pressureSummary}</span> : null}
           <div className="actions">
-            <button className="iconButton" onClick={() => void threadAction('compact')} disabled={!threadId || busy} title={t(config.locale, 'compact')} aria-label={t(config.locale, 'compact')}>
-              <Icon name="refresh" />
-            </button>
+            <button className="iconButton" onClick={() => void threadAction('compact')} disabled={!threadId || busy} title={t(config.locale, 'compact')} aria-label={t(config.locale, 'compact')}><Icon name="refresh" /></button>
+            <button className="iconButton helpButton" onClick={() => setSettingsHelpOpen(true)} title={config.locale === 'zh' ? '设置说明' : 'Settings guide'} aria-label={config.locale === 'zh' ? '设置说明' : 'Settings guide'}><Icon name="question" /></button>
           </div>
         </header>
 
@@ -1373,7 +1373,7 @@ function App() {
           consumePendingMcpDraft={() => setPendingMcpDraft(null)}
         />
       ) : null}
-
+      {settingsHelpOpen ? <SettingsHelpDialog locale={config.locale} onClose={() => setSettingsHelpOpen(false)} /> : null}
       {dialog ? <AppDialog dialog={dialog} onClose={() => setDialog(null)} /> : null}
       {weixinConnectState ? <WeixinConnectDialog locale={config.locale} state={weixinConnectState} onClose={() => setWeixinConnectState(null)} /> : null}
       {skillDraft ? (

@@ -123,6 +123,10 @@
     @apply rounded-lg text-slate-600;
   }
 
+  .helpButton {
+    border-radius: 999px;
+  }
+
   .iconButton.primary {
     @apply border-slate-900 bg-slate-950 text-white;
   }
@@ -1026,26 +1030,6 @@
     @apply col-span-2;
   }
 
-  .runProfileInfoGrid {
-    @apply grid grid-cols-2 gap-2.5;
-  }
-
-  .runProfileInfoGrid > div {
-    @apply rounded-lg border border-slate-200 bg-white p-3 shadow-none;
-  }
-
-  .runProfileInfoGrid > div.active {
-    @apply border-slate-400 bg-slate-50;
-  }
-
-  .runProfileInfoGrid strong {
-    @apply block text-sm font-bold text-slate-800;
-  }
-
-  .runProfileInfoGrid span {
-    @apply mt-1 block text-xs leading-5 text-slate-500;
-  }
-
   .inlineSaveRow {
     @apply grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3;
   }
@@ -1242,6 +1226,26 @@
 
   .dialogMessage {
     @apply text-sm leading-6 text-slate-600;
+  }
+
+  .settingsHelpDialog {
+    @apply w-[min(720px,calc(100vw-32px))];
+  }
+
+  .settingsHelpGrid {
+    @apply grid grid-cols-2 gap-2.5;
+  }
+
+  .settingsHelpGrid article {
+    @apply rounded-xl border border-slate-200 bg-slate-50 p-3;
+  }
+
+  .settingsHelpGrid strong {
+    @apply block text-sm font-bold text-slate-950;
+  }
+
+  .settingsHelpGrid p {
+    @apply mt-1 text-xs leading-5 text-slate-600;
   }
 
   .dialogActions {
@@ -2245,24 +2249,6 @@
     height: 28px;
   }
 
-  .runProfileInfoGrid > div {
-    border-color: rgba(255,255,255,.08);
-    background: rgba(255,255,255,.04);
-  }
-
-  .runProfileInfoGrid > div.active {
-    border-color: rgba(143,180,255,.36);
-    background: rgba(143,180,255,.08);
-  }
-
-  .runProfileInfoGrid strong {
-    color: #edf2f7;
-  }
-
-  .runProfileInfoGrid span {
-    color: #9aa4b4;
-  }
-
   .slashPalette {
     border-color: rgba(255,255,255,.12);
     background: #15181c;
@@ -2621,6 +2607,19 @@
     color: #929cab;
   }
 
+  .settingsHelpGrid article {
+    border-color: rgba(255,255,255,.1);
+    background: rgba(255,255,255,.055);
+  }
+
+  .settingsHelpGrid strong {
+    color: #f1f4f8;
+  }
+
+  .settingsHelpGrid p {
+    color: #aeb8c7;
+  }
+
   .settingsDrawer input,
   .settingsDrawer select,
   .settingsDrawer textarea,
@@ -2662,7 +2661,7 @@
   }
 
   .appShell.theme-light {
-    background: #f4f6f8;
+    background: #ffffff;
     color: #111827;
   }
 
@@ -2682,7 +2681,7 @@
   }
 
   .appShell.theme-light .workspace {
-    background: #f4f6f8;
+    background: #ffffff;
   }
 
   .appShell.theme-light .threadListBrand strong,
@@ -2708,7 +2707,7 @@
   .appShell.theme-light .composerMeta,
   .appShell.theme-light .agentStageRole,
   .appShell.theme-light .agentStageMain p {
-    color: #64748b;
+    color: #334155;
   }
 
   .appShell.theme-light .workspaceThreadRow:hover,
@@ -2716,13 +2715,13 @@
   .appShell.theme-light .searchLauncher.active,
   .appShell.theme-light .threadModuleToggle:hover:not(:disabled),
   .appShell.theme-light .searchDialogResults button:hover:not(:disabled) {
-    background: #eef2f7;
+    background: #f6f8fb;
     color: #111827;
   }
 
   .appShell.theme-light .workspaceThreadRow.active {
     border-color: #cbd5e1;
-    background: #e9eef7;
+    background: #eef4ff;
     box-shadow: inset 3px 0 #4b7cff;
   }
 
@@ -2736,6 +2735,19 @@
     border-color: #d8dee8;
     background: #ffffff;
     color: #111827;
+  }
+
+  .appShell.theme-light .settingsHelpGrid article {
+    border-color: #e2e8f0;
+    background: #ffffff;
+  }
+
+  .appShell.theme-light .settingsHelpGrid strong {
+    color: #111827;
+  }
+
+  .appShell.theme-light .settingsHelpGrid p {
+    color: #334155;
   }
 
   .appShell.theme-light .searchDialog {
@@ -2755,7 +2767,7 @@
 
   @media (prefers-color-scheme: light) {
     .appShell.theme-system {
-      background: #f4f6f8;
+      background: #ffffff;
       color: #111827;
     }
 
@@ -2774,6 +2786,10 @@
       color: #111827;
     }
 
+    .appShell.theme-system .workspace {
+      background: #ffffff;
+    }
+
     .appShell.theme-system input,
     .appShell.theme-system textarea,
     .appShell.theme-system select,
@@ -2781,6 +2797,19 @@
       border-color: #cbd5e1;
       background: #ffffff;
       color: #111827;
+    }
+
+    .appShell.theme-system .settingsHelpGrid article {
+      border-color: #e2e8f0;
+      background: #ffffff;
+    }
+
+    .appShell.theme-system .settingsHelpGrid strong {
+      color: #111827;
+    }
+
+    .appShell.theme-system .settingsHelpGrid p {
+      color: #334155;
     }
   }
 
@@ -2866,6 +2895,13 @@
   .appShell select option {
     background-color: #171a1f;
     color: #e8edf5;
+  }
+
+  .settingsDrawer select,
+  .appDialog select,
+  .appShell select,
+  .modeSelect select {
+    border-radius: 999px;
   }
 
   .appShell.theme-light .settingsDrawer select,
