@@ -1073,8 +1073,22 @@
 
   .composer {
     @apply relative z-20 grid max-h-[42vh] shrink-0 gap-2 overflow-visible border-t border-slate-200 bg-white px-4 py-3 shadow-none;
+    justify-self: center;
     grid-column: 1;
     grid-row: 4;
+    width: min(100%, 1120px);
+  }
+
+  .composer.compactWidth {
+    width: min(60%, 860px);
+  }
+
+  .composer.balancedWidth {
+    width: min(75%, 1120px);
+  }
+
+  .composer.wideWidth {
+    width: min(90%, 1280px);
   }
 
   .composer.dragging {
@@ -2568,7 +2582,7 @@
 
   .composer {
     max-height: 42vh;
-    margin: 0 18px 16px;
+    margin: 0 auto 16px;
     border: 1px solid rgba(255,255,255,.12);
     border-radius: 18px;
     background: rgba(18,20,23,.9);
@@ -3562,6 +3576,7 @@
 
     .composer {
       grid-column: 1;
+      width: calc(100% - 24px);
     }
   }
 

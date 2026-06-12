@@ -1255,7 +1255,7 @@ function App() {
         ) : null}
 
         <footer
-          className={draggingImage ? 'composer dragging' : 'composer'}
+          className={['composer', draggingImage ? 'dragging' : '', !rightPaneVisible ? 'compactWidth' : rightPaneTab === 'files' ? 'wideWidth' : 'balancedWidth'].filter(Boolean).join(' ')}
           onDragEnter={(event) => {
             event.preventDefault();
             setDraggingImage(true);
