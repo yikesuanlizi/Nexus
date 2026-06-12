@@ -1212,6 +1212,10 @@
     @apply pointer-events-auto fixed inset-0 z-30 grid place-items-center bg-slate-950/25 px-4;
   }
 
+  .settingsHelpLayer {
+    background: rgba(2, 6, 12, .58);
+  }
+
   .appDialog {
     @apply grid w-[min(420px,100%)] gap-3 rounded-xl border border-slate-300 bg-white p-4 shadow-xl shadow-slate-900/15;
   }
@@ -1230,6 +1234,12 @@
 
   .settingsHelpDialog {
     @apply w-[min(720px,calc(100vw-32px))];
+    border-color: rgba(255,255,255,.12);
+    background: #101317;
+  }
+
+  .settingsHelpDialog .dialogHeader h2 {
+    color: #f4f7fb;
   }
 
   .settingsHelpGrid {
@@ -1237,7 +1247,8 @@
   }
 
   .settingsHelpGrid article {
-    @apply rounded-xl border border-slate-200 bg-slate-50 p-3;
+    @apply rounded-xl border border-slate-200 p-3;
+    background: #15191f;
   }
 
   .settingsHelpGrid strong {
@@ -2739,7 +2750,20 @@
 
   .appShell.theme-light .settingsHelpGrid article {
     border-color: #e2e8f0;
+    background: #f8fafc;
+  }
+
+  .appShell.theme-light .settingsHelpDialog {
+    border-color: #dbe3ee;
     background: #ffffff;
+  }
+
+  .appShell.theme-light .settingsHelpLayer {
+    background: rgba(15, 23, 42, .18);
+  }
+
+  .appShell.theme-light .settingsHelpDialog .dialogHeader h2 {
+    color: #111827;
   }
 
   .appShell.theme-light .settingsHelpGrid strong {
@@ -2801,7 +2825,20 @@
 
     .appShell.theme-system .settingsHelpGrid article {
       border-color: #e2e8f0;
+      background: #f8fafc;
+    }
+
+    .appShell.theme-system .settingsHelpDialog {
+      border-color: #dbe3ee;
       background: #ffffff;
+    }
+
+    .appShell.theme-system .settingsHelpLayer {
+      background: rgba(15, 23, 42, .18);
+    }
+
+    .appShell.theme-system .settingsHelpDialog .dialogHeader h2 {
+      color: #111827;
     }
 
     .appShell.theme-system .settingsHelpGrid strong {

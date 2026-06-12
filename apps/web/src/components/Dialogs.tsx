@@ -135,7 +135,7 @@ export function SettingsHelpDialog({ locale, onClose }: { locale: Locale; onClos
   ];
 
   return (
-    <div className="dialogLayer" role="presentation" onMouseDown={onClose}>
+    <div className="dialogLayer settingsHelpLayer" role="presentation" onMouseDown={onClose}>
       <section className="appDialog settingsHelpDialog" role="dialog" aria-modal="true" aria-labelledby="settings-help-title" onMouseDown={(event) => event.stopPropagation()}>
         <header className="dialogHeader">
           <h2 id="settings-help-title">{zh ? '设置说明' : 'Settings guide'}</h2>
