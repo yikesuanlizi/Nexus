@@ -38,6 +38,14 @@ import { buildPromptCacheShape, comparePromptCacheShape, type PromptCacheShape }
 import { compactionOptionsForRunProfile, normalizeRunProfile, type RunProfile } from './runProfile.js';
 
 const RUNNING_CHECKPOINT_TTL_MS = 30 * 60 * 1000;
+const MAX_WEB_SEARCH_CALLS_PER_TURN = 6;
+const MAX_DUPLICATE_WEB_SEARCH_QUERY_PER_TURN = 2;
+
+interface WebToolBudget {
+  searchCalls: number;
+  searchQueries: Map<string, number>;
+  webSearchDisabled: boolean;
+}
 
 // ─── Config ─────────────────────────────────────────────────────────────────
 export interface AgentConfig {
@@ -556,6 +564,11 @@ export class AgentLoop {
   ): Promise<{ items: ThreadItem[]; usage: Usage | null }> {
     let iteration = 0;
     let usage: Usage | null = null;
+    const webToolBudget: WebToolBudget = {
+      searchCalls: 0,
+      searchQueries: new Map(),
+      webSearchDisabled: false,
+    };
 
     while (iteration < this.config.maxIterations) {
       if (signal.aborted) throw new Error('Turn cancelled');
@@ -566,7 +579,7 @@ export class AgentLoop {
         turnId,
         collectedItems,
         messages,
-        webSearchToolAvailable,
+        webSearchToolAvailable && !webToolBudget.webSearchDisabled,
       );
       usage = streamed.usage;
       const message = streamed.message;
@@ -591,7 +604,11 @@ export class AgentLoop {
           turnId,
           toolCall,
           collectedItems,
+          webToolBudget,
         );
+        if (toolResult.disableWebSearch) {
+          webToolBudget.webSearchDisabled = true;
+        }
 
         // Update checkpoint after each tool execution
         this.refreshRunningCheckpoint(checkpoint, threadId, turnId, collectedItems.length);
@@ -622,7 +639,7 @@ export class AgentLoop {
 
     const tools = this.tools
       .toOpenAITools()
-      .filter((tool) => webSearchToolAvailable || tool.function.name !== 'web_search');
+      .filter((tool) => webSearchToolAvailable || !['web_search', 'web_fetch'].includes(tool.function.name));
     const cacheShape = buildPromptCacheShape(messages, tools);
     const cacheComparison = comparePromptCacheShape(this.promptCacheShapes.get(threadId), cacheShape);
     this.promptCacheShapes.set(threadId, cacheShape);
@@ -739,12 +756,40 @@ export class AgentLoop {
   }
 
   // ─── Tool Execution ───────────────────────────────────────────────────────
+  private consumeWebToolBudget(
+    toolName: string,
+    args: Record<string, unknown>,
+    budget?: WebToolBudget,
+  ): string | null {
+    if (!budget || toolName !== 'web_search') return null;
+    const query = typeof args.query === 'string' ? args.query.trim().replace(/\s+/g, ' ') : '';
+    const normalizedQuery = query.toLowerCase();
+    const duplicateCount = (budget.searchQueries.get(normalizedQuery) ?? 0) + 1;
+    budget.searchCalls += 1;
+    budget.searchQueries.set(normalizedQuery, duplicateCount);
+
+    if (budget.searchCalls > MAX_WEB_SEARCH_CALLS_PER_TURN) {
+      budget.webSearchDisabled = true;
+      return this.config.locale === 'zh'
+        ? `本轮 web_search 已达到 ${MAX_WEB_SEARCH_CALLS_PER_TURN} 次上限。请停止继续搜索，改用已有搜索结果回答；如果需要读取具体页面，请使用 web_fetch 抓取明确 URL。`
+        : `web_search reached the per-turn limit of ${MAX_WEB_SEARCH_CALLS_PER_TURN}. Stop searching and answer from existing results; use web_fetch for a specific URL if needed.`;
+    }
+    if (normalizedQuery && duplicateCount > MAX_DUPLICATE_WEB_SEARCH_QUERY_PER_TURN) {
+      budget.webSearchDisabled = true;
+      return this.config.locale === 'zh'
+        ? `本轮重复搜索相同 query 已达到上限。请停止重复 web_search，改用已有结果回答或使用 web_fetch 抓取明确 URL。`
+        : `Repeated web_search for the same query reached the per-turn limit. Stop repeating the search and answer from existing results or use web_fetch for a specific URL.`;
+    }
+    return null;
+  }
+
   private async executeToolCall(
     threadId: ThreadId,
     turnId: TurnId,
     toolCall: ToolCall,
     collectedItems: ThreadItem[],
-  ): Promise<{ output: string }> {
+    webToolBudget?: WebToolBudget,
+  ): Promise<{ output: string; disableWebSearch?: boolean }> {
     const toolName = toolCall.function.name;
     let args: Record<string, unknown>;
     try {
@@ -760,6 +805,26 @@ export class AgentLoop {
       approved: false,
       signal: this.stateManager.get(threadId).cancelController?.signal,
     };
+
+    const webBudgetError = this.consumeWebToolBudget(toolName, args, webToolBudget);
+    if (webBudgetError) {
+      const toolItem: ThreadItem = {
+        id: generateItemId(turnId, collectedItems.length),
+        type: 'tool_call',
+        turnId,
+        toolName,
+        arguments: args,
+        status: 'failed',
+        error: { message: webBudgetError },
+        result: webBudgetError,
+        timestamp: new Date().toISOString(),
+      };
+      collectedItems.push(toolItem);
+      this.emit({ type: 'item.started', threadId, turnId, item: toolItem });
+      this.emit({ type: 'item.completed', threadId, turnId, item: toolItem });
+      await this.config.store.appendItems(threadId, [toolItem]);
+      return { output: webBudgetError, disableWebSearch: true };
+    }
 
     // Check sandbox policy
     const toolDef = this.tools.get(toolName);
@@ -1447,8 +1512,11 @@ export class AgentLoop {
     }
     if (webSearchRecommended) {
       sections.push([
-        'Web search is recommended for this turn through the web_search tool.',
-        'Use it for current, external, or explicitly requested online information; avoid it for local repository work.',
+        'Web access is recommended for this turn.',
+        'If the user provides a URL, use web_fetch first to read that page.',
+        'Use web_search only to discover likely URLs, then stop searching and fetch the most relevant page.',
+        'Avoid repeated searches for the same task; summarize from fetched pages and search results.',
+        'Avoid web tools for local repository work.',
       ].join(' '));
     }
     if (sections.length === 0) return '';

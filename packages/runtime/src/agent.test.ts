@@ -12,6 +12,7 @@ import { compactionOptionsForRunProfile } from './runProfile.js';
 import { ThreadStateManager } from './state.js';
 import type { ThreadStore } from '@nexus/storage';
 import { LocalSkillRegistry } from '@nexus/extensions';
+import { ToolRegistry, type ToolDefinition } from '@nexus/tools';
 
 class FakeStore implements ThreadStore {
   thread: ThreadMeta;
@@ -195,6 +196,27 @@ class UsageModel {
         cache_strategy: 'deepseek-native',
       },
     };
+  }
+}
+
+class RepeatingWebSearchModel {
+  toolNames: string[][] = [];
+
+  async *chatStream(req: { tools?: Array<{ function: { name: string } }> }) {
+    const toolNames = (req.tools ?? []).map((tool) => tool.function.name);
+    this.toolNames.push(toolNames);
+    if (toolNames.includes('web_search')) {
+      yield {
+        type: 'tool_call_end' as const,
+        id: `call_web_search_${this.toolNames.length}`,
+        name: 'web_search',
+        arguments: JSON.stringify({ query: 'same query', maxResults: 5 }),
+      };
+      yield { type: 'done' as const };
+      return;
+    }
+    yield { type: 'delta' as const, content: 'final' };
+    yield { type: 'done' as const };
   }
 }
 
@@ -760,6 +782,7 @@ describe('AgentLoop web search tool policy', () => {
       text: '联网搜索 LangChain 最新版本',
     });
     expect(offModel.toolNames[0]).not.toContain('web_search');
+    expect(offModel.toolNames[0]).not.toContain('web_fetch');
 
     const onModel = new ToolListModel();
     const onAgent = new AgentLoop({
@@ -774,6 +797,7 @@ describe('AgentLoop web search tool policy', () => {
       text: '普通问题',
     });
     expect(onModel.toolNames[0]).toContain('web_search');
+    expect(onModel.toolNames[0]).toContain('web_fetch');
 
     const autoLocalModel = new ToolListModel();
     const autoLocalAgent = new AgentLoop({
@@ -788,6 +812,7 @@ describe('AgentLoop web search tool policy', () => {
       text: '检查本地文件',
     });
     expect(autoLocalModel.toolNames[0]).toContain('web_search');
+    expect(autoLocalModel.toolNames[0]).toContain('web_fetch');
 
     const autoModel = new ToolListModel();
     const autoAgent = new AgentLoop({
@@ -802,6 +827,49 @@ describe('AgentLoop web search tool policy', () => {
       text: '联网搜索 LangChain 最新版本',
     });
     expect(autoModel.toolNames[0]).toContain('web_search');
+    expect(autoModel.toolNames[0]).toContain('web_fetch');
+  });
+
+  it('disables web_search after repeated searches so the turn can converge', async () => {
+    const model = new RepeatingWebSearchModel();
+    const registry = new ToolRegistry();
+    let executedSearches = 0;
+    registry.register({
+      name: 'web_search',
+      description: 'fake web search',
+      parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
+      requiredPolicy: 'readonly',
+      async execute() {
+        executedSearches += 1;
+        return { output: 'result', status: 'completed' };
+      },
+    } satisfies ToolDefinition);
+
+    const store = new FakeStore('thread-web-search-budget', 'previous-turn');
+    const agent = new AgentLoop({
+      workspaceRoot: process.cwd(),
+      sandbox: { level: 'workspace_write', workspaceRoot: process.cwd() },
+      model: model as never,
+      store,
+      tools: registry,
+      webSearchMode: 'on',
+      maxIterations: 20,
+    });
+
+    await agent.runTurn('thread-web-search-budget', {
+      type: 'text',
+      text: 'https://example.com 看看有什么内容',
+    });
+
+    expect(executedSearches).toBe(2);
+    expect(model.toolNames.at(-1)).not.toContain('web_search');
+    expect(store.items.some((item) =>
+      item.type === 'tool_call' &&
+      item.toolName === 'web_search' &&
+      item.status === 'failed' &&
+      JSON.stringify(item.result).includes('重复搜索'),
+    )).toBe(true);
+    expect(store.items.some((item) => item.type === 'agent_message' && item.text === 'final')).toBe(true);
   });
 });
 

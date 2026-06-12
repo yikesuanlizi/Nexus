@@ -7,6 +7,7 @@ export {
   shellCommandTool,
   searchContentTool,
   webSearchTool,
+  webFetchTool,
   applyPatchTool,
 } from './builtin.js';
 

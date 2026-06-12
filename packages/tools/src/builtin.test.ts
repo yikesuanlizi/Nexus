@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { applyPatchTool, readFileTool, searchContentTool, webSearchTool } from './builtin.js';
+import { applyPatchTool, readFileTool, searchContentTool, webFetchTool, webSearchTool } from './builtin.js';
 
 const originalFetch = globalThis.fetch;
 
@@ -64,6 +64,46 @@ describe('webSearchTool', () => {
 
     expect(result.status).toBe('failed');
     expect(result.error?.message).toBe('query is required');
+  });
+});
+
+describe('webFetchTool', () => {
+  it('fetches a URL and extracts readable HTML text', async () => {
+    globalThis.fetch = async () =>
+      new Response(`
+        <html>
+          <head><title>React Bits &amp; Animations</title><style>.hidden{}</style></head>
+          <body>
+            <script>window.noise = true</script>
+            <main>
+              <h1>Text Animations</h1>
+              <p>Includes <strong>DecryptText</strong> and FuzzyText.</p>
+            </main>
+          </body>
+        </html>
+      `, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+
+    const result = await webFetchTool.execute(
+      { url: 'https://example.com/react-bits' },
+      { workspaceRoot: process.cwd(), threadId: 'thread', turnId: 'turn', approved: false },
+    );
+
+    expect(result.status).toBe('completed');
+    expect(result.output).toContain('Fetched URL: https://example.com/react-bits');
+    expect(result.output).toContain('Title: React Bits & Animations');
+    expect(result.output).toContain('Text Animations');
+    expect(result.output).toContain('Includes DecryptText and FuzzyText.');
+    expect(result.output).not.toContain('window.noise');
+  });
+
+  it('rejects non-http URLs', async () => {
+    const result = await webFetchTool.execute(
+      { url: 'file:///secret.txt' },
+      { workspaceRoot: process.cwd(), threadId: 'thread', turnId: 'turn', approved: false },
+    );
+
+    expect(result.status).toBe('failed');
+    expect(result.error?.code).toBe('INVALID_ARGUMENTS');
   });
 });
 
