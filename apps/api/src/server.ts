@@ -15,6 +15,7 @@ import { installGracefulShutdown } from './shutdown.js';
 import { handlePickWorkspaceDirectory } from './workspacePicker.js';
 import { handlePatchThread } from './threadMetadata.js';
 import { handleBotRoute } from './botRoute.js';
+import { handleWorkspaceFilesRoute } from './workspaceFiles.js';
 import { buildSkillDraftSystemPrompt, createSkillInstallTurnItems, createTemplateSkillDraft, installSkillsFromGitHubUrl, prepareSkillDraftRequest, safeGeneratedSkillDraft, writeSkillDraft, type InstallSkillsResult, type SkillDraft } from './skills.js';
 import { shouldRetitleThread, titleFromInput } from './threadTitle.js';
 import { buildThreadChildInfos } from './threadChildren.js';
@@ -321,6 +322,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const segments = url.pathname.split('/').filter(Boolean);
 
   if (await handleBotRoute({ req, res, url, segments, store, getDefaultRunConfig, createAgent: async (config) => ({ agent: (await createAgent(config)).agent }) })) return;
+  if (await handleWorkspaceFilesRoute({ req, res, url })) return;
 
   if (req.method === 'GET' && url.pathname === '/api/status') {
     sendJson(res, 200, { ok: true, defaultConfig: publicRunConfig(await getDefaultRunConfig()) });

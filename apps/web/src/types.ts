@@ -124,6 +124,26 @@ export interface AgentStageRow extends SubagentStatusRow {
   kind: 'main' | 'child';
 }
 
+export interface WorkspaceFileEntry {
+  name: string;
+  path: string;
+  kind: 'directory' | 'file';
+  size: number;
+  updatedAt: string;
+  extension?: string;
+}
+
+export interface WorkspaceFilePreview {
+  root: string;
+  path: string;
+  name: string;
+  size: number;
+  updatedAt: string;
+  truncated: boolean;
+  text: string;
+  binary: boolean;
+}
+
 export interface Usage {
   inputTokens: number;
   cachedInputTokens: number;

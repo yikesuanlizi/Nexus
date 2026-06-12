@@ -472,6 +472,10 @@
     @apply grid h-screen min-h-0 min-w-0 grid-cols-[minmax(0,1fr)_320px] grid-rows-[auto_minmax(0,1fr)_auto_auto] overflow-hidden bg-slate-50;
   }
 
+  .workspace.rightPaneHidden {
+    @apply grid-cols-[minmax(0,1fr)];
+  }
+
   .topbar {
     @apply flex min-h-12 items-center justify-between gap-4 border-b border-slate-200 bg-white px-4 py-2 shadow-none;
     grid-column: 1 / -1;
@@ -525,6 +529,121 @@
     @apply grid self-stretch overflow-hidden border-l border-slate-200 bg-white px-4 py-3 shadow-none;
     grid-column: 2;
     grid-row: 2 / -1;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .panelButton.active {
+    @apply border-slate-300 bg-slate-100 text-slate-900;
+  }
+
+  .rightPaneTabs {
+    @apply grid grid-cols-2 gap-1 rounded-full border border-slate-200 bg-slate-100 p-1;
+  }
+
+  .rightPaneTabs button {
+    @apply h-7 rounded-full border-0 bg-transparent px-3 text-xs font-bold text-slate-500 shadow-none;
+  }
+
+  .rightPaneTabs button.active {
+    @apply bg-white text-slate-950 shadow-sm;
+  }
+
+  .workspaceFiles {
+    @apply grid min-h-0 grid-rows-[auto_auto_auto_minmax(0,1fr)_minmax(120px,0.78fr)] gap-2 overflow-hidden;
+  }
+
+  .workspaceFilesHeader {
+    @apply flex items-start justify-between gap-2;
+  }
+
+  .workspaceFilesHeader h2 {
+    @apply text-xs font-bold uppercase tracking-wide text-slate-500;
+  }
+
+  .workspaceFilesHeader p {
+    @apply mt-1 max-w-[230px] truncate text-[11px] text-slate-400;
+  }
+
+  .workspaceFileSearch,
+  .workspacePathLine {
+    @apply grid items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 text-slate-500;
+  }
+
+  .workspaceFileSearch {
+    @apply h-9 grid-cols-[16px_minmax(0,1fr)];
+  }
+
+  .workspaceFileSearch input {
+    @apply h-full border-0 bg-transparent p-0 text-xs shadow-none;
+  }
+
+  .workspacePathLine {
+    @apply h-8 grid-cols-[24px_minmax(0,1fr)] text-xs;
+  }
+
+  .workspacePathLine button {
+    @apply grid h-6 w-6 place-items-center rounded-md border-0 bg-transparent p-0 text-slate-400 shadow-none;
+  }
+
+  .workspacePathLine span {
+    @apply truncate;
+  }
+
+  .workspaceFileList {
+    @apply grid min-h-0 content-start gap-1 overflow-auto pr-1;
+  }
+
+  .workspaceFileList > p,
+  .workspacePreview > p,
+  .workspaceFileError,
+  .emptyFiles p {
+    @apply text-xs leading-5 text-slate-500;
+  }
+
+  .workspaceFileError {
+    @apply rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-rose-700;
+  }
+
+  .workspaceFileRow {
+    @apply grid h-8 grid-cols-[16px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg border border-transparent bg-transparent px-2 text-left text-xs text-slate-600 shadow-none;
+  }
+
+  .workspaceFileRow span {
+    @apply truncate font-semibold;
+  }
+
+  .workspaceFileRow small {
+    @apply text-[10px] text-slate-400;
+  }
+
+  .workspaceFileRow:hover,
+  .workspaceFileRow.active {
+    @apply border-slate-200 bg-white text-slate-950;
+  }
+
+  .workspacePreview {
+    @apply min-h-0 overflow-hidden rounded-xl border border-slate-200 bg-white;
+  }
+
+  .workspacePreviewHeader {
+    @apply grid gap-0.5 border-b border-slate-200 px-3 py-2;
+  }
+
+  .workspacePreviewHeader strong {
+    @apply truncate text-xs text-slate-900;
+  }
+
+  .workspacePreviewHeader span {
+    @apply text-[10px] text-slate-400;
+  }
+
+  .workspacePreview pre {
+    @apply h-full overflow-auto whitespace-pre-wrap break-words p-3 text-[11px] leading-5 text-slate-700;
+  }
+
+  .emptyFiles {
+    @apply content-start gap-2;
   }
 
   .agentStageHeader h2 {
@@ -1882,6 +2001,104 @@
     padding: 18px 14px;
   }
 
+  .workspace.rightPaneHidden {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .panelButton.active {
+    border-color: rgba(255,255,255,.14);
+    background: rgba(255,255,255,.08);
+    color: #f3f6fb;
+  }
+
+  .rightPaneTabs {
+    border-color: rgba(255,255,255,.09);
+    background: rgba(255,255,255,.045);
+  }
+
+  .rightPaneTabs button {
+    color: #8f98a7;
+  }
+
+  .rightPaneTabs button.active {
+    background: rgba(255,255,255,.12);
+    color: #f2f5f9;
+    box-shadow: inset 0 1px rgba(255,255,255,.08);
+  }
+
+  .workspaceFilesHeader h2 {
+    color: #eef1f5;
+    font-size: 12px;
+    letter-spacing: .06em;
+  }
+
+  .workspaceFilesHeader p {
+    color: #7f8794;
+  }
+
+  .workspaceFileSearch,
+  .workspacePathLine {
+    border-color: rgba(255,255,255,.09);
+    background: rgba(255,255,255,.045);
+    color: #8f98a7;
+  }
+
+  .workspaceFileSearch input {
+    color: #dce3ee;
+  }
+
+  .workspacePathLine button {
+    color: #8f98a7;
+  }
+
+  .workspaceFileList > p,
+  .workspacePreview > p,
+  .emptyFiles p {
+    color: #7f8794;
+  }
+
+  .workspaceFileError {
+    border-color: rgba(248,113,113,.24);
+    background: rgba(248,113,113,.09);
+    color: #fda4af;
+  }
+
+  .workspaceFileRow {
+    color: #c4ccd8;
+  }
+
+  .workspaceFileRow small {
+    color: #727b89;
+  }
+
+  .workspaceFileRow:hover,
+  .workspaceFileRow.active {
+    border-color: rgba(255,255,255,.1);
+    background: rgba(255,255,255,.075);
+    color: #f4f7fb;
+  }
+
+  .workspacePreview {
+    border-color: rgba(255,255,255,.09);
+    background: rgba(255,255,255,.045);
+  }
+
+  .workspacePreviewHeader {
+    border-color: rgba(255,255,255,.08);
+  }
+
+  .workspacePreviewHeader strong {
+    color: #f4f7fb;
+  }
+
+  .workspacePreviewHeader span {
+    color: #7f8794;
+  }
+
+  .workspacePreview pre {
+    color: #dce3ee;
+  }
+
   .agentStage {
     gap: 12px;
   }
@@ -2774,6 +2991,47 @@
     color: #334155;
   }
 
+  .appShell.theme-light .rightPaneTabs {
+    border-color: #e2e8f0;
+    background: #f1f5f9;
+  }
+
+  .appShell.theme-light .rightPaneTabs button {
+    color: #475569;
+  }
+
+  .appShell.theme-light .rightPaneTabs button.active {
+    background: #ffffff;
+    color: #111827;
+  }
+
+  .appShell.theme-light .workspaceFileSearch,
+  .appShell.theme-light .workspacePathLine,
+  .appShell.theme-light .workspacePreview {
+    border-color: #d8dee8;
+    background: #ffffff;
+    color: #334155;
+  }
+
+  .appShell.theme-light .workspaceFileRow {
+    color: #334155;
+  }
+
+  .appShell.theme-light .workspaceFileRow:hover,
+  .appShell.theme-light .workspaceFileRow.active {
+    border-color: #d8dee8;
+    background: #f8fafc;
+    color: #111827;
+  }
+
+  .appShell.theme-light .workspacePreviewHeader {
+    border-color: #e2e8f0;
+  }
+
+  .appShell.theme-light .workspacePreview pre {
+    color: #1f2937;
+  }
+
   .appShell.theme-light .searchDialog {
     border-color: #d8dee8;
     background: #ffffff;
@@ -2847,6 +3105,47 @@
 
     .appShell.theme-system .settingsHelpGrid p {
       color: #334155;
+    }
+
+    .appShell.theme-system .rightPaneTabs {
+      border-color: #e2e8f0;
+      background: #f1f5f9;
+    }
+
+    .appShell.theme-system .rightPaneTabs button {
+      color: #475569;
+    }
+
+    .appShell.theme-system .rightPaneTabs button.active {
+      background: #ffffff;
+      color: #111827;
+    }
+
+    .appShell.theme-system .workspaceFileSearch,
+    .appShell.theme-system .workspacePathLine,
+    .appShell.theme-system .workspacePreview {
+      border-color: #d8dee8;
+      background: #ffffff;
+      color: #334155;
+    }
+
+    .appShell.theme-system .workspaceFileRow {
+      color: #334155;
+    }
+
+    .appShell.theme-system .workspaceFileRow:hover,
+    .appShell.theme-system .workspaceFileRow.active {
+      border-color: #d8dee8;
+      background: #f8fafc;
+      color: #111827;
+    }
+
+    .appShell.theme-system .workspacePreviewHeader {
+      border-color: #e2e8f0;
+    }
+
+    .appShell.theme-system .workspacePreview pre {
+      color: #1f2937;
     }
   }
 

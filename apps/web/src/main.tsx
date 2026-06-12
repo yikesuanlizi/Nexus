@@ -6,7 +6,7 @@ import { AppDialog, SettingsHelpDialog, SkillDraftDialog, type AppDialogState } 
 import { AssistantTurnView, ItemView } from './components/ItemView.js';
 import { SettingsDrawer } from './components/SettingsDrawer.js';
 import { WeixinConnectDialog } from './components/WeixinConnectDialog.js';
-import { AgentStagePanel } from './components/AgentStagePanel.js';
+import { RightPane, type RightPaneTab } from './components/RightPane.js';
 import { WorkspaceThreadList } from './components/WorkspaceThreadList.js';
 import { useBotControls, type WeixinLoginState } from './botClient.js';
 import { resizeTextareaToContent } from './composer.js';
@@ -48,7 +48,6 @@ import type {
   TurnMeta,
 } from './types.js';
 import './styles.css';
-
 type PaletteOption = SlashCommandOption & (
   | { action?: 'command' }
   | { action: 'insert_skill'; skillName: string; hideCommand: true }
@@ -91,6 +90,7 @@ function App() {
   const [status, setStatus] = useState('Idle');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsHelpOpen, setSettingsHelpOpen] = useState(false);
+  const [rightPaneVisible, setRightPaneVisible] = useState(true), [rightPaneTab, setRightPaneTab] = useState<RightPaneTab>('status');
   const [pendingApprovals, setPendingApprovals] = useState<ApprovalRequest[]>([]);
   const [providers, setProviders] = useState<ProviderEntry[]>([]);
   const [keyStates, setKeyStates] = useState<ApiKeyState[]>([]);
@@ -130,6 +130,7 @@ function App() {
     children: subagentRows,
     locale: config.locale,
   }), [activeThread?.title, busy, config.locale, subagentRows, threadId]);
+  const activeWorkspaceRoot = activeThread?.tags?.conversationKind === 'chat' ? '' : (activeThread?.workspaceRoot || config.workspaceRoot || '');
   const childActivityByThread = useMemo(() => buildChildActivityByThread(threadChildren), [threadChildren]);
   const tokenSummary = useMemo(() => {
     return formatThreadTokenSummary(threadUsage, config.locale);
@@ -1182,7 +1183,7 @@ function App() {
         />
       </aside>
 
-      <section className="workspace">
+      <section className={rightPaneVisible ? 'workspace' : 'workspace rightPaneHidden'}>
         <header className="topbar">
           <div className="conversationTitle">
             <strong>{activeThread?.title || t(config.locale, 'noConversation')}</strong>
@@ -1194,6 +1195,7 @@ function App() {
           <div className="actions">
             <button className="iconButton" onClick={() => void threadAction('compact')} disabled={!threadId || busy} title={t(config.locale, 'compact')} aria-label={t(config.locale, 'compact')}><Icon name="refresh" /></button>
             <button className="iconButton helpButton" onClick={() => setSettingsHelpOpen(true)} title={config.locale === 'zh' ? '设置说明' : 'Settings guide'} aria-label={config.locale === 'zh' ? '设置说明' : 'Settings guide'}><Icon name="question" /></button>
+            <button className={rightPaneVisible ? 'iconButton panelButton active' : 'iconButton panelButton'} onClick={() => setRightPaneVisible((value) => !value)} title={config.locale === 'zh' ? '显示/隐藏右侧栏' : 'Show/hide right panel'} aria-label={config.locale === 'zh' ? '显示/隐藏右侧栏' : 'Show/hide right panel'}><Icon name="panel" /></button>
           </div>
         </header>
 
@@ -1229,9 +1231,7 @@ function App() {
               ))
             )}
           </section>
-          <aside className="eventPane">
-            <AgentStagePanel locale={config.locale} rows={agentStageRows} />
-          </aside>
+          {rightPaneVisible ? <RightPane activeTab={rightPaneTab} agentStageRows={agentStageRows} locale={config.locale} workspaceRoot={activeWorkspaceRoot} onTabChange={setRightPaneTab} /> : null}
         </div>
 
         {pendingApprovals.length > 0 ? (
