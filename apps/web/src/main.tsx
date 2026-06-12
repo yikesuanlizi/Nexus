@@ -1184,7 +1184,7 @@ function App() {
         />
       </aside>
 
-      <section className={rightPaneVisible ? 'workspace' : 'workspace rightPaneHidden'}>
+      <section className={rightPaneVisible ? `workspace ${rightPaneTab === 'files' ? 'rightPaneFiles' : ''}` : 'workspace rightPaneHidden'}>
         <header className="topbar">
           <div className="conversationTitle">
             <strong>{activeThread?.title || t(config.locale, 'noConversation')}</strong>

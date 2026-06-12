@@ -476,6 +476,10 @@
     @apply grid-cols-[minmax(0,1fr)];
   }
 
+  .workspace.rightPaneFiles {
+    grid-template-columns: minmax(0, 1fr) minmax(560px, 42vw);
+  }
+
   .topbar {
     @apply flex min-h-12 items-center justify-between gap-4 border-b border-slate-200 bg-white px-4 py-2 shadow-none;
     grid-column: 1 / -1;
@@ -550,7 +554,7 @@
   }
 
   .workspaceFiles {
-    @apply grid min-h-0 grid-rows-[auto_auto_auto_minmax(0,1fr)_minmax(120px,0.78fr)] gap-2 overflow-hidden;
+    @apply grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-2 overflow-hidden;
   }
 
   .workspaceFilesHeader {
@@ -565,8 +569,24 @@
     @apply mt-1 max-w-[230px] truncate text-[11px] text-slate-400;
   }
 
-  .workspaceFileSearch,
-  .workspacePathLine {
+  .workspaceFileBody {
+    @apply grid min-h-0 overflow-hidden;
+  }
+
+  .workspaceFileTreePane,
+  .workspacePreviewPane {
+    @apply grid min-h-0 gap-2 overflow-hidden rounded-xl border border-slate-200 bg-white p-2;
+  }
+
+  .workspaceFileTreePane {
+    @apply grid-rows-[auto_auto_minmax(0,1fr)];
+  }
+
+  .workspacePreviewPane {
+    @apply grid-rows-[auto_minmax(0,1fr)];
+  }
+
+  .workspaceFileSearch {
     @apply grid items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 text-slate-500;
   }
 
@@ -576,18 +596,6 @@
 
   .workspaceFileSearch input {
     @apply h-full border-0 bg-transparent p-0 text-xs shadow-none;
-  }
-
-  .workspacePathLine {
-    @apply h-8 grid-cols-[24px_minmax(0,1fr)] text-xs;
-  }
-
-  .workspacePathLine button {
-    @apply grid h-6 w-6 place-items-center rounded-md border-0 bg-transparent p-0 text-slate-400 shadow-none;
-  }
-
-  .workspacePathLine span {
-    @apply truncate;
   }
 
   .workspaceFileList {
@@ -607,6 +615,7 @@
 
   .workspaceFileRow {
     @apply grid h-8 grid-cols-[16px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg border border-transparent bg-transparent px-2 text-left text-xs text-slate-600 shadow-none;
+    padding-left: calc(8px + var(--file-depth, 0) * 14px);
   }
 
   .workspaceFileRow span {
@@ -623,7 +632,35 @@
   }
 
   .workspacePreview {
-    @apply min-h-0 overflow-hidden rounded-xl border border-slate-200 bg-white;
+    @apply min-h-0 overflow-hidden rounded-lg border border-slate-200 bg-white;
+  }
+
+  .workspacePreviewTabs {
+    @apply flex min-h-8 gap-1 overflow-auto;
+  }
+
+  .workspacePreviewTabs button {
+    @apply grid h-8 max-w-36 grid-cols-[minmax(0,1fr)_14px] items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 text-left text-[11px] font-semibold text-slate-600 shadow-none;
+  }
+
+  .workspacePreviewTabs button span {
+    @apply truncate;
+  }
+
+  .workspacePreviewTabs button i {
+    @apply not-italic text-slate-400;
+  }
+
+  .workspacePreviewTabs button.active {
+    @apply border-slate-300 bg-white text-slate-950;
+  }
+
+  .workspaceFileDivider {
+    @apply h-full w-[7px] cursor-col-resize rounded-full border-0 bg-transparent p-0 shadow-none;
+  }
+
+  .workspaceFileDivider:hover {
+    @apply bg-slate-200;
   }
 
   .workspacePreviewHeader {
@@ -1596,9 +1633,12 @@
     @apply truncate text-[10px] text-slate-400;
   }
 
-  .dropdownOption:hover:not(:disabled),
-  .dropdownOption.active {
+  .dropdownOption:hover:not(:disabled) {
     @apply bg-slate-100 text-slate-950;
+  }
+
+  .dropdownOption.active {
+    @apply text-slate-950;
   }
 
   .modeSelect .dropdownButton {
@@ -1796,9 +1836,12 @@
     color: #7c8594;
   }
 
-  .dropdownOption:hover:not(:disabled),
-  .dropdownOption.active {
+  .dropdownOption:hover:not(:disabled) {
     background: rgba(255,255,255,.08);
+    color: #f5f7fb;
+  }
+
+  .dropdownOption.active {
     color: #f5f7fb;
   }
 
@@ -2092,6 +2135,10 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .workspace.rightPaneFiles {
+    grid-template-columns: minmax(0, 1fr) minmax(560px, 42vw);
+  }
+
   .panelButton.active {
     border-color: rgba(255,255,255,.14);
     background: rgba(255,255,255,.08);
@@ -2124,7 +2171,14 @@
   }
 
   .workspaceFileSearch,
-  .workspacePathLine {
+  .workspaceFileTreePane,
+  .workspacePreviewPane {
+    border-color: rgba(255,255,255,.09);
+    background: rgba(255,255,255,.045);
+    color: #8f98a7;
+  }
+
+  .workspaceFileSearch {
     border-color: rgba(255,255,255,.09);
     background: rgba(255,255,255,.045);
     color: #8f98a7;
@@ -2132,10 +2186,6 @@
 
   .workspaceFileSearch input {
     color: #dce3ee;
-  }
-
-  .workspacePathLine button {
-    color: #8f98a7;
   }
 
   .workspaceFileList > p,
@@ -2168,6 +2218,27 @@
   .workspacePreview {
     border-color: rgba(255,255,255,.09);
     background: rgba(255,255,255,.045);
+  }
+
+  .workspacePreviewTabs button {
+    border-color: rgba(255,255,255,.09);
+    background: rgba(255,255,255,.05);
+    color: #c7d0dc;
+  }
+
+  .workspacePreviewTabs button.active,
+  .workspacePreviewTabs button:hover:not(:disabled) {
+    border-color: rgba(255,255,255,.14);
+    background: rgba(255,255,255,.09);
+    color: #f4f7fb;
+  }
+
+  .workspacePreviewTabs button i {
+    color: #8a93a2;
+  }
+
+  .workspaceFileDivider:hover {
+    background: rgba(255,255,255,.12);
   }
 
   .workspacePreviewHeader {
@@ -3093,7 +3164,8 @@
   }
 
   .appShell.theme-light .workspaceFileSearch,
-  .appShell.theme-light .workspacePathLine,
+  .appShell.theme-light .workspaceFileTreePane,
+  .appShell.theme-light .workspacePreviewPane,
   .appShell.theme-light .workspacePreview {
     border-color: #d8dee8;
     background: #ffffff;
@@ -3117,6 +3189,19 @@
 
   .appShell.theme-light .workspacePreview pre {
     color: #1f2937;
+  }
+
+  .appShell.theme-light .workspacePreviewTabs button {
+    border-color: #d8dee8;
+    background: #f8fafc;
+    color: #334155;
+  }
+
+  .appShell.theme-light .workspacePreviewTabs button.active,
+  .appShell.theme-light .workspacePreviewTabs button:hover:not(:disabled) {
+    border-color: #cbd5e1;
+    background: #ffffff;
+    color: #111827;
   }
 
   .appShell.theme-light .searchDialog {
@@ -3165,9 +3250,12 @@
     color: #64748b;
   }
 
-  .appShell.theme-light .dropdownOption:hover:not(:disabled),
-  .appShell.theme-light .dropdownOption.active {
+  .appShell.theme-light .dropdownOption:hover:not(:disabled) {
     background: #f1f5f9;
+    color: #0f172a;
+  }
+
+  .appShell.theme-light .dropdownOption.active {
     color: #0f172a;
   }
 
@@ -3236,9 +3324,12 @@
       color: #64748b;
     }
 
-    .appShell.theme-system .dropdownOption:hover:not(:disabled),
-    .appShell.theme-system .dropdownOption.active {
+    .appShell.theme-system .dropdownOption:hover:not(:disabled) {
       background: #f1f5f9;
+      color: #0f172a;
+    }
+
+    .appShell.theme-system .dropdownOption.active {
       color: #0f172a;
     }
 
@@ -3283,7 +3374,8 @@
     }
 
     .appShell.theme-system .workspaceFileSearch,
-    .appShell.theme-system .workspacePathLine,
+    .appShell.theme-system .workspaceFileTreePane,
+    .appShell.theme-system .workspacePreviewPane,
     .appShell.theme-system .workspacePreview {
       border-color: #d8dee8;
       background: #ffffff;
@@ -3307,6 +3399,19 @@
 
     .appShell.theme-system .workspacePreview pre {
       color: #1f2937;
+    }
+
+    .appShell.theme-system .workspacePreviewTabs button {
+      border-color: #d8dee8;
+      background: #f8fafc;
+      color: #334155;
+    }
+
+    .appShell.theme-system .workspacePreviewTabs button.active,
+    .appShell.theme-system .workspacePreviewTabs button:hover:not(:disabled) {
+      border-color: #cbd5e1;
+      background: #ffffff;
+      color: #111827;
     }
   }
 
