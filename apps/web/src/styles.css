@@ -609,6 +609,10 @@
     @apply text-xs leading-5 text-slate-500;
   }
 
+  .workspacePreview > p {
+    @apply p-3;
+  }
+
   .workspaceFileError {
     @apply rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-rose-700;
   }
@@ -632,7 +636,7 @@
   }
 
   .workspacePreview {
-    @apply min-h-0 overflow-hidden rounded-lg border border-slate-200 bg-white;
+    @apply grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-lg border border-slate-200 bg-white;
   }
 
   .workspacePreviewTabs {
@@ -676,7 +680,7 @@
   }
 
   .workspacePreview pre {
-    @apply h-full overflow-auto whitespace-pre-wrap break-words p-3 text-[11px] leading-5 text-slate-700;
+    @apply min-h-0 overflow-auto whitespace-pre-wrap break-words p-3 text-[11px] leading-5 text-slate-700;
   }
 
   .emptyFiles {
@@ -2564,7 +2568,7 @@
 
   .composer {
     max-height: 42vh;
-    margin: 0 max(18px, calc((100vw - 1360px) / 2)) 16px;
+    margin: 0 18px 16px;
     border: 1px solid rgba(255,255,255,.12);
     border-radius: 18px;
     background: rgba(18,20,23,.9);
