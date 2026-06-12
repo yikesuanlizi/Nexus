@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { RUN_CONFIG_STORAGE_KEY, mergeRunConfigDefaults, type PermissionPresetId, type ReasoningEffort, type RunConfig, type RunProfile, type WebSearchMode } from './config.js';
 import { Icon } from './components/Icon.js';
 import { AppDialog, SettingsHelpDialog, SkillDraftDialog, type AppDialogState } from './components/Dialogs.js';
+import { DropdownSelect } from './components/DropdownSelect.js';
 import { AssistantTurnView, ItemView } from './components/ItemView.js';
 import { SettingsDrawer } from './components/SettingsDrawer.js';
 import { WeixinConnectDialog } from './components/WeixinConnectDialog.js';
@@ -1349,13 +1350,9 @@ function App() {
                 <input type="file" accept="image/*" multiple onChange={handleFileSelect} hidden />
                 <Icon name="clip" />
               </label>
-              <label className="modeSelect" title={t(config.locale, 'mode')} aria-label={t(config.locale, 'mode')}>
-                <select value={config.permissions} onChange={(event) => setConfig({ ...config, permissions: event.target.value as PermissionPresetId })}><option value="read_only">{config.locale === 'zh' ? '只读' : 'Read'}</option><option value="workspace">{config.locale === 'zh' ? '默认' : 'Default'}</option><option value="danger_full_access">{config.locale === 'zh' ? '自主' : 'Auto'}</option></select>
-              </label>
-              <label className="modeSelect reasoningSelect" title={config.locale === 'zh' ? '思考程度' : 'Reasoning effort'} aria-label={config.locale === 'zh' ? '思考程度' : 'Reasoning effort'}>
-                <select value={config.reasoningEffort} onChange={(event) => setConfig({ ...config, reasoningEffort: event.target.value as ReasoningEffort })}><option value="low">{config.locale === 'zh' ? '快速' : 'Fast'}</option><option value="medium">{config.locale === 'zh' ? '均衡' : 'Balanced'}</option><option value="high">{config.locale === 'zh' ? '深度' : 'Deep'}</option></select>
-              </label>
-              <label className="modeSelect runProfileSelect" title={runProfileDescription(config.runProfile, config.locale)} aria-label={config.locale === 'zh' ? '运行模式' : 'Run profile'}><select value={config.runProfile} onChange={(event) => setConfig({ ...config, runProfile: event.target.value as RunProfile })}><option value="cache_first">{runProfileLabel('cache_first', config.locale)}</option><option value="runtime_os">{runProfileLabel('runtime_os', config.locale)}</option></select></label>
+              <DropdownSelect<PermissionPresetId> ariaLabel={t(config.locale, 'mode')} className="modeSelect" title={t(config.locale, 'mode')} value={config.permissions} onChange={(permissions) => setConfig({ ...config, permissions })} options={[{ value: 'read_only', label: config.locale === 'zh' ? '只读' : 'Read' }, { value: 'workspace', label: config.locale === 'zh' ? '默认' : 'Default' }, { value: 'danger_full_access', label: config.locale === 'zh' ? '自主' : 'Auto' }]} />
+              <DropdownSelect<ReasoningEffort> ariaLabel={config.locale === 'zh' ? '思考程度' : 'Reasoning effort'} className="modeSelect reasoningSelect" title={config.locale === 'zh' ? '思考程度' : 'Reasoning effort'} value={config.reasoningEffort} onChange={(reasoningEffort) => setConfig({ ...config, reasoningEffort })} options={[{ value: 'low', label: config.locale === 'zh' ? '快速' : 'Fast' }, { value: 'medium', label: config.locale === 'zh' ? '均衡' : 'Balanced' }, { value: 'high', label: config.locale === 'zh' ? '深度' : 'Deep' }]} />
+              <DropdownSelect<RunProfile> ariaLabel={config.locale === 'zh' ? '运行模式' : 'Run profile'} className="modeSelect runProfileSelect" title={runProfileDescription(config.runProfile, config.locale)} value={config.runProfile} onChange={(runProfile) => setConfig({ ...config, runProfile })} options={[{ value: 'cache_first', label: runProfileLabel('cache_first', config.locale) }, { value: 'runtime_os', label: runProfileLabel('runtime_os', config.locale) }]} />
             </div>
           </div>
         </footer>

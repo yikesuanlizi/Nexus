@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import type { Locale, RunConfig, ThemeMode, WebSearchMode } from '../config.js';
 import { Icon } from './Icon.js';
+import { DropdownSelect, type DropdownOption } from './DropdownSelect.js';
 import { emptyMcp } from '../defaults.js';
 import { formatTimestamp, t } from '../i18n.js';
 import { localizedSkillDescription } from '../skillDescriptions.js';
@@ -195,9 +196,7 @@ export function SettingsDrawer({
               <div className="formGrid">
                 <label>
                   {t(locale, 'provider')}
-                  <select value={config.provider} onChange={(event) => selectProvider(event.target.value)}>
-                    <ProviderOptions providers={providers} locale={locale} />
-                  </select>
+                  <DropdownSelect value={config.provider} onChange={selectProvider} options={providerDropdownOptions(providers, locale)} />
                 </label>
                 <label>
                   {t(locale, 'model')}
@@ -209,26 +208,15 @@ export function SettingsDrawer({
                 </label>
                 <label>
                   {t(locale, 'language')}
-                  <select value={config.locale} onChange={(event) => setConfig({ ...config, locale: event.target.value as Locale })}>
-                    <option value="zh">中文</option>
-                    <option value="en">English</option>
-                  </select>
+                  <DropdownSelect<Locale> value={config.locale} onChange={(locale) => setConfig({ ...config, locale })} options={[{ value: 'zh', label: '中文' }, { value: 'en', label: 'English' }]} />
                 </label>
                 <label>
                   {locale === 'zh' ? '外观' : 'Theme'}
-                  <select value={config.themeMode} onChange={(event) => setConfig({ ...config, themeMode: event.target.value as ThemeMode })}>
-                    <option value="dark">{locale === 'zh' ? '深色' : 'Dark'}</option>
-                    <option value="light">{locale === 'zh' ? '浅色' : 'Light'}</option>
-                    <option value="system">{locale === 'zh' ? '跟随系统' : 'System'}</option>
-                  </select>
+                  <DropdownSelect<ThemeMode> value={config.themeMode} onChange={(themeMode) => setConfig({ ...config, themeMode })} options={[{ value: 'dark', label: locale === 'zh' ? '深色' : 'Dark' }, { value: 'light', label: locale === 'zh' ? '浅色' : 'Light' }, { value: 'system', label: locale === 'zh' ? '跟随系统' : 'System' }]} />
                 </label>
                 <label>
                   {t(locale, 'webSearch')}
-                  <select value={config.webSearchMode} onChange={(event) => setConfig({ ...config, webSearchMode: event.target.value as WebSearchMode })}>
-                    <option value="auto">{t(locale, 'webSearchAuto')}</option>
-                    <option value="on">{t(locale, 'webSearchOn')}</option>
-                    <option value="off">{t(locale, 'webSearchOff')}</option>
-                  </select>
+                  <DropdownSelect<WebSearchMode> value={config.webSearchMode} onChange={(webSearchMode) => setConfig({ ...config, webSearchMode })} options={[{ value: 'auto', label: t(locale, 'webSearchAuto') }, { value: 'on', label: t(locale, 'webSearchOn') }, { value: 'off', label: t(locale, 'webSearchOff') }]} />
                 </label>
               </div>
               <div className="providerCard">
@@ -516,45 +504,26 @@ export function SettingsDrawer({
   );
 }
 
-function ProviderOptions({ providers, locale }: { providers: ProviderEntry[]; locale: Locale }) {
+function providerDropdownOptions(providers: ProviderEntry[], locale: Locale): Array<DropdownOption<string>> {
   const local = providers.filter((provider) => provider.isLocal && provider.id !== 'openai_compatible');
   const generic = providers.filter((provider) => provider.id === 'openai_compatible');
   const chinaIds = new Set(['deepseek', 'zhipu', 'kimi', 'qwen', 'baidu', 'volcengine', 'siliconflow']);
   const china = providers.filter((provider) => chinaIds.has(provider.id));
   const global = providers.filter((provider) => !provider.isLocal && !chinaIds.has(provider.id));
-
-  return (
-    <>
-      <optgroup label={t(locale, 'localProvider')}>
-        {local.map((provider) => (
-          <option value={provider.id} key={provider.id}>
-            {provider.name} - {provider.baseUrl.replace(/^https?:\/\//, '')}
-          </option>
-        ))}
-      </optgroup>
-      <optgroup label={t(locale, 'remoteChina')}>
-        {china.map((provider) => (
-          <option value={provider.id} key={provider.id}>
-            {provider.name} - {provider.apiKeyEnvVar}
-          </option>
-        ))}
-      </optgroup>
-      <optgroup label={t(locale, 'remoteGlobal')}>
-        {global.map((provider) => (
-          <option value={provider.id} key={provider.id}>
-            {provider.name} - {provider.apiKeyEnvVar}
-          </option>
-        ))}
-      </optgroup>
-      <optgroup label={t(locale, 'genericProvider')}>
-        {generic.map((provider) => (
-          <option value={provider.id} key={provider.id}>
-            {provider.name} - {provider.baseUrl.replace(/^https?:\/\//, '')}
-          </option>
-        ))}
-      </optgroup>
-    </>
-  );
+  const map = (group: string, provider: ProviderEntry): DropdownOption<string> => ({
+    group,
+    value: provider.id,
+    label: provider.name,
+    detail: provider.isLocal || provider.id === 'openai_compatible'
+      ? provider.baseUrl.replace(/^https?:\/\//, '')
+      : provider.apiKeyEnvVar,
+  });
+  return [
+    ...local.map((provider) => map(t(locale, 'localProvider'), provider)),
+    ...china.map((provider) => map(t(locale, 'remoteChina'), provider)),
+    ...global.map((provider) => map(t(locale, 'remoteGlobal'), provider)),
+    ...generic.map((provider) => map(t(locale, 'genericProvider'), provider)),
+  ];
 }
 
 function McpSection({

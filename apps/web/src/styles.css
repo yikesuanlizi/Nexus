@@ -1555,16 +1555,62 @@
     @apply block;
   }
 
-  .modeSelect select {
-    @apply h-7 w-[72px] rounded-lg px-2 text-[11px] font-semibold text-slate-700;
+  .dropdownSelect {
+    @apply relative min-w-0;
   }
 
-  .runProfileSelect select {
+  .dropdownButton {
+    @apply grid h-9 w-full grid-cols-[minmax(0,1fr)_14px] items-center gap-2 rounded-full border border-slate-300 bg-white px-3 text-left text-sm font-semibold text-slate-700 shadow-none transition;
+  }
+
+  .dropdownButton span {
+    @apply min-w-0 truncate;
+  }
+
+  .dropdownButton svg {
+    @apply h-3.5 w-3.5 text-slate-400;
+  }
+
+  .dropdownButton:hover:not(:disabled),
+  .dropdownSelect:focus-within .dropdownButton {
+    @apply border-slate-400 bg-slate-50 text-slate-950;
+  }
+
+  .dropdownMenu {
+    @apply absolute left-0 top-[calc(100%+6px)] z-50 grid max-h-72 w-full min-w-[180px] gap-1 overflow-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl shadow-slate-950/15;
+  }
+
+  .dropdownGroup {
+    @apply px-2 pt-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400;
+  }
+
+  .dropdownOption {
+    @apply grid min-h-8 gap-0.5 rounded-xl border-0 bg-transparent px-2.5 py-1.5 text-left text-xs text-slate-600 shadow-none;
+  }
+
+  .dropdownOption span {
+    @apply truncate font-semibold;
+  }
+
+  .dropdownOption small {
+    @apply truncate text-[10px] text-slate-400;
+  }
+
+  .dropdownOption:hover:not(:disabled),
+  .dropdownOption.active {
+    @apply bg-slate-100 text-slate-950;
+  }
+
+  .modeSelect .dropdownButton {
+    @apply h-7 w-[72px] px-2 text-[11px];
+  }
+
+  .runProfileSelect .dropdownButton {
     @apply w-[86px];
   }
 
-  select option {
-    @apply bg-white text-slate-900;
+  .composerActions .dropdownMenu {
+    @apply bottom-[calc(100%+8px)] left-auto right-0 top-auto min-w-[140px];
   }
 
   /* ── Nexus desktop workspace skin ──────────────────────────────────────── */
@@ -1713,6 +1759,47 @@
   .appShell select option {
     background: #171a1f;
     color: #e6ebf3;
+  }
+
+  .dropdownButton {
+    border-color: rgba(255,255,255,.1);
+    background: rgba(255,255,255,.055);
+    color: #dce3ee;
+  }
+
+  .dropdownButton svg {
+    color: #8f98a7;
+  }
+
+  .dropdownButton:hover:not(:disabled),
+  .dropdownSelect:focus-within .dropdownButton {
+    border-color: rgba(255,255,255,.16);
+    background: rgba(255,255,255,.085);
+    color: #f4f7fb;
+  }
+
+  .dropdownMenu {
+    border-color: rgba(255,255,255,.12);
+    background: #1d2025;
+    box-shadow: 0 20px 48px rgba(0,0,0,.46), inset 0 1px rgba(255,255,255,.06);
+  }
+
+  .dropdownGroup {
+    color: #737d8c;
+  }
+
+  .dropdownOption {
+    color: #c8d0dc;
+  }
+
+  .dropdownOption small {
+    color: #7c8594;
+  }
+
+  .dropdownOption:hover:not(:disabled),
+  .dropdownOption.active {
+    background: rgba(255,255,255,.08);
+    color: #f5f7fb;
   }
 
   .workspaceSearch {
@@ -2462,7 +2549,7 @@
   }
 
   .composerActions .fileButton,
-  .modeSelect select {
+  .modeSelect .dropdownButton {
     border-color: rgba(255,255,255,.1);
     background: rgba(255,255,255,.055);
     color: #b8c1cf;
@@ -2473,7 +2560,7 @@
     width: 28px;
   }
 
-  .modeSelect select {
+  .modeSelect .dropdownButton {
     height: 28px;
   }
 
@@ -3047,6 +3134,43 @@
     color: #111827;
   }
 
+  .appShell.theme-light .dropdownButton {
+    border-color: #cbd5e1;
+    background: #ffffff;
+    color: #111827;
+  }
+
+  .appShell.theme-light .dropdownButton:hover:not(:disabled),
+  .appShell.theme-light .dropdownSelect:focus-within .dropdownButton {
+    border-color: #94a3b8;
+    background: #f8fafc;
+    color: #0f172a;
+  }
+
+  .appShell.theme-light .dropdownMenu {
+    border-color: #d8dee8;
+    background: #ffffff;
+    box-shadow: 0 18px 42px rgba(15,23,42,.16);
+  }
+
+  .appShell.theme-light .dropdownGroup {
+    color: #64748b;
+  }
+
+  .appShell.theme-light .dropdownOption {
+    color: #334155;
+  }
+
+  .appShell.theme-light .dropdownOption small {
+    color: #64748b;
+  }
+
+  .appShell.theme-light .dropdownOption:hover:not(:disabled),
+  .appShell.theme-light .dropdownOption.active {
+    background: #f1f5f9;
+    color: #0f172a;
+  }
+
   @media (prefers-color-scheme: light) {
     .appShell.theme-system {
       background: #ffffff;
@@ -3079,6 +3203,43 @@
       border-color: #cbd5e1;
       background: #ffffff;
       color: #111827;
+    }
+
+    .appShell.theme-system .dropdownButton {
+      border-color: #cbd5e1;
+      background: #ffffff;
+      color: #111827;
+    }
+
+    .appShell.theme-system .dropdownButton:hover:not(:disabled),
+    .appShell.theme-system .dropdownSelect:focus-within .dropdownButton {
+      border-color: #94a3b8;
+      background: #f8fafc;
+      color: #0f172a;
+    }
+
+    .appShell.theme-system .dropdownMenu {
+      border-color: #d8dee8;
+      background: #ffffff;
+      box-shadow: 0 18px 42px rgba(15,23,42,.16);
+    }
+
+    .appShell.theme-system .dropdownGroup {
+      color: #64748b;
+    }
+
+    .appShell.theme-system .dropdownOption {
+      color: #334155;
+    }
+
+    .appShell.theme-system .dropdownOption small {
+      color: #64748b;
+    }
+
+    .appShell.theme-system .dropdownOption:hover:not(:disabled),
+    .appShell.theme-system .dropdownOption.active {
+      background: #f1f5f9;
+      color: #0f172a;
     }
 
     .appShell.theme-system .settingsHelpGrid article {
@@ -3205,7 +3366,7 @@
   }
 
   .settingsDrawer input,
-  .settingsDrawer select {
+  .settingsDrawer .dropdownButton {
     height: 32px;
     font-size: 12px;
   }
