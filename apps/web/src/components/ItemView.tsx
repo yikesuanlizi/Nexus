@@ -451,6 +451,8 @@ function preferredValueKeys(toolName: string): string[] {
       return ['patch'];
     case 'current_time':
       return ['timeZone', 'locale'];
+    case 'web_search':
+      return ['action', 'url', 'query', 'queries', 'pattern'];
     default:
       return ['query', 'pattern', 'filePath', 'path', 'command', 'url', 'name', 'text'];
   }

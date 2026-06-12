@@ -58,12 +58,48 @@ describe('webSearchTool', () => {
 
   it('fails clearly when query is empty', async () => {
     const result = await webSearchTool.execute(
-      { query: '   ' },
+      { action: 'search', query: '   ' },
       { workspaceRoot: process.cwd(), threadId: 'thread', turnId: 'turn', approved: false },
     );
 
     expect(result.status).toBe('failed');
-    expect(result.error?.message).toBe('query is required');
+    expect(result.error?.message).toBe('query or queries is required for action="search"');
+  });
+
+  it('opens a page through the Codex-style web_search action', async () => {
+    globalThis.fetch = async () =>
+      new Response(`
+        <html>
+          <head><title>React Bits</title></head>
+          <body><h1>Animations</h1><p>Text animations include DecryptText.</p></body>
+        </html>
+      `, { headers: { 'content-type': 'text/html' } });
+
+    const result = await webSearchTool.execute(
+      { action: 'open_page', url: 'https://example.com/react-bits' },
+      { workspaceRoot: process.cwd(), threadId: 'thread', turnId: 'turn', approved: false },
+    );
+
+    expect(result.status).toBe('completed');
+    expect(result.output).toContain('Opened page: https://example.com/react-bits');
+    expect(result.output).toContain('Title: React Bits');
+    expect(result.output).toContain('Text animations include DecryptText.');
+  });
+
+  it('finds text in a page through the Codex-style web_search action', async () => {
+    globalThis.fetch = async () =>
+      new Response(`
+        <html><body><p>BlurText adds blur transitions.</p><p>DecryptText reveals letters.</p></body></html>
+      `, { headers: { 'content-type': 'text/html' } });
+
+    const result = await webSearchTool.execute(
+      { action: 'find_in_page', url: 'https://example.com/react-bits', pattern: 'DecryptText' },
+      { workspaceRoot: process.cwd(), threadId: 'thread', turnId: 'turn', approved: false },
+    );
+
+    expect(result.status).toBe('completed');
+    expect(result.output).toContain('Find in page: "DecryptText"');
+    expect(result.output).toContain('DecryptText reveals letters.');
   });
 });
 
@@ -89,7 +125,7 @@ describe('webFetchTool', () => {
     );
 
     expect(result.status).toBe('completed');
-    expect(result.output).toContain('Fetched URL: https://example.com/react-bits');
+    expect(result.output).toContain('Opened page: https://example.com/react-bits');
     expect(result.output).toContain('Title: React Bits & Animations');
     expect(result.output).toContain('Text Animations');
     expect(result.output).toContain('Includes DecryptText and FuzzyText.');

@@ -223,28 +223,55 @@ export const searchContentTool: ToolDefinition = {
 export const webSearchTool: ToolDefinition = {
   name: 'web_search',
   description:
-    'Search the public web for current, external, or explicitly requested online information. Use it to discover likely URLs, then use web_fetch for a specific page. Avoid repeated searches for the same task.',
+    'Codex-style web access tool. Use action="search" to discover pages, action="open_page" to read a specific URL, and action="find_in_page" to find text within a specific URL. If the user provides a URL, prefer open_page over search.',
   parameters: {
     type: 'object',
     properties: {
-      query: { type: 'string', description: 'The web search query.' },
+      action: {
+        type: 'string',
+        enum: ['search', 'open_page', 'find_in_page'],
+        description: 'Web action to perform. Defaults to open_page when url is provided, otherwise search.',
+      },
+      query: { type: 'string', description: 'Search query for action="search".' },
+      queries: {
+        type: 'array',
+        description: 'Optional list of search queries for action="search".',
+        items: { type: 'string' },
+      },
+      url: { type: 'string', description: 'HTTP/HTTPS URL for action="open_page" or action="find_in_page".' },
+      pattern: { type: 'string', description: 'Text or regex-like pattern for action="find_in_page".' },
       maxResults: {
         type: 'number',
         description: 'Maximum number of results to return, from 1 to 8. Default is 5.',
       },
     },
-    required: ['query'],
   },
   requiredPolicy: 'readonly',
   timeoutMs: 20_000,
   maxOutputLength: 12_000,
-  async execute(args): Promise<ToolResult> {
-    const query = typeof args.query === 'string' ? args.query.trim() : '';
-    if (!query) {
+  async execute(args, ctx): Promise<ToolResult> {
+    const url = typeof args.url === 'string' ? args.url.trim() : '';
+    const pattern = typeof args.pattern === 'string' ? args.pattern.trim() : '';
+    const requestedAction = typeof args.action === 'string' ? args.action : '';
+    const action = requestedAction === 'open_page' || requestedAction === 'find_in_page' || requestedAction === 'search'
+      ? requestedAction
+      : url
+        ? (pattern ? 'find_in_page' : 'open_page')
+        : 'search';
+
+    if (action === 'open_page') {
+      return fetchUrlAsToolResult(url, ctx);
+    }
+    if (action === 'find_in_page') {
+      return findInPageAsToolResult(url, pattern, ctx);
+    }
+
+    const queries = collectSearchQueries(args);
+    if (queries.length === 0) {
       return {
         output: 'Missing query for web_search',
         status: 'failed',
-        error: { message: 'query is required', code: 'INVALID_ARGUMENTS' },
+        error: { message: 'query or queries is required for action="search"', code: 'INVALID_ARGUMENTS' },
       };
     }
 
@@ -253,17 +280,19 @@ export const webSearchTool: ToolDefinition = {
       ? Math.min(8, Math.max(1, Math.floor(maxResultsRaw)))
       : 5;
     try {
-      const results = (await fetchSearchResults(query)).slice(0, maxResults);
+      const results = dedupeSearchResults((await Promise.all(
+        queries.map((query) => fetchSearchResults(query)),
+      )).flat()).slice(0, maxResults);
       if (results.length === 0) {
         return {
-          output: `No web search results found for "${query}".`,
+          output: `No web search results found for "${queries.join('", "')}".`,
           status: 'completed',
-          data: { query, results: [] },
+          data: { action: 'search', query: queries[0] ?? '', queries, results: [] },
         };
       }
 
       const output = [
-        `Web search results for "${query}":`,
+        `Web search results for "${queries.join('", "')}":`,
         ...results.map((result, index) =>
           [
             `${index + 1}. ${result.title}`,
@@ -276,12 +305,12 @@ export const webSearchTool: ToolDefinition = {
       return {
         output,
         status: 'completed',
-        data: { query, results },
+        data: { action: 'search', query: queries[0] ?? '', queries, results },
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return {
-        output: `Web search failed for "${query}": ${message}`,
+        output: `Web search failed for "${queries.join('", "')}": ${message}`,
         status: 'failed',
         error: { message, code: 'WEB_SEARCH_FAILED' },
       };
@@ -306,79 +335,7 @@ export const webFetchTool: ToolDefinition = {
   maxOutputLength: 18_000,
   async execute(args, ctx): Promise<ToolResult> {
     const rawUrl = typeof args.url === 'string' ? args.url.trim() : '';
-    let url: URL;
-    try {
-      url = new URL(rawUrl);
-    } catch {
-      return {
-        output: 'Missing or invalid URL for web_fetch',
-        status: 'failed',
-        error: { message: 'url must be a valid HTTP/HTTPS URL', code: 'INVALID_ARGUMENTS' },
-      };
-    }
-
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-      return {
-        output: `Unsupported URL protocol for web_fetch: ${url.protocol}`,
-        status: 'failed',
-        error: { message: 'only http and https URLs are supported', code: 'INVALID_ARGUMENTS' },
-      };
-    }
-
-    const controller = new AbortController();
-    const abortFromContext = () => controller.abort(ctx.signal?.reason);
-    if (ctx.signal) {
-      if (ctx.signal.aborted) controller.abort(ctx.signal.reason);
-      else ctx.signal.addEventListener('abort', abortFromContext, { once: true });
-    }
-
-    try {
-      const response = await fetch(url.toString(), {
-        headers: {
-          'user-agent': 'Mozilla/5.0 Nexus/0.1',
-          accept: 'text/html,application/xhtml+xml,text/plain,application/json;q=0.9,*/*;q=0.8',
-        },
-        signal: controller.signal,
-      });
-      const contentType = response.headers.get('content-type') ?? '';
-      const body = await response.text();
-      const title = contentType.includes('html') ? extractHtmlTitle(body) : undefined;
-      const text = contentType.includes('html') ? htmlToReadableText(body) : body.trim();
-      const returnedText = limitToolText(text, 16_000);
-      const output = [
-        `Fetched URL: ${url.toString()}`,
-        `Status: ${response.status} ${response.statusText}`.trim(),
-        contentType ? `Content-Type: ${contentType}` : undefined,
-        title ? `Title: ${title}` : undefined,
-        '',
-        returnedText || '[empty response body]',
-      ].filter((line) => line !== undefined).join('\n');
-
-      return {
-        output,
-        status: response.ok ? 'completed' : 'failed',
-        data: {
-          url: url.toString(),
-          status: response.status,
-          contentType,
-          title,
-          text: returnedText,
-          truncated: text.length > returnedText.length,
-        },
-        error: response.ok
-          ? undefined
-          : { message: `HTTP ${response.status} ${response.statusText}`.trim(), code: 'WEB_FETCH_FAILED' },
-      };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      return {
-        output: `web_fetch failed for "${url.toString()}": ${message}`,
-        status: 'failed',
-        error: { message, code: 'WEB_FETCH_FAILED' },
-      };
-    } finally {
-      if (ctx.signal) ctx.signal.removeEventListener('abort', abortFromContext);
-    }
+    return fetchUrlAsToolResult(rawUrl, ctx);
   },
 };
 
@@ -598,6 +555,138 @@ async function fetchSearchResults(query: string): Promise<WebSearchResult[]> {
     throw new Error(failures.join('; '));
   }
   return [];
+}
+
+function collectSearchQueries(args: Record<string, unknown>): string[] {
+  const queries: string[] = [];
+  if (typeof args.query === 'string' && args.query.trim()) {
+    queries.push(args.query.trim());
+  }
+  if (Array.isArray(args.queries)) {
+    for (const item of args.queries) {
+      if (typeof item === 'string' && item.trim()) {
+        queries.push(item.trim());
+      }
+    }
+  }
+  return [...new Set(queries.map((query) => query.replace(/\s+/g, ' ')))].slice(0, 4);
+}
+
+async function fetchUrlAsToolResult(rawUrl: string, ctx: ToolContext): Promise<ToolResult> {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return {
+      output: 'Missing or invalid URL for web_search open_page',
+      status: 'failed',
+      error: { message: 'url must be a valid HTTP/HTTPS URL', code: 'INVALID_ARGUMENTS' },
+    };
+  }
+
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    return {
+      output: `Unsupported URL protocol for web_search open_page: ${url.protocol}`,
+      status: 'failed',
+      error: { message: 'only http and https URLs are supported', code: 'INVALID_ARGUMENTS' },
+    };
+  }
+
+  const controller = new AbortController();
+  const abortFromContext = () => controller.abort(ctx.signal?.reason);
+  if (ctx.signal) {
+    if (ctx.signal.aborted) controller.abort(ctx.signal.reason);
+    else ctx.signal.addEventListener('abort', abortFromContext, { once: true });
+  }
+
+  try {
+    const response = await fetch(url.toString(), {
+      headers: {
+        'user-agent': 'Mozilla/5.0 Nexus/0.1',
+        accept: 'text/html,application/xhtml+xml,text/plain,application/json;q=0.9,*/*;q=0.8',
+      },
+      signal: controller.signal,
+    });
+    const contentType = response.headers.get('content-type') ?? '';
+    const body = await response.text();
+    const title = contentType.includes('html') ? extractHtmlTitle(body) : undefined;
+    const text = contentType.includes('html') ? htmlToReadableText(body) : body.trim();
+    const returnedText = limitToolText(text, 16_000);
+    const output = [
+      `Opened page: ${url.toString()}`,
+      `Status: ${response.status} ${response.statusText}`.trim(),
+      contentType ? `Content-Type: ${contentType}` : undefined,
+      title ? `Title: ${title}` : undefined,
+      '',
+      returnedText || '[empty response body]',
+    ].filter((line) => line !== undefined).join('\n');
+
+    return {
+      output,
+      status: response.ok ? 'completed' : 'failed',
+      data: {
+        action: 'open_page',
+        url: url.toString(),
+        status: response.status,
+        contentType,
+        title,
+        text: returnedText,
+        truncated: text.length > returnedText.length,
+      },
+      error: response.ok
+        ? undefined
+        : { message: `HTTP ${response.status} ${response.statusText}`.trim(), code: 'WEB_FETCH_FAILED' },
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return {
+      output: `web_search open_page failed for "${url.toString()}": ${message}`,
+      status: 'failed',
+      error: { message, code: 'WEB_FETCH_FAILED' },
+    };
+  } finally {
+    if (ctx.signal) ctx.signal.removeEventListener('abort', abortFromContext);
+  }
+}
+
+async function findInPageAsToolResult(rawUrl: string, pattern: string, ctx: ToolContext): Promise<ToolResult> {
+  if (!pattern) {
+    return {
+      output: 'Missing pattern for web_search find_in_page',
+      status: 'failed',
+      error: { message: 'pattern is required for action="find_in_page"', code: 'INVALID_ARGUMENTS' },
+    };
+  }
+  const fetched = await fetchUrlAsToolResult(rawUrl, ctx);
+  if (fetched.status !== 'completed') return fetched;
+  const data = fetched.data && typeof fetched.data === 'object'
+    ? fetched.data as { url?: string; title?: string; text?: string }
+    : {};
+  const text = data.text ?? '';
+  const lines = text.split('\n');
+  const patternLower = pattern.toLowerCase();
+  const matches = lines
+    .map((line, index) => ({ line, lineNumber: index + 1 }))
+    .filter((entry) => entry.line.toLowerCase().includes(patternLower))
+    .slice(0, 20);
+  const output = [
+    `Find in page: "${pattern}" in ${data.url ?? rawUrl}`,
+    data.title ? `Title: ${data.title}` : undefined,
+    '',
+    matches.length > 0
+      ? matches.map((match) => `${match.lineNumber}: ${match.line}`).join('\n')
+      : 'No matches found.',
+  ].filter((line) => line !== undefined).join('\n');
+  return {
+    output,
+    status: 'completed',
+    data: {
+      action: 'find_in_page',
+      url: data.url ?? rawUrl,
+      pattern,
+      matches,
+    },
+  };
 }
 
 function parseDuckDuckGoResults(html: string): WebSearchResult[] {

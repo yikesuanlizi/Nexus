@@ -639,7 +639,8 @@ export class AgentLoop {
 
     const tools = this.tools
       .toOpenAITools()
-      .filter((tool) => webSearchToolAvailable || !['web_search', 'web_fetch'].includes(tool.function.name));
+      .filter((tool) => tool.function.name !== 'web_fetch')
+      .filter((tool) => webSearchToolAvailable || tool.function.name !== 'web_search');
     const cacheShape = buildPromptCacheShape(messages, tools);
     const cacheComparison = comparePromptCacheShape(this.promptCacheShapes.get(threadId), cacheShape);
     this.promptCacheShapes.set(threadId, cacheShape);
@@ -761,7 +762,7 @@ export class AgentLoop {
     args: Record<string, unknown>,
     budget?: WebToolBudget,
   ): string | null {
-    if (!budget || toolName !== 'web_search') return null;
+    if (!budget || toolName !== 'web_search' || !isWebSearchAction(args)) return null;
     const query = typeof args.query === 'string' ? args.query.trim().replace(/\s+/g, ' ') : '';
     const normalizedQuery = query.toLowerCase();
     const duplicateCount = (budget.searchQueries.get(normalizedQuery) ?? 0) + 1;
@@ -771,14 +772,14 @@ export class AgentLoop {
     if (budget.searchCalls > MAX_WEB_SEARCH_CALLS_PER_TURN) {
       budget.webSearchDisabled = true;
       return this.config.locale === 'zh'
-        ? `本轮 web_search 已达到 ${MAX_WEB_SEARCH_CALLS_PER_TURN} 次上限。请停止继续搜索，改用已有搜索结果回答；如果需要读取具体页面，请使用 web_fetch 抓取明确 URL。`
-        : `web_search reached the per-turn limit of ${MAX_WEB_SEARCH_CALLS_PER_TURN}. Stop searching and answer from existing results; use web_fetch for a specific URL if needed.`;
+        ? `本轮 web_search 的 search action 已达到 ${MAX_WEB_SEARCH_CALLS_PER_TURN} 次上限。请停止继续搜索，改用已有搜索结果回答；如果需要读取具体页面，请使用 web_search 的 open_page action 抓取明确 URL。`
+        : `web_search search action reached the per-turn limit of ${MAX_WEB_SEARCH_CALLS_PER_TURN}. Stop searching and answer from existing results; use web_search open_page for a specific URL if needed.`;
     }
     if (normalizedQuery && duplicateCount > MAX_DUPLICATE_WEB_SEARCH_QUERY_PER_TURN) {
       budget.webSearchDisabled = true;
       return this.config.locale === 'zh'
-        ? `本轮重复搜索相同 query 已达到上限。请停止重复 web_search，改用已有结果回答或使用 web_fetch 抓取明确 URL。`
-        : `Repeated web_search for the same query reached the per-turn limit. Stop repeating the search and answer from existing results or use web_fetch for a specific URL.`;
+        ? `本轮重复搜索相同 query 已达到上限。请停止重复 search action，改用已有结果回答或使用 web_search 的 open_page action 抓取明确 URL。`
+        : `Repeated web_search search action for the same query reached the per-turn limit. Stop repeating the search and answer from existing results or use web_search open_page for a specific URL.`;
     }
     return null;
   }
@@ -1513,8 +1514,9 @@ export class AgentLoop {
     if (webSearchRecommended) {
       sections.push([
         'Web access is recommended for this turn.',
-        'If the user provides a URL, use web_fetch first to read that page.',
-        'Use web_search only to discover likely URLs, then stop searching and fetch the most relevant page.',
+        'Use the Codex-style web_search tool actions: search, open_page, and find_in_page.',
+        'If the user provides a URL, call web_search with action="open_page" and url first.',
+        'Use action="search" only to discover likely URLs, then stop searching and use action="open_page" on the most relevant page.',
         'Avoid repeated searches for the same task; summarize from fetched pages and search results.',
         'Avoid web tools for local repository work.',
       ].join(' '));
@@ -1767,6 +1769,12 @@ function normalizeFileChanges(data: unknown): Array<{
       summary: typeof candidate.summary === 'string' ? candidate.summary : undefined,
     }];
   });
+}
+
+function isWebSearchAction(args: Record<string, unknown>): boolean {
+  const action = typeof args.action === 'string' ? args.action : '';
+  if (action === 'open_page' || action === 'find_in_page') return false;
+  return true;
 }
 
 // ─── Defaults ───────────────────────────────────────────────────────────────

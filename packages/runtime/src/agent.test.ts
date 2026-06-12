@@ -165,9 +165,12 @@ class ToolCallingModel {
 
 class ToolListModel {
   toolNames: string[][] = [];
+  tools: Array<Array<{ function: { name: string; parameters: { properties?: Record<string, { enum?: string[] }> } } }>> = [];
 
-  async *chatStream(req: { tools?: Array<{ function: { name: string } }> }) {
-    this.toolNames.push((req.tools ?? []).map((tool) => tool.function.name));
+  async *chatStream(req: { tools?: Array<{ function: { name: string; parameters: { properties?: Record<string, { enum?: string[] }> } } }> }) {
+    const tools = req.tools ?? [];
+    this.tools.push(tools);
+    this.toolNames.push(tools.map((tool) => tool.function.name));
     yield { type: 'delta' as const, content: 'ok' };
     yield { type: 'done' as const };
   }
@@ -797,7 +800,11 @@ describe('AgentLoop web search tool policy', () => {
       text: '普通问题',
     });
     expect(onModel.toolNames[0]).toContain('web_search');
-    expect(onModel.toolNames[0]).toContain('web_fetch');
+    expect(onModel.toolNames[0]).not.toContain('web_fetch');
+    const onWebSearchTool = onModel.tools[0].find((tool) => tool.function.name === 'web_search');
+    const webActionEnum = onWebSearchTool?.function.parameters.properties?.action?.enum;
+    expect(webActionEnum).toContain('open_page');
+    expect(webActionEnum).toContain('find_in_page');
 
     const autoLocalModel = new ToolListModel();
     const autoLocalAgent = new AgentLoop({
@@ -812,7 +819,7 @@ describe('AgentLoop web search tool policy', () => {
       text: '检查本地文件',
     });
     expect(autoLocalModel.toolNames[0]).toContain('web_search');
-    expect(autoLocalModel.toolNames[0]).toContain('web_fetch');
+    expect(autoLocalModel.toolNames[0]).not.toContain('web_fetch');
 
     const autoModel = new ToolListModel();
     const autoAgent = new AgentLoop({
@@ -827,7 +834,7 @@ describe('AgentLoop web search tool policy', () => {
       text: '联网搜索 LangChain 最新版本',
     });
     expect(autoModel.toolNames[0]).toContain('web_search');
-    expect(autoModel.toolNames[0]).toContain('web_fetch');
+    expect(autoModel.toolNames[0]).not.toContain('web_fetch');
   });
 
   it('disables web_search after repeated searches so the turn can converge', async () => {
