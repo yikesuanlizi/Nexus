@@ -1,8 +1,8 @@
 # Nexus
 
-**本地 Agent OS**，一个用 TypeScript 和 React 构建的多智能体编程工作台。
+**本地 Agent OS**，一个用 TypeScript 和 React 构建的多智能体全能工作台。
 
-项目目标是做一个完全本地运行的编程智能体系统：不依赖 ChatGPT 登录、不强制使用 OpenAI API、不绑定云端任务服务。模型侧默认面向 Ollama / LM Studio / vLLM / OpenAI-compatible endpoint。
+项目目标是做一个完全本地运行的全能智能体系统：不依赖 ChatGPT 登录、不强制使用 OpenAI API、不绑定云端任务服务。模型侧默认面向 Ollama / LM Studio / vLLM / OpenAI-compatible endpoint。
 
 ## 架构
 
@@ -135,14 +135,14 @@ Nexus 把“微信账号登录”和“对话绑定”分开处理：
 
 ## 工程取舍
 
-| 编程 Agent 能力 | Nexus 当前实现 |
+| 能力领域 | Nexus 当前实现 |
 |---|---|
-| JSON-RPC / stdio 协议 | 改为本地 HTTP API + SSE 事件 |
-| OS 级沙箱 | 暂用 TypeScript 策略引擎与权限预设 |
-| 云端任务 / 账号体系 | 不接云端任务；单机默认关闭鉴权，多租户使用本地 token + JWT |
-| 企业 IAM / 组织治理 | 移除 |
-| Thread / Turn / Item 模型 | 保留并简化 |
-| exec policy 前缀规则 | 保留基础版本 |
+| 对外协议 | 本地 HTTP API + SSE 事件，前后端分离 |
+| 安全沙箱 | TypeScript 策略引擎与权限预设 |
+| 鉴权体系 | 单机默认关闭鉴权，多租户使用本地 token + JWT |
+| 多租户隔离 | storage 层按 tenant_id 强制过滤 |
+| Thread / Turn / Item 模型 | 已实现并简化，支持可恢复对话 |
+| 执行策略 | 保留基础版本，shell 命令按规则 allow / prompt / forbidden |
 | SQLite + JSONL thread-store | 作为单机轻量模式保留 |
 | Postgres 多租户 thread-store | 已有 storage adapter 与 Docker Compose 部署模板 |
 | checkpoint / resume | 已实现基础版本 |
