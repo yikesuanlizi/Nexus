@@ -1,0 +1,46 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { describe, expect, it } from 'vitest';
+
+const here = dirname(fileURLToPath(import.meta.url));
+
+describe('settings navigation', () => {
+  it('switches settings pages with internal state instead of anchor scrolling', () => {
+    const source = readFileSync(join(here, 'components', 'SettingsDrawer.tsx'), 'utf-8');
+
+    expect(source).toContain('const [activeSection, setActiveSection]');
+    expect(source).toContain("onClick={() => setActiveSection(tab.id)}");
+    expect(source).not.toContain('href="#settings-');
+  });
+
+  it('keeps the settings layer fixed instead of sharing drawer panel layout', () => {
+    const css = readFileSync(join(here, 'styles.css'), 'utf-8');
+
+    expect(css).toMatch(/\.settingsLayer\s*\{[^}]*fixed[^}]*inset-0[^}]*z-20/s);
+    expect(css).not.toMatch(/\.settingsLayer\s*,\s*\.settingsDrawer\s*\{/);
+  });
+
+  it('offers built-in and custom user avatar controls in appearance settings', () => {
+    const source = readFileSync(join(here, 'components', 'SettingsDrawer.tsx'), 'utf-8');
+    const avatar = readFileSync(join(here, 'components', 'UserAvatar.tsx'), 'utf-8');
+
+    expect(source).toContain('USER_AVATAR_OPTIONS.map');
+    expect(source).toContain('accept="image/*"');
+    expect(source).toContain('customUserAvatarDataUrl');
+    expect(source).toContain('恢复默认头像');
+    expect(avatar).toContain("DEFAULT_USER_AVATAR_ID: UserAvatarId = 'asteroid'");
+    expect(avatar).toContain("id: 'mushroom'");
+  });
+
+  it('offers memory controls with list, delete, and export actions', () => {
+    const source = readFileSync(join(here, 'components', 'SettingsDrawer.tsx'), 'utf-8');
+    const main = readFileSync(join(here, 'main.tsx'), 'utf-8');
+
+    expect(source).toContain("{ id: 'memory'");
+    expect(source).toContain('/api/memories/settings');
+    expect(source).toContain('/api/memories/export');
+    expect(source).toContain('memoryRecords.map');
+    expect(main).toContain('memoryExcluded');
+  });
+});

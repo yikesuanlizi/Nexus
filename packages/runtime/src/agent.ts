@@ -8,7 +8,6 @@ import type {
   UserInput,
   ItemId,
   Usage,
-  ApprovalRequest,
   TextInput,
   CollabToolCallItem,
   CollabToolName,
@@ -17,14 +16,45 @@ import type {
   ThreadRuntimeState,
   ThreadUsage,
   CompactedRange,
+  EpisodeRecord,
+  ThreadWorkingSetSnapshot,
+  EpisodeMemoryMode,
 } from '@nexus/protocol';
 import { ModelGateway, type ChatMessage, type ToolCall } from '@nexus/model-gateway';
-import { ToolRegistry, type ToolContext, type ToolDefinition, BUILTIN_TOOLS } from '@nexus/tools';
-import { Sandbox, resolveSandboxEffective, type SandboxConfig, type SandboxLevel, AutoApproveHandler, DenyAllApprovalHandler } from '@nexus/sandbox';
+import { ToolRegistry, type ToolContext, type ToolDefinition, type WebProviderRouterOptions, BUILTIN_TOOLS } from '@nexus/tools';
+import { Sandbox, resolveSandboxEffective, type SandboxConfig, type SandboxLevel, DenyAllApprovalHandler } from '@nexus/sandbox';
 import type { ApprovalHandler } from '@nexus/sandbox';
 import type { PermissionPreset } from '@nexus/sandbox';
-import type { ThreadStore } from '@nexus/storage';
-import { compactThread, getCompactionPressure, resumeThread } from '@nexus/memory';
+import type { RunEvent, RunEventLevel, RunRecord, ThreadStore } from '@nexus/storage';
+import {
+  DEFAULT_MEMORY_SETTINGS,
+  compactThread,
+  extractMemoryCandidates,
+  getCompactionPressure,
+  mergeMemoryCandidate,
+  normalizeMemorySettings,
+  resumeThread,
+  rollbackTurns,
+  searchColdMemories,
+  buildOrReuseWorkingSet,
+  getThreadWorkingSetSnapshot,
+  saveThreadWorkingSetSnapshot,
+  emptyWorkingSetSnapshot,
+  createEpisodeRecord,
+  getOpenEpisodeForThread,
+  saveEpisodeRecord,
+  sealEpisode,
+  updateEpisodeFromTurn,
+  recordEpisodeUsage,
+  promoteEpisodeToWarm,
+  invalidateEpisodesByTurnRange,
+  getEpisodeMemorySettings,
+  normalizeEpisodeMemorySettings,
+  DEFAULT_EPISODE_MEMORY_SETTINGS,
+  listLightMemories,
+  type MemorySettings,
+  type EpisodeMemorySettings,
+} from '@nexus/memory';
 import { loadAgentsMd, LocalSkillRegistry, LocalHookRegistry } from '@nexus/extensions';
 import type { HookRegistry, SkillRegistry } from '@nexus/extensions';
 import { createI18n, systemPromptKey } from '@nexus/i18n';
@@ -32,63 +62,222 @@ import type { Locale, I18n } from '@nexus/i18n';
 import { ThreadStateManager } from './state.js';
 import type { ThreadState } from './state.js';
 import type { Checkpoint } from '@nexus/protocol';
+import { createHash } from 'node:crypto';
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 import { shouldEnableWebSearch, type WebSearchMode } from './webSearchPolicy.js';
 import { parseMcpNamespacedToolName } from './mcpClient.js';
 import { buildPromptCacheShape, comparePromptCacheShape, type PromptCacheShape } from './cacheShape.js';
 import { compactionOptionsForRunProfile, normalizeRunProfile, type RunProfile } from './runProfile.js';
+import { leaksToolProtocol, validateThreadItemsForPersistence } from './modelOutput.js';
+import { NexusRuntimeError, affectsTurnStatus, isRecoverableStreamError, toNexusErrorInfo } from './runtimeError.js';
+import {
+  composeRuntimeMiddleware,
+  createDynamicContextMiddleware,
+  createStabilityMiddleware,
+  type RuntimeMiddleware,
+  type RuntimeModelRequest,
+  type RuntimeToolRequest,
+  type RuntimeToolResponse,
+  type RuntimeTurnResult,
+  type RuntimeTurnContext,
+} from './middleware.js';
+import {
+  createToolSearchTool,
+  toolNamesFromSearchResult,
+  TOOL_SEARCH_TOOL_NAME,
+} from './toolSearch.js';
+import { createToolGovernanceMiddleware, type ToolGovernanceConfig } from './toolGovernance.js';
+import { createGuardianMiddleware, type GuardianConfig } from './guardian.js';
 
 const RUNNING_CHECKPOINT_TTL_MS = 30 * 60 * 1000;
 const MAX_WEB_SEARCH_CALLS_PER_TURN = 6;
 const MAX_DUPLICATE_WEB_SEARCH_QUERY_PER_TURN = 2;
+const MODEL_HISTORY_TOKEN_BUDGET = 40_000;
 
-interface WebToolBudget {
-  searchCalls: number;
-  searchQueries: Map<string, number>;
-  webSearchDisabled: boolean;
+export type ToolBindingMode = 'eager' | 'delayed';
+
+export const DEFAULT_AGENT_ROLE_NAME = 'default';
+
+export interface AgentRoleProfile {
+  // 中文注释：展示给模型与 list_agents 调用者的人类可读用途说明。
+  /** Human-readable purpose shown to the model and list_agents callers. */
+  description?: string;
+  // 中文注释：附加到子 agent 系统提示的角色特定指令。
+  /** Role-specific instructions appended to the child system prompt. */
+  instructions?: string;
+  // 中文注释：instructions 的别名，与常见配置命名一致。
+  /** Alias for instructions, matching common config naming. */
+  systemPrompt?: string;
+  // 中文注释：角色作用域内的技能。等价于 allowedSkills。
+  /** Role-scoped skills. Equivalent to allowedSkills. */
+  skills?: string[];
+  // 中文注释：对使用此角色生成的子 agent 可见的技能名称。
+  /** Skill names visible to spawned agents using this role. */
+  allowedSkills?: string[];
+  // 中文注释：对使用此角色生成的子 agent 可见且可执行的工具名称。
+  /** Tool names visible and executable by spawned agents using this role. */
+  allowedTools?: string[];
+  // 中文注释：对使用此角色生成的子 agent 隐藏并拒绝的工具名称。
+  /** Tool names hidden and rejected for spawned agents using this role. */
+  blockedTools?: string[];
+  // 中文注释：复制到子线程的元数据；不会切换继承的模型。
+  /** Metadata copied to the child thread; it does not switch the inherited model. */
+  serviceTier?: string;
+  // 中文注释：此 agent 可生成的子 agent 的本地数量上限。
+  /** Role-local limit for children spawned by this agent. */
+  maxSubagents?: number;
+  // 中文注释：角色本地的子 agent 嵌套深度上限。
+  /** Role-local child-agent depth limit. */
+  maxSubagentDepth?: number;
 }
+
+export interface ResolvedAgentRoleProfile extends AgentRoleProfile {
+  name: string;
+}
+
+export type AgentRoleProfiles = Record<string, AgentRoleProfile>;
 
 // ─── Config ─────────────────────────────────────────────────────────────────
+// 中文注释：运行时配置接口。
 export interface AgentConfig {
+  // 中文注释：文件操作的工作区根目录。
   /** Workspace root for file operations. */
   workspaceRoot: string;
+  // 中文注释：沙箱配置。
   /** Sandbox config. */
   sandbox: SandboxConfig;
+  // 中文注释：模型网关实例。
   /** Model gateway instance. */
   model: ModelGateway;
+  // 中文注释：线程存储。
   /** Thread store. */
   store: ThreadStore;
+  // 中文注释：运行时租户隔离 ID。
+  /** Runtime tenant isolation id. */
+  tenantId?: string;
+  // 中文注释：工具注册表（默认为 BUILTIN_TOOLS）。
   /** Tool registry (defaults to BUILTIN_TOOLS). */
   tools?: ToolRegistry;
+  // 中文注释：从已启用的 MCP 服务器发现的 MCP 工具。
   /** MCP tools discovered from enabled MCP servers. */
   mcpTools?: ToolDefinition[];
+  // 中文注释：审批处理器（默认为 DenyAllApprovalHandler）。
   /** Approval handler (defaults to DenyAllApprovalHandler). */
   approvalHandler?: ApprovalHandler;
+  // 中文注释：每个回合 agent 循环的最大迭代次数。
   /** Max agent loop iterations per turn. */
   maxIterations?: number;
+  // 中文注释：系统提示覆盖。
   /** System prompt override. */
   systemPrompt?: string;
+  // 中文注释：技能注册表。
   /** Skills registry. */
   skills?: SkillRegistry;
+  // 中文注释：hooks 注册表。
   /** Hooks registry. */
   hooks?: HookRegistry;
+  // 中文注释：UI 与 agent 响应的语言（默认 'zh'）。
   /** UI + agent response locale (default: 'zh'). */
   locale?: Locale;
+  // 中文注释：控制在提供者扩展可用时何时提供 web_search。
   /** Controls when web_search should be offered once a provider extension is available. */
   webSearchMode?: WebSearchMode;
+  // 中文注释：传递给 web_search/web_fetch 工具的 Web 提供者设置。
+  /** Web provider settings passed down to web_search/web_fetch tools. */
+  webProvider?: WebProviderRouterOptions;
+  // 中文注释：运行时权衡配置（缓存命中稳定性或长期追踪可追溯性）。
   /** Runtime trade-off profile: cache hit stability or long-running traceability. */
   runProfile?: RunProfile;
+  // 中文注释：父线程下允许打开的已生成子 agent 最大数量。
   /** Maximum open spawned subagents below a parent thread. */
   maxSubagents?: number;
+  // 中文注释：供回合/模型/工具流水线扩展使用的运行时中间件钩子。
+  /** Runtime middleware hooks for turn/model/tool pipeline extension. */
+  runtimeMiddleware?: RuntimeMiddleware[];
+  // 中文注释：用于动态上下文注入的可选事实提供者。
+  /** Optional fact provider for dynamic context injection. */
+  dynamicContextProvider?: (ctx: RuntimeTurnContext) => Promise<string | string[]>;
+  // 中文注释：每个回合重复执行相同工具调用的最大次数，超过则短路。
+  /** Maximum repeated identical tool calls per turn before short-circuiting. */
+  maxRepeatedToolCalls?: number;
+  // 中文注释：连续工具响应失败的最大次数，超过则短路重试。
+  /** Maximum consecutive failed tool responses before short-circuiting retries. */
+  maxConsecutiveToolErrors?: number;
+  // 中文注释：工具 schema 绑定策略。出于兼容性考虑，默认为 eager。
+  /** Tool schema binding strategy. Defaults to eager for compatibility. */
+  toolBindingMode?: ToolBindingMode;
+  // 中文注释：在 delayed-binding 首次模型调用时暴露的工具名称。
+  /** Tool names exposed on the first delayed-binding model call. */
+  initialTools?: string[];
+  // 中文注释：一次 tool_search 调用可返回并绑定的最大工具数。
+  /** Maximum tools returned and bound by one tool_search call. */
+  maxToolSearchResults?: number;
+  // 中文注释：超出稳定性限制的运行时工具治理策略。
+  /** Runtime tool governance policy beyond stability limits. */
+  toolGovernance?: ToolGovernanceConfig;
+  // 中文注释：子 agent 嵌套深度的最大值。根节点的子节点深度为 1。
+  /** Maximum child-agent nesting depth. Root children are depth 1. */
+  maxSubagentDepth?: number;
+  // 中文注释：生成时模型/推理覆写的可选工厂。未设置时回退到继承模型。
+  /** Optional factory for spawn-time model/reasoning overrides. Falls back to inherited model. */
+  spawnModelFactory?: (override: {
+    model?: string;
+    reasoningEffort?: string;
+    serviceTier?: string;
+    agentRole?: string;
+  }) => ModelGateway;
+  // 中文注释：Codex 风格的 agent_type 角色配置。用户配置可按名称覆写内置配置。
+  /** Codex-style agent_type profiles. User profiles override built-ins by name. */
+  agentRoles?: AgentRoleProfiles;
+  // 中文注释：此 AgentLoop 实例活动的角色配置；通常为已生成子 agent 设置。
+  /** Active role profile for this AgentLoop instance; normally set for spawned children. */
+  activeAgentRoleProfile?: ResolvedAgentRoleProfile | null;
+  // 中文注释：在工具执行前的可选 Codex 风格 fail-closed 安全审查。
+  /** Optional Codex-style fail-closed safety review before tool execution. */
+  guardian?: GuardianConfig;
+  // 中文注释：此运行时的热/温/冷记忆策略。
+  /** Hot/warm/cold memory policy for this runtime. */
+  memory?: Partial<MemorySettings>;
 }
+
+type ResolvedAgentConfig = Required<Omit<AgentConfig, 'memory'>> & { memory: MemorySettings };
+
+type ToolCallExecutionResult = {
+  toolCall: ToolCall;
+  output: string;
+  disableWebSearch?: boolean;
+  activateToolNames?: string[];
+};
 
 // ─── Agent Loop ─────────────────────────────────────────────────────────────
 export class AgentLoop {
-  private config: Required<AgentConfig>;
+  private config: ResolvedAgentConfig;
   private tools: ToolRegistry;
   private i18n: I18n;
   private eventListeners: Array<(event: ThreadEvent) => void> = [];
   private subagentRuns = new Map<ThreadId, Promise<{ items: ThreadItem[]; usage: Usage | null }>>();
   private promptCacheShapes = new Map<ThreadId, PromptCacheShape>();
+  private runMonitorSessions = new Map<TurnId, {
+    runId: string;
+    threadId: ThreadId;
+    turnId: TurnId;
+    sequence: number;
+    startedAt: string;
+    modelCallCount: number;
+    toolCallCount: number;
+    subagentCount: number;
+    middlewareEventCount: number;
+    inputTokens: number;
+    cachedInputTokens: number;
+    outputTokens: number;
+    reasoningOutputTokens: number;
+  }>();
+  private runtimeMiddleware: ReturnType<typeof composeRuntimeMiddleware>;
+  /** Per-thread episode working set snapshot (in-memory cache). */
+  private threadWorkingSets = new Map<ThreadId, ThreadWorkingSetSnapshot>();
+  /** Per-thread currently open episode (in-memory cache). */
+  private threadOpenEpisodes = new Map<ThreadId, EpisodeRecord>();
   /** Per-thread state manager — process-level singleton by default. */
   readonly stateManager: ThreadStateManager;
   /** Resolved sandbox engine (lazy). */
@@ -105,6 +294,7 @@ export class AgentLoop {
       sandbox: config.sandbox,
       model: config.model,
       store: config.store,
+      tenantId: safeRuntimeTenantId(config.tenantId ?? config.store.tenantId),
       tools: config.tools ?? createDefaultRegistry(),
       mcpTools: config.mcpTools ?? [],
       approvalHandler: config.approvalHandler ?? new DenyAllApprovalHandler(),
@@ -114,13 +304,50 @@ export class AgentLoop {
       hooks: config.hooks ?? new LocalHookRegistry(),
       locale,
       webSearchMode: config.webSearchMode ?? 'auto',
+      webProvider: config.webProvider ?? { provider: 'native_fetch' },
       runProfile: normalizeRunProfile(config.runProfile),
       maxSubagents: config.maxSubagents ?? 4,
+      runtimeMiddleware: config.runtimeMiddleware ?? [],
+      dynamicContextProvider: config.dynamicContextProvider ?? (async () => []),
+      maxRepeatedToolCalls: config.maxRepeatedToolCalls ?? 3,
+      maxConsecutiveToolErrors: config.maxConsecutiveToolErrors ?? 3,
+      toolBindingMode: config.toolBindingMode ?? 'eager',
+      initialTools: config.initialTools ?? [],
+      maxToolSearchResults: config.maxToolSearchResults ?? 8,
+      toolGovernance: config.toolGovernance ?? {},
+      maxSubagentDepth: config.maxSubagentDepth ?? Number.POSITIVE_INFINITY,
+      spawnModelFactory: config.spawnModelFactory ?? (() => config.model),
+      agentRoles: normalizeAgentRoleProfiles(config.agentRoles),
+      activeAgentRoleProfile: config.activeAgentRoleProfile ?? null,
+      guardian: config.guardian ?? {},
+      memory: normalizeMemorySettings(config.memory ?? DEFAULT_MEMORY_SETTINGS),
     };
     this.tools = this.config.tools;
     registerCollabTools(this.tools);
     registerOptionalTools(this.tools, this.config.mcpTools);
+    if (this.config.toolBindingMode === 'delayed' && !this.tools.get(TOOL_SEARCH_TOOL_NAME)) {
+      this.tools.register(createToolSearchTool(this.tools, {
+        maxResults: this.config.maxToolSearchResults,
+      }));
+    }
     this._effectiveSandbox = resolveSandboxEffective(config.sandbox);
+    this.runtimeMiddleware = composeRuntimeMiddleware([
+      createStabilityMiddleware({
+        maxRepeatedToolCalls: this.config.maxRepeatedToolCalls,
+        maxConsecutiveToolErrors: this.config.maxConsecutiveToolErrors,
+        maxWebSearchCallsPerTurn: MAX_WEB_SEARCH_CALLS_PER_TURN,
+        maxDuplicateWebSearchQueryPerTurn: MAX_DUPLICATE_WEB_SEARCH_QUERY_PER_TURN,
+      }),
+      createGuardianMiddleware(this.config.guardian),
+      createToolGovernanceMiddleware({
+        approvalHandler: this.config.approvalHandler,
+        preset: this.preset,
+        sandbox: () => this.sandbox,
+        governance: this.config.toolGovernance,
+      }),
+      createDynamicContextMiddleware(),
+      ...this.config.runtimeMiddleware,
+    ]);
   }
 
   /** Lazy Sandbox instance for exec policy evaluation. */
@@ -151,6 +378,17 @@ export class AgentLoop {
     return this.config.locale;
   }
 
+  private initialVisibleToolNames(): Set<string> {
+    const names = new Set<string>([TOOL_SEARCH_TOOL_NAME]);
+    for (const name of this.config.initialTools) {
+      const resolved = resolveToolName(this.tools, name);
+      if (this.tools.get(resolved)) {
+        names.add(resolved);
+      }
+    }
+    return names;
+  }
+
   /** Get the i18n context (for UI to translate messages). */
   get i18nContext(): I18n {
     return this.i18n;
@@ -159,6 +397,69 @@ export class AgentLoop {
   /** Get the thread state for a given thread. */
   getThreadState(threadId: ThreadId): ThreadState {
     return this.stateManager.get(threadId);
+  }
+
+  async rollbackThread(threadId: ThreadId, count: number = 1): Promise<{ removedTurns: number }> {
+    const requestId = `rollback_${generateId()}`;
+    await this.beginControlRun(requestId, threadId, 'Thread rollback');
+    const fail = async (message: string, error?: unknown): Promise<never> => {
+      const info = toNexusErrorInfo(error ?? new Error(message));
+      this.emit({
+        type: 'thread.rollback.failed',
+        threadId,
+        error: { message, info },
+      });
+      await this.appendRunMonitorEvent(requestId, {
+        category: 'rollback',
+        type: 'rollback.failed',
+        level: 'error',
+        message,
+        metadata: { requestId, count, status: 'failed', error: message },
+      });
+      await this.finishRunMonitor(requestId, 'failed', null, error ?? new Error(message));
+      throw new Error(message);
+    };
+
+    if (!Number.isFinite(count) || count <= 0) {
+      return fail('rollback count must be >= 1');
+    }
+    if (this.stateManager.isRunning(threadId)) {
+      return fail(`Thread ${threadId} is running; rollback is not allowed during an active turn`);
+    }
+    if (!this.stateManager.beginRollback(threadId, requestId)) {
+      return fail(`Thread ${threadId} already has a pending rollback`);
+    }
+
+    await this.appendRunMonitorEvent(requestId, {
+      category: 'rollback',
+      type: 'rollback.started',
+      message: 'Thread rollback started',
+      metadata: { requestId, count, status: 'started' },
+    });
+    try {
+      const thread = await this.config.store.getThread(threadId);
+      const result = await rollbackTurns(threadId, this.config.store, count);
+      this.emit({
+        type: 'thread.rollback.completed',
+        threadId,
+        checkpointTurnCount: Math.max(0, (thread?.turnCount ?? 0) - result.removedTurns),
+      });
+      await this.appendRunMonitorEvent(requestId, {
+        category: 'rollback',
+        type: 'rollback.completed',
+        message: 'Thread rollback completed',
+        metadata: { requestId, count, removedTurns: result.removedTurns, status: 'completed' },
+      });
+      const newTurnCount = Math.max(0, (thread?.turnCount ?? 0) - result.removedTurns);
+      await this.invalidateEpisodesForRollback(threadId, newTurnCount, requestId);
+      await this.finishRunMonitor(requestId, 'completed', null);
+      return result;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return fail(message, error);
+    } finally {
+      this.stateManager.finishRollback(threadId, requestId);
+    }
   }
 
   async getRuntimeState(threadId: ThreadId): Promise<ThreadRuntimeState> {
@@ -233,10 +534,12 @@ export class AgentLoop {
     }
 
     // Rehydrate already completed items so item ids remain stable.
+    // 重新恢复已完成的条目，保持条目 id 稳定不变。
     const allItems = await this.config.store.getItems(threadId);
     const collectedItems: ThreadItem[] = allItems.slice(0, ckpt.itemIndex);
 
     // Clear interrupts and restart
+    // 清除中断并重启
     this.stateManager.clearPendingInterrupts(threadId);
     const cancelController = this.stateManager.startTurn(threadId, turnId);
     const effectiveSignal = signal ?? cancelController.signal;
@@ -247,12 +550,30 @@ export class AgentLoop {
       turnIndex: thread.turnCount,
     });
 
+    const updatedCkpt: Checkpoint = this.withCheckpointState(threadId, turnId, ckpt.itemIndex, 'running');
+    const runtimeContext = await this.createRuntimeTurnContext(
+      threadId,
+      turnId,
+      thread,
+      userInput,
+      updatedCkpt,
+      collectedItems,
+    );
+    await this.beginRunMonitor({ threadId, turnId, title: thread.title, userInput });
+    await this.maybeEmitWorkingSetRestored(threadId, turnId);
+
     const webSearchRecommended = shouldEnableWebSearch(this.config.webSearchMode, userInput);
     const webSearchToolAvailable = this.shouldOfferWebSearchTool();
     const messages = await this.buildMessages(threadId, userInput, thread, webSearchRecommended);
-    const updatedCkpt: Checkpoint = this.withCheckpointState(threadId, turnId, ckpt.itemIndex, 'running');
+    let terminalTurnResult: RuntimeTurnResult | null = null;
 
     try {
+      await this.appendRunMonitorEvent(turnId, {
+        category: 'middleware',
+        type: 'middleware.beforeTurn',
+        message: 'beforeTurn middleware started',
+      });
+      await this.runtimeMiddleware.beforeTurn(runtimeContext);
       const result = await this.agentLoop(
         threadId,
         turnId,
@@ -261,6 +582,7 @@ export class AgentLoop {
         effectiveSignal,
         updatedCkpt,
         webSearchToolAvailable,
+        runtimeContext,
       );
       const turns = await this.config.store.getTurns(threadId);
       const turn = turns.find((candidate) => candidate.turnId === turnId);
@@ -273,13 +595,15 @@ export class AgentLoop {
       this.stateManager.completeTurn(threadId, turnId);
       if (result.usage) await this.recordUsage(threadId, turnId, result.usage);
       this.emit({ type: 'turn.completed', threadId, turnId, usage: result.usage });
-      await this.config.hooks.trigger('turn_end', {
-        threadId,
-        turnId,
-        workspaceRoot: this.config.workspaceRoot,
-      });
+      terminalTurnResult = { status: 'completed', usage: result.usage };
+      await this.finishRunMonitor(turnId, 'completed', result.usage);
+      const resumedTurnIndex = turn?.index ?? thread.turnCount;
+      await this.updateEpisodeFromCompletedTurn(thread, turnId, resumedTurnIndex, userInput, collectedItems);
+      await this.maybeExtractColdMemories(thread, turnId, userInput, collectedItems);
+      await this.finishTurnLifecycle(runtimeContext, terminalTurnResult);
       return result;
     } catch (err) {
+      if (terminalTurnResult) throw err;
       if (isTurnCancelledError(err)) {
         const turns = await this.config.store.getTurns(threadId);
         const turn = turns.find((candidate) => candidate.turnId === turnId);
@@ -291,14 +615,46 @@ export class AgentLoop {
         await this.writeCheckpoint(threadId, this.withCheckpointState(threadId, turnId, collectedItems.length, 'interrupted'));
         this.stateManager.completeInterruptedTurn(threadId, turnId);
         this.emit({ type: 'turn.completed', threadId, turnId, usage: null, status: 'interrupted' });
-        await this.config.hooks.trigger('turn_end', {
+        terminalTurnResult = { status: 'interrupted', usage: null, error: err };
+        await this.finishRunMonitor(turnId, 'interrupted', null, err);
+        await this.finishTurnLifecycle(runtimeContext, terminalTurnResult);
+        return { items: collectedItems, usage: null };
+      }
+      if (isRecoverableStreamError(err)) {
+        const info = toNexusErrorInfo(err);
+        const message = err instanceof Error ? err.message : String(err);
+        const turns = await this.config.store.getTurns(threadId);
+        const turn = turns.find((candidate) => candidate.turnId === turnId);
+        if (turn) {
+          turn.status = 'interrupted';
+          turn.completedAt = new Date().toISOString();
+          await this.config.store.saveTurn(turn);
+        }
+        await this.writeCheckpoint(threadId, this.withCheckpointState(threadId, turnId, collectedItems.length, 'interrupted'));
+        this.stateManager.completeInterruptedTurn(threadId, turnId);
+        this.emit({
+          type: 'stream.error',
           threadId,
           turnId,
-          workspaceRoot: this.config.workspaceRoot,
+          message,
+          recoverable: true,
+          error: { message, info },
         });
+        this.emit({ type: 'turn.completed', threadId, turnId, usage: null, status: 'interrupted' });
+        await this.appendRunMonitorEvent(turnId, {
+          category: 'model',
+          type: 'stream.error',
+          level: 'warning',
+          message,
+          metadata: { info, recoverable: true },
+        });
+        terminalTurnResult = { status: 'interrupted', usage: null, error: err };
+        await this.finishRunMonitor(turnId, 'interrupted', null, err);
+        await this.finishTurnLifecycle(runtimeContext, terminalTurnResult);
         return { items: collectedItems, usage: null };
       }
       const errorMsg = String(err);
+      const errorInfo = toNexusErrorInfo(err);
       this.stateManager.failTurn(threadId, turnId, {
         message: errorMsg,
         timestamp: new Date().toISOString(),
@@ -308,13 +664,16 @@ export class AgentLoop {
         type: 'turn.failed',
         threadId,
         turnId,
-        error: { message: errorMsg },
+        error: { message: errorMsg, info: errorInfo },
       });
-      await this.config.hooks.trigger('turn_end', {
-        threadId,
-        turnId,
-        workspaceRoot: this.config.workspaceRoot,
-      });
+      terminalTurnResult = { status: 'failed', usage: null, error: err };
+      await this.finishRunMonitor(turnId, 'failed', null, err);
+      try {
+        await this.finishTurnLifecycle(runtimeContext, terminalTurnResult);
+      } catch {
+        // Preserve the original turn failure after afterTurn has had a chance to run.
+        // 在 afterTurn 有机会执行后保留原始回合失败信息。
+      }
       throw err;
     }
   }
@@ -331,7 +690,213 @@ export class AgentLoop {
         listener(event);
       } catch {
         // don't let listener errors crash the loop
+        // 不让监听器错误导致循环崩溃
       }
+    }
+  }
+
+  private discardTransientItem(
+    threadId: ThreadId,
+    turnId: TurnId,
+    collectedItems: ThreadItem[],
+    itemId?: string,
+  ): void {
+    if (!itemId) return;
+    const itemIndex = collectedItems.findIndex((item) => item.id === itemId);
+    if (itemIndex >= 0) collectedItems.splice(itemIndex, 1);
+    this.emit({ type: 'item.discarded', threadId, turnId, itemId });
+  }
+
+  private async beginRunMonitor(options: {
+    threadId: ThreadId;
+    turnId: TurnId;
+    title: string;
+    userInput: UserInput;
+  }): Promise<void> {
+    const now = new Date().toISOString();
+    const runId = `run_${options.turnId}`;
+    const session = {
+      runId,
+      threadId: options.threadId,
+      turnId: options.turnId,
+      sequence: 0,
+      startedAt: now,
+      modelCallCount: 0,
+      toolCallCount: 0,
+      subagentCount: 0,
+      middlewareEventCount: 0,
+      inputTokens: 0,
+      cachedInputTokens: 0,
+      outputTokens: 0,
+      reasoningOutputTokens: 0,
+    };
+    this.runMonitorSessions.set(options.turnId, session);
+    await this.safeMonitorWrite(async () => {
+      const record: RunRecord = {
+        runId,
+        tenantId: this.config.tenantId,
+        threadId: options.threadId,
+        turnId: options.turnId,
+        kind: 'turn',
+        status: 'running',
+        title: options.title,
+        caller: 'lead_agent',
+        activeStep: 'turn',
+        inputTokens: 0,
+        cachedInputTokens: 0,
+        outputTokens: 0,
+        reasoningOutputTokens: 0,
+        toolCallCount: 0,
+        modelCallCount: 0,
+        subagentCount: 0,
+        middlewareEventCount: 0,
+        firstHumanMessage: truncateMonitorText(userInputToText(options.userInput)),
+        startedAt: now,
+        updatedAt: now,
+        metadata: { locale: this.config.locale, runProfile: this.config.runProfile },
+      };
+      await this.config.store.createRunRecord?.(record);
+    });
+    await this.appendRunMonitorEvent(options.turnId, {
+      category: 'turn',
+      type: 'turn.started',
+      level: 'info',
+      message: 'Turn started',
+      metadata: { tenantId: this.config.tenantId },
+    });
+  }
+
+  private async beginControlRun(runKey: TurnId, threadId: ThreadId, title: string): Promise<void> {
+    const now = new Date().toISOString();
+    const runId = `run_${runKey}`;
+    const session = {
+      runId,
+      threadId,
+      turnId: runKey,
+      sequence: 0,
+      startedAt: now,
+      modelCallCount: 0,
+      toolCallCount: 0,
+      subagentCount: 0,
+      middlewareEventCount: 0,
+      inputTokens: 0,
+      cachedInputTokens: 0,
+      outputTokens: 0,
+      reasoningOutputTokens: 0,
+    };
+    this.runMonitorSessions.set(runKey, session);
+    await this.safeMonitorWrite(async () => {
+      await this.config.store.createRunRecord?.({
+        runId,
+        tenantId: this.config.tenantId,
+        threadId,
+        turnId: null,
+        kind: 'control',
+        status: 'running',
+        title,
+        caller: 'lead_agent',
+        activeStep: 'rollback',
+        inputTokens: 0,
+        cachedInputTokens: 0,
+        outputTokens: 0,
+        reasoningOutputTokens: 0,
+        toolCallCount: 0,
+        modelCallCount: 0,
+        subagentCount: 0,
+        middlewareEventCount: 0,
+        startedAt: now,
+        updatedAt: now,
+        metadata: { tenantId: this.config.tenantId },
+      });
+    });
+  }
+
+  private async appendRunMonitorEvent(turnId: TurnId, event: {
+    category: RunEvent['category'];
+    type: string;
+    level?: RunEventLevel;
+    message: string;
+    toolName?: string | null;
+    model?: string | null;
+    durationMs?: number | null;
+    metadata?: Record<string, unknown>;
+  }): Promise<void> {
+    const session = this.runMonitorSessions.get(turnId);
+    if (!session) return;
+    session.sequence += 1;
+    if (event.category === 'model') session.modelCallCount += event.type === 'model.started' ? 1 : 0;
+    if (event.category === 'tool') session.toolCallCount += event.type.endsWith('.started') ? 1 : 0;
+    if (event.category === 'subagent') session.subagentCount += event.type.endsWith('.started') ? 1 : 0;
+    if (event.category === 'middleware') session.middlewareEventCount += 1;
+    const createdAt = new Date().toISOString();
+    await this.safeMonitorWrite(async () => {
+      await this.config.store.appendRunEvent?.({
+        eventId: `${session.runId}_event_${session.sequence}`,
+        runId: session.runId,
+        tenantId: this.config.tenantId,
+        threadId: session.threadId,
+        turnId: session.turnId,
+        sequence: session.sequence,
+        category: event.category,
+        type: event.type,
+        level: event.level ?? 'info',
+        message: event.message,
+        toolName: event.toolName ?? null,
+        model: event.model ?? null,
+        durationMs: event.durationMs ?? null,
+        metadata: event.metadata ?? {},
+        createdAt,
+      });
+      await this.config.store.updateRunRecord?.(session.runId, {
+        activeStep: event.category,
+        updatedAt: createdAt,
+        toolCallCount: session.toolCallCount,
+        modelCallCount: session.modelCallCount,
+        subagentCount: session.subagentCount,
+        middlewareEventCount: session.middlewareEventCount,
+      });
+    });
+  }
+
+  private async finishRunMonitor(turnId: TurnId, status: RunRecord['status'], usage: Usage | null, error?: unknown): Promise<void> {
+    const session = this.runMonitorSessions.get(turnId);
+    if (!session) return;
+    const completedAt = new Date().toISOString();
+    await this.appendRunMonitorEvent(turnId, {
+      category: 'turn',
+      type: status === 'completed' ? 'turn.completed' : `turn.${status}`,
+      level: status === 'failed' ? 'error' : status === 'interrupted' ? 'warning' : 'info',
+      message: status === 'completed' ? 'Turn completed' : `Turn ${status}`,
+      metadata: usage ? { usage } : {},
+    });
+    await this.safeMonitorWrite(async () => {
+      await this.config.store.updateRunRecord?.(session.runId, {
+        status,
+        activeStep: 'done',
+        inputTokens: session.inputTokens,
+        cachedInputTokens: session.cachedInputTokens,
+        outputTokens: session.outputTokens,
+        reasoningOutputTokens: session.reasoningOutputTokens,
+        toolCallCount: session.toolCallCount,
+        modelCallCount: session.modelCallCount,
+        subagentCount: session.subagentCount,
+        middlewareEventCount: session.middlewareEventCount,
+        error: error ? String(error instanceof Error ? error.message : error) : null,
+        completedAt,
+        updatedAt: completedAt,
+      });
+    });
+    this.runMonitorSessions.delete(turnId);
+  }
+
+  private async safeMonitorWrite(write: () => Promise<void>): Promise<void> {
+    try {
+      await write();
+    } catch (error) {
+      this.emit({
+        type: 'error',
+        message: `Run monitor write failed: ${error instanceof Error ? error.message : String(error)}`,
+      });
     }
   }
 
@@ -342,6 +907,7 @@ export class AgentLoop {
     const now = new Date().toISOString();
     const meta: ThreadMeta = {
       threadId,
+      tenantId: this.config.tenantId,
       title: title ?? 'Untitled',
       workspaceRoot: options.workspaceRoot ?? this.config.workspaceRoot,
       status: 'active',
@@ -422,6 +988,7 @@ export class AgentLoop {
     if (!thread) throw new Error(`Thread ${threadId} not found`);
 
     // Check if already running
+    // 检查是否已在运行
     if (this.stateManager.isRunning(threadId)) {
       throw new Error(`Thread ${threadId} already has an active turn`);
     }
@@ -439,10 +1006,12 @@ export class AgentLoop {
     };
 
     // State machine: start turn
+    // 状态机：启动回合
     const cancelController = this.stateManager.startTurn(threadId, turnId);
     const effectiveSignal = signal ?? cancelController.signal;
 
     // Write initial checkpoint
+    // 写入初始检查点
     const checkpoint = this.withCheckpointState(threadId, turnId, 0, 'running');
     await this.writeCheckpoint(threadId, checkpoint);
 
@@ -451,6 +1020,7 @@ export class AgentLoop {
       turnCount: turnIndex + 1,
     });
 
+    await this.beginRunMonitor({ threadId, turnId, title: thread.title, userInput });
     this.emit({ type: 'turn.started', threadId, turnId, turnIndex });
     await this.config.hooks.trigger('turn_start', {
       threadId,
@@ -458,11 +1028,16 @@ export class AgentLoop {
       workspaceRoot: this.config.workspaceRoot,
     });
 
+    // Episode working set preparation (after turn_start hook, before compaction).
+    await this.prepareEpisodeWorkingSet(thread, turnId, turnIndex, userInput);
+
     // Pre-turn auto compaction: visible item, then compacted summary enters context.
+    // 回合前自动压缩：可见条目，然后压缩摘要进入上下文。
     await this.maybeAutoCompact(threadId, turnId);
     const refreshedThread = await this.config.store.getThread(threadId) ?? thread;
 
     // Build messages
+    // 构建消息
     const webSearchRecommended = shouldEnableWebSearch(this.config.webSearchMode, userInput);
     const webSearchToolAvailable = this.shouldOfferWebSearchTool();
     const messages = await this.buildMessages(threadId, userInput, refreshedThread, webSearchRecommended);
@@ -478,9 +1053,25 @@ export class AgentLoop {
     await this.config.store.appendItems(threadId, [userItem]);
     this.refreshRunningCheckpoint(checkpoint, threadId, turnId, collectedItems.length);
     await this.writeCheckpoint(threadId, checkpoint);
+    const runtimeContext = await this.createRuntimeTurnContext(
+      threadId,
+      turnId,
+      refreshedThread,
+      userInput,
+      checkpoint,
+      collectedItems,
+    );
 
     // Main agent loop
+    // 主 agent 循环
+    let terminalTurnResult: RuntimeTurnResult | null = null;
     try {
+      await this.appendRunMonitorEvent(turnId, {
+        category: 'middleware',
+        type: 'middleware.beforeTurn',
+        message: 'beforeTurn middleware started',
+      });
+      await this.runtimeMiddleware.beforeTurn(runtimeContext);
       const result = await this.agentLoop(
         threadId,
         turnId,
@@ -489,6 +1080,7 @@ export class AgentLoop {
         effectiveSignal,
         checkpoint,
         webSearchToolAvailable,
+        runtimeContext,
       );
       turn.status = 'completed';
       turn.completedAt = new Date().toISOString();
@@ -497,13 +1089,14 @@ export class AgentLoop {
       this.stateManager.completeTurn(threadId, turnId);
       if (result.usage) await this.recordUsage(threadId, turnId, result.usage);
       this.emit({ type: 'turn.completed', threadId, turnId, usage: result.usage });
-      await this.config.hooks.trigger('turn_end', {
-        threadId,
-        turnId,
-        workspaceRoot: this.config.workspaceRoot,
-      });
+      terminalTurnResult = { status: 'completed', usage: result.usage };
+      await this.finishRunMonitor(turnId, 'completed', result.usage);
+      await this.updateEpisodeFromCompletedTurn(refreshedThread, turnId, turnIndex, userInput, collectedItems);
+      await this.maybeExtractColdMemories(refreshedThread, turnId, userInput, collectedItems);
+      await this.finishTurnLifecycle(runtimeContext, terminalTurnResult);
       return result;
     } catch (err) {
+      if (terminalTurnResult) throw err;
       if (isTurnCancelledError(err)) {
         turn.status = 'interrupted';
         turn.completedAt = new Date().toISOString();
@@ -511,19 +1104,59 @@ export class AgentLoop {
         await this.writeCheckpoint(threadId, this.withCheckpointState(threadId, turnId, collectedItems.length, 'interrupted'));
         this.stateManager.completeInterruptedTurn(threadId, turnId);
         this.emit({ type: 'turn.completed', threadId, turnId, usage: null, status: 'interrupted' });
-        await this.config.hooks.trigger('turn_end', {
+        terminalTurnResult = { status: 'interrupted', usage: null, error: err };
+        await this.finishRunMonitor(turnId, 'interrupted', null, err);
+        await this.finishTurnLifecycle(runtimeContext, terminalTurnResult);
+        return { items: collectedItems, usage: null };
+      }
+      if (isRecoverableStreamError(err)) {
+        const info = toNexusErrorInfo(err);
+        const message = err instanceof Error ? err.message : String(err);
+        turn.status = 'interrupted';
+        turn.completedAt = new Date().toISOString();
+        await this.config.store.saveTurn(turn);
+        const errorItem: ThreadItem = {
+          id: generateItemId(turnId, collectedItems.length),
+          type: 'error',
+          turnId,
+          message,
+          info,
+          timestamp: new Date().toISOString(),
+        };
+        collectedItems.push(errorItem);
+        this.emitItem(threadId, turnId, errorItem);
+        await this.config.store.appendItems(threadId, [errorItem]);
+        await this.writeCheckpoint(threadId, this.withCheckpointState(threadId, turnId, collectedItems.length, 'interrupted'));
+        this.stateManager.completeInterruptedTurn(threadId, turnId);
+        this.emit({
+          type: 'stream.error',
           threadId,
           turnId,
-          workspaceRoot: this.config.workspaceRoot,
+          message,
+          recoverable: true,
+          error: { message, info },
         });
+        this.emit({ type: 'turn.completed', threadId, turnId, usage: null, status: 'interrupted' });
+        await this.appendRunMonitorEvent(turnId, {
+          category: 'model',
+          type: 'stream.error',
+          level: 'warning',
+          message,
+          metadata: { info, recoverable: true },
+        });
+        terminalTurnResult = { status: 'interrupted', usage: null, error: err };
+        await this.finishRunMonitor(turnId, 'interrupted', null, err);
+        await this.finishTurnLifecycle(runtimeContext, terminalTurnResult);
         return { items: collectedItems, usage: null };
       }
       const errorMsg = err instanceof Error ? err.message : String(err);
+      const errorInfo = toNexusErrorInfo(err);
       const errorItem: ThreadItem = {
         id: generateItemId(turnId, collectedItems.length),
         type: 'error',
         turnId,
         message: errorMsg,
+        info: errorInfo,
         timestamp: new Date().toISOString(),
       };
       collectedItems.push(errorItem);
@@ -541,13 +1174,16 @@ export class AgentLoop {
         type: 'turn.failed',
         threadId,
         turnId,
-        error: { message: errorMsg },
+        error: { message: errorMsg, info: errorInfo },
       });
-      await this.config.hooks.trigger('turn_end', {
-        threadId,
-        turnId,
-        workspaceRoot: this.config.workspaceRoot,
-      });
+      terminalTurnResult = { status: 'failed', usage: null, error: err };
+      await this.finishRunMonitor(turnId, 'failed', null, err);
+      try {
+        await this.finishTurnLifecycle(runtimeContext, terminalTurnResult);
+      } catch {
+        // Preserve the original turn failure after afterTurn has had a chance to run.
+        // 在 afterTurn 有机会执行后保留原始回合失败信息。
+      }
       throw err;
     }
   }
@@ -561,14 +1197,14 @@ export class AgentLoop {
     signal: AbortSignal,
     checkpoint: Checkpoint,
     webSearchToolAvailable: boolean,
+    runtimeContext: RuntimeTurnContext,
   ): Promise<{ items: ThreadItem[]; usage: Usage | null }> {
     let iteration = 0;
     let usage: Usage | null = null;
-    const webToolBudget: WebToolBudget = {
-      searchCalls: 0,
-      searchQueries: new Map(),
-      webSearchDisabled: false,
-    };
+    let webSearchDisabled = false;
+    const visibleToolNames = this.config.toolBindingMode === 'delayed'
+      ? this.initialVisibleToolNames()
+      : undefined;
 
     while (iteration < this.config.maxIterations) {
       if (signal.aborted) throw new Error('Turn cancelled');
@@ -579,50 +1215,115 @@ export class AgentLoop {
         turnId,
         collectedItems,
         messages,
-        webSearchToolAvailable && !webToolBudget.webSearchDisabled,
+        webSearchToolAvailable && !webSearchDisabled,
+        runtimeContext,
+        signal,
+        visibleToolNames,
       );
       usage = streamed.usage;
       const message = streamed.message;
 
       // If no tool calls, this is the final response
+      // 如果没有工具调用，就是最终响应
       if (!message.tool_calls || message.tool_calls.length === 0) {
+        if (isTextToolPlaceholder(message.content) && iteration < this.config.maxIterations) {
+          await this.appendRunMonitorEvent(turnId, {
+            category: 'model',
+            type: 'model.plain_text_tool_call',
+            level: 'warning',
+            message: 'Model emitted a plain-text tool call placeholder; requesting a structured retry',
+            metadata: { iteration },
+          });
+          messages.push({
+            role: 'assistant',
+            content: message.content ?? '',
+          });
+          messages.push({
+            role: 'user',
+            content: this.config.locale === 'zh'
+              ? '你刚才把工具调用写成了普通文本占位符。不要输出类似 [Tool xxx]、<|tool_calls|>、DSML 的文本工具调用。如果需要工具，请使用结构化 tool call；如果不需要工具，请直接给出完整最终回答。'
+              : 'You wrote a tool call as plain text. Do not output placeholders like [Tool xxx], <|tool_calls|>, or DSML. If you need a tool, use a structured tool call; otherwise provide the complete final answer directly.',
+          });
+          continue;
+        }
         return { items: collectedItems, usage };
       }
 
       // Process tool calls
+      // 处理工具调用
       messages.push({
         role: 'assistant',
         content: message.content ?? null,
         tool_calls: message.tool_calls,
       });
 
-      for (const toolCall of message.tool_calls) {
-        if (signal.aborted) throw new Error('Turn cancelled');
+      const toolResults = await this.executeToolCallBatch(
+        threadId,
+        turnId,
+        message.tool_calls,
+        collectedItems,
+        runtimeContext,
+        signal,
+        visibleToolNames,
+      );
 
-        const toolResult = await this.executeToolCall(
-          threadId,
-          turnId,
-          toolCall,
-          collectedItems,
-          webToolBudget,
-        );
+      for (const toolResult of toolResults) {
         if (toolResult.disableWebSearch) {
-          webToolBudget.webSearchDisabled = true;
+          webSearchDisabled = true;
+        }
+        if (visibleToolNames && toolResult.activateToolNames) {
+          for (const name of toolResult.activateToolNames) {
+            visibleToolNames.add(resolveToolName(this.tools, name));
+          }
         }
 
         // Update checkpoint after each tool execution
+        // 每次工具执行后更新检查点
         this.refreshRunningCheckpoint(checkpoint, threadId, turnId, collectedItems.length);
         await this.writeCheckpoint(threadId, checkpoint);
 
         messages.push({
           role: 'tool',
           content: toolResult.output,
-          tool_call_id: toolCall.id,
+          tool_call_id: toolResult.toolCall.id,
         });
+      }
+
+      const compacted = await this.maybeAutoCompact(threadId, turnId, 'mid_turn', messages);
+      if (compacted) {
+        const refreshedThread = await this.config.store.getThread(threadId);
+        if (refreshedThread) {
+          const webSearchRecommended = shouldEnableWebSearch(this.config.webSearchMode, runtimeContext.userInput);
+          const rebuilt = await this.buildMessages(
+            threadId,
+            runtimeContext.userInput,
+            refreshedThread,
+            webSearchRecommended,
+            false,
+          );
+          messages.splice(0, messages.length, ...rebuilt);
+        }
       }
     }
 
     throw new Error(this.i18n.t('runtime.max_iterations', { max: this.config.maxIterations }));
+  }
+
+  private roleToolFilter(): { include?: string[]; exclude?: string[] } | undefined {
+    const profile = this.config.activeAgentRoleProfile;
+    if (!profile) return undefined;
+    return {
+      include: profile.allowedTools && profile.allowedTools.length > 0 ? profile.allowedTools : undefined,
+      exclude: profile.blockedTools && profile.blockedTools.length > 0 ? profile.blockedTools : undefined,
+    };
+  }
+
+  private isToolAllowedByRole(toolName: string): boolean {
+    const profile = this.config.activeAgentRoleProfile;
+    if (!profile) return true;
+    if (profile.blockedTools?.includes(toolName)) return false;
+    if (profile.allowedTools?.length && !profile.allowedTools.includes(toolName)) return false;
+    return true;
   }
 
   private async runModelStream(
@@ -631,17 +1332,31 @@ export class AgentLoop {
     collectedItems: ThreadItem[],
     messages: ChatMessage[],
     webSearchToolAvailable: boolean,
+    runtimeContext: RuntimeTurnContext,
+    signal: AbortSignal,
+    visibleToolNames?: ReadonlySet<string>,
   ): Promise<{ message: ChatMessage; usage: Usage | null }> {
-    let content = '';
-    let usage: Usage | null = null;
-    let agentItem: ThreadItem | null = null;
-    const toolCalls = new Map<string, ToolCall>();
-
+    const roleToolFilter = this.roleToolFilter();
     const tools = this.tools
-      .toOpenAITools()
+      .toOpenAITools(roleToolFilter)
+      .filter((tool) => !visibleToolNames || visibleToolNames.has(tool.function.name))
       .filter((tool) => tool.function.name !== 'web_fetch')
       .filter((tool) => webSearchToolAvailable || tool.function.name !== 'web_search');
-    const cacheShape = buildPromptCacheShape(messages, tools);
+
+    let modelRequest: RuntimeModelRequest = {
+      messages,
+      tools,
+      tool_choice: 'auto',
+      signal,
+    };
+    await this.appendRunMonitorEvent(turnId, {
+      category: 'middleware',
+      type: 'middleware.beforeModel',
+      message: 'beforeModel middleware started',
+      metadata: { messageCount: messages.length, toolCount: tools.length },
+    });
+    modelRequest = await this.runtimeMiddleware.beforeModel(runtimeContext, modelRequest);
+    const cacheShape = buildPromptCacheShape(modelRequest.messages, modelRequest.tools ?? []);
     const cacheComparison = comparePromptCacheShape(this.promptCacheShapes.get(threadId), cacheShape);
     this.promptCacheShapes.set(threadId, cacheShape);
     this.emit({
@@ -656,132 +1371,302 @@ export class AgentLoop {
       type: 'context.token_estimate.updated',
       threadId,
       turnId,
-      estimate: estimateRuntimeChatTokens(messages),
+      estimate: estimateRuntimeChatTokens(modelRequest.messages),
     });
 
-    for await (const event of this.config.model.chatStream({
-      messages,
-      tools,
-      tool_choice: 'auto',
-    }, {
-      onRetry: (notice) => {
-        this.emit({
-          type: 'model.retry',
-          threadId,
-          turnId,
-          attempt: notice.attempt,
-          maxAttempts: notice.maxAttempts,
-          delayMs: notice.delayMs,
-          status: notice.status,
-          error: notice.error,
-        });
-      },
-    })) {
-      if (event.type === 'delta') {
-        if (!agentItem) {
-          agentItem = {
-            id: generateItemId(turnId, collectedItems.length),
-            type: 'agent_message',
+    await this.appendRunMonitorEvent(turnId, {
+      category: 'model',
+      type: 'model.started',
+      message: 'Model stream started',
+      metadata: { messageCount: modelRequest.messages.length, toolCount: modelRequest.tools?.length ?? 0 },
+    });
+    let response: { message: ChatMessage; usage: Usage | null };
+    try {
+      response = await this.runtimeMiddleware.wrapModel(runtimeContext, modelRequest, async (request) => {
+      let content = '';
+      let usage: Usage | null = null;
+      let agentItem: ThreadItem | null = null;
+      const toolCalls = new Map<string, ToolCall>();
+      const requestSignal = request.signal ?? signal;
+
+      try {
+      for await (const event of this.config.model.chatStream({
+        messages: request.messages,
+        tools: request.tools,
+        tool_choice: request.tool_choice ?? 'auto',
+      }, {
+        signal: requestSignal,
+        onRetry: (notice) => {
+          this.emit({
+            type: 'model.retry',
+            threadId,
             turnId,
-            text: '',
-            timestamp: new Date().toISOString(),
+            attempt: notice.attempt,
+            maxAttempts: notice.maxAttempts,
+            delayMs: notice.delayMs,
+            status: notice.status,
+            error: notice.error,
+          });
+        },
+      })) {
+        if (requestSignal.aborted) throw new Error('Turn cancelled');
+        if (event.type === 'delta') {
+          if (!agentItem) {
+            agentItem = {
+              id: generateItemId(turnId, collectedItems.length),
+              type: 'agent_message',
+              turnId,
+              text: '',
+              timestamp: new Date().toISOString(),
+            };
+            collectedItems.push(agentItem);
+            this.emit({ type: 'item.started', threadId, turnId, item: agentItem });
+          }
+          content += event.content;
+          agentItem.text = content;
+          this.emit({
+            type: 'agent_message.delta',
+            threadId,
+            turnId,
+            itemId: agentItem.id,
+            delta: event.content,
+          });
+          this.emit({ type: 'item.updated', threadId, turnId, item: agentItem });
+        } else if (event.type === 'tool_call_start' || event.type === 'tool_call_delta') {
+          const id = event.id || `tool_${toolCalls.size}`;
+          const existing = toolCalls.get(id) ?? {
+            id,
+            type: 'function' as const,
+            function: { name: '', arguments: '' },
           };
-          collectedItems.push(agentItem);
-          this.emit({ type: 'item.started', threadId, turnId, item: agentItem });
+          if (event.type === 'tool_call_start') {
+            existing.function.name = event.name;
+          } else {
+            existing.function.arguments = event.arguments;
+          }
+          toolCalls.set(id, existing);
+        } else if (event.type === 'tool_call_end') {
+          const id = event.id || `tool_${toolCalls.size}`;
+          toolCalls.set(id, {
+            id,
+            type: 'function',
+            function: {
+              name: event.name,
+              arguments: event.arguments,
+            },
+          });
+        } else if (event.type === 'done') {
+          usage = event.usage
+            ? {
+                inputTokens: event.usage.prompt_tokens,
+                cachedInputTokens: event.usage.cached_tokens ?? 0,
+                outputTokens: event.usage.completion_tokens,
+                reasoningOutputTokens: 0,
+                cacheStrategy: event.usage.cache_strategy,
+              }
+            : usage;
+        } else if (event.type === 'error') {
+          throw event.error;
         }
-        content += event.content;
-        agentItem.text = content;
-        this.emit({
-          type: 'agent_message.delta',
-          threadId,
-          turnId,
-          itemId: agentItem.id,
-          delta: event.content,
-        });
-        this.emit({ type: 'item.updated', threadId, turnId, item: agentItem });
-      } else if (event.type === 'tool_call_start' || event.type === 'tool_call_delta') {
-        const id = event.id || `tool_${toolCalls.size}`;
-        const existing = toolCalls.get(id) ?? {
-          id,
-          type: 'function' as const,
-          function: { name: '', arguments: '' },
-        };
-        if (event.type === 'tool_call_start') {
-          existing.function.name = event.name;
-        } else {
-          existing.function.arguments = event.arguments;
-        }
-        toolCalls.set(id, existing);
-      } else if (event.type === 'tool_call_end') {
-        const id = event.id || `tool_${toolCalls.size}`;
-        toolCalls.set(id, {
-          id,
-          type: 'function',
-          function: {
-            name: event.name,
-            arguments: event.arguments,
-          },
-        });
-      } else if (event.type === 'done') {
-        usage = event.usage
-          ? {
-              inputTokens: event.usage.prompt_tokens,
-              cachedInputTokens: event.usage.cached_tokens ?? 0,
-              outputTokens: event.usage.completion_tokens,
-              reasoningOutputTokens: 0,
-              cacheStrategy: event.usage.cache_strategy,
-            }
-          : usage;
-      } else if (event.type === 'error') {
-        throw event.error;
       }
-    }
+      } catch (error) {
+        if (agentItem && content.trim() && (isRecoverableStreamError(error) || isTurnCancelledError(error))) {
+          const partialValidation = validateThreadItemsForPersistence([agentItem]);
+          if (partialValidation.ok) {
+            this.emit({ type: 'item.completed', threadId, turnId, item: agentItem });
+            await this.config.store.appendItems(threadId, [agentItem]);
+          } else {
+            this.discardTransientItem(threadId, turnId, collectedItems, agentItem.id);
+            this.emit({
+              type: 'model.output.rejected',
+              threadId,
+              turnId,
+              message: partialValidation.error.message,
+              error: { message: partialValidation.error.message, info: partialValidation.error.info },
+            });
+            await this.appendRunMonitorEvent(turnId, {
+              category: 'model',
+              type: 'model.output.rejected',
+              level: 'warning',
+              message: partialValidation.error.message,
+              metadata: { info: partialValidation.error.info },
+            });
+          }
+        }
+        const info = toNexusErrorInfo(error);
+        throw new NexusRuntimeError(error instanceof Error ? error.message : String(error), info, { cause: error });
+      }
 
-    if (agentItem) {
-      this.emit({ type: 'item.completed', threadId, turnId, item: agentItem });
-      await this.config.store.appendItems(threadId, [agentItem]);
-    }
+      const plainTextToolPlaceholder = agentItem && toolCalls.size === 0 && isTextToolPlaceholder(content);
+      if (plainTextToolPlaceholder) {
+        this.discardTransientItem(threadId, turnId, collectedItems, agentItem?.id);
+      } else if (agentItem) {
+        const validation = validateThreadItemsForPersistence([agentItem]);
+        if (!validation.ok) {
+          this.discardTransientItem(threadId, turnId, collectedItems, agentItem.id);
+          this.emit({
+            type: 'model.output.rejected',
+            threadId,
+            turnId,
+            message: validation.error.message,
+            error: { message: validation.error.message, info: validation.error.info },
+          });
+          await this.appendRunMonitorEvent(turnId, {
+            category: 'model',
+            type: 'model.output.rejected',
+            level: 'warning',
+            message: validation.error.message,
+            metadata: { info: validation.error.info },
+          });
+          throw validation.error;
+        }
+        this.emit({ type: 'item.completed', threadId, turnId, item: agentItem });
+        await this.config.store.appendItems(threadId, [agentItem]);
+      }
 
-    if (!agentItem && toolCalls.size === 0) {
-      throw new Error(this.i18n.t('runtime.no_response'));
-    }
+      if (!agentItem && toolCalls.size === 0) {
+        throw new Error(this.i18n.t('runtime.no_response'));
+      }
 
-    return {
-      message: {
-        role: 'assistant',
-        content,
-        tool_calls: toolCalls.size > 0 ? [...toolCalls.values()] : undefined,
-      },
-      usage,
-    };
+      return {
+        message: {
+          role: 'assistant',
+          content,
+          tool_calls: toolCalls.size > 0 ? [...toolCalls.values()] : undefined,
+        },
+        usage,
+      };
+      });
+    } catch (error) {
+      await this.appendRunMonitorEvent(turnId, {
+        category: 'model',
+        type: 'model.failed',
+        level: 'error',
+        message: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+    await this.runtimeMiddleware.afterModel(runtimeContext, modelRequest, response);
+    const session = this.runMonitorSessions.get(turnId);
+    if (session && response.usage) {
+      session.inputTokens += response.usage.inputTokens;
+      session.cachedInputTokens += response.usage.cachedInputTokens;
+      session.outputTokens += response.usage.outputTokens;
+      session.reasoningOutputTokens += response.usage.reasoningOutputTokens;
+    }
+    await this.appendRunMonitorEvent(turnId, {
+      category: 'model',
+      type: 'model.completed',
+      message: 'Model stream completed',
+      metadata: response.usage ? { usage: response.usage } : {},
+    });
+    return response;
   }
 
   // ─── Tool Execution ───────────────────────────────────────────────────────
-  private consumeWebToolBudget(
-    toolName: string,
-    args: Record<string, unknown>,
-    budget?: WebToolBudget,
-  ): string | null {
-    if (!budget || toolName !== 'web_search' || !isWebSearchAction(args)) return null;
-    const query = typeof args.query === 'string' ? args.query.trim().replace(/\s+/g, ' ') : '';
-    const normalizedQuery = query.toLowerCase();
-    const duplicateCount = (budget.searchQueries.get(normalizedQuery) ?? 0) + 1;
-    budget.searchCalls += 1;
-    budget.searchQueries.set(normalizedQuery, duplicateCount);
+  private async executeToolCallBatch(
+    threadId: ThreadId,
+    turnId: TurnId,
+    toolCalls: ToolCall[],
+    collectedItems: ThreadItem[],
+    runtimeContext: RuntimeTurnContext,
+    signal: AbortSignal,
+    visibleToolNames?: ReadonlySet<string>,
+  ): Promise<ToolCallExecutionResult[]> {
+    const results = new Array<ToolCallExecutionResult>(toolCalls.length);
+    let index = 0;
+    while (index < toolCalls.length) {
+      if (signal.aborted) throw new Error('Turn cancelled');
 
-    if (budget.searchCalls > MAX_WEB_SEARCH_CALLS_PER_TURN) {
-      budget.webSearchDisabled = true;
-      return this.config.locale === 'zh'
-        ? `本轮 web_search 的 search action 已达到 ${MAX_WEB_SEARCH_CALLS_PER_TURN} 次上限。请停止继续搜索，改用已有搜索结果回答；如果需要读取具体页面，请使用 web_search 的 open_page action 抓取明确 URL。`
-        : `web_search search action reached the per-turn limit of ${MAX_WEB_SEARCH_CALLS_PER_TURN}. Stop searching and answer from existing results; use web_search open_page for a specific URL if needed.`;
+      if (!this.supportsParallelToolCall(toolCalls[index], visibleToolNames)) {
+        const toolCall = toolCalls[index];
+        const result = await this.executeToolCall(
+          threadId,
+          turnId,
+          toolCall,
+          collectedItems,
+          runtimeContext,
+          visibleToolNames,
+        );
+        results[index] = { toolCall, ...result };
+        index += 1;
+        continue;
+      }
+
+      const start = index;
+      index += 1;
+      while (index < toolCalls.length && this.supportsParallelToolCall(toolCalls[index], visibleToolNames)) {
+        index += 1;
+      }
+      const group = toolCalls.slice(start, index);
+      if (group.length === 1) {
+        const toolCall = group[0];
+        const result = await this.executeToolCall(
+          threadId,
+          turnId,
+          toolCall,
+          collectedItems,
+          runtimeContext,
+          visibleToolNames,
+        );
+        results[start] = { toolCall, ...result };
+        continue;
+      }
+
+      const toolNames = group.map((toolCall) => resolveToolName(this.tools, toolCall.function.name));
+      await this.appendRunMonitorEvent(turnId, {
+        category: 'tool',
+        type: 'tool.batch.started',
+        message: `Parallel tool batch started (${toolNames.join(', ')})`,
+        metadata: { parallel: true, toolCount: group.length, toolNames },
+      });
+      try {
+        const groupResults = await Promise.all(group.map(async (toolCall) => {
+          const result = await this.executeToolCall(
+            threadId,
+            turnId,
+            toolCall,
+            collectedItems,
+            runtimeContext,
+            visibleToolNames,
+          );
+          return { toolCall, ...result };
+        }));
+        groupResults.forEach((result, offset) => {
+          results[start + offset] = result;
+        });
+        await this.appendRunMonitorEvent(turnId, {
+          category: 'tool',
+          type: 'tool.batch.completed',
+          message: `Parallel tool batch completed (${toolNames.join(', ')})`,
+          metadata: { parallel: true, toolCount: group.length, toolNames },
+        });
+      } catch (error) {
+        await this.appendRunMonitorEvent(turnId, {
+          category: 'tool',
+          type: 'tool.batch.failed',
+          level: 'error',
+          message: error instanceof Error ? error.message : String(error),
+          metadata: { parallel: true, toolCount: group.length, toolNames },
+        });
+        throw error;
+      }
     }
-    if (normalizedQuery && duplicateCount > MAX_DUPLICATE_WEB_SEARCH_QUERY_PER_TURN) {
-      budget.webSearchDisabled = true;
-      return this.config.locale === 'zh'
-        ? `本轮重复搜索相同 query 已达到上限。请停止重复 search action，改用已有结果回答或使用 web_search 的 open_page action 抓取明确 URL。`
-        : `Repeated web_search search action for the same query reached the per-turn limit. Stop repeating the search and answer from existing results or use web_search open_page for a specific URL.`;
-    }
-    return null;
+    return results;
+  }
+
+  private supportsParallelToolCall(
+    toolCall: ToolCall,
+    visibleToolNames?: ReadonlySet<string>,
+  ): boolean {
+    const toolName = resolveToolName(this.tools, toolCall.function.name);
+    if (visibleToolNames && !visibleToolNames.has(toolName)) return false;
+    if (isCollabTool(toolName)) return false;
+    if (!this.isToolAllowedByRole(toolName)) return false;
+    const toolDef = this.tools.get(toolName);
+    return toolDef?.supportsParallelToolCalls === true
+      && toolDef.requiredPolicy === 'readonly'
+      && toolDef.requiresApproval !== true;
   }
 
   private async executeToolCall(
@@ -789,9 +1674,11 @@ export class AgentLoop {
     turnId: TurnId,
     toolCall: ToolCall,
     collectedItems: ThreadItem[],
-    webToolBudget?: WebToolBudget,
-  ): Promise<{ output: string; disableWebSearch?: boolean }> {
-    const toolName = toolCall.function.name;
+    runtimeContext: RuntimeTurnContext,
+    visibleToolNames?: ReadonlySet<string>,
+  ): Promise<{ output: string; disableWebSearch?: boolean; activateToolNames?: string[] }> {
+    const requestedToolName = toolCall.function.name;
+    const toolName = resolveToolName(this.tools, requestedToolName);
     let args: Record<string, unknown>;
     try {
       args = JSON.parse(toolCall.function.arguments);
@@ -805,29 +1692,11 @@ export class AgentLoop {
       turnId,
       approved: false,
       signal: this.stateManager.get(threadId).cancelController?.signal,
+      webProvider: this.config.webProvider,
     };
 
-    const webBudgetError = this.consumeWebToolBudget(toolName, args, webToolBudget);
-    if (webBudgetError) {
-      const toolItem: ThreadItem = {
-        id: generateItemId(turnId, collectedItems.length),
-        type: 'tool_call',
-        turnId,
-        toolName,
-        arguments: args,
-        status: 'failed',
-        error: { message: webBudgetError },
-        result: webBudgetError,
-        timestamp: new Date().toISOString(),
-      };
-      collectedItems.push(toolItem);
-      this.emit({ type: 'item.started', threadId, turnId, item: toolItem });
-      this.emit({ type: 'item.completed', threadId, turnId, item: toolItem });
-      await this.config.store.appendItems(threadId, [toolItem]);
-      return { output: webBudgetError, disableWebSearch: true };
-    }
-
     // Check sandbox policy
+    // 检查沙箱策略
     const toolDef = this.tools.get(toolName);
     if (!toolDef) {
       const msg = this.i18n.t('runtime.unknown_tool', { tool: toolName });
@@ -842,102 +1711,137 @@ export class AgentLoop {
       this.emitItem(threadId, turnId, errorItem);
       return { output: msg };
     }
+    if (!this.isToolAllowedByRole(toolName)) {
+      const response: RuntimeToolResponse = {
+        status: 'failed',
+        output: `Tool ${toolName} is not allowed by active agent role ${this.config.activeAgentRoleProfile?.name}.`,
+        error: { message: 'Tool blocked by active agent role.', code: 'TOOL_BLOCKED_BY_AGENT_ROLE' },
+      };
+      const runtimeToolRequest: RuntimeToolRequest = {
+        toolCall,
+        requestedToolName,
+        toolName,
+        args,
+        toolDef,
+        toolContext: ctx,
+      };
+      await this.runtimeMiddleware.afterTool(runtimeContext, runtimeToolRequest, response);
+      const output = await this.recordMiddlewareToolResponse(
+        threadId,
+        turnId,
+        toolName,
+        args,
+        collectedItems,
+        response,
+      );
+      return { output };
+    }
+
+    const runtimeToolRequest: RuntimeToolRequest = {
+      toolCall,
+      requestedToolName,
+      toolName,
+      args,
+      toolDef,
+      toolContext: ctx,
+    };
+    await this.appendRunMonitorEvent(turnId, {
+      category: 'middleware',
+      type: 'middleware.beforeTool',
+      message: `beforeTool middleware started for ${toolName}`,
+      toolName,
+    });
+    const middlewareShortCircuit = await this.runtimeMiddleware.beforeTool(runtimeContext, runtimeToolRequest);
+    if (middlewareShortCircuit) {
+      await this.runtimeMiddleware.afterTool(runtimeContext, runtimeToolRequest, middlewareShortCircuit);
+      const output = await this.recordMiddlewareToolResponse(
+        threadId,
+        turnId,
+        toolName,
+        args,
+        collectedItems,
+        middlewareShortCircuit,
+      );
+      await this.appendRunMonitorEvent(turnId, {
+        category: 'tool',
+        type: middlewareShortCircuit.status === 'failed' ? 'tool.failed' : 'tool.completed',
+        level: middlewareShortCircuit.status === 'failed' ? 'warning' : 'info',
+        message: middlewareShortCircuit.output,
+        toolName,
+        metadata: { status: middlewareShortCircuit.status, shortCircuited: true },
+      });
+      return { output, disableWebSearch: middlewareShortCircuit.disableWebSearch };
+    }
+
+    if (visibleToolNames && !visibleToolNames.has(toolName)) {
+      const response: RuntimeToolResponse = {
+        status: 'failed',
+        output: this.config.locale === 'zh'
+          ? `工具 "${toolName}" 尚未绑定。请先调用 ${TOOL_SEARCH_TOOL_NAME} 搜索并绑定需要的工具 schema，然后再调用该工具。`
+          : `Tool "${toolName}" is not bound yet. Call ${TOOL_SEARCH_TOOL_NAME} first to search and bind the needed tool schema, then call this tool again.`,
+        error: {
+          code: 'TOOL_NOT_BOUND',
+          message: `Tool "${toolName}" is not visible in the current delayed binding set`,
+        },
+        data: {
+          requestedToolName,
+          toolName,
+          visibleTools: [...visibleToolNames].sort(),
+        },
+      };
+      await this.runtimeMiddleware.afterTool(runtimeContext, runtimeToolRequest, response);
+      const output = await this.recordMiddlewareToolResponse(
+        threadId,
+        turnId,
+        toolName,
+        args,
+        collectedItems,
+        response,
+      );
+      await this.appendRunMonitorEvent(turnId, {
+        category: 'tool',
+        type: 'tool.failed',
+        level: 'warning',
+        message: response.output,
+        toolName,
+        metadata: { status: response.status, code: response.error?.code },
+      });
+      return { output };
+    }
 
     if (isCollabTool(toolName)) {
-      return this.executeCollabToolCall(threadId, turnId, toolName, args, collectedItems);
-    }
-
-    // Sandbox check — use resolved effective level
-    if (toolDef.requiredPolicy === 'workspace_write' && this.effectiveLevel === 'readonly') {
-      const msg = this.i18n.t('runtime.sandbox_denied', { tool: toolName });
-      const errorItem: ThreadItem = {
-        id: generateItemId(turnId, collectedItems.length),
-        type: 'error',
-        turnId,
-        message: msg,
-        timestamp: new Date().toISOString(),
-      };
-      collectedItems.push(errorItem);
-      this.emitItem(threadId, turnId, errorItem);
-      return { output: msg };
-    }
-
-    // Exec policy for shell commands
-    if (toolName === 'shell_command' && typeof args.command === 'string') {
-      const execResult = this.sandbox.evaluateCommand(args.command);
-      if (execResult.decision === 'forbidden') {
-        const reason = execResult.matchedRules[0]?.justification ?? 'Blocked by exec policy';
-        const msg = this.i18n.t('runtime.rejected', { reason });
-        const errorItem: ThreadItem = {
-          id: generateItemId(turnId, collectedItems.length),
-          type: 'error',
-          turnId,
-          message: msg,
-          timestamp: new Date().toISOString(),
-        };
-        collectedItems.push(errorItem);
-        this.emitItem(threadId, turnId, errorItem);
-        return { output: msg };
-      }
-    }
-
-    // Approval check — preset's 'never' skips all approval;
-    // otherwise respect the tool's own requiresApproval flag.
-    const requireApproval =
-      this.preset?.approval === 'never' ? false : toolDef.requiresApproval;
-
-    if (requireApproval) {
-      const approvalReq: ApprovalRequest = {
-        requestId: generateId(),
-        threadId,
-        turnId,
-        itemId: generateItemId(turnId, collectedItems.length),
-        kind: toolName === 'shell_command' ? 'command' : 'file_write',
-        description: `Execute ${toolName}: ${JSON.stringify(args).slice(0, 200)}`,
-        payload: args,
-        decision: 'prompt',
-      };
-
-      this.emit({
-        type: 'approval.required',
-        threadId,
-        turnId,
-        itemId: approvalReq.itemId,
-        requestId: approvalReq.requestId,
-        kind: approvalReq.kind,
-        description: approvalReq.description,
-        payload: approvalReq.payload,
-        decision: 'prompt',
+      const itemCountBeforeWrap = collectedItems.length;
+      const response = await this.runtimeMiddleware.wrapTool(runtimeContext, runtimeToolRequest, async () => {
+        const result = await this.executeCollabToolCall(threadId, turnId, toolName, args, collectedItems);
+        return { output: result.output, status: 'completed' };
       });
-
-      const approval = await this.config.approvalHandler.requestApproval(approvalReq);
-      if (!approval.approved) {
-        const reason = approval.reason ?? 'denied';
-        const msg = this.i18n.t('runtime.rejected', { reason });
-        const errorItem: ThreadItem = {
-          id: generateItemId(turnId, collectedItems.length),
-          type: 'error',
+      await this.runtimeMiddleware.afterTool(runtimeContext, runtimeToolRequest, response);
+      if (collectedItems.length === itemCountBeforeWrap) {
+        const output = await this.recordMiddlewareToolResponse(
+          threadId,
           turnId,
-          message: msg,
-          timestamp: new Date().toISOString(),
-        };
-        collectedItems.push(errorItem);
-        this.emitItem(threadId, turnId, errorItem);
-        return { output: msg };
+          toolName,
+          args,
+          collectedItems,
+          response,
+        );
+        return { output, disableWebSearch: response.disableWebSearch };
       }
-      ctx.approved = true;
+      return { output: response.output, disableWebSearch: response.disableWebSearch };
     }
 
     // Pre-tool hook
+    // 工具前钩子
     await this.config.hooks.trigger('pre_tool_use', {
       threadId,
       turnId,
-      toolName,
+      toolName: requestedToolName === toolName ? toolName : `${requestedToolName} -> ${toolName}`,
       toolArgs: args,
       workspaceRoot: this.config.workspaceRoot,
     });
 
     // Start item
+    // 启动条目
     const itemId = generateItemId(turnId, collectedItems.length);
     const mcpIdentity = parseMcpNamespacedToolName(toolName);
     const toolItem: ThreadItem = {
@@ -959,11 +1863,28 @@ export class AgentLoop {
     } as ThreadItem;
     collectedItems.push(toolItem);
     this.emit({ type: 'item.started', threadId, turnId, item: toolItem });
+    await this.appendRunMonitorEvent(turnId, {
+      category: 'tool',
+      type: 'tool.started',
+      message: `Tool ${toolName} started`,
+      toolName,
+      metadata: { args: redactMonitorArgs(args) },
+    });
+
+    const prePatchSnapshots = toolName === 'apply_patch'
+      ? await capturePrePatchSnapshots(args, this.config.workspaceRoot)
+      : new Map<string, string | null>();
 
     // Execute
-    const result = await this.tools.execute(toolName, args, ctx);
+    // 执行
+    const result = await this.runtimeMiddleware.wrapTool(
+      runtimeContext,
+      runtimeToolRequest,
+      (request) => this.tools.execute(request.toolName, request.args, request.toolContext),
+    );
 
     // Update item
+    // 更新条目
     (toolItem as ThreadItem & { status: typeof result.status }).status = result.status;
     if (result.error) {
       (toolItem as ThreadItem & { error?: { message: string } }).error = result.error;
@@ -982,6 +1903,7 @@ export class AgentLoop {
     this.emit({ type: 'item.completed', threadId, turnId, item: toolItem });
 
     // Persist
+    // 持久化
     await this.config.store.appendItems(threadId, [toolItem]);
 
     if (toolName === 'apply_patch' && result.status === 'completed') {
@@ -1001,6 +1923,21 @@ export class AgentLoop {
         this.emit({ type: 'item.started', threadId, turnId, item: fileItem });
         this.emit({ type: 'item.completed', threadId, turnId, item: fileItem });
         await this.config.store.appendItems(threadId, [fileItem]);
+        const projectCheckpoint = await createProjectCheckpointItem({
+          threadId,
+          turnId,
+          itemId: generateItemId(turnId, collectedItems.length),
+          turnCount: await activeTurnCount(this.config.store, threadId),
+          workspaceRoot: this.config.workspaceRoot,
+          changes,
+          beforeSnapshots: prePatchSnapshots,
+        });
+        if (projectCheckpoint.files.length > 0) {
+          collectedItems.push(projectCheckpoint);
+          this.emit({ type: 'item.started', threadId, turnId, item: projectCheckpoint });
+          this.emit({ type: 'item.completed', threadId, turnId, item: projectCheckpoint });
+          await this.config.store.appendItems(threadId, [projectCheckpoint]);
+        }
         this.emit({
           type: 'turn.diff.updated',
           threadId,
@@ -1011,6 +1948,7 @@ export class AgentLoop {
     }
 
     // Post-tool hook
+    // 工具后钩子
     await this.config.hooks.trigger('post_tool_use', {
       threadId,
       turnId,
@@ -1020,7 +1958,79 @@ export class AgentLoop {
       workspaceRoot: this.config.workspaceRoot,
     });
 
-    return { output: result.output };
+    await this.runtimeMiddleware.afterTool(runtimeContext, runtimeToolRequest, result);
+    await this.appendRunMonitorEvent(turnId, {
+      category: 'tool',
+      type: result.status === 'failed' ? 'tool.failed' : 'tool.completed',
+      level: result.status === 'failed' ? 'error' : 'info',
+      message: result.status === 'failed' ? (result.error?.message ?? result.output) : `Tool ${toolName} completed`,
+      toolName,
+      metadata: { status: result.status },
+    });
+
+    return {
+      output: result.output,
+      disableWebSearch: result.disableWebSearch,
+      activateToolNames: toolName === TOOL_SEARCH_TOOL_NAME
+        ? toolNamesFromSearchResult(result.data)
+        : undefined,
+    };
+  }
+
+  private async recordMiddlewareToolResponse(
+    threadId: ThreadId,
+    turnId: TurnId,
+    toolName: string,
+    args: Record<string, unknown>,
+    collectedItems: ThreadItem[],
+    response: RuntimeToolResponse,
+  ): Promise<string> {
+    if (isCollabTool(toolName)) {
+      const item: CollabToolCallItem = {
+        id: generateItemId(turnId, collectedItems.length),
+        type: 'collab_tool_call',
+        turnId,
+        tool: toolName,
+        status: response.status,
+        senderThreadId: threadId,
+        receiverThreadId: stringArg(args, 'threadId') ?? stringArg(args, 'agentId'),
+        prompt: stringArg(args, 'prompt'),
+        error: response.error,
+        result: response.data ?? response.output,
+        timestamp: new Date().toISOString(),
+      };
+      collectedItems.push(item);
+      this.emit({ type: 'item.started', threadId, turnId, item });
+      this.emit({ type: 'item.completed', threadId, turnId, item });
+      await this.config.store.appendItems(threadId, [item]);
+      return response.output;
+    }
+
+    const mcpIdentity = parseMcpNamespacedToolName(toolName);
+    const toolItem: ThreadItem = {
+      id: generateItemId(turnId, collectedItems.length),
+      type: mcpIdentity ? 'mcp_tool_call' : 'tool_call',
+      turnId,
+      ...(mcpIdentity
+        ? {
+            server: mcpIdentity.serverId,
+            tool: mcpIdentity.toolName,
+            arguments: args,
+          }
+        : {
+            toolName,
+            arguments: args,
+          }),
+      status: response.status,
+      error: response.error,
+      result: response.data ?? response.output,
+      timestamp: new Date().toISOString(),
+    } as ThreadItem;
+    collectedItems.push(toolItem);
+    this.emit({ type: 'item.started', threadId, turnId, item: toolItem });
+    this.emit({ type: 'item.completed', threadId, turnId, item: toolItem });
+    await this.config.store.appendItems(threadId, [toolItem]);
+    return response.output;
   }
 
   private async executeCollabToolCall(
@@ -1050,9 +2060,12 @@ export class AgentLoop {
       item.result = result;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      const code = error && typeof error === 'object' && typeof (error as { code?: unknown }).code === 'string'
+        ? (error as { code: string }).code
+        : undefined;
       item.status = 'failed';
-      item.error = { message };
-      item.result = { error: message };
+      item.error = code ? { message, code } : { message };
+      item.result = code ? { error: message, code } : { error: message };
     }
 
     this.emit({ type: 'item.completed', threadId, turnId, item });
@@ -1071,10 +2084,17 @@ export class AgentLoop {
         return this.spawnSubagent(parentThreadId, args, item);
       case 'send_input':
         return this.sendInputToSubagent(parentThreadId, args, item);
+      case 'send_message':
+        return this.sendInterAgentMessage(parentThreadId, args, item, false);
+      case 'followup_task':
+        return this.sendInterAgentMessage(parentThreadId, args, item, true);
       case 'resume_agent':
         return this.resumeSubagent(parentThreadId, args, item);
       case 'wait':
+      case 'wait_agent':
         return this.waitForSubagents(parentThreadId, args, item);
+      case 'list_agents':
+        return this.listSubagents(parentThreadId, args, item);
       case 'close_agent':
         return this.closeSubagent(parentThreadId, args, item);
       default:
@@ -1090,18 +2110,35 @@ export class AgentLoop {
     const prompt = stringArg(args, 'prompt')?.trim();
     if (!prompt) throw new Error('spawn_agent requires prompt');
     const openEdges = await this.config.store.listThreadSpawnDescendants(parentThreadId, 'open');
-    if (openEdges.length >= this.config.maxSubagents) {
-      throw new Error(`Maximum open subagents reached: ${this.config.maxSubagents}`);
+    const parentMaxSubagents = this.config.activeAgentRoleProfile?.maxSubagents ?? this.config.maxSubagents;
+    if (openEdges.length >= parentMaxSubagents) {
+      throw new Error(`Maximum open subagents reached: ${parentMaxSubagents}`);
     }
 
     const parent = await this.config.store.getThread(parentThreadId);
     if (!parent) throw new Error(`Thread ${parentThreadId} not found`);
+    const nextDepth = await this.subagentDepth(parentThreadId) + 1;
+    const parentMaxSubagentDepth = this.config.activeAgentRoleProfile?.maxSubagentDepth ?? this.config.maxSubagentDepth;
+    if (nextDepth > parentMaxSubagentDepth) {
+      const error = new Error(`Maximum subagent depth reached: ${parentMaxSubagentDepth}`);
+      (error as Error & { code?: string }).code = 'SUBAGENT_DEPTH_LIMIT_REACHED';
+      throw error;
+    }
     const now = new Date().toISOString();
     const childThreadId = generateId();
-    const agentRole = stringArg(args, 'agentRole') ?? stringArg(args, 'role') ?? 'subagent';
+    const roleName = stringArg(args, 'agentRole') ?? stringArg(args, 'agent_type') ?? stringArg(args, 'role') ?? DEFAULT_AGENT_ROLE_NAME;
+    const roleProfile = resolveAgentRoleProfile(this.config.agentRoles, roleName);
+    const agentRole = roleProfile.name;
     const agentNickname = stringArg(args, 'agentNickname') ?? stringArg(args, 'nickname') ?? agentRole;
+    const spawnOverrides = {
+      model: stringArg(args, 'model')?.trim() || undefined,
+      reasoningEffort: stringArg(args, 'reasoningEffort') ?? stringArg(args, 'reasoning_effort') ?? undefined,
+      serviceTier: stringArg(args, 'serviceTier') ?? stringArg(args, 'service_tier') ?? roleProfile.serviceTier ?? undefined,
+      agentRole,
+    };
     const child: ThreadMeta = {
       threadId: childThreadId,
+      tenantId: this.config.tenantId,
       title: titleFromText(prompt),
       workspaceRoot: parent.workspaceRoot || this.config.workspaceRoot,
       status: 'active',
@@ -1110,7 +2147,14 @@ export class AgentLoop {
       updatedAt: now,
       archivedAt: null,
       ephemeral: parent.ephemeral,
-      tags: { ...parent.tags },
+      tags: {
+        ...parent.tags,
+        agentDepth: String(nextDepth),
+        agentRoleProfile: roleProfile.name,
+        ...(spawnOverrides.model ? { agentRequestedModel: spawnOverrides.model, agentModelInherited: 'true' } : {}),
+        ...(spawnOverrides.reasoningEffort ? { agentReasoningEffort: spawnOverrides.reasoningEffort } : {}),
+        ...(spawnOverrides.serviceTier ? { agentServiceTier: spawnOverrides.serviceTier } : {}),
+      },
       parentThreadId,
       agentNickname,
       agentRole,
@@ -1118,6 +2162,7 @@ export class AgentLoop {
     await this.config.store.createThread(child);
     await this.config.store.upsertThreadSpawnEdge({
       parentThreadId,
+      tenantId: this.config.tenantId,
       childThreadId,
       status: 'open',
       createdAt: now,
@@ -1135,7 +2180,7 @@ export class AgentLoop {
       agentRole,
       agentNickname,
     });
-    const childAgent = this.createChildAgent(agentRole, agentNickname, envelope);
+    const childAgent = this.createChildAgent(agentRole, agentNickname, envelope, spawnOverrides, roleProfile);
     this.forwardChildEvents({
       childAgent,
       parentThreadId,
@@ -1198,6 +2243,90 @@ export class AgentLoop {
     void run.catch(() => undefined);
     await this.waitForSubagentPromptPersisted(childThreadId, prompt);
     return { childThreadId, status: 'running', envelope };
+  }
+
+  private async sendInterAgentMessage(
+    parentThreadId: ThreadId,
+    args: Record<string, unknown>,
+    item: CollabToolCallItem,
+    triggerTurn: boolean,
+  ): Promise<unknown> {
+    const childThreadId = stringArg(args, 'target') ?? stringArg(args, 'threadId') ?? stringArg(args, 'agentId');
+    if (!childThreadId) throw new Error(`${item.tool} requires target`);
+    const message = stringArg(args, 'message')?.trim() ?? stringArg(args, 'prompt')?.trim();
+    if (!message) throw new Error(`${item.tool} requires message`);
+    const child = await this.ensureChildThread(parentThreadId, childThreadId);
+    await this.appendAgentMailboxMessage(child, {
+      senderThreadId: parentThreadId,
+      receiverThreadId: childThreadId,
+      content: message,
+      triggerTurn,
+      createdAt: new Date().toISOString(),
+    });
+
+    item.receiverThreadId = childThreadId;
+    item.prompt = message;
+    item.agentStatus = triggerTurn ? 'running' : 'open';
+
+    if (!triggerTurn) {
+      return { childThreadId, status: 'queued', triggerTurn: false };
+    }
+    if (this.stateManager.isRunning(childThreadId)) {
+      return { childThreadId, status: 'queued_running', triggerTurn: true };
+    }
+
+    const agentRole = child.agentRole ?? 'subagent';
+    const agentNickname = child.agentNickname ?? 'subagent';
+    const envelope = this.buildTransferEnvelope({
+      parentThreadId,
+      childThreadId,
+      prompt: message,
+      agentRole,
+      agentNickname,
+    });
+    const childAgent = this.createChildAgent(agentRole, agentNickname, envelope);
+    this.forwardChildEvents({
+      childAgent,
+      parentThreadId,
+      childThreadId,
+      agentNickname,
+      agentRole,
+    });
+    const run = childAgent.runTurn(childThreadId, { type: 'text', text: message });
+    this.subagentRuns.set(childThreadId, run);
+    void run.catch(() => undefined);
+    await this.waitForSubagentPromptPersisted(childThreadId, message);
+    return { childThreadId, status: 'running', triggerTurn: true, envelope };
+  }
+
+  private async listSubagents(
+    parentThreadId: ThreadId,
+    args: Record<string, unknown>,
+    item: CollabToolCallItem,
+  ): Promise<unknown> {
+    const pathPrefix = stringArg(args, 'path_prefix') ?? stringArg(args, 'pathPrefix');
+    const edges = await this.config.store.listThreadSpawnDescendants(parentThreadId);
+    const agents = [];
+    for (const edge of edges) {
+      const child = await this.config.store.getThread(edge.childThreadId);
+      if (!child) continue;
+      const taskName = child.agentNickname ?? child.agentRole ?? child.threadId;
+      if (pathPrefix && !child.threadId.startsWith(pathPrefix) && !taskName.startsWith(pathPrefix)) continue;
+      const runtimeState = await this.getRuntimeState(child.threadId);
+      const latestTurn = (await this.config.store.getTurns(child.threadId)).at(-1);
+      agents.push({
+        threadId: child.threadId,
+        agentId: child.threadId,
+        taskName,
+        agentRole: child.agentRole ?? null,
+        agentNickname: child.agentNickname ?? null,
+        edgeStatus: edge.status,
+        status: runtimeState.status === 'idle' ? (latestTurn?.status ?? edge.status) : runtimeState.status,
+        parentThreadId: edge.parentThreadId,
+      });
+    }
+    item.agentStatus = agents.some((agent) => agent.status === 'running') ? 'running' : 'completed';
+    return { agents };
   }
 
   private forwardChildEvents(options: {
@@ -1271,6 +2400,7 @@ export class AgentLoop {
           await run;
         } catch {
           // The child's own turn records the failure; wait reports the status below.
+          // 子 agent 自己的回合会记录失败；等待会在下面报告状态。
         }
       }
       const turns = await this.config.store.getTurns(childThreadId);
@@ -1361,6 +2491,35 @@ export class AgentLoop {
     return child;
   }
 
+  private async appendAgentMailboxMessage(
+    child: ThreadMeta,
+    message: {
+      senderThreadId: ThreadId;
+      receiverThreadId: ThreadId;
+      content: string;
+      triggerTurn: boolean;
+      createdAt: string;
+    },
+  ): Promise<void> {
+    const mailbox = parseAgentMailbox(child.tags.agentMailbox);
+    mailbox.push(message);
+    await this.config.store.updateThreadMetadata(child.threadId, {
+      tags: { ...child.tags, agentMailbox: JSON.stringify(mailbox) },
+    });
+  }
+
+  private async subagentDepth(threadId: ThreadId): Promise<number> {
+    let depth = 0;
+    let current = await this.config.store.getThread(threadId);
+    const seen = new Set<ThreadId>();
+    while (current?.parentThreadId && !seen.has(current.threadId)) {
+      seen.add(current.threadId);
+      depth += 1;
+      current = await this.config.store.getThread(current.parentThreadId);
+    }
+    return depth;
+  }
+
   private buildTransferEnvelope({
     agentNickname,
     agentRole,
@@ -1424,32 +2583,65 @@ export class AgentLoop {
     agentRole: string | null | undefined,
     agentNickname: string | null | undefined,
     envelope?: AgentTransferEnvelope,
+    _overrides?: {
+      model?: string;
+      reasoningEffort?: string;
+      serviceTier?: string;
+      agentRole?: string;
+    },
+    roleProfile?: ResolvedAgentRoleProfile | null,
   ): AgentLoop {
+    const activeRoleProfile = roleProfile ?? this.tryResolveAgentRoleProfile(agentRole);
     const roleLine = this.config.locale === 'zh'
       ? `你是父线程派生的子 agent。角色：${agentRole ?? 'subagent'}。名称：${agentNickname ?? 'subagent'}。独立完成分配任务，最后给出简洁结论。`
       : `You are a spawned subagent. Role: ${agentRole ?? 'subagent'}. Nickname: ${agentNickname ?? 'subagent'}. Complete the delegated task independently and end with a concise result.`;
+    const roleProfilePrompt = buildRoleProfilePrompt(activeRoleProfile);
     const envelopeLine = envelope
       ? `\n\n## Agent Transfer Envelope\n${JSON.stringify(envelope, null, 2)}`
       : '';
+    const roleProfileLine = roleProfilePrompt ? `\n\n${roleProfilePrompt}` : '';
     return new AgentLoop(
       {
         workspaceRoot: this.config.workspaceRoot,
         sandbox: this.config.sandbox,
         model: this.config.model,
         store: this.config.store,
+        tenantId: this.config.tenantId,
         tools: this.tools,
         approvalHandler: this.config.approvalHandler,
         maxIterations: this.config.maxIterations,
-        systemPrompt: `${this.config.systemPrompt}\n\n${roleLine}${envelopeLine}`,
-        skills: this.config.skills,
+        systemPrompt: `${this.config.systemPrompt}\n\n${roleLine}${roleProfileLine}${envelopeLine}`,
+        skills: scopedSkillsForRole(this.config.skills, activeRoleProfile),
         hooks: this.config.hooks,
         locale: this.config.locale,
         webSearchMode: this.config.webSearchMode,
         runProfile: this.config.runProfile,
-        maxSubagents: this.config.maxSubagents,
+        maxSubagents: activeRoleProfile?.maxSubagents ?? this.config.maxSubagents,
+        maxSubagentDepth: activeRoleProfile?.maxSubagentDepth ?? this.config.maxSubagentDepth,
+        spawnModelFactory: this.config.spawnModelFactory,
+        agentRoles: this.config.agentRoles,
+        activeAgentRoleProfile: activeRoleProfile,
+        runtimeMiddleware: this.config.runtimeMiddleware,
+        dynamicContextProvider: this.config.dynamicContextProvider,
+        maxRepeatedToolCalls: this.config.maxRepeatedToolCalls,
+        maxConsecutiveToolErrors: this.config.maxConsecutiveToolErrors,
+        toolBindingMode: this.config.toolBindingMode,
+        initialTools: this.config.initialTools,
+        maxToolSearchResults: this.config.maxToolSearchResults,
+        toolGovernance: this.config.toolGovernance,
+        guardian: this.config.guardian,
+        memory: this.config.memory,
       },
       this.stateManager,
     );
+  }
+
+  private tryResolveAgentRoleProfile(roleName: string | null | undefined): ResolvedAgentRoleProfile | null {
+    try {
+      return resolveAgentRoleProfile(this.config.agentRoles, roleName ?? DEFAULT_AGENT_ROLE_NAME);
+    } catch {
+      return null;
+    }
   }
 
   // ─── Message Building ─────────────────────────────────────────────────────
@@ -1458,15 +2650,18 @@ export class AgentLoop {
     userInput: UserInput,
     thread: ThreadMeta,
     webSearchRecommended = false,
+    includeCurrentUserInput = true,
   ): Promise<ChatMessage[]> {
     const messages: ChatMessage[] = [];
 
     // System prompt
-    const systemPrompt = await this.buildSystemPrompt(thread);
+    // 系统提示
+    const systemPrompt = await this.buildSystemPrompt(thread, userInput);
     messages.push({ role: 'system', content: systemPrompt });
     const turnInstruction = this.buildTurnInstructionPrompt(userInput, webSearchRecommended);
 
     // Recent history
+    // 最近历史
     const recentItems = await this.config.store.getRecentItems(threadId, 50);
     const compactedTurnIds = new Set(parseCompactedRanges(thread.tags?.compactedRanges)
       .flatMap((range) => range.compactedTurnIds));
@@ -1478,7 +2673,11 @@ export class AgentLoop {
       if (msg) messages.push(msg);
     }
 
-    // Current user input — support multimodal (text + images)
+    // Current user input - support multimodal (text + images)
+    // 当前用户输入 — 支持多模态（文本 + 图像）
+    if (!includeCurrentUserInput) {
+      return fitMessagesToBudget(messages, MODEL_HISTORY_TOKEN_BUDGET);
+    }
     if (userInput.type === 'multimodal') {
       const contentParts: Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> = [];
       for (const part of userInput.parts) {
@@ -1496,7 +2695,7 @@ export class AgentLoop {
       messages.push({ role: 'user', content: appendTurnInstruction(userInput.text, turnInstruction) });
     }
 
-    return messages;
+    return fitMessagesToBudget(messages, MODEL_HISTORY_TOKEN_BUDGET);
   }
 
   private shouldOfferWebSearchTool(): boolean {
@@ -1525,22 +2724,43 @@ export class AgentLoop {
     return `<turn_instructions>\n${sections.join('\n\n')}\n</turn_instructions>`;
   }
 
-  private async buildSystemPrompt(thread: ThreadMeta): Promise<string> {
+  private async buildSystemPrompt(thread: ThreadMeta, userInput?: UserInput): Promise<string> {
     let prompt = this.config.systemPrompt;
 
     // Inject AGENTS.md
+    // 注入 AGENTS.md
     const agentsMd = await loadAgentsMd(this.config.workspaceRoot);
     if (agentsMd) {
       prompt += `\n\n## Project Rules (AGENTS.md)\n${agentsMd}`;
     }
 
     // Inject skills
+    // 注入技能
     const skillsText = this.config.skills.toPromptText();
     if (skillsText) {
       prompt += `\n\n${skillsText}`;
     }
 
+    if (userInput) {
+      const memoryContext = await this.buildMemoryContext(thread, userInput);
+      if (memoryContext) {
+        prompt += `\n\n${memoryContext}`;
+      }
+    }
+
+    const lightMemoryContext = await this.buildLightMemoryContext(thread);
+    if (lightMemoryContext) {
+      prompt += `\n\n${lightMemoryContext}`;
+    }
+
+    // Inject episode working set (after cold memory, before compacted summary).
+    const workingSet = this.threadWorkingSets.get(thread.threadId);
+    if (workingSet?.frozenPromptBlock) {
+      prompt += `\n\n${workingSet.frozenPromptBlock}`;
+    }
+
     // Inject compacted summary
+    // 注入压缩摘要
     if (thread.status === 'compacted' && thread.tags?.compactedSummary) {
       prompt += `\n\n## Previous Conversation Summary\n${thread.tags.compactedSummary}`;
     }
@@ -1548,41 +2768,614 @@ export class AgentLoop {
     return prompt;
   }
 
-  private async maybeAutoCompact(threadId: ThreadId, turnId: TurnId): Promise<void> {
-    const recentItems = await this.config.store.getRecentItems(threadId, 200);
-    const compactionOptions = compactionOptionsForRunProfile(this.config.runProfile);
-    const pressure = getCompactionPressure(recentItems, compactionOptions);
-    if (pressure.status === 'soft') {
-      this.emit({ type: 'context.compaction_pressure', threadId, turnId, pressure });
-      return;
+  private async buildMemoryContext(thread: ThreadMeta, userInput: UserInput): Promise<string> {
+    const settings = this.config.memory;
+    if (!settings.memoryEnabled || !settings.useColdMemories) return '';
+    if (thread.tags?.memoryExcluded === 'true') return '';
+    if (!this.config.store.listMemoryRecords && !this.config.store.searchMemoryRecords) return '';
+
+    const query = userInputToText(userInput);
+    const results = await searchColdMemories(this.config.store, query, {
+      workspaceRoot: thread.workspaceRoot ?? this.config.workspaceRoot,
+      limit: settings.memoryInjectLimit,
+      tokenBudget: settings.memoryTokenBudget,
+    });
+    if (results.length === 0) return '';
+
+    const usedAt = new Date().toISOString();
+    for (const result of results) {
+      try {
+        await this.config.store.recordMemoryUsage?.(result.record.id, usedAt);
+      } catch (err) {
+        await this.appendRunMonitorEvent('memory-context', {
+          category: 'memory',
+          type: 'memory.usage_record_failed',
+          level: 'warning',
+          message: err instanceof Error ? err.message : String(err),
+          metadata: { memoryId: result.record.id },
+        });
+      }
     }
-    if (pressure.status !== 'hard') return;
-    await this.config.hooks.trigger('pre_compact', {
-      threadId,
-      turnId,
-      workspaceRoot: this.config.workspaceRoot,
+
+    const lines = results.map((result) => {
+      const record = result.record;
+      const sourceThreadId = record.sourceThreadId ?? 'unknown';
+      const score = result.score.toFixed(2);
+      return `- [memory:${record.id} ${record.type} score=${score} sourceThreadId=${sourceThreadId}] ${record.text}`;
     });
-    const result = await compactThread(threadId, this.config.store, this.config.model, {
-      trigger: 'auto',
-      compactionTurnId: turnId,
-      ...compactionOptions,
-    });
-    if (result.item) {
-      this.emit({ type: 'item.started', threadId, turnId, item: result.item });
-      this.emit({ type: 'item.completed', threadId, turnId, item: result.item });
-      this.emit({
-        type: 'thread.compacted',
-        threadId,
-        compactedTurns: result.compactedTurns,
-        tokensBefore: result.tokensBefore,
-        tokensAfter: result.tokensAfter,
+    return [
+      '## Cold Memories',
+      'Persistent memories retrieved for this turn. Use them only when relevant; each entry is source-marked for audit.',
+      ...lines,
+    ].join('\n');
+  }
+
+  private async buildLightMemoryContext(thread: ThreadMeta): Promise<string> {
+    const settings = this.config.memory;
+    if (!settings.memoryEnabled) return '';
+    if (thread.tags?.memoryExcluded === 'true') return '';
+
+    try {
+      const memories = await listLightMemories(this.config.store);
+      if (memories.length === 0) return '';
+      const limit = Math.max(1, Math.min(settings.memoryInjectLimit, 20));
+      const selected = memories
+        .slice()
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+        .slice(0, limit);
+      const lines = selected.map((entry) => {
+        const sourceThreadId = entry.sourceThreadId ?? 'unknown';
+        return `- [light:${entry.id} sourceThreadId=${sourceThreadId}] ${entry.text}`;
+      });
+      return [
+        '## Light Memories',
+        'Recent lightweight user notes. Use them only when relevant to the current turn.',
+        ...lines,
+      ].join('\n');
+    } catch (err) {
+      await this.appendRunMonitorEvent('memory-context', {
+        category: 'memory',
+        type: 'memory.light_context_failed',
+        level: 'warning',
+        message: err instanceof Error ? err.message : String(err),
+      });
+      return '';
+    }
+  }
+
+  private async maybeExtractColdMemories(
+    thread: ThreadMeta,
+    turnId: TurnId,
+    userInput: UserInput,
+    collectedItems: ThreadItem[],
+  ): Promise<void> {
+    const settings = this.config.memory;
+    if (!settings.memoryEnabled || !settings.autoExtractMemories) return;
+    if (thread.ephemeral || thread.parentThreadId || thread.tags?.memoryExcluded === 'true') return;
+    if (!this.config.store.upsertMemoryRecord || !this.config.store.listMemoryRecords) return;
+
+    try {
+      const assistantText = collectedItems
+        .filter((item): item is Extract<ThreadItem, { type: 'agent_message' }> => item.turnId === turnId && item.type === 'agent_message')
+        .map((item) => item.text)
+        .join('\n\n');
+      const candidates = extractMemoryCandidates({
+        threadId: thread.threadId,
+        turnId,
+        workspaceRoot: thread.workspaceRoot ?? this.config.workspaceRoot,
+        userText: userInputToText(userInput),
+        assistantText,
+        now: new Date(),
+      });
+      for (const candidate of candidates) {
+        await mergeMemoryCandidate(this.config.store, candidate, new Date());
+      }
+    } catch (err) {
+      await this.appendRunMonitorEvent(turnId, {
+        category: 'memory',
+        type: 'memory.extract_failed',
+        level: 'warning',
+        message: err instanceof Error ? err.message : String(err),
       });
     }
-    await this.config.hooks.trigger('post_compact', {
+  }
+
+  // ─── Episode Memory Helpers ─────────────────────────────────────────────────
+  private storeSupportsEpisodes(): boolean {
+    return Boolean(
+      this.config.store.upsertEpisodeRecord &&
+      this.config.store.listEpisodeRecords &&
+      this.config.store.saveThreadWorkingSet &&
+      this.config.store.getThreadWorkingSet,
+    );
+  }
+
+  private async loadEpisodeMemorySettings(): Promise<EpisodeMemorySettings> {
+    if (!this.storeSupportsEpisodes()) return normalizeEpisodeMemorySettings(undefined);
+    try {
+      return await getEpisodeMemorySettings(this.config.store);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      // 无 turn 上下文时静默回退；有上下文的地方会额外上报 warning
+      return normalizeEpisodeMemorySettings(undefined);
+    }
+  }
+
+  private resolveEpisodeMemoryMode(thread: ThreadMeta): EpisodeMemoryMode {
+    const mode = thread.tags?.episodeMemoryMode;
+    if (mode === 'disabled' || mode === 'polluted') return mode;
+    return 'enabled';
+  }
+
+  private async prepareEpisodeWorkingSet(
+    thread: ThreadMeta,
+    turnId: TurnId,
+    turnIndex: number,
+    userInput: UserInput,
+  ): Promise<void> {
+    if (!this.storeSupportsEpisodes()) return;
+
+    const mode = this.resolveEpisodeMemoryMode(thread);
+    if (mode === 'disabled') {
+      this.threadWorkingSets.delete(thread.threadId);
+      this.threadOpenEpisodes.delete(thread.threadId);
+      await this.appendRunMonitorEvent(turnId, {
+        category: 'memory',
+        type: 'episode.mode.disabled',
+        message: 'Episode memory is disabled for this thread',
+      });
+      return;
+    }
+
+    if (mode === 'polluted') {
+      this.threadWorkingSets.delete(thread.threadId);
+      this.threadOpenEpisodes.delete(thread.threadId);
+      await this.appendRunMonitorEvent(turnId, {
+        category: 'memory',
+        type: 'episode.mode.polluted',
+        message: 'Episode memory is polluted for this thread; skipping automatic injection',
+      });
+      return;
+    }
+
+    let settings: EpisodeMemorySettings;
+    try {
+      settings = await this.loadEpisodeMemorySettings();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      await this.appendRunMonitorEvent(turnId, {
+        category: 'memory',
+        type: 'episode.settings_load_failed',
+        level: 'warning',
+        message: `Failed to load episode memory settings: ${message}`,
+      });
+      return;
+    }
+
+    if (!settings.episodeMemoryEnabled) return;
+
+    try {
+      const previousOpenEpisode = this.threadOpenEpisodes.get(thread.threadId) ?? null;
+      const openEpisode = await getOpenEpisodeForThread(this.config.store, thread.threadId);
+      if (openEpisode) {
+        this.threadOpenEpisodes.set(thread.threadId, openEpisode);
+      }
+
+      const hadSnapshot = await getThreadWorkingSetSnapshot(this.config.store, thread.threadId);
+      if (hadSnapshot) {
+        this.threadWorkingSets.set(thread.threadId, hadSnapshot);
+      }
+
+      const activeGoal = thread.tags?.activeGoal;
+      const selectedArtifacts = thread.tags?.selectedArtifacts
+        ? thread.tags.selectedArtifacts.split(',').map((s) => s.trim()).filter(Boolean)
+        : undefined;
+
+      const result = await buildOrReuseWorkingSet(
+        this.config.store,
+        thread,
+        userInput,
+        turnId,
+        turnIndex,
+        openEpisode,
+        settings,
+        activeGoal,
+        selectedArtifacts,
+      );
+
+      this.threadWorkingSets.set(thread.threadId, result.snapshot);
+      if (result.openEpisode) {
+        this.threadOpenEpisodes.set(thread.threadId, result.openEpisode);
+      }
+
+      if (result.rebuilt) {
+        try {
+          await saveThreadWorkingSetSnapshot(this.config.store, result.snapshot);
+          if (result.openEpisode && result.openEpisode.id !== previousOpenEpisode?.id) {
+            await saveEpisodeRecord(this.config.store, result.openEpisode);
+          }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          await this.appendRunMonitorEvent(turnId, {
+            category: 'memory',
+            type: 'episode.working_set_save_failed',
+            level: 'warning',
+            message: `Failed to save rebuilt working set: ${message}`,
+          });
+        }
+
+        this.emit({
+          type: 'episode.working_set_rebuilt',
+          threadId: thread.threadId,
+          turnId,
+          generation: result.snapshot.generation,
+          activeEpisodeIds: result.snapshot.activeEpisodeIds,
+          frozenPromptBlock: result.snapshot.frozenPromptBlock,
+        });
+        await this.appendRunMonitorEvent(turnId, {
+          category: 'memory',
+          type: 'episode.working_set_rebuilt',
+          message: 'Episode working set rebuilt',
+          metadata: {
+            generation: result.snapshot.generation,
+            activeEpisodeIds: result.snapshot.activeEpisodeIds,
+            injectedEpisodeIds: result.snapshot.injectedEpisodeIds,
+            taskFingerprint: result.snapshot.taskFingerprint,
+          },
+        });
+      } else if (hadSnapshot) {
+        await this.appendRunMonitorEvent(turnId, {
+          category: 'memory',
+          type: 'episode.working_set_restored',
+          message: 'Episode working set restored from persisted snapshot',
+          metadata: {
+            generation: result.snapshot.generation,
+            activeEpisodeIds: result.snapshot.activeEpisodeIds,
+            taskFingerprint: result.snapshot.taskFingerprint,
+          },
+        });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      await this.appendRunMonitorEvent(turnId, {
+        category: 'memory',
+        type: 'episode.working_set_failed',
+        level: 'warning',
+        message: `Episode working set preparation failed: ${message}`,
+      });
+    }
+  }
+
+  private async updateEpisodeFromCompletedTurn(
+    thread: ThreadMeta,
+    turnId: TurnId,
+    turnIndex: number,
+    userInput: UserInput,
+    collectedItems: ThreadItem[],
+  ): Promise<void> {
+    if (!this.storeSupportsEpisodes()) return;
+
+    const mode = this.resolveEpisodeMemoryMode(thread);
+    if (mode !== 'enabled') return;
+
+    const openEpisode = this.threadOpenEpisodes.get(thread.threadId);
+    if (!openEpisode || openEpisode.lifecycle !== 'open') return;
+
+    let settings: EpisodeMemorySettings;
+    try {
+      settings = await this.loadEpisodeMemorySettings();
+    } catch {
+      return;
+    }
+    if (!settings.episodeMemoryEnabled) return;
+
+    const userText = userInputToText(userInput);
+    const assistantText = collectedItems
+      .filter((item): item is Extract<ThreadItem, { type: 'agent_message' }> =>
+        item.turnId === turnId && item.type === 'agent_message',
+      )
+      .map((item) => item.text)
+      .join('\n\n');
+    const episodeItems = collectedItems
+      .filter((item) => item.turnId === turnId)
+      .map((item) => ({
+        type: item.type,
+        text: (item as Partial<ThreadItem> & { text?: string }).text,
+        path: (item as Partial<ThreadItem> & { path?: string }).path,
+        items: (item as Partial<ThreadItem> & { items?: Array<{ text: string; completed: boolean }> }).items,
+      }));
+
+    try {
+      const updated = updateEpisodeFromTurn(
+        openEpisode,
+        turnId,
+        turnIndex,
+        userText,
+        assistantText,
+        episodeItems,
+      );
+      await saveEpisodeRecord(this.config.store, updated);
+      this.threadOpenEpisodes.set(thread.threadId, updated);
+      await this.appendRunMonitorEvent(turnId, {
+        category: 'memory',
+        type: 'episode.updated',
+        message: 'Open episode updated from completed turn',
+        metadata: { episodeId: updated.id, sourceTurnEndIndex: updated.sourceTurnEndIndex },
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      await this.appendRunMonitorEvent(turnId, {
+        category: 'memory',
+        type: 'episode.update_failed',
+        level: 'warning',
+        message: `Failed to update open episode: ${message}`,
+      });
+    }
+  }
+
+  private async sealOpenEpisodeForCompaction(threadId: ThreadId, turnId: TurnId): Promise<void> {
+    if (!this.storeSupportsEpisodes()) return;
+
+    const thread = await this.config.store.getThread(threadId);
+    if (!thread || this.resolveEpisodeMemoryMode(thread) !== 'enabled') return;
+
+    let settings: EpisodeMemorySettings;
+    try {
+      settings = await this.loadEpisodeMemorySettings();
+    } catch {
+      return;
+    }
+    if (!settings.episodeMemoryEnabled) return;
+
+    const openEpisode = this.threadOpenEpisodes.get(threadId);
+    if (!openEpisode || openEpisode.lifecycle !== 'open') return;
+
+    try {
+      const sealed = sealEpisode(openEpisode, 'pre_compact');
+      await saveEpisodeRecord(this.config.store, sealed);
+      this.threadOpenEpisodes.set(threadId, sealed);
+      await this.appendRunMonitorEvent(turnId, {
+        category: 'memory',
+        type: 'episode.sealed',
+        message: 'Open episode sealed before context compaction',
+        metadata: { episodeId: sealed.id, reason: 'pre_compact' },
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      await this.appendRunMonitorEvent(turnId, {
+        category: 'memory',
+        type: 'episode.seal_failed',
+        level: 'warning',
+        message: `Failed to seal open episode before compaction: ${message}`,
+      });
+    }
+  }
+
+  private async invalidateEpisodesForRollback(
+    threadId: ThreadId,
+    newTurnCount: number,
+    turnId: TurnId,
+  ): Promise<void> {
+    if (!this.storeSupportsEpisodes()) return;
+
+    try {
+      const { rolledBack, stale } = await invalidateEpisodesByTurnRange(
+        this.config.store,
+        threadId,
+        newTurnCount,
+      );
+      if (rolledBack.length > 0 || stale.length > 0) {
+        await this.appendRunMonitorEvent(turnId, {
+          category: 'memory',
+          type: 'episode.invalidated',
+          message: `Invalidated episodes after rollback (rolledBack=${rolledBack.length}, stale=${stale.length})`,
+          metadata: { rolledBack, stale, newTurnCount },
+        });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      await this.appendRunMonitorEvent(turnId, {
+        category: 'memory',
+        type: 'episode.invalidate_failed',
+        level: 'warning',
+        message: `Failed to invalidate episodes after rollback: ${message}`,
+      });
+    }
+
+    try {
+      if (this.config.store.deleteThreadWorkingSet) {
+        await this.config.store.deleteThreadWorkingSet(threadId);
+      }
+      this.threadWorkingSets.delete(threadId);
+      this.threadOpenEpisodes.delete(threadId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      await this.appendRunMonitorEvent(turnId, {
+        category: 'memory',
+        type: 'episode.working_set_delete_failed',
+        level: 'warning',
+        message: `Failed to delete thread working set after rollback: ${message}`,
+      });
+    }
+  }
+
+  private async maybeEmitWorkingSetRestored(threadId: ThreadId, turnId: TurnId): Promise<void> {
+    if (!this.storeSupportsEpisodes()) return;
+    try {
+      const thread = await this.config.store.getThread(threadId);
+      const mode = thread ? this.resolveEpisodeMemoryMode(thread) : 'enabled';
+      if (mode !== 'enabled') {
+        this.threadWorkingSets.delete(threadId);
+        this.threadOpenEpisodes.delete(threadId);
+        return;
+      }
+
+      const openEpisode = await getOpenEpisodeForThread(this.config.store, threadId);
+      if (openEpisode) {
+        this.threadOpenEpisodes.set(threadId, openEpisode);
+      }
+      const snapshot = this.config.store.getThreadWorkingSet
+        ? await this.config.store.getThreadWorkingSet(threadId)
+        : null;
+      if (snapshot) {
+        this.threadWorkingSets.set(threadId, snapshot);
+        await this.appendRunMonitorEvent(turnId, {
+          category: 'memory',
+          type: 'episode.working_set_restored',
+          message: 'Episode working set restored from persisted snapshot',
+          metadata: {
+            generation: snapshot.generation,
+            activeEpisodeIds: snapshot.activeEpisodeIds,
+            taskFingerprint: snapshot.taskFingerprint,
+            episodeIdentity: snapshot.episodeIdentity,
+          },
+        });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      await this.appendRunMonitorEvent(turnId, {
+        category: 'memory',
+        type: 'episode.working_set_restore_failed',
+        level: 'warning',
+        message: `Failed to restore episode working set: ${message}`,
+      });
+    }
+  }
+
+  private async maybeAutoCompact(
+    threadId: ThreadId,
+    turnId: TurnId,
+    phaseContext: 'pre_turn' | 'mid_turn' = 'pre_turn',
+    visibleMessages?: ChatMessage[],
+  ): Promise<boolean> {
+    const recentItems = await this.config.store.getRecentItems(threadId, 200);
+    const thread = await this.config.store.getThread(threadId);
+    const effectiveRecentItems = filterEffectiveCompactionItems(recentItems, thread?.tags?.compactedRanges);
+    const compactionOptions = compactionOptionsForRunProfile(this.config.runProfile);
+    const rolloutPressure = getCompactionPressure(effectiveRecentItems, compactionOptions);
+    const visibleInputTokens = visibleMessages ? estimateRuntimeChatTokens(visibleMessages).inputTokens : 0;
+    const estimatedTokens = Math.max(rolloutPressure.estimatedTokens, visibleInputTokens);
+    const ratio = rolloutPressure.maxTokens > 0 ? estimatedTokens / rolloutPressure.maxTokens : 1;
+    const pressure = {
+      ...rolloutPressure,
+      estimatedTokens,
+      ratio,
+      status: estimatedTokens >= rolloutPressure.hardThreshold
+        ? 'hard' as const
+        : estimatedTokens >= rolloutPressure.softThreshold
+          ? 'soft' as const
+          : 'ok' as const,
+    };
+    const autoCompactWindow = { ...this.stateManager.get(threadId).autoCompactWindow };
+    const pressureWithWindow = {
+      ...pressure,
+      window: autoCompactWindow,
+    };
+    if (pressure.status === 'soft') {
+      this.emit({ type: 'context.compaction_pressure', threadId, turnId, pressure: pressureWithWindow });
+      return false;
+    }
+    if (pressure.status !== 'hard') return false;
+    const compactionItemId = `compact_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    this.emit({
+      type: 'thread.compacted.v2',
       threadId,
       turnId,
-      workspaceRoot: this.config.workspaceRoot,
+      phase: 'started',
+      trigger: 'auto',
+      strategy: compactionOptions.strategy,
+      tokensBefore: Math.ceil(pressure.estimatedTokens),
+      item: { id: compactionItemId },
     });
+    await this.appendRunMonitorEvent(turnId, {
+      category: 'compaction',
+      type: 'compaction.started',
+      message: 'Automatic context compaction started',
+      metadata: { trigger: 'auto', phase: phaseContext, strategy: compactionOptions.strategy, pressure: pressureWithWindow },
+    });
+    try {
+      await this.config.hooks.trigger('pre_compact', {
+        threadId,
+        turnId,
+        workspaceRoot: this.config.workspaceRoot,
+      });
+      await this.sealOpenEpisodeForCompaction(threadId, turnId);
+      const result = await compactThread(threadId, this.config.store, this.config.model, {
+        trigger: 'auto',
+        compactionTurnId: turnId,
+        compactionItemId,
+        force: phaseContext === 'mid_turn',
+        tokensBeforeOverride: Math.ceil(pressure.estimatedTokens),
+        ...compactionOptions,
+      });
+      let compacted = false;
+      if (result.item) {
+        this.emit({ type: 'item.started', threadId, turnId, item: result.item });
+        this.emit({ type: 'item.completed', threadId, turnId, item: result.item });
+        this.emit({
+          type: 'thread.compacted',
+          threadId,
+          compactedTurns: result.compactedTurns,
+          tokensBefore: result.tokensBefore,
+          tokensAfter: result.tokensAfter,
+        });
+        this.emit({
+          type: 'thread.compacted.v2',
+          threadId,
+          turnId,
+          phase: 'completed',
+          trigger: 'auto',
+          strategy: compactionOptions.strategy,
+          compactedTurns: result.compactedTurns,
+          tokensBefore: result.tokensBefore,
+          tokensAfter: result.tokensAfter,
+          item: result.item,
+        });
+        await this.appendRunMonitorEvent(turnId, {
+          category: 'compaction',
+          type: 'compaction.completed',
+          message: 'Automatic context compaction completed',
+          metadata: {
+            trigger: 'auto',
+            phase: phaseContext,
+            strategy: compactionOptions.strategy,
+            compactedTurns: result.compactedTurns,
+            tokensBefore: result.tokensBefore,
+            tokensAfter: result.tokensAfter,
+            windowOrdinal: autoCompactWindow.ordinal,
+          },
+        });
+        this.stateManager.startNextAutoCompactWindow(threadId);
+        compacted = true;
+      }
+      await this.config.hooks.trigger('post_compact', {
+        threadId,
+        turnId,
+        workspaceRoot: this.config.workspaceRoot,
+      });
+      return compacted;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const info = toNexusErrorInfo(error);
+      this.emit({
+        type: 'thread.compacted.v2',
+        threadId,
+        turnId,
+        phase: 'failed',
+        trigger: 'auto',
+        strategy: compactionOptions.strategy,
+        item: { id: compactionItemId },
+        error: { message, info },
+      });
+      await this.appendRunMonitorEvent(turnId, {
+        category: 'compaction',
+        type: 'compaction.failed',
+        level: 'error',
+        message,
+        metadata: { trigger: 'auto', phase: phaseContext, strategy: compactionOptions.strategy, info },
+      });
+      throw error;
+    }
   }
 
   private buildActiveSkillsPrompt(userInput: UserInput): string {
@@ -1603,6 +3396,68 @@ export class AgentLoop {
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
+  private async finishTurnLifecycle(
+    runtimeContext: RuntimeTurnContext,
+    result: RuntimeTurnResult,
+  ): Promise<void> {
+    let lifecycleError: unknown;
+    try {
+      await this.config.hooks.trigger('turn_end', {
+        threadId: runtimeContext.threadId,
+        turnId: runtimeContext.turnId,
+        workspaceRoot: this.config.workspaceRoot,
+      });
+    } catch (err) {
+      lifecycleError = err;
+    } finally {
+      try {
+        await this.runtimeMiddleware.afterTurn(runtimeContext, result);
+      } catch (err) {
+        lifecycleError ??= err;
+      }
+    }
+    if (lifecycleError) throw lifecycleError;
+  }
+
+  private async createRuntimeTurnContext(
+    threadId: ThreadId,
+    turnId: TurnId,
+    thread: ThreadMeta,
+    userInput: UserInput,
+    checkpoint: Checkpoint,
+    collectedItems: ThreadItem[],
+  ): Promise<RuntimeTurnContext> {
+    const runtimeState = await this.getRuntimeState(threadId);
+    return {
+      tenantId: this.config.tenantId,
+      threadId,
+      turnId,
+      thread,
+      userInput,
+      workspaceRoot: this.config.workspaceRoot,
+      locale: this.config.locale,
+      runProfile: this.config.runProfile,
+      webSearchMode: this.config.webSearchMode,
+      runtimeState: {
+        ...runtimeState,
+        checkpoint,
+      },
+      checkpoint,
+      collectedItems,
+      store: this.config.store,
+      stateManager: this.stateManager,
+      emit: (event) => this.emit(event),
+      audit: (event) => this.appendRunMonitorEvent(turnId, event),
+      permissions: {
+        level: this.effectiveLevel,
+        networkAllowed: this.effectiveNetwork,
+        presetId: this.preset?.id,
+      },
+      maxSubagents: this.config.maxSubagents,
+      dynamicContextProvider: this.config.dynamicContextProvider,
+    };
+  }
+
   private withCheckpointState(
     threadId: ThreadId,
     turnId: TurnId,
@@ -1645,6 +3500,7 @@ export class AgentLoop {
   }
 
   private async recordUsage(threadId: ThreadId, turnId: TurnId, usage: Usage): Promise<void> {
+    this.stateManager.recordAutoCompactWindowPrefill(threadId, usage.inputTokens);
     const thread = await this.config.store.getThread(threadId);
     const previous = parseThreadUsage(threadId, thread?.tags?.threadUsage);
     const turns = [
@@ -1701,6 +3557,7 @@ function parseThreadUsage(threadId: ThreadId, raw: string | undefined): ThreadUs
       if (parsed && Array.isArray(parsed.turns) && parsed.total) return parsed;
     } catch {
       // ignore malformed persisted usage
+      // 忽略格式不正确的持久化用量
     }
   }
   return {
@@ -1711,6 +3568,40 @@ function parseThreadUsage(threadId: ThreadId, raw: string | undefined): ThreadUs
   };
 }
 
+function parseAgentMailbox(raw: string | undefined): Array<{
+  senderThreadId: ThreadId;
+  receiverThreadId: ThreadId;
+  content: string;
+  triggerTurn: boolean;
+  createdAt: string;
+}> {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.flatMap((entry) => {
+      if (!entry || typeof entry !== 'object') return [];
+      const candidate = entry as Record<string, unknown>;
+      if (
+        typeof candidate.senderThreadId !== 'string' ||
+        typeof candidate.receiverThreadId !== 'string' ||
+        typeof candidate.content !== 'string'
+      ) {
+        return [];
+      }
+      return [{
+        senderThreadId: candidate.senderThreadId,
+        receiverThreadId: candidate.receiverThreadId,
+        content: candidate.content,
+        triggerTurn: candidate.triggerTurn === true,
+        createdAt: typeof candidate.createdAt === 'string' ? candidate.createdAt : new Date().toISOString(),
+      }];
+    });
+  } catch {
+    return [];
+  }
+}
+
 function parseCompactedRanges(raw: string | undefined): CompactedRange[] {
   if (!raw) return [];
   try {
@@ -1719,6 +3610,17 @@ function parseCompactedRanges(raw: string | undefined): CompactedRange[] {
   } catch {
     return [];
   }
+}
+
+function filterEffectiveCompactionItems(items: ThreadItem[], compactedRangesRaw: string | undefined): ThreadItem[] {
+  const compactedTurnIds = new Set(parseCompactedRanges(compactedRangesRaw)
+    .flatMap((range) => range.compactedTurnIds));
+  if (compactedTurnIds.size === 0) return items;
+  return items.filter((item) => (
+    !item.turnId
+    || !compactedTurnIds.has(item.turnId)
+    || item.type === 'context_compaction'
+  ));
 }
 
 function normalizeFileChanges(data: unknown): Array<{
@@ -1771,10 +3673,98 @@ function normalizeFileChanges(data: unknown): Array<{
   });
 }
 
-function isWebSearchAction(args: Record<string, unknown>): boolean {
-  const action = typeof args.action === 'string' ? args.action : '';
-  if (action === 'open_page' || action === 'find_in_page') return false;
-  return true;
+type NormalizedFileChange = ReturnType<typeof normalizeFileChanges>[number];
+
+async function activeTurnCount(store: ThreadStore, threadId: ThreadId): Promise<number> {
+  const thread = await store.getThread(threadId);
+  return thread?.turnCount ?? (await store.getTurns(threadId)).length;
+}
+
+async function capturePrePatchSnapshots(args: Record<string, unknown>, workspaceRoot: string): Promise<Map<string, string | null>> {
+  const patchText = typeof args.patch === 'string' ? args.patch : '';
+  const paths = extractPatchPaths(patchText);
+  const snapshots = new Map<string, string | null>();
+  for (const filePath of paths) {
+    snapshots.set(filePath, await readWorkspaceTextFile(workspaceRoot, filePath));
+  }
+  return snapshots;
+}
+
+function extractPatchPaths(patchText: string): string[] {
+  const paths = new Set<string>();
+  for (const line of patchText.split(/\r?\n/)) {
+    for (const prefix of ['*** Add File: ', '*** Delete File: ', '*** Update File: ', '*** Move to: ']) {
+      if (line.startsWith(prefix)) {
+        paths.add(line.slice(prefix.length).trim());
+      }
+    }
+  }
+  return [...paths].filter(Boolean);
+}
+
+async function createProjectCheckpointItem({
+  turnId,
+  itemId,
+  turnCount,
+  workspaceRoot,
+  changes,
+  beforeSnapshots,
+}: {
+  threadId: ThreadId;
+  turnId: TurnId;
+  itemId: ItemId;
+  turnCount: number;
+  workspaceRoot: string;
+  changes: NormalizedFileChange[];
+  beforeSnapshots: Map<string, string | null>;
+}): Promise<Extract<ThreadItem, { type: 'project_checkpoint' }>> {
+  const files = [];
+  for (const change of changes) {
+    const beforeContent = beforeSnapshots.has(change.path)
+      ? beforeSnapshots.get(change.path)!
+      : await readWorkspaceTextFile(workspaceRoot, change.path);
+    const afterContent = await readWorkspaceTextFile(workspaceRoot, change.path);
+    files.push({
+      path: change.path,
+      kind: change.kind,
+      beforeContent,
+      afterContent,
+      beforeHash: beforeContent === null ? null : sha256(beforeContent),
+      afterHash: afterContent === null ? null : sha256(afterContent),
+    });
+  }
+  return {
+    id: itemId,
+    type: 'project_checkpoint',
+    turnId,
+    turnCount,
+    workspaceRoot,
+    files,
+    timestamp: new Date().toISOString(),
+  };
+}
+
+async function readWorkspaceTextFile(workspaceRoot: string, filePath: string): Promise<string | null> {
+  const absolutePath = safeWorkspacePath(workspaceRoot, filePath);
+  if (!absolutePath) return null;
+  try {
+    return await fs.readFile(absolutePath, 'utf-8');
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'ENOENT' ? null : Promise.reject(error);
+  }
+}
+
+function safeWorkspacePath(workspaceRoot: string, filePath: string): string | null {
+  if (!workspaceRoot.trim()) return null;
+  const root = path.resolve(workspaceRoot);
+  const absolutePath = path.resolve(root, filePath);
+  const relative = path.relative(root, absolutePath);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) return null;
+  return absolutePath;
+}
+
+function sha256(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
 }
 
 // ─── Defaults ───────────────────────────────────────────────────────────────
@@ -1784,6 +3774,95 @@ function createDefaultRegistry(): ToolRegistry {
     registry.register(tool);
   }
   return registry;
+}
+
+const BUILTIN_AGENT_ROLE_PROFILES: AgentRoleProfiles = {
+  [DEFAULT_AGENT_ROLE_NAME]: {
+    description: 'Default spawned agent role. Inherits the parent runtime configuration.',
+  },
+  reviewer: {
+    description: 'Reviews implementation, tests, regressions, and risks.',
+    instructions: [
+      'Review the delegated work with a code-review posture.',
+      'Prioritize correctness, regressions, missing tests, safety, and concrete file references.',
+      'Keep the final result concise and actionable.',
+    ].join('\n'),
+    allowedSkills: ['code-review'],
+  },
+  researcher: {
+    description: 'Investigates code, documentation, and design context before reporting findings.',
+    instructions: [
+      'Explore the delegated context before drawing conclusions.',
+      'Prefer source-backed findings and identify uncertainty explicitly.',
+      'Do not make code changes unless the task explicitly asks for implementation.',
+    ].join('\n'),
+  },
+  implementer: {
+    description: 'Implements focused changes and reports verification results.',
+    instructions: [
+      'Implement the delegated change within the inherited workspace and constraints.',
+      'Keep edits scoped, preserve unrelated user changes, and verify the behavior you changed.',
+    ].join('\n'),
+  },
+  worker: {
+    description: 'General-purpose worker role for compatibility with existing Nexus subagent prompts.',
+    instructions: 'Complete the delegated task independently under the inherited runtime constraints.',
+  },
+  subagent: {
+    description: 'Legacy Nexus subagent role alias.',
+    instructions: 'Complete the delegated task independently under the inherited runtime constraints.',
+  },
+};
+
+function normalizeAgentRoleProfiles(profiles?: AgentRoleProfiles): AgentRoleProfiles {
+  const normalized: AgentRoleProfiles = {};
+  for (const [name, profile] of Object.entries(profiles ?? {})) {
+    const normalizedName = normalizeAgentRoleName(name);
+    if (normalizedName) normalized[normalizedName] = { ...profile };
+  }
+  return normalized;
+}
+
+function normalizeAgentRoleName(name: string | null | undefined): string {
+  const trimmed = (name ?? DEFAULT_AGENT_ROLE_NAME).trim();
+  return trimmed || DEFAULT_AGENT_ROLE_NAME;
+}
+
+function resolveAgentRoleProfile(profiles: AgentRoleProfiles, name: string | null | undefined): ResolvedAgentRoleProfile {
+  const roleName = normalizeAgentRoleName(name);
+  const profile = profiles[roleName] ?? BUILTIN_AGENT_ROLE_PROFILES[roleName];
+  if (!profile) {
+    const error = new Error(`unknown agent_type '${roleName}'`);
+    (error as Error & { code?: string }).code = 'UNKNOWN_AGENT_ROLE';
+    throw error;
+  }
+  return { ...profile, name: roleName };
+}
+
+function scopedSkillsForRole(parentSkills: SkillRegistry, profile: ResolvedAgentRoleProfile | null | undefined): SkillRegistry {
+  const allowedSkillNames = profile ? profile.allowedSkills ?? profile.skills : undefined;
+  if (!allowedSkillNames || allowedSkillNames.length === 0) return parentSkills;
+  const registry = new LocalSkillRegistry();
+  for (const name of allowedSkillNames) {
+    const skill = parentSkills.get(name);
+    if (skill) registry.register(skill);
+  }
+  return registry;
+}
+
+function buildRoleProfilePrompt(profile: ResolvedAgentRoleProfile | null | undefined): string {
+  if (!profile) return '';
+  const lines = [`## Agent Role Profile: ${profile.name}`];
+  if (profile.description?.trim()) lines.push(`Description: ${profile.description.trim()}`);
+  const instructions = [profile.instructions, profile.systemPrompt]
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    .join('\n\n');
+  if (instructions) lines.push(`Instructions:\n${instructions}`);
+  const allowedSkills = profile.allowedSkills ?? profile.skills;
+  if (allowedSkills?.length) lines.push(`Allowed skills: ${allowedSkills.join(', ')}`);
+  if (profile.allowedTools?.length) lines.push(`Allowed tools: ${profile.allowedTools.join(', ')}`);
+  if (profile.blockedTools?.length) lines.push(`Blocked tools: ${profile.blockedTools.join(', ')}`);
+  return lines.join('\n');
 }
 
 function registerCollabTools(registry: ToolRegistry): void {
@@ -1802,6 +3881,32 @@ function registerOptionalTools(registry: ToolRegistry, tools: ToolDefinition[]):
   }
 }
 
+function resolveToolName(registry: ToolRegistry, name: string): string {
+  const maybeRegistry = registry as ToolRegistry & { resolveName?: (toolName: string) => string };
+  if (typeof maybeRegistry.resolveName === 'function') {
+    return maybeRegistry.resolveName(name);
+  }
+  return FALLBACK_TOOL_ALIASES.get(name) ?? name;
+}
+
+const FALLBACK_TOOL_ALIASES = new Map<string, string>([
+  ['list_file', 'list_files'],
+  ['list_dir', 'list_files'],
+  ['list_directory', 'list_files'],
+  ['ls', 'list_files'],
+  ['dir', 'list_files'],
+  ['search_file', 'search_content'],
+  ['search_files', 'search_content'],
+  ['grep', 'search_content'],
+  ['rg', 'search_content'],
+  ['read_files', 'read_file'],
+  ['cat', 'read_file'],
+  ['open_page', 'web_search'],
+  ['open_url', 'web_search'],
+  ['fetch_url', 'web_fetch'],
+  ['web_open', 'web_search'],
+]);
+
 function createCollabToolDefinitions(): ToolDefinition[] {
   const readonly = 'readonly' as const;
   return [
@@ -1814,8 +3919,12 @@ function createCollabToolDefinitions(): ToolDefinition[] {
         type: 'object',
         properties: {
           prompt: { type: 'string', description: 'The full task prompt for the child agent.' },
-          agentRole: { type: 'string', description: 'Short role label, such as reviewer, researcher, or implementer.' },
+          agentRole: { type: 'string', description: 'Agent role profile, such as default, reviewer, researcher, implementer, or a configured role.' },
+          agent_type: { type: 'string', description: 'Codex-compatible role label alias for agentRole.' },
           agentNickname: { type: 'string', description: 'Optional display nickname for the child agent.' },
+          model: { type: 'string', description: 'Optional requested model metadata. Nexus child agents still inherit the parent model.' },
+          reasoningEffort: { type: 'string', description: 'Optional requested reasoning effort metadata.' },
+          reasoning_effort: { type: 'string', description: 'Codex-compatible reasoning effort alias.' },
         },
         required: ['prompt'],
         additionalProperties: false,
@@ -1835,6 +3944,38 @@ function createCollabToolDefinitions(): ToolDefinition[] {
           interrupt: { type: 'boolean', description: 'Interrupt the child if it is already running before sending.' },
         },
         required: ['threadId', 'prompt'],
+        additionalProperties: false,
+      },
+      execute: async () => ({ output: 'handled by AgentLoop', status: 'completed' as const }),
+    },
+    {
+      name: 'send_message',
+      description: 'Queue a message for an existing child agent without starting a new turn.',
+      requiredPolicy: readonly,
+      requiresApproval: false,
+      parameters: {
+        type: 'object',
+        properties: {
+          target: { type: 'string', description: 'Child thread ID.' },
+          message: { type: 'string', description: 'Message to queue for the child agent.' },
+        },
+        required: ['target', 'message'],
+        additionalProperties: false,
+      },
+      execute: async () => ({ output: 'handled by AgentLoop', status: 'completed' as const }),
+    },
+    {
+      name: 'followup_task',
+      description: 'Queue a follow-up task for an existing child agent and wake it to run a turn.',
+      requiredPolicy: readonly,
+      requiresApproval: false,
+      parameters: {
+        type: 'object',
+        properties: {
+          target: { type: 'string', description: 'Child thread ID.' },
+          message: { type: 'string', description: 'Task message for the child agent.' },
+        },
+        required: ['target', 'message'],
         additionalProperties: false,
       },
       execute: async () => ({ output: 'handled by AgentLoop', status: 'completed' as const }),
@@ -1863,6 +4004,35 @@ function createCollabToolDefinitions(): ToolDefinition[] {
         type: 'object',
         properties: {
           threadId: { type: 'string', description: 'Optional child thread ID.' },
+        },
+        additionalProperties: false,
+      },
+      execute: async () => ({ output: 'handled by AgentLoop', status: 'completed' as const }),
+    },
+    {
+      name: 'wait_agent',
+      description: 'Codex-compatible alias for wait. Wait for one child agent, or all open child agents when target is omitted.',
+      requiredPolicy: readonly,
+      requiresApproval: false,
+      parameters: {
+        type: 'object',
+        properties: {
+          target: { type: 'string', description: 'Optional child thread ID.' },
+          threadId: { type: 'string', description: 'Optional child thread ID.' },
+        },
+        additionalProperties: false,
+      },
+      execute: async () => ({ output: 'handled by AgentLoop', status: 'completed' as const }),
+    },
+    {
+      name: 'list_agents',
+      description: 'List spawned child agents and their current/persisted status.',
+      requiredPolicy: readonly,
+      requiresApproval: false,
+      parameters: {
+        type: 'object',
+        properties: {
+          path_prefix: { type: 'string', description: 'Optional child id or nickname prefix.' },
         },
         additionalProperties: false,
       },
@@ -1904,10 +4074,22 @@ function itemToMessage(item: ThreadItem): ChatMessage | null {
     case 'user_message':
       return { role: 'user', content: item.text };
     case 'agent_message':
+      if (leaksToolProtocol(item.text)) {
+        return {
+          role: 'assistant',
+          content: '[Previous assistant message redacted because it contained leaked tool-call protocol text.]',
+        };
+      }
       return { role: 'assistant', content: item.text };
     case 'reasoning':
       return { role: 'assistant', content: `[Reasoning] ${item.text}` };
     case 'tool_call':
+      if (isDingtalkGroupForwardTool(item.toolName)) {
+        return {
+          role: 'assistant',
+          content: `[Tool ${item.toolName} ${item.status}]\nDingTalk group message tool result redacted. Do not reuse this prior tool call or reveal internal routing details.`,
+        };
+      }
       return {
         role: 'assistant',
         content: `[Tool ${item.toolName} ${item.status}]\n${formatToolHistoryPayload(item.result ?? item.error ?? item.arguments)}`,
@@ -1937,6 +4119,23 @@ function itemToMessage(item: ThreadItem): ChatMessage | null {
     default:
       return null;
   }
+}
+
+function fitMessagesToBudget(messages: ChatMessage[], maxTokens: number): ChatMessage[] {
+  if (estimateRuntimeChatTokens(messages).inputTokens <= maxTokens) return messages;
+  if (messages.length <= 2) return messages;
+
+  const first = messages[0];
+  const last = messages[messages.length - 1];
+  const middle = messages.slice(1, -1);
+  const retained: ChatMessage[] = [];
+  for (let index = middle.length - 1; index >= 0; index -= 1) {
+    const candidate = [first, middle[index], ...retained, last];
+    if (estimateRuntimeChatTokens(candidate).inputTokens <= maxTokens) {
+      retained.unshift(middle[index]);
+    }
+  }
+  return [first, ...retained, last];
 }
 
 function estimateRuntimeChatTokens(messages: ChatMessage[]): {
@@ -1975,6 +4174,19 @@ function formatToolHistoryPayload(payload: unknown): string {
   return typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2);
 }
 
+function isTextToolPlaceholder(content: unknown): boolean {
+  if (typeof content !== 'string') return false;
+  const trimmed = content.trim();
+  if (!trimmed) return false;
+  return /\[(?:Tool|tool)\s+[\w.-]+\]/.test(trimmed)
+    || /^工具调用\s*[:：]\s*[\w.-]+\s*$/i.test(trimmed)
+    || leaksToolProtocol(trimmed);
+}
+
+function isDingtalkGroupForwardTool(name: string): boolean {
+  return name === 'dingtalk_send_group_message' || name === 'dingtalk_forward_to_group';
+}
+
 function userInputToText(input: UserInput): string {
   if (input.type === 'text') return input.text;
   return input.parts
@@ -2010,13 +4222,49 @@ function isTurnCancelledError(error: unknown): boolean {
   return error instanceof Error && error.message === 'Turn cancelled';
 }
 
+function safeRuntimeTenantId(value: string | null | undefined): string {
+  const tenantId = value?.trim() || 'default';
+  if (!/^[A-Za-z0-9_-]+$/.test(tenantId)) {
+    throw new Error(`Invalid tenant id: ${value ?? ''}`);
+  }
+  return tenantId;
+}
+
 function isCollabTool(name: string): name is CollabToolName {
-  return ['spawn_agent', 'send_input', 'resume_agent', 'wait', 'close_agent'].includes(name);
+  return [
+    'spawn_agent',
+    'send_input',
+    'send_message',
+    'followup_task',
+    'resume_agent',
+    'wait',
+    'wait_agent',
+    'list_agents',
+    'close_agent',
+  ].includes(name);
 }
 
 function stringArg(args: Record<string, unknown>, key: string): string | undefined {
   const value = args[key];
   return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+function truncateMonitorText(text: string, max = 500): string {
+  return text.length > max ? `${text.slice(0, max)}...` : text;
+}
+
+function redactMonitorArgs(args: Record<string, unknown>): Record<string, unknown> {
+  const redacted: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(args)) {
+    if (/key|token|secret|password|authorization/i.test(key)) {
+      redacted[key] = '[redacted]';
+    } else if (typeof value === 'string') {
+      redacted[key] = truncateMonitorText(value, 300);
+    } else {
+      redacted[key] = value;
+    }
+  }
+  return redacted;
 }
 
 function requiredThreadArg(args: Record<string, unknown>): ThreadId {

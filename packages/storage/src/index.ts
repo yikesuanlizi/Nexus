@@ -1,11 +1,21 @@
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { createRequire } from 'node:module';
-import { LocalThreadStore } from './store.js';
+import { DEFAULT_TENANT_ID, LocalThreadStore, safeTenantId } from './store.js';
+import { PostgresThreadStore, type PgClientLike } from './postgres.js';
 import type { ThreadStore } from './store.js';
 
-export { LocalThreadStore };
-export type { ThreadStore };
+export { DEFAULT_TENANT_ID, LocalThreadStore, PostgresThreadStore, safeTenantId };
+export type { RunCaller, RunEvent, RunEventLevel, RunFeedback, RunKind, RunRecord, RunStatus, ThreadStore } from './store.js';
+
+export type StorageMode = 'single' | 'multi';
+export type StorageBackend = 'sqlite' | 'postgres';
+
+export interface StorageOptions {
+  mode: StorageMode;
+  backend: StorageBackend;
+  postgresUrl: string | null;
+}
 
 /**
  * Create a LocalThreadStore backed by SQLite + JSONL in `dataDir`.
@@ -18,10 +28,22 @@ export type { ThreadStore };
  *
  * For testing, `createStore` returns a stub when no dbFactory is given.
  */
+// 以 SQLite + JSONL 为后端，在 dataDir 目录下创建 LocalThreadStore
+// 调用方应注入真实的 better-sqlite3 Database 实例（见上方示例）
+// 测试场景：不传 dbFactory 时 createStore 返回内存 stub 版本
 export function createStore(
   dataDir: string,
   db?: unknown,
-): { store: LocalThreadStore; db: unknown } {
+  env: Record<string, string | undefined> = process.env,
+): { store: ThreadStore; db: unknown } {
+  const options = resolveStorageOptions(env);
+  if (options.backend === 'postgres') {
+    const pg = db ?? createPostgresPool(options.postgresUrl!);
+    const store = new PostgresThreadStore(pg as PgClientLike);
+    console.log(`[storage] Using Postgres backend (${options.mode} mode)`);
+    return { store, db: pg };
+  }
+
   fs.mkdirSync(dataDir, { recursive: true });
   if (!db) {
     try {
@@ -43,10 +65,41 @@ export function createStore(
   return { store, db };
 }
 
+export function resolveStorageOptions(env: Record<string, string | undefined> = process.env): StorageOptions {
+  const rawMode = (env.NEXUS_STORAGE_MODE ?? 'single').trim().toLowerCase();
+  const mode: StorageMode = ['multi', 'multi_tenant', 'multitenant'].includes(rawMode) ? 'multi' : 'single';
+  if (!['single', 'multi', 'multi_tenant', 'multitenant'].includes(rawMode)) {
+    throw new Error(`Invalid NEXUS_STORAGE_MODE: ${env.NEXUS_STORAGE_MODE}`);
+  }
+
+  const rawBackend = env.NEXUS_STORAGE_BACKEND?.trim().toLowerCase();
+  const backend: StorageBackend = rawBackend
+    ? parseStorageBackend(rawBackend)
+    : mode === 'multi' ? 'postgres' : 'sqlite';
+  const postgresUrl = env.DATABASE_URL?.trim() || env.NEXUS_DATABASE_URL?.trim() || null;
+  if (backend === 'postgres' && !postgresUrl) {
+    throw new Error('DATABASE_URL is required when using Postgres storage');
+  }
+  return { mode, backend, postgresUrl };
+}
+
+function parseStorageBackend(value: string): StorageBackend {
+  if (value === 'sqlite' || value === 'postgres') return value;
+  throw new Error(`Invalid NEXUS_STORAGE_BACKEND: ${value}`);
+}
+
 function loadBetterSqlite(): new (filename: string) => unknown {
   const require = createRequire(__filename);
   const mod = require('better-sqlite3') as { default?: new (filename: string) => unknown } | (new (filename: string) => unknown);
   return typeof mod === 'function' ? mod : mod.default!;
+}
+
+function createPostgresPool(connectionString: string): PgClientLike {
+  const require = createRequire(__filename);
+  const mod = require('pg') as { Pool?: new (options: { connectionString: string }) => PgClientLike };
+  const Pool = mod.Pool;
+  if (!Pool) throw new Error('pg Pool export not found');
+  return new Pool({ connectionString });
 }
 
 interface BackendStore {
@@ -280,10 +333,12 @@ function latestIso(left: string, right: string): string {
  * Persists synchronously on every mutation (write-through).
  * Not safe for concurrent processes, but survives restarts.
  */
+// 进程内数据库：以 `dataDir/threads.json` 为存储
+// 每次变更都同步写盘（直写），进程重启后可恢复；但不支持多进程并发写
 function createFileBackedDb(dataDir: string) {
   const filePath = path.join(dataDir, 'threads.json');
 
-  // Load existing data or start fresh
+  // 加载已有数据，或从零开始；英文说明：Load existing data or start fresh
   let store: BackendStore;
   try {
     const raw = fs.readFileSync(filePath, 'utf-8');
@@ -301,7 +356,7 @@ function createFileBackedDb(dataDir: string) {
     store = { threads: [], turns: [], settings: [], thread_spawn_edges: [] };
   }
 
-  // Thread lookup by ID for fast access
+  // 线程 ID 快速索引；英文说明：Thread lookup by ID for fast access
   const threadById = new Map<string, Record<string, unknown>>();
   for (const row of store.threads) {
     threadById.set(String(row.thread_id), row);
@@ -337,18 +392,19 @@ function createFileBackedDb(dataDir: string) {
           if (normalized.startsWith('INSERT INTO threads')) {
             const row: Record<string, unknown> = {
               thread_id: params[0],
-              title: params[1],
-              workspace_root: params[2],
-              status: params[3],
-              turn_count: params[4],
-              created_at: params[5],
-              updated_at: params[6],
-              archived_at: params[7],
-              ephemeral: params[8],
-              tags: params[9],
-              parent_thread_id: params[10] ?? null,
-              agent_nickname: params[11] ?? null,
-              agent_role: params[12] ?? null,
+              tenant_id: normalized.includes('tenant_id') ? params[1] : 'default',
+              title: normalized.includes('tenant_id') ? params[2] : params[1],
+              workspace_root: normalized.includes('tenant_id') ? params[3] : params[2],
+              status: normalized.includes('tenant_id') ? params[4] : params[3],
+              turn_count: normalized.includes('tenant_id') ? params[5] : params[4],
+              created_at: normalized.includes('tenant_id') ? params[6] : params[5],
+              updated_at: normalized.includes('tenant_id') ? params[7] : params[6],
+              archived_at: normalized.includes('tenant_id') ? params[8] : params[7],
+              ephemeral: normalized.includes('tenant_id') ? params[9] : params[8],
+              tags: normalized.includes('tenant_id') ? params[10] : params[9],
+              parent_thread_id: (normalized.includes('tenant_id') ? params[11] : params[10]) ?? null,
+              agent_nickname: (normalized.includes('tenant_id') ? params[12] : params[11]) ?? null,
+              agent_role: (normalized.includes('tenant_id') ? params[13] : params[12]) ?? null,
             };
             threadById.set(String(params[0]), row);
             persist();
@@ -356,8 +412,11 @@ function createFileBackedDb(dataDir: string) {
           }
 
           if (normalized.startsWith('UPDATE threads SET')) {
-            const threadId = String(params[params.length - 1]);
+            const hasTenantFilter = normalized.includes('AND tenant_id = ?');
+            const threadId = String(params[params.length - (hasTenantFilter ? 2 : 1)]);
+            const tenantId = hasTenantFilter ? String(params[params.length - 1]) : null;
             const row = threadById.get(threadId);
+            if (tenantId && row?.tenant_id !== tenantId) return;
             if (!row) return;
             const setClause = normalized.slice(
               'UPDATE threads SET '.length,
@@ -416,9 +475,24 @@ function createFileBackedDb(dataDir: string) {
             return;
           }
 
+          if (normalized.startsWith('DELETE FROM thread_spawn_edges WHERE tenant_id = ? AND (parent_thread_id = ? OR child_thread_id = ?)')) {
+            const tenantId = String(params[0]);
+            const parent = String(params[1]);
+            const child = String(params[2]);
+            for (const [key, row] of edgeByKey) {
+              if (String(row.tenant_id) === tenantId && (String(row.parent_thread_id) === parent || String(row.child_thread_id) === child)) {
+                edgeByKey.delete(key);
+              }
+            }
+            persist();
+            return;
+          }
+
           if (normalized.startsWith('DELETE FROM threads WHERE thread_id = ?')) {
             const tid = String(params[0]);
-            threadById.delete(tid);
+            const tenantId = normalized.includes('AND tenant_id = ?') ? String(params[1]) : null;
+            const row = threadById.get(tid);
+            if (!tenantId || row?.tenant_id === tenantId) threadById.delete(tid);
             store.turns = store.turns.filter((row) => row.thread_id !== tid);
             persist();
             return;
@@ -439,9 +513,10 @@ function createFileBackedDb(dataDir: string) {
             const row: Record<string, unknown> = {
               parent_thread_id: params[0],
               child_thread_id: params[1],
-              status: params[2],
-              created_at: params[3],
-              updated_at: params[4],
+              tenant_id: normalized.includes('tenant_id') ? params[2] : 'default',
+              status: normalized.includes('tenant_id') ? params[3] : params[2],
+              created_at: normalized.includes('tenant_id') ? params[4] : params[3],
+              updated_at: normalized.includes('tenant_id') ? params[5] : params[4],
             };
             edgeByKey.set(edgeKey(params[0], params[1]), row);
             persist();
@@ -449,8 +524,10 @@ function createFileBackedDb(dataDir: string) {
           }
 
           if (normalized.startsWith('UPDATE thread_spawn_edges SET status = ?')) {
+            const hasTenantFilter = normalized.includes('AND tenant_id = ?');
             const key = edgeKey(params[2], params[3]);
             const row = edgeByKey.get(key);
+            if (hasTenantFilter && row?.tenant_id !== params[4]) return;
             if (!row) return;
             row.status = params[0];
             row.updated_at = params[1];
@@ -461,7 +538,9 @@ function createFileBackedDb(dataDir: string) {
           if (
             normalized.startsWith('SELECT * FROM threads WHERE thread_id = ?')
           ) {
-            return threadById.get(String(params[0]));
+            const row = threadById.get(String(params[0]));
+            if (normalized.includes('AND tenant_id = ?') && row?.tenant_id !== params[1]) return undefined;
+            return row;
           }
           if (
             normalized.startsWith('SELECT value FROM settings WHERE key = ?')
@@ -474,6 +553,7 @@ function createFileBackedDb(dataDir: string) {
           if (normalized.startsWith('PRAGMA table_info(threads)')) {
             return [
               'thread_id',
+              'tenant_id',
               'title',
               'workspace_root',
               'status',
@@ -502,7 +582,12 @@ function createFileBackedDb(dataDir: string) {
 
           if (normalized.startsWith('SELECT * FROM threads')) {
             let rows = [...threadById.values()];
-            if (normalized.includes('WHERE status = ?')) {
+            if (normalized.includes('WHERE tenant_id = ?')) {
+              rows = rows.filter((row) => row.tenant_id === params[0]);
+              if (normalized.includes('AND status = ?')) {
+                rows = rows.filter((row) => row.status === params[1]);
+              }
+            } else if (normalized.includes('WHERE status = ?')) {
               rows = rows.filter((row) => row.status === params[0]);
             }
             rows.sort((a, b) =>
@@ -512,6 +597,15 @@ function createFileBackedDb(dataDir: string) {
               const limit = Number(params[params.length - 1]);
               rows = rows.slice(0, limit);
             }
+            return rows;
+          }
+
+          if (normalized.startsWith('SELECT * FROM thread_spawn_edges WHERE tenant_id = ? AND parent_thread_id = ?')) {
+            let rows = [...edgeByKey.values()].filter((row) => row.tenant_id === params[0] && row.parent_thread_id === params[1]);
+            if (normalized.includes('AND status = ?')) {
+              rows = rows.filter((row) => row.status === params[2]);
+            }
+            rows.sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
             return rows;
           }
 

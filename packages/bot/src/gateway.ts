@@ -23,8 +23,13 @@ export interface BotGatewayOptions {
   createId?(): string;
   defaultWorkspaceRoot: string;
   preferredThreadId?: string;
+  defaultThreadTitle?: string;
+  singleBindingMode?: boolean;
+  usePreferredThreadForSessions?: boolean;
   locale?: 'zh' | 'en';
   dedupeTtlMs?: number;
+  tenantId?: string;
+  botAccountId?: string;
 }
 
 export class BotGateway {
@@ -36,8 +41,13 @@ export class BotGateway {
   private readonly createId: NonNullable<BotGatewayOptions['createId']>;
   private readonly defaultWorkspaceRoot: string;
   private readonly preferredThreadId: string;
+  private readonly defaultThreadTitle: string;
+  private readonly singleBindingMode: boolean;
+  private readonly usePreferredThreadForSessions: boolean;
   private readonly locale: 'zh' | 'en';
   private readonly dedupeTtlMs: number;
+  private readonly tenantId: string;
+  private readonly botAccountId: string;
 
   constructor(options: BotGatewayOptions) {
     this.store = options.store;
@@ -48,8 +58,13 @@ export class BotGateway {
     this.createId = options.createId ?? (() => `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
     this.defaultWorkspaceRoot = options.defaultWorkspaceRoot;
     this.preferredThreadId = options.preferredThreadId?.trim() ?? '';
+    this.defaultThreadTitle = options.defaultThreadTitle?.trim() ?? '';
+    this.singleBindingMode = options.singleBindingMode === true;
+    this.usePreferredThreadForSessions = options.usePreferredThreadForSessions !== false;
     this.locale = options.locale ?? 'zh';
     this.dedupeTtlMs = options.dedupeTtlMs ?? 24 * 60 * 60 * 1000;
+    this.tenantId = options.tenantId?.trim() || 'default';
+    this.botAccountId = options.botAccountId?.trim() ?? '';
   }
 
   async handleMessage(message: BotInboundMessage): Promise<BotTurnResult> {
@@ -71,6 +86,7 @@ export class BotGateway {
         chatId: message.chatId,
         text: reply,
         threadId: session.threadId,
+        metadata: message.metadata,
       });
       return { status: 'busy', threadId: session.threadId, reply };
     }
@@ -91,6 +107,7 @@ export class BotGateway {
         chatId: message.chatId,
         text: reply,
         threadId: session.threadId,
+        metadata: message.metadata,
       });
       await this.touchSession(session.key);
       return { status: 'completed', threadId: session.threadId, reply };
@@ -102,6 +119,7 @@ export class BotGateway {
         chatId: message.chatId,
         text: reply,
         threadId: session.threadId,
+        metadata: message.metadata,
       });
       return { status: 'failed', threadId: session.threadId, error: err, reply };
     }
@@ -109,13 +127,21 @@ export class BotGateway {
 
   private sessionKey(message: Pick<BotInboundMessage, 'platform' | 'chatType' | 'chatId' | 'threadId'>): string {
     const topic = message.threadId?.trim();
-    return topic
+    const base = topic
       ? `${message.platform}:${message.chatType}:${message.chatId}:${topic}`
       : `${message.platform}:${message.chatType}:${message.chatId}`;
+    return this.scopeKey(base);
   }
 
   private dedupeKey(message: Pick<BotInboundMessage, 'platform' | 'messageId'>): string {
-    return `${message.platform}:${message.messageId}`;
+    return this.scopeKey(`${message.platform}:${message.messageId}`);
+  }
+
+  private scopeKey(base: string): string {
+    const prefix: string[] = [];
+    if (this.tenantId !== 'default') prefix.push(`tenant:${this.tenantId}`);
+    if (this.botAccountId) prefix.push(`account:${this.botAccountId}`);
+    return prefix.length ? `${prefix.join(':')}:${base}` : base;
   }
 
   private async readSessions(): Promise<BotSessionState> {
@@ -131,12 +157,33 @@ export class BotGateway {
     const key = this.sessionKey(message);
     const state = await this.readSessions();
     const existing = state.sessions.find((session) => session.key === key);
-    if (existing) return existing;
+    const preferredThread = this.usePreferredThreadForSessions && this.preferredThreadId
+      ? await this.store.getThread(this.preferredThreadId)
+      : null;
+    if (existing) {
+      if (preferredThread && existing.threadId !== preferredThread.threadId) {
+        const relinked: BotSession = {
+          ...existing,
+          threadId: preferredThread.threadId,
+          title: preferredThread.title || existing.title,
+          updatedAt: this.now(),
+        };
+        await this.writeSessions({
+          sessions: state.sessions.map((session) => session.key === key ? relinked : session),
+        });
+        return relinked;
+      }
+      if (preferredThread) return existing;
+      const existingThread = await this.store.getThread(existing.threadId);
+      if (existingThread && !this.singleBindingMode) {
+        return existing;
+      }
+      return this.createOrReplaceSessionThread(state, existing, message, key);
+    }
 
-    const now = this.now();
-    const title = this.titleForMessage(message);
-    const preferredThread = this.preferredThreadId ? await this.store.getThread(this.preferredThreadId) : null;
     if (preferredThread) {
+      const now = this.now();
+      const title = this.titleForMessage(message);
       const session: BotSession = {
         key,
         platform: message.platform,
@@ -151,9 +198,21 @@ export class BotGateway {
       await this.writeSessions(state);
       return session;
     }
+    return this.createOrReplaceSessionThread(state, null, message, key);
+  }
+
+  private async createOrReplaceSessionThread(
+    state: BotSessionState,
+    existing: BotSession | null,
+    message: BotInboundMessage,
+    key: string,
+  ): Promise<BotSession> {
+    const now = this.now();
+    const title = this.titleForMessage(message);
     const threadId = this.createId();
     const thread: ThreadMeta = {
       threadId,
+      tenantId: this.tenantId,
       title,
       workspaceRoot: this.defaultWorkspaceRoot,
       status: 'active',
@@ -165,6 +224,8 @@ export class BotGateway {
       tags: {
         botPlatform: message.platform,
         botSessionKey: key,
+        botTenantId: this.tenantId,
+        ...(this.botAccountId ? { botAccountId: this.botAccountId } : {}),
       },
     };
     await this.store.createThread(thread);
@@ -179,8 +240,10 @@ export class BotGateway {
       createdAt: now,
       updatedAt: now,
     };
-    state.sessions.unshift(session);
-    await this.writeSessions(state);
+    const sessions = existing
+      ? state.sessions.map((item) => item.key === key ? session : item)
+      : [session, ...state.sessions];
+    await this.writeSessions({ sessions });
     return session;
   }
 
@@ -193,6 +256,7 @@ export class BotGateway {
   }
 
   private titleForMessage(message: BotInboundMessage): string {
+    if (this.defaultThreadTitle) return this.defaultThreadTitle;
     if (message.chatType === 'group') return message.chatId || '微信群';
     return message.userName.trim() || message.userId || '微信联系人';
   }

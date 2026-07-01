@@ -1,0 +1,52 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: nexus-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-nexus}
+      POSTGRES_USER: ${POSTGRES_USER:-nexus}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nexus}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - nexus-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-nexus} -d ${POSTGRES_DB:-nexus}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  nexus:
+    image: node:22-bookworm-slim
+    container_name: nexus-app
+    restart: unless-stopped
+    working_dir: /workspace
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NEXUS_STORAGE_MODE: multi
+      NEXUS_STORAGE_BACKEND: postgres
+      DATABASE_URL: postgresql://${POSTGRES_USER:-nexus}:${POSTGRES_PASSWORD:-nexus}@postgres:5432/${POSTGRES_DB:-nexus}
+      NEXUS_DEPLOYMENT_MODE: ${NEXUS_DEPLOYMENT_MODE:-}
+      NEXUS_AUTH_MODE: ${NEXUS_AUTH_MODE:-}
+      NEXUS_JWT_SECRET: ${NEXUS_JWT_SECRET:-}
+      NEXUS_ADMIN_BOOTSTRAP_TOKEN: ${NEXUS_ADMIN_BOOTSTRAP_TOKEN:-}
+      NEXUS_CORS_ORIGINS: ${NEXUS_CORS_ORIGINS:-http://127.0.0.1:5177,http://localhost:5177}
+      NEXUS_API_PORT: ${NEXUS_API_PORT:-4127}
+      NEXUS_WEB_HOST: 0.0.0.0
+      NEXUS_WEB_PORT: ${NEXUS_WEB_PORT:-5177}
+    ports:
+      - "${NEXUS_API_PORT:-4127}:${NEXUS_API_PORT:-4127}"
+      - "${NEXUS_WEB_PORT:-5177}:${NEXUS_WEB_PORT:-5177}"
+    volumes:
+      - ./:/workspace
+      - nexus-node-modules:/workspace/node_modules
+      - nexus-data:/workspace/.nexus
+    command: sh -lc "npm install && npm start"
+
+volumes:
+  nexus-postgres-data:
+  nexus-node-modules:
+  nexus-data:

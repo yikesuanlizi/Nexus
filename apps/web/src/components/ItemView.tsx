@@ -1,10 +1,12 @@
 import type React from 'react';
-import type { Locale } from '../config.js';
+import type { Locale } from '../config/config.js';
 import { Icon } from './Icon.js';
-import { formatTimestamp } from '../i18n.js';
-import { itemHeading } from '../threadView.js';
-import type { ThreadItem } from '../types.js';
-import { childActivityForCollabItem } from '../subagentActivity.js';
+import { formatTimestamp } from '../shared/i18n.js';
+import { itemHeading } from '../features/chat/threadView.js';
+import type { ThreadItem } from '../shared/types.js';
+import { childActivityForCollabItem } from '../features/agents/subagentActivity.js';
+import { RobotMoodIcon, type RobotMoodVariant } from './AgentStagePanel.js';
+import { UserAvatar } from './UserAvatar.js';
 
 export interface AssistantTurnGroup {
   turnId?: string;
@@ -19,12 +21,16 @@ export function ItemView({
   onBranch,
   onCopy,
   onRollback,
+  userAvatarId,
+  customUserAvatarDataUrl,
 }: {
   item: ThreadItem;
   locale: Locale;
   onBranch?: (turnId: string) => void;
   onCopy?: (text: string) => void;
   onRollback?: (turnId: string) => void;
+  userAvatarId?: string;
+  customUserAvatarDataUrl?: string;
 }) {
   const heading = itemHeading(item, locale);
   if (item.type === 'user_message') {
@@ -37,6 +43,8 @@ export function ItemView({
         action="rollback"
         onCopy={onCopy}
         onRollback={onRollback}
+        userAvatarId={userAvatarId}
+        customUserAvatarDataUrl={customUserAvatarDataUrl}
       >
         <article className="message user"><RichMessageText text={item.text ?? ''} onCopy={onCopy} /></article>
       </MessageFrame>
@@ -53,7 +61,9 @@ export function ItemView({
         onBranch={onBranch}
         onCopy={onCopy}
       >
-        <article className="message agent"><RichMessageText text={item.text ?? ''} onCopy={onCopy} /></article>
+        <article className="message agent">
+          <RichMessageText showStreamingOutputIcon={item.status === 'in_progress' && Boolean((item.text ?? '').trim())} text={item.text ?? ''} onCopy={onCopy} />
+        </article>
       </MessageFrame>
     );
   }
@@ -120,6 +130,9 @@ export function AssistantTurnView({
     .join('\n\n');
   const timestamp = group.timestamp ?? group.items.find((item) => item.timestamp)?.timestamp ?? new Date().toISOString();
   const hasRunningItem = group.items.some((item) => item.status === 'in_progress');
+  const agentItems = group.items.filter((item) => item.type === 'agent_message' && item.text);
+  const streamingAgentItemId = [...agentItems].reverse().find((item) => item.status === 'in_progress')?.id
+    ?? ((group.status === 'running' || hasRunningItem) ? agentItems.at(-1)?.id : undefined);
   return (
     <MessageFrame
       align="agent"
@@ -141,7 +154,15 @@ export function AssistantTurnView({
       <article className="message agent assistantTurnBubble">
         {group.items.map((item) => {
           if (item.type === 'agent_message') {
-            return item.text ? <RichMessageText className="assistantTurnText" key={item.id} text={item.text} onCopy={onCopy} /> : null;
+            return item.text ? (
+              <RichMessageText
+                className="assistantTurnText"
+                key={item.id}
+                showStreamingOutputIcon={item.id === streamingAgentItemId}
+                text={item.text}
+                onCopy={onCopy}
+              />
+            ) : null;
           }
           if (
             item.type === 'tool_call'
@@ -174,15 +195,22 @@ export function AssistantTurnView({
 function RichMessageText({
   className,
   onCopy,
+  showStreamingOutputIcon = false,
   text,
 }: {
   className?: string;
   onCopy?: (text: string) => void;
+  showStreamingOutputIcon?: boolean;
   text: string;
 }) {
   const parts = splitFencedCode(text);
   if (parts.length === 1 && parts[0]?.kind === 'text') {
-    return <p className={className ?? 'messageText'}>{text}</p>;
+    return (
+      <p className={streamingTextClassName(className ?? 'messageText', showStreamingOutputIcon)}>
+        {showStreamingOutputIcon ? <StreamingOutputIcon /> : null}
+        <span>{text}</span>
+      </p>
+    );
   }
   return (
     <div className={className ? `${className} richMessageText` : 'richMessageText'}>
@@ -197,9 +225,101 @@ function RichMessageText({
             />
           );
         }
-        return part.text ? <p className="messageText" key={`${part.kind}-${index}`}>{part.text}</p> : null;
+        const showIcon = showStreamingOutputIcon && index === firstTextPartIndex(parts);
+        return part.text ? (
+          <p className={streamingTextClassName('messageText', showIcon)} key={`${part.kind}-${index}`}>
+            {showIcon ? <StreamingOutputIcon /> : null}
+            <span>{part.text}</span>
+          </p>
+        ) : null;
       })}
     </div>
+  );
+}
+
+function streamingTextClassName(baseClassName: string, showStreamingOutputIcon: boolean): string {
+  return showStreamingOutputIcon ? `${baseClassName} streamingOutputLine` : baseClassName;
+}
+
+function firstTextPartIndex(parts: Array<{ kind: 'text'; text: string } | { kind: 'code'; language: string; code: string }>): number {
+  return parts.findIndex((part) => part.kind === 'text' && part.text.trim());
+}
+
+function StreamingOutputIcon() {
+  return (
+    <span className="streamingOutputIcon" aria-hidden="true">
+      <svg viewBox="-15 -30 150 170">
+        <ellipse cx="48" cy="120" rx="24" ry="5" fill="#cbd5e1">
+          <animate attributeName="rx" values="24; 20; 24" dur="1s" repeatCount="indefinite" />
+        </ellipse>
+        <g>
+          <animateTransform attributeName="transform" type="translate" values="0,-2; 0,2; 0,-2" dur="1s" repeatCount="indefinite" />
+          <path d="M18 62 L8 66" stroke="#0f172a" strokeWidth="5" strokeLinecap="round" fill="none" />
+          <circle cx="6" cy="67" r="7" fill="#fff" stroke="#0f172a" strokeWidth="4" />
+          <rect x="9" y="54" width="11" height="9" rx="2" fill="#6366f1" stroke="#0f172a" strokeWidth="2.5" />
+          <rect x="16" y="36" width="50" height="56" rx="16" fill="#c7d2fe" stroke="#0f172a" strokeWidth="5" />
+          <path d="M36 36 L33 17" stroke="#0f172a" strokeWidth="5" strokeLinecap="round" />
+          <circle cx="32" cy="15" r="6" fill="#ef4444" stroke="#0f172a" strokeWidth="4">
+            <animate attributeName="fill" values="#ef4444; #fca5a5; #ef4444" dur="0.3s" repeatCount="indefinite" />
+          </circle>
+          <rect x="23" y="46" width="36" height="26" rx="8" fill="#0f172a" />
+          <line x1="29" y1="57" x2="37" y2="57" stroke="#818cf8" strokeWidth="3" strokeLinecap="round" />
+          <line x1="45" y1="57" x2="53" y2="57" stroke="#818cf8" strokeWidth="3" strokeLinecap="round" />
+          <line x1="37" y1="65" x2="45" y2="65" stroke="#818cf8" strokeWidth="3" strokeLinecap="round" />
+          <g>
+            <animateTransform attributeName="transform" type="translate" values="0,-4; 0,4; 0,-4" dur="0.35s" repeatCount="indefinite" />
+            <path d="M66 58 L78 64" stroke="#0f172a" strokeWidth="5" strokeLinecap="round" fill="none" />
+            <circle cx="80" cy="65" r="7" fill="#fff" stroke="#0f172a" strokeWidth="4" />
+          </g>
+        </g>
+        <g>
+          <line x1="82" y1="88" x2="82" y2="100" stroke="#0f172a" strokeWidth="4" strokeLinecap="round" />
+          <line x1="118" y1="88" x2="118" y2="100" stroke="#0f172a" strokeWidth="4" strokeLinecap="round" />
+          <circle cx="82" cy="82" r="8" fill="#64748b" stroke="#0f172a" strokeWidth="4">
+            <animateTransform attributeName="transform" type="rotate" from="0 82 82" to="360 82 82" dur="0.3s" repeatCount="indefinite" />
+          </circle>
+          <circle cx="118" cy="82" r="8" fill="#64748b" stroke="#0f172a" strokeWidth="4">
+            <animateTransform attributeName="transform" type="rotate" from="0 118 82" to="360 118 82" dur="0.3s" repeatCount="indefinite" />
+          </circle>
+          <line x1="76" y1="82" x2="88" y2="82" stroke="#0f172a" strokeWidth="2" opacity="0.4">
+            <animateTransform attributeName="transform" type="rotate" from="0 82 82" to="360 82 82" dur="0.3s" repeatCount="indefinite" />
+          </line>
+          <line x1="112" y1="82" x2="124" y2="82" stroke="#0f172a" strokeWidth="2" opacity="0.4">
+            <animateTransform attributeName="transform" type="rotate" from="0 118 82" to="360 118 82" dur="0.3s" repeatCount="indefinite" />
+          </line>
+          <rect x="82" y="74" width="36" height="3" rx="1.5" fill="#0f172a" />
+          <rect x="82" y="87" width="36" height="3" rx="1.5" fill="#0f172a" />
+          <g>
+            <line x1="86" y1="74" x2="86" y2="90" stroke="#94a3b8" strokeWidth="2.5">
+              <animate attributeName="x1" values="86; 122; 86" dur="0.3s" repeatCount="indefinite" />
+              <animate attributeName="x2" values="86; 122; 86" dur="0.3s" repeatCount="indefinite" />
+            </line>
+            <line x1="94" y1="74" x2="94" y2="90" stroke="#94a3b8" strokeWidth="2.5">
+              <animate attributeName="x1" values="94; 86; 94" dur="0.3s" repeatCount="indefinite" />
+              <animate attributeName="x2" values="94; 86; 94" dur="0.3s" repeatCount="indefinite" />
+            </line>
+            <line x1="102" y1="74" x2="102" y2="90" stroke="#94a3b8" strokeWidth="2.5">
+              <animate attributeName="x1" values="102; 94; 102" dur="0.3s" repeatCount="indefinite" />
+              <animate attributeName="x2" values="102; 94; 102" dur="0.3s" repeatCount="indefinite" />
+            </line>
+            <line x1="110" y1="74" x2="110" y2="90" stroke="#94a3b8" strokeWidth="2.5">
+              <animate attributeName="x1" values="110; 102; 110" dur="0.3s" repeatCount="indefinite" />
+              <animate attributeName="x2" values="110; 102; 110" dur="0.3s" repeatCount="indefinite" />
+            </line>
+          </g>
+        </g>
+        <g>
+          <rect x="84" y="65" width="11" height="9" rx="2" fill="#6366f1" stroke="#0f172a" strokeWidth="2.5">
+            <animate attributeName="x" values="84; 115; 115" keyTimes="0; 0.85; 1" dur="0.6s" repeatCount="indefinite" />
+            <animate attributeName="opacity" values="1; 1; 0" keyTimes="0; 0.85; 1" dur="0.6s" repeatCount="indefinite" />
+          </rect>
+          <rect x="84" y="65" width="11" height="9" rx="2" fill="#818cf8" stroke="#0f172a" strokeWidth="2.5">
+            <animate attributeName="x" values="84; 115; 115" keyTimes="0; 0.85; 1" dur="0.6s" begin="0.3s" repeatCount="indefinite" />
+            <animate attributeName="opacity" values="1; 1; 0" keyTimes="0; 0.85; 1" dur="0.6s" begin="0.3s" repeatCount="indefinite" />
+          </rect>
+        </g>
+      </svg>
+    </span>
   );
 }
 
@@ -382,6 +502,8 @@ function MessageFrame({
   onRollback,
   showActionRow = true,
   text,
+  userAvatarId,
+  customUserAvatarDataUrl,
 }: {
   align: 'agent' | 'user';
   children: React.ReactNode;
@@ -393,6 +515,8 @@ function MessageFrame({
   onRollback?: (turnId: string) => void;
   showActionRow?: boolean;
   text: string;
+  userAvatarId?: string;
+  customUserAvatarDataUrl?: string;
 }) {
   const timestamp = item.timestamp ?? new Date().toISOString();
   const actionTitle = action === 'branch'
@@ -400,9 +524,20 @@ function MessageFrame({
     : (locale === 'zh' ? '回退到这里' : 'Rollback to here');
   const runAction = action === 'branch' ? onBranch : onRollback;
   const showActions = showActionRow && item.status !== 'in_progress';
+  const moodVariant = messageMoodVariant(item, text);
   return (
     <div className={align === 'user' ? 'messageBlock user' : 'messageBlock agent'}>
+      {align === 'agent' ? (
+        <div className={['messageAgentAvatar', moodVariant].join(' ')} aria-hidden="true">
+          <RobotMoodIcon variant={moodVariant} />
+        </div>
+      ) : null}
       {children}
+      {align === 'user' ? (
+        <div className="messageUserAvatar" aria-hidden="true">
+          <UserAvatar avatarId={userAvatarId} customDataUrl={customUserAvatarDataUrl} size="sm" />
+        </div>
+      ) : null}
       {showActions ? (
       <div className="messageActions">
         <time className="messageTimestamp">{formatTimestamp(timestamp, locale)}</time>
@@ -428,6 +563,13 @@ function MessageFrame({
       ) : null}
     </div>
   );
+}
+
+function messageMoodVariant(item: ThreadItem, text: string): RobotMoodVariant {
+  if (item.status === 'in_progress') return text.trim() ? 'working' : 'thinking';
+  if (item.status === 'completed') return 'idle';
+  if (item.status === 'failed' || item.status === 'cancelled') return 'thinking';
+  return 'idle';
 }
 
 function formatItemPayload(item: ThreadItem): string {

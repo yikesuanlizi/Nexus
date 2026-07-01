@@ -216,4 +216,29 @@ describe('ModelGateway retry policy', () => {
     await expect(gateway.chat({ messages: [{ role: 'user', content: 'hello' }] })).rejects.toThrow('401');
     expect(attempts).toBe(1);
   });
+
+  it('propagates caller abort signals into OpenAI-compatible fetch requests', async () => {
+    const controller = new AbortController();
+    let observedSignal: AbortSignal | undefined;
+    globalThis.fetch = async (_url, init) => {
+      observedSignal = init?.signal as AbortSignal | undefined;
+      controller.abort('stop requested');
+      throw new DOMException('Aborted', 'AbortError');
+    };
+
+    const gateway = new ModelGateway({
+      provider: 'openai_compatible',
+      baseUrl: 'http://example.test/v1',
+      model: 'test-model',
+      retry: { maxAttempts: 1 },
+    });
+
+    await expect(gateway.chat(
+      { messages: [{ role: 'user', content: 'hello' }] },
+      { signal: controller.signal },
+    )).rejects.toThrow('Aborted');
+
+    expect(observedSignal).toBeDefined();
+    expect(observedSignal?.aborted).toBe(true);
+  });
 });

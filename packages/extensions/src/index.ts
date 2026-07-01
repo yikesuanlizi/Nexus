@@ -1,5 +1,6 @@
 export {
   loadAgentsMd,
+  LocalSkillRegistryCache,
   LocalSkillRegistry,
   LocalHookRegistry,
 } from './extensions.js';

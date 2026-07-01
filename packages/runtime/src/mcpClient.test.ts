@@ -57,6 +57,139 @@ describe('McpStdioClient', () => {
 });
 
 describe('McpRuntimeManager', () => {
+  it('can keep enabled servers configured until tool definitions are requested', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'mini-mcp-'));
+    const startedMarker = path.join(dir, 'started.txt');
+    const serverPath = await writeFakeMcpServer(dir, startedMarker);
+    const manager = new McpRuntimeManager();
+
+    try {
+      await manager.configure([
+        {
+          id: 'Lazy MCP',
+          name: 'Lazy MCP',
+          command: process.execPath,
+          args: serverPath,
+          enabled: true,
+        },
+      ], { startEnabled: false });
+
+      expect(manager.statuses()[0]).toMatchObject({
+        id: 'lazy-mcp',
+        enabled: true,
+        status: 'configured',
+        toolCount: 0,
+      });
+      await expect(writeFile(startedMarker, 'already-started', { flag: 'wx' })).resolves.toBeUndefined();
+
+      await rm(startedMarker, { force: true });
+      const tools = await manager.toolDefinitions({ ensureStarted: true });
+
+      expect(tools.map((tool) => tool.name)).toContain('mcp__lazy-mcp__echo');
+      expect(manager.statuses()[0]?.status).toBe('running');
+      await expect(writeFile(startedMarker, 'already-started', { flag: 'wx' })).rejects.toThrow();
+    } finally {
+      await manager.shutdown();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('exposes configured servers as lazy MCP tools without starting them', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'mini-mcp-'));
+    const startedMarker = path.join(dir, 'started.txt');
+    const serverPath = await writeFakeMcpServer(dir, startedMarker);
+    const manager = new McpRuntimeManager();
+
+    try {
+      await manager.configure([
+        {
+          id: 'Lazy MCP',
+          name: 'Lazy MCP',
+          command: process.execPath,
+          args: serverPath,
+          enabled: true,
+        },
+      ], { startEnabled: false });
+
+      const tools = manager.toolDefinitions({ includeConfigured: true });
+      expect(tools.map((tool) => tool.name)).toEqual([
+        'mcp__lazy-mcp__mcp_list_tools',
+        'mcp__lazy-mcp__mcp_call_tool',
+      ]);
+      await expect(writeFile(startedMarker, 'not-started-yet', { flag: 'wx' })).resolves.toBeUndefined();
+
+      await rm(startedMarker, { force: true });
+      const listResult = await tools[0]?.execute({}, {
+        workspaceRoot: dir,
+        threadId: 'thread',
+        turnId: 'turn',
+        approved: true,
+      });
+
+      expect(listResult?.status).toBe('completed');
+      expect(listResult?.output).toContain('echo');
+      expect(manager.statuses()[0]?.status).toBe('running');
+      await expect(writeFile(startedMarker, 'already-started', { flag: 'wx' })).rejects.toThrow();
+    } finally {
+      await manager.shutdown();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('starts only the target configured MCP server when the lazy call tool runs', async () => {
+    const firstDir = await mkdtemp(path.join(tmpdir(), 'mini-mcp-first-'));
+    const secondDir = await mkdtemp(path.join(tmpdir(), 'mini-mcp-second-'));
+    const firstMarker = path.join(firstDir, 'started.txt');
+    const secondMarker = path.join(secondDir, 'started.txt');
+    const firstServerPath = await writeFakeMcpServer(firstDir, firstMarker);
+    const secondServerPath = await writeFakeMcpServer(secondDir, secondMarker);
+    const manager = new McpRuntimeManager();
+
+    try {
+      await manager.configure([
+        {
+          id: 'First MCP',
+          name: 'First MCP',
+          command: process.execPath,
+          args: firstServerPath,
+          enabled: true,
+        },
+        {
+          id: 'Second MCP',
+          name: 'Second MCP',
+          command: process.execPath,
+          args: secondServerPath,
+          enabled: true,
+        },
+      ], { startEnabled: false });
+
+      const tools = manager.toolDefinitions({ includeConfigured: true });
+      const firstCallTool = tools.find((tool) => tool.name === 'mcp__first-mcp__mcp_call_tool');
+      expect(firstCallTool).toBeDefined();
+
+      const result = await firstCallTool?.execute({
+        tool: 'echo',
+        arguments: { message: 'lazy call' },
+      }, {
+        workspaceRoot: firstDir,
+        threadId: 'thread',
+        turnId: 'turn',
+        approved: true,
+      });
+
+      expect(result?.status).toBe('completed');
+      expect(result?.output).toContain('lazy call');
+      expect(manager.statuses().find((status) => status.id === 'first-mcp')?.status).toBe('running');
+      expect(manager.statuses().find((status) => status.id === 'second-mcp')?.status).toBe('configured');
+      await expect(writeFile(firstMarker, 'already-started', { flag: 'wx' })).rejects.toThrow();
+      await expect(writeFile(secondMarker, 'not-started', { flag: 'wx' })).resolves.toBeUndefined();
+    } finally {
+      await manager.shutdown();
+      await rm(firstDir, { recursive: true, force: true });
+      await rm(secondDir, { recursive: true, force: true });
+    }
+  });
+
   it('normalizes server IDs, exposes namespaced tool definitions, and renders display names', async () => {
     const dir = await mkdtemp(path.join(tmpdir(), 'mini-mcp-'));
     const serverPath = await writeFakeMcpServer(dir);
@@ -104,9 +237,10 @@ describe('McpRuntimeManager', () => {
   });
 });
 
-async function writeFakeMcpServer(dir: string): Promise<string> {
+async function writeFakeMcpServer(dir: string, startedMarker?: string): Promise<string> {
   const file = path.join(dir, 'fake-mcp-server.mjs');
   await writeFile(file, `
+${startedMarker ? `await import('node:fs/promises').then(({ writeFile }) => writeFile(${JSON.stringify(startedMarker)}, 'started'));\n` : ''}
 let buffer = Buffer.alloc(0);
 
 process.stderr.write('fake mcp stderr is consumed\\n');

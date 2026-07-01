@@ -1,61 +1,53 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { RUN_CONFIG_STORAGE_KEY, mergeRunConfigDefaults, type PermissionPresetId, type ReasoningEffort, type RunConfig, type RunProfile, type WebSearchMode } from './config.js';
+import { RUN_CONFIG_STORAGE_KEY, mergeRunConfigDefaults, type RunConfig, type WebSearchMode } from './config/config.js';
 import { Icon } from './components/Icon.js';
 import { AppDialog, SettingsHelpDialog, SkillDraftDialog, type AppDialogState } from './components/Dialogs.js';
-import { DropdownSelect } from './components/DropdownSelect.js';
+import { AuthGate } from './components/AuthGate.js';
+import { ComposerBar, type PaletteOption } from './components/ComposerBar.js';
 import { AssistantTurnView, ItemView } from './components/ItemView.js';
 import { SettingsDrawer } from './components/SettingsDrawer.js';
 import { WeixinConnectDialog } from './components/WeixinConnectDialog.js';
 import { RightPane, type RightPaneTab } from './components/RightPane.js';
+import { RunMonitorDrawer } from './components/RunMonitorDrawer.js';
+import { WorkflowSidePane } from './components/WorkflowSidePane.js';
 import { WorkspaceThreadList } from './components/WorkspaceThreadList.js';
-import { useBotControls, type WeixinLoginState } from './botClient.js';
-import { resizeTextareaToContent } from './composer.js';
-import { defaultConfig, defaultMcps } from './defaults.js';
-import { t } from './i18n.js';
-import { mcpFromCommandText, normalizeStoredMcps } from './mcpConfig.js';
-import { getSlashCommandOptions, isSlashInput, parseSlashCommand, type SlashCommand, type SlashCommandOption } from './slashCommands.js';
-import { localizedSkillDescription } from './skillDescriptions.js';
-import { readStored } from './storage.js';
-import { buildChildActivityByThread } from './subagentActivity.js';
-import { buildAgentStageRows, buildSubagentStatusRows } from './subagents.js';
-import { modeInstructionFor } from './taskModes.js';
-import { formatCacheDiagnostics, formatCompactionPressure, formatThreadTokenSummary } from './usageDisplay.js';
-import { runProfileDescription, runProfileLabel } from './runProfiles.js';
-import { actionDetail, actionTitle, completeLocalSkillDraftItem, createLocalSkillDraftItems, mergeIncomingItems } from './threadItems.js';
-import { optimisticDeleteThread } from './threads.js';
-import { forgetWorkspaceRoot, pickWorkspaceRoot, readRememberedWorkspaceRoots, rememberWorkspaceRoots, workspacePickerNotice, workspacePickerStatus } from './workspaces.js';
-import {
-  applyAgentMessageDelta,
-  describeEvent,
-  groupTranscriptItems,
-  withSyntheticUserMessages,
-  type EventDraft,
-} from './threadView.js';
-import type {
-  ApiKeyState,
-  ApprovalRequest,
-  EventLine,
-  McpConfig,
-  McpServerStatus,
-  ModelPreset,
-  ProviderEntry,
-  SkillDraft,
-  SkillEntry,
-  ThreadItem,
-  ThreadChildInfo,
-  ThreadMeta,
-  ThreadUsage,
-  TurnMeta,
-} from './types.js';
+import { useBotControls, type WeixinLoginState } from './api/botClient.js';
+import { resizeTextareaToContent } from './shared/composer.js';
+import { useRightPaneSizing, useToastNotice } from './shared/uiState.js';
+import { defaultConfig, defaultMcps } from './config/defaults.js';
+import { t } from './shared/i18n.js';
+import { mcpFromCommandText, normalizeStoredMcps } from './features/settings/mcpConfig.js';
+import { getSlashCommandOptions, isSlashInput, parseSlashCommand, type SlashCommand, type SlashCommandOption } from './features/slash/slashCommands.js';
+import { localizedSkillDescription } from './features/settings/skillDescriptions.js';
+import { readStored } from './shared/storage.js';
+import { buildChildActivityByThread } from './features/agents/subagentActivity.js';
+import { buildAgentStageRows, buildSubagentStatusRows } from './features/agents/subagents.js';
+import { modeInstructionFor } from './config/taskModes.js';
+import { formatCacheDiagnostics, formatCompactionPressure, formatThreadTokenSummary } from './features/chat/usageDisplay.js';
+import { useWebProviderSettings, type SettingsResponseWithWebProvider } from './api/webProviderClient.js';
+import { useRunMonitor } from './features/monitor/runMonitor.js';
+import { actionDetail, actionTitle, completeLocalSkillDraftItem, createLocalSkillDraftItems, mergeIncomingItems } from './features/chat/threadItems.js';
+import { optimisticDeleteThread } from './features/chat/threads.js';
+import { forgetWorkspaceRoot, pickWorkspaceRoot, readRememberedWorkspaceRoots, rememberWorkspaceRoots, workspacePickerNotice, workspacePickerStatus } from './features/workspaces/workspaces.js';
+import { controlThreadWorkflow, createWorkflowDraftErrorItem, createWorkflowDraftReplyItem, createWorkflowDraftUserItem, isUntitledWorkflowProjectTitle, loadThreadWorkflow, parseThreadWorkflow, parseWorkflowCheckpointItems, planWorkflowDraft, saveThreadWorkflow, workflowThreadTitleFromGoal, type WorkflowBlueprintCompileResult, type WorkflowComponentDefinition, type WorkflowPlanDraft, type WorkflowRuntimeAction, type WorkflowSnapshot } from './features/workflow/workflow.js';
+import { authEventSourceUrl, patchGlobalFetch } from './api/authClient.js';
+import { applyAgentMessageDelta, describeEvent, groupTranscriptItems, removeThreadItem, withSyntheticUserMessages, type EventDraft } from './features/chat/threadView.js';
+import type { ApiKeyState, ApprovalRequest, EventLine, McpConfig, McpServerStatus, ModelPreset, ProviderEntry, SkillDraft, SkillEntry, ThreadItem, ThreadChildInfo, ThreadMeta, ThreadUsage, TurnMeta } from './shared/types.js';
 import './styles.css';
-type PaletteOption = SlashCommandOption & (
-  | { action?: 'command' }
-  | { action: 'insert_skill'; skillName: string; hideCommand: true }
-  | { action: 'enable_mcp'; mcpId: string; hideCommand: true }
-);
+type DeploymentStatus = { deploymentMode?: 'single' | 'multi'; authMode?: 'off' | 'token' };
+function resolveThemeShortcutMode(current: RunConfig['themeMode']): 'light' | 'dark' {
+  if (current === 'dark') return 'dark';
+  if (current === 'light') return 'light';
+  if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches) return 'dark';
+  return 'light';
+}
 
-function App() {
+function nextThemeMode(current: RunConfig['themeMode']): RunConfig['themeMode'] {
+  return resolveThemeShortcutMode(current) === 'dark' ? 'light' : 'dark';
+}
+
+patchGlobalFetch(); function App() {
   const [hasStoredRunConfig] = useState(() => Boolean(localStorage.getItem(RUN_CONFIG_STORAGE_KEY)));
   const [config, setConfig] = useState<RunConfig>(() => ({
     ...defaultConfig,
@@ -88,9 +80,16 @@ function App() {
   const [images, setImages] = useState<Array<{ name: string; dataUrl: string }>>([]);
   const [draggingImage, setDraggingImage] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [workflowPlanning, setWorkflowPlanning] = useState(false);
+  const [workflowSaving, setWorkflowSaving] = useState(false);
+  const [workflowRuntimeBusy, setWorkflowRuntimeBusy] = useState(false);
+  const [workflowPlanDraft, setWorkflowPlanDraft] = useState<WorkflowPlanDraft | null>(null);
+  const [workflowComponents, setWorkflowComponents] = useState<WorkflowComponentDefinition[]>([]);
+  const [workflowBlueprint, setWorkflowBlueprint] = useState<WorkflowBlueprintCompileResult | null>(null);
+  const [workflowSelectedNodeIds, setWorkflowSelectedNodeIds] = useState<string[]>([]);
   const [status, setStatus] = useState('Idle');
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsHelpOpen, setSettingsHelpOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false), [settingsHelpOpen, setSettingsHelpOpen] = useState(false);
+  const [deploymentStatus, setDeploymentStatus] = useState<DeploymentStatus | null>(null);
   const [rightPaneVisible, setRightPaneVisible] = useState(true), [rightPaneTab, setRightPaneTab] = useState<RightPaneTab>('status');
   const [pendingApprovals, setPendingApprovals] = useState<ApprovalRequest[]>([]);
   const [providers, setProviders] = useState<ProviderEntry[]>([]);
@@ -108,10 +107,16 @@ function App() {
   const eventSourceRef = useRef<EventSource | null>(null);
   const transcriptRef = useRef<HTMLElement | null>(null);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
-  const { botConfig, botStatus, refreshBotStatus, saveBotConfig, connectWeixin } = useBotControls();
-
+  const activeTurnThreadIdRef = useRef<string>('');
   const activeThread = threads.find((thread) => thread.threadId === threadId);
+  const activeWorkflow = useMemo(() => parseThreadWorkflow(activeThread) ?? parseWorkflowCheckpointItems(items), [activeThread, items]);
+  const isWorkflowProject = activeThread?.tags?.workflowProject === 'true' || Boolean(activeWorkflow);
+  const { rightPaneGridTemplateColumns, startRightPaneResize } = useRightPaneSizing(rightPaneVisible, rightPaneTab, isWorkflowProject ? 'workflow' : 'standard');
+  const { toast, showToast } = useToastNotice();
+  const { botConfig, botStatus, bindRemoteAssistant, refreshBotStatus, saveBotConfig, connectWeixin, startDingtalkStream, stopDingtalkStream, testDingtalkMessage } = useBotControls();
+  const { applyWebProviderState, clearWebProviderKey, saveWebProviderKey, webProviderState } = useWebProviderSettings();
   const activeProvider = providers.find((provider) => provider.id === config.provider);
+  const showAdminControls = deploymentStatus?.deploymentMode === 'multi' && deploymentStatus?.authMode === 'token';
   const apiConfig = useMemo(() => {
     const patch: Partial<RunConfig> = {};
     for (const key of Object.keys(config) as Array<keyof RunConfig>) {
@@ -122,6 +127,13 @@ function App() {
     }
     return patch;
   }, [config]);
+  const threadApiConfig = useMemo(() => {
+    const { themeMode, userAvatarId, customUserAvatarDataUrl, ...threadConfig } = apiConfig;
+    void themeMode;
+    void userAvatarId;
+    void customUserAvatarDataUrl;
+    return threadConfig;
+  }, [apiConfig]);
   const transcriptGroups = useMemo(() => groupTranscriptItems(items, turns), [items, turns]);
   const subagentRows = useMemo(() => buildSubagentStatusRows(threadChildren, config.locale), [config.locale, threadChildren]);
   const agentStageRows = useMemo(() => buildAgentStageRows({
@@ -150,9 +162,34 @@ function App() {
       JSON.stringify(last.result ?? last.error ?? ''),
     ].join('\n');
   }, [items]);
-
-  const openWeixinRemote = useCallback(() => void connectWeixin(threadId || undefined, setWeixinConnectState), [connectWeixin, threadId]);
-  const slashVisible = !activeSlashOption && isSlashInput(input) && !busy && images.length === 0;
+  const openRemoteAssistants = useCallback((platform: 'weixin' | 'dingtalk') => {
+    const targetThreadId = threadId || undefined;
+    void (async () => {
+      if (platform === 'weixin') {
+        await connectWeixin(targetThreadId, setWeixinConnectState);
+        return;
+      }
+      const dingtalkConfigured = Boolean(botConfig?.dingtalk.enabled && botConfig.dingtalk.clientId && botConfig.dingtalk.clientSecret)
+        || botStatus?.dingtalk?.configured === true;
+      if (!dingtalkConfigured) {
+        setWeixinConnectState({ dialogTitle: '绑定钉钉远程助手', polling: false, error: '请先在设置中配置钉钉机器人。' });
+        return;
+      }
+      if (!targetThreadId) {
+        setWeixinConnectState({ dialogTitle: '绑定钉钉远程助手', polling: false, error: '请先选择一个对话再绑定钉钉。' });
+        return;
+      }
+      const bound = await bindRemoteAssistant('dingtalk', targetThreadId);
+      setWeixinConnectState({
+        dialogTitle: '绑定钉钉远程助手',
+        polling: false,
+        message: bound ? '钉钉已绑定到当前对话。' : undefined,
+        error: bound ? undefined : '钉钉绑定当前对话失败。',
+        successTitle: '钉钉已绑定',
+      });
+    })();
+  }, [bindRemoteAssistant, botConfig?.dingtalk.clientId, botConfig?.dingtalk.clientSecret, botConfig?.dingtalk.enabled, botStatus?.dingtalk?.configured, connectWeixin, threadId]);
+  const slashVisible = !isWorkflowProject && !activeSlashOption && isSlashInput(input) && !busy && images.length === 0;
   const slashCommandOptions = useMemo<PaletteOption[]>(() => getSlashCommandOptions(config.locale), [config.locale]);
   const filteredSlashOptions = useMemo<PaletteOption[]>(() => {
     if (!slashVisible) return [];
@@ -205,7 +242,6 @@ function App() {
       || option.detail.toLowerCase().includes(query)
     ));
   }, [config.locale, input, mcps, skillsList, slashCommandOptions, slashVisible]);
-
   const addEvent = useCallback((event: EventDraft) => {
     eventCounter.current += 1;
     setEvents((current) => {
@@ -230,26 +266,23 @@ function App() {
       return [next, ...current].slice(0, 80);
     });
   }, []);
-
+  const runMonitor = useRunMonitor({ threadId, locale: config.locale, addEvent });
   const mergeApproval = useCallback((approval: ApprovalRequest) => {
     setPendingApprovals((current) =>
       current.some((item) => item.requestId === approval.requestId) ? current : [...current, approval],
     );
   }, []);
-
   const refreshThreads = useCallback(async () => {
     const response = await fetch('/api/threads');
     const data = (await response.json()) as { threads: ThreadMeta[] };
     setThreads(data.threads ?? []);
   }, []);
-
   const refreshApprovals = useCallback(async () => {
     const response = await fetch('/api/approvals');
     if (!response.ok) return;
     const data = (await response.json()) as { approvals?: ApprovalRequest[] };
     setPendingApprovals(data.approvals ?? []);
   }, []);
-
   const refreshProviders = useCallback(async () => {
     const [providerResponse, keyResponse] = await Promise.all([
       fetch('/api/providers'),
@@ -264,28 +297,33 @@ function App() {
       setKeyStates(data.keys ?? []);
     }
   }, []);
-
   const refreshModelPresets = useCallback(async () => {
     const response = await fetch('/api/model-presets');
     if (!response.ok) return;
     const data = (await response.json()) as { presets?: ModelPreset[] };
     setModelPresets(data.presets ?? []);
   }, []);
-
-  const refreshSkills = useCallback(async () => {
-    const response = await fetch('/api/skills');
+  const refreshSkills = useCallback(async (options: { forceReload?: boolean } = {}) => {
+    const response = await fetch(options.forceReload ? '/api/skills?forceReload=1' : '/api/skills');
     if (!response.ok) return;
     const data = (await response.json()) as { skills?: SkillEntry[] };
     setSkillsList(data.skills ?? []);
   }, []);
-
-  const refreshMcpStatus = useCallback(async () => {
-    const response = await fetch('/api/mcp/status');
-    if (!response.ok) return;
-    const data = (await response.json()) as { servers?: McpServerStatus[] };
-    setMcpStatuses(data.servers ?? []);
-  }, []);
-
+  const refreshMcpStatus = useCallback(async (detail: 'light' | 'full' = 'light') => {
+    try {
+      const response = await fetch(detail === 'full' ? '/api/mcp/status?detail=full' : '/api/mcp/status');
+      if (!response.ok) return;
+      const data = (await response.json()) as { servers?: McpServerStatus[] };
+      setMcpStatuses(data.servers ?? []);
+    } catch (error) {
+      addEvent({
+        kind: 'error',
+        title: config.locale === 'zh' ? 'MCP 状态刷新失败' : 'MCP status refresh failed',
+        detail: error instanceof Error ? error.message : String(error),
+        tone: 'danger',
+      });
+    }
+  }, [addEvent, config.locale]);
   const refreshThreadChildren = useCallback(async (id: string) => {
     if (!id) return setThreadChildren([]);
     const response = await fetch(`/api/threads/${id}/children?recursive=1`);
@@ -293,16 +331,19 @@ function App() {
     const data = (await response.json()) as { children?: ThreadChildInfo[] };
     setThreadChildren(data.children ?? []);
   }, []);
-
   const reloadThreadSnapshot = useCallback(async (id: string) => {
     const response = await fetch(`/api/threads/${id}?includeChildren=1`);
     if (!response.ok) return;
     const data = (await response.json()) as {
+      thread?: ThreadMeta;
       turns?: TurnMeta[];
       items: ThreadItem[];
       config?: Partial<RunConfig>;
       usage?: ThreadUsage;
     };
+    if (data.thread) {
+      setThreads((current) => current.map((thread) => thread.threadId === id ? data.thread! : thread));
+    }
     setTurns(data.turns ?? []);
     setThreadUsage(data.usage ?? null);
     setRunningTurnIds(new Set((data.turns ?? [])
@@ -310,26 +351,149 @@ function App() {
       .map((turn) => turn.turnId)));
     setItems(withSyntheticUserMessages(data.turns ?? [], data.items ?? []) as ThreadItem[]);
     if (data.config) {
-      const { workspaceRoot, ...threadConfig } = data.config;
+      const { workspaceRoot, themeMode, userAvatarId, customUserAvatarDataUrl, ...threadConfig } = data.config;
+      void themeMode;
+      void userAvatarId;
+      void customUserAvatarDataUrl;
       setConfig((current) => ({
         ...current,
         ...threadConfig,
         ...(workspaceRoot ? { workspaceRoot } : {}),
       }));
     }
+    try {
+      const workflowData = await loadThreadWorkflow(id);
+      setWorkflowComponents(workflowData.components ?? []);
+      setWorkflowBlueprint(workflowData.blueprint ?? null);
+    } catch {
+      setWorkflowComponents([]);
+      setWorkflowBlueprint(null);
+    }
     await refreshThreadChildren(id);
   }, [refreshThreadChildren]);
-
+  const requestWorkflowPlan = useCallback(async (goal: string) => {
+    const trimmedGoal = goal.trim();
+    if (!trimmedGoal || !threadId) return;
+    const draftTurnId = `workflow_draft_${Date.now()}`;
+    setWorkflowPlanning(true);
+    try {
+      const editableWorkflow = activeWorkflow && activeWorkflow.definition.nodes.length > 0 ? activeWorkflow : null;
+      const selectedScope = editableWorkflow?.definition.nodes
+        .filter((node) => workflowSelectedNodeIds.includes(node.id))
+        .map((node) => `${node.id}（${node.title}）`)
+        .join('、') ?? '';
+      const effectiveGoal = editableWorkflow
+        ? `${editableWorkflow.definition.goal}${selectedScope ? `\n\n修改范围：${selectedScope}` : ''}\n\n修改要求：${trimmedGoal}`
+        : trimmedGoal;
+      const draft = await planWorkflowDraft(effectiveGoal, threadId);
+      setWorkflowPlanDraft(draft);
+      setWorkflowComponents(draft.components);
+      setWorkflowBlueprint(draft.blueprint ?? null);
+      setItems((current) => mergeIncomingItems(
+        current,
+        draft.items?.length ? draft.items : [
+          createWorkflowDraftUserItem(trimmedGoal, draftTurnId),
+          createWorkflowDraftReplyItem(draft, config.locale, draftTurnId),
+        ],
+      ) as ThreadItem[]);
+      if (isUntitledWorkflowProjectTitle(activeThread?.title)) {
+        void renameConversation(threadId, workflowThreadTitleFromGoal(draft.workflow.definition.goal, config.locale === 'zh' ? '未命名工作流项目' : 'Untitled workflow project'))
+          .catch(() => undefined);
+      }
+      addEvent({
+        kind: 'workflow',
+        title: config.locale === 'zh' ? '计划草案已生成' : 'Plan draft ready',
+        detail: draft.workflow.definition.goal,
+        tone: 'success',
+      });
+    } catch (error) {
+      setItems((current) => mergeIncomingItems(current, [
+        createWorkflowDraftUserItem(trimmedGoal, draftTurnId),
+        createWorkflowDraftErrorItem(error instanceof Error ? error.message : String(error), config.locale, draftTurnId),
+      ]) as ThreadItem[]);
+      addEvent({
+        kind: 'workflow',
+        title: config.locale === 'zh' ? '计划生成失败' : 'Plan failed',
+        detail: error instanceof Error ? error.message : String(error),
+        tone: 'danger',
+      });
+    } finally {
+      setWorkflowPlanning(false);
+    }
+  }, [activeThread?.title, activeWorkflow, addEvent, config.locale, threadId, workflowSelectedNodeIds]);
+  const commitWorkflowPlan = useCallback(async () => {
+    if (!threadId || !workflowPlanDraft) return;
+    setWorkflowSaving(true);
+    try {
+      const data = await saveThreadWorkflow(threadId, workflowPlanDraft.workflow);
+      if (data.thread) setThreads((current) => current.map((thread) => thread.threadId === threadId ? data.thread! : thread));
+      setWorkflowComponents(data.components ?? workflowPlanDraft.components);
+      setWorkflowBlueprint(data.blueprint ?? workflowPlanDraft.blueprint ?? null);
+      setWorkflowPlanDraft(null);
+      addEvent({
+        kind: 'workflow',
+        title: config.locale === 'zh' ? '计划已保存' : 'Plan saved',
+        detail: data.workflow?.definition.goal ?? workflowPlanDraft.goal,
+        tone: 'success',
+      });
+    } catch (error) {
+      addEvent({
+        kind: 'workflow',
+        title: config.locale === 'zh' ? '保存失败' : 'Save failed',
+        detail: error instanceof Error ? error.message : String(error),
+        tone: 'danger',
+      });
+    } finally {
+      setWorkflowSaving(false);
+    }
+  }, [addEvent, config.locale, threadId, workflowPlanDraft]);
+  const saveWorkflow = useCallback(async (workflow: WorkflowSnapshot) => {
+    if (!threadId) return;
+    setWorkflowSaving(true);
+    try {
+      const response = await fetch(`/api/threads/${threadId}/workflow`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workflow }),
+      });
+      const data = (await response.json()) as { thread?: ThreadMeta; workflow?: WorkflowSnapshot; components?: WorkflowComponentDefinition[]; blueprint?: WorkflowBlueprintCompileResult | null; error?: string };
+      if (!response.ok) throw new Error(data.error ?? 'Workflow save failed');
+      if (data.thread) setThreads((current) => current.map((thread) => thread.threadId === threadId ? data.thread! : thread));
+      setWorkflowComponents(data.components ?? workflowComponents);
+      setWorkflowBlueprint(data.blueprint ?? workflowBlueprint);
+      addEvent({
+        kind: 'workflow',
+        title: config.locale === 'zh' ? '节点已保存' : 'Workflow saved',
+        detail: data.workflow?.definition.goal ?? '',
+        tone: 'success',
+      });
+    } catch (error) {
+      addEvent({
+        kind: 'workflow',
+        title: config.locale === 'zh' ? '保存失败' : 'Save failed',
+        detail: error instanceof Error ? error.message : String(error),
+        tone: 'danger',
+      });
+    } finally {
+      setWorkflowSaving(false);
+    }
+  }, [addEvent, config.locale, threadId, workflowBlueprint, workflowComponents]);
+  const controlWorkflowRuntime = useCallback(async (action: WorkflowRuntimeAction, nodeId?: string) => { if (!threadId || !activeWorkflow) return; setWorkflowRuntimeBusy(true);
+    try { const data = await controlThreadWorkflow(threadId, action, { nodeId, runId: activeWorkflow.run.id, input: { goal: activeWorkflow.definition.goal } }); if (data.thread) setThreads((current) => current.map((thread) => thread.threadId === threadId ? data.thread! : thread)); setWorkflowComponents(data.components ?? workflowComponents); setWorkflowBlueprint(data.blueprint ?? workflowBlueprint); addEvent({ kind: 'workflow', title: config.locale === 'zh' ? '工作流状态已更新' : 'Workflow updated', detail: data.workflow?.run.status ?? action, tone: data.workflow?.run.status === 'failed' ? 'danger' : data.workflow?.run.status === 'blocked' ? 'warning' : 'success' }); if (runMonitor.open) void runMonitor.refresh(); }
+    catch (error) { addEvent({ kind: 'workflow', title: config.locale === 'zh' ? '工作流运行失败' : 'Workflow runtime failed', detail: error instanceof Error ? error.message : String(error), tone: 'danger' }); }
+    finally { setWorkflowRuntimeBusy(false); }
+  }, [activeWorkflow, addEvent, config.locale, runMonitor, threadId, workflowBlueprint, workflowComponents]);
   const loadThread = useCallback(
     async (id: string) => {
       if (!id) return;
       setThreadId(id);
+      setWorkflowPlanDraft(null);
       setEvents([]);
       setCacheDiagnostics(null);
       setCompactionPressure(null);
       await reloadThreadSnapshot(id);
       eventSourceRef.current?.close();
-      const source = new EventSource(`/api/events/${id}`);
+      const source = new EventSource(authEventSourceUrl(`/api/events/${id}`));
       source.onmessage = (message) => {
         try {
           const event = JSON.parse(message.data) as Record<string, unknown>;
@@ -371,6 +535,10 @@ function App() {
           if (event.type === 'agent_message.delta') {
             setItems((current) => applyAgentMessageDelta(current, event as never) as ThreadItem[]);
           }
+          if (event.type === 'item.discarded' && typeof event.itemId === 'string') {
+            const itemId = event.itemId;
+            setItems((current) => removeThreadItem(current, itemId) as ThreadItem[]);
+          }
           if (
             (event.type === 'item.started' || event.type === 'item.updated' || event.type === 'item.completed')
             && event.item
@@ -380,6 +548,7 @@ function App() {
               void refreshThreadChildren(id);
             }
           }
+          if (runMonitor.open) void runMonitor.refresh();
         } catch {
           addEvent({
             kind: 'event',
@@ -405,22 +574,26 @@ function App() {
       };
       eventSourceRef.current = source;
     },
-    [addEvent, config.locale, mergeApproval, refreshThreadChildren, reloadThreadSnapshot],
+    [addEvent, config.locale, mergeApproval, refreshThreadChildren, reloadThreadSnapshot, runMonitor],
   );
-
   useEffect(() => {
     fetch('/api/settings')
       .then((response) => response.json())
-      .then((data: { config?: Partial<RunConfig>; stored?: boolean }) => {
+      .then((data: { config?: Partial<RunConfig>; stored?: boolean } & SettingsResponseWithWebProvider) => {
         setConfig((current) => {
           if (data.stored || !hasStoredRunConfig) {
             return { ...defaultConfig, ...data.config };
           }
           return mergeRunConfigDefaults(data.config, current);
         });
+        applyWebProviderState(data);
         setConfigHydrated(true);
       })
       .catch(() => setConfigHydrated(true));
+    fetch('/api/status')
+      .then((response) => response.ok ? response.json() : null)
+      .then((data: DeploymentStatus | null) => setDeploymentStatus(data))
+      .catch(() => setDeploymentStatus({ deploymentMode: 'single', authMode: 'off' }));
     void refreshThreads();
     void refreshProviders();
     void refreshModelPresets();
@@ -433,18 +606,16 @@ function App() {
           setMcps(normalizeStoredMcps(data.servers));
         }
         setMcpHydrated(true);
-        void refreshMcpStatus();
+        void refreshMcpStatus('light');
       })
       .catch(() => setMcpHydrated(true));
     return () => eventSourceRef.current?.close();
-  }, [hasStoredRunConfig, refreshBotStatus, refreshMcpStatus, refreshModelPresets, refreshProviders, refreshSkills, refreshThreads]);
-
+  }, [applyWebProviderState, hasStoredRunConfig, refreshBotStatus, refreshMcpStatus, refreshModelPresets, refreshProviders, refreshSkills, refreshThreads]);
   useEffect(() => {
     void refreshApprovals();
     const timer = window.setInterval(() => void refreshApprovals(), 2000);
     return () => window.clearInterval(timer);
   }, [refreshApprovals]);
-
   useEffect(() => {
     if (!configHydrated) return;
     localStorage.setItem(RUN_CONFIG_STORAGE_KEY, JSON.stringify(config));
@@ -457,16 +628,14 @@ function App() {
       void fetch(`/api/threads/${threadId}/config`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config: apiConfig }),
+        body: JSON.stringify({ config: threadApiConfig }),
       });
     }
-  }, [apiConfig, config, configHydrated, threadId]);
-
+  }, [apiConfig, config, configHydrated, threadApiConfig, threadId]);
   useEffect(() => {
     const roots = [config.workspaceRoot, ...threads.map((thread) => thread.workspaceRoot)];
     setRememberedWorkspaceRoots((current) => rememberWorkspaceRoots(current, roots));
   }, [config.workspaceRoot, threads]);
-
   useEffect(() => {
     if (!mcpHydrated) return;
     void fetch('/api/mcp', {
@@ -477,29 +646,36 @@ function App() {
       .then((response) => response.ok ? response.json() : null)
       .then((data: { statuses?: McpServerStatus[] } | null) => {
         if (data?.statuses) setMcpStatuses(data.statuses);
+      })
+      .catch((error) => {
+        addEvent({
+          kind: 'error',
+          title: config.locale === 'zh' ? 'MCP 配置保存失败' : 'MCP config save failed',
+          detail: error instanceof Error ? error.message : String(error),
+          tone: 'danger',
+        });
       });
-  }, [mcpHydrated, mcps]);
-
+  }, [addEvent, config.locale, mcpHydrated, mcps]);
   useEffect(() => {
     const transcript = transcriptRef.current;
     if (!transcript) return;
     transcript.scrollTo({ top: transcript.scrollHeight, behavior: 'smooth' });
   }, [lastItemSignature]);
-
   useEffect(() => { resizeTextareaToContent(composerInputRef.current); }, [activeSlashOption, images.length, input]);
-
-  async function createConversation(workspaceRoot = config.workspaceRoot, conversationKind: 'chat' | 'project' = 'project') {
+  async function createConversation(workspaceRoot = config.workspaceRoot, conversationKind: 'chat' | 'project' = 'project', workflowProject = false) {
+    setWorkflowPlanDraft(null);
     setBusy(true);
     setStatus(t(config.locale, 'creating'));
     try {
-      const runConfig = { ...apiConfig, workspaceRoot: conversationKind === 'chat' ? '' : workspaceRoot };
+      const runConfig = { ...threadApiConfig, workspaceRoot: conversationKind === 'chat' ? '' : workspaceRoot };
+      const title = workflowProject ? (config.locale === 'zh' ? '未命名工作流项目' : 'Untitled workflow project') : t(config.locale, 'untitled');
       if (conversationKind === 'project') {
         setRememberedWorkspaceRoots((current) => rememberWorkspaceRoots(current, [workspaceRoot]));
       }
       const response = await fetch('/api/threads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: t(config.locale, 'untitled'), config: runConfig, conversationKind }),
+        body: JSON.stringify({ title, config: runConfig, conversationKind, workflowProject }),
       });
       const data = (await response.json()) as { thread: ThreadMeta };
       await refreshThreads();
@@ -509,11 +685,8 @@ function App() {
       setBusy(false);
     }
   }
-
-  async function createPlainConversation() {
-    await createConversation('', 'chat');
-  }
-
+  async function createPlainConversation() { await createConversation('', 'chat'); }
+  async function createWorkflowProject() { await createConversation(config.workspaceRoot, 'project', true); }
   async function createConversationWithWorkspacePicker() {
     if (busy) return;
     setStatus(workspacePickerStatus(config.locale));
@@ -525,7 +698,6 @@ function App() {
       setDialog(workspacePickerNotice(config.locale, error)); setStatus(t(config.locale, 'ready'));
     }
   }
-
   function handlePaste(event: React.ClipboardEvent<HTMLTextAreaElement>) {
     const items = event.clipboardData?.items;
     if (!items) return;
@@ -543,7 +715,6 @@ function App() {
       }
     }
   }
-
   function addImageFiles(files: FileList | File[]) {
     for (const file of Array.from(files)) {
       if (!file.type.startsWith('image/')) continue;
@@ -555,36 +726,30 @@ function App() {
       reader.readAsDataURL(file);
     }
   }
-
   function handleFileSelect(event: React.ChangeEvent<HTMLInputElement>) {
     const files = event.target.files;
     if (!files) return;
     addImageFiles(files);
     event.target.value = '';
   }
-
   function handleDrop(event: React.DragEvent<HTMLElement>) {
     event.preventDefault();
     setDraggingImage(false);
     addImageFiles(event.dataTransfer.files);
   }
-
   function removeImage(index: number) {
     setImages((current) => current.filter((_, i) => i !== index));
   }
-
   function requestDecisionDialog(options: Omit<Extract<AppDialogState, { kind: 'decision' }>, 'kind' | 'resolve'>) {
     return new Promise<boolean>((resolve) => {
       setDialog({ ...options, kind: 'decision', resolve });
     });
   }
-
   function requestTextDialog(options: Omit<Extract<AppDialogState, { kind: 'text' }>, 'kind' | 'resolve'>) {
     return new Promise<string | null>((resolve) => {
       setDialog({ ...options, kind: 'text', resolve });
     });
   }
-
   async function runSlashCommand(command: SlashCommand) {
     switch (command.kind) {
       case 'skills.list':
@@ -627,7 +792,6 @@ function App() {
         return;
     }
   }
-
   function selectSlashOption(option: PaletteOption) {
     if (option.action === 'insert_skill') {
       setActiveSlashOption(null);
@@ -662,8 +826,17 @@ function App() {
     setInput('');
     void runSlashCommand(parseSlashCommand(option.command));
   }
-
   async function submitComposer() {
+    if (isWorkflowProject) {
+      const goal = input.trim();
+      if (!goal) return;
+      setInput('');
+      setActiveSlashOption(null);
+      setStatus(config.locale === 'zh' ? '正在更新工作流' : 'Updating workflow');
+      await requestWorkflowPlan(goal);
+      setStatus(t(config.locale, 'idle'));
+      return;
+    }
     if (activeSlashOption) {
       if (!input.trim()) return;
       const command = parseSlashCommand(activeSlashOption.command + input);
@@ -685,7 +858,6 @@ function App() {
     }
     await sendMessage();
   }
-
   function setWebSearchMode(mode: WebSearchMode) {
     setConfig((current) => ({ ...current, webSearchMode: mode }));
     addEvent({
@@ -695,7 +867,6 @@ function App() {
       tone: 'success',
     });
   }
-
   async function createSkillDraft(description: string) {
     const text = description.trim();
     if (!text) {
@@ -744,7 +915,6 @@ function App() {
       setBusy(false);
     }
   }
-
   async function installSkillFromGitHub(skillUrl: string) {
     const text = skillUrl.trim();
     if (!text) return;
@@ -769,7 +939,6 @@ function App() {
         await refreshThreads();
         await loadThread(activeThreadId);
       }
-
       const response = await fetch(`/api/threads/${activeThreadId}/skills/install`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -813,7 +982,6 @@ function App() {
       setBusy(false);
     }
   }
-
   async function saveSkillDraft(draft: SkillDraft) {
     const response = await fetch('/api/skills', {
       method: 'POST',
@@ -831,8 +999,22 @@ function App() {
       detail: draft.name,
       tone: 'success',
     });
+    await refreshSkills({ forceReload: true });
   }
-
+  async function deleteSkill(name: string) {
+    const response = await fetch(`/api/skills/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    if (!response.ok) {
+      const error = (await response.json()) as { error?: string };
+      throw new Error(error.error ?? 'Delete skill failed');
+    }
+    await refreshSkills({ forceReload: true });
+    addEvent({
+      kind: 'config',
+      title: config.locale === 'zh' ? 'Skill 已删除' : 'Skill removed',
+      detail: name,
+      tone: 'success',
+    });
+  }
   async function sendMessage(modeInstruction?: string, forcedText?: string) {
     const text = (forcedText ?? input).trim();
     const hasImages = images.length > 0;
@@ -850,11 +1032,12 @@ function App() {
       });
       const data = (await response.json()) as { thread: ThreadMeta };
       activeThreadId = data.thread.threadId;
+      activeTurnThreadIdRef.current = activeThreadId;
       await loadThread(activeThreadId);
       await refreshThreads();
     }
-
     setBusy(true);
+    activeTurnThreadIdRef.current = activeThreadId;
     setInput('');
     const sentImages = [...images];
     setImages([]);
@@ -900,21 +1083,32 @@ function App() {
       });
     } finally {
       setBusy(false);
+      activeTurnThreadIdRef.current = '';
     }
   }
-
   async function stopTurn() {
-    if (!threadId) return;
-    const response = await fetch(`/api/threads/${threadId}/interrupt`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ config: apiConfig }),
-    });
-    const data = (await response.json()) as { interrupted?: boolean };
-    if (data.interrupted) {
+    const targetThreadId = activeTurnThreadIdRef.current || threadId;
+    if (!targetThreadId) return;
+    setBusy(false);
+    setRunningTurnIds(new Set());
+    setStatus(config.locale === 'zh' ? '已停止' : 'Interrupted');
+    showToast(config.locale === 'zh' ? '已请求停止当前回复' : 'Stop requested');
+    try {
+      const response = await fetch(`/api/threads/${targetThreadId}/interrupt`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ config: apiConfig }),
+      });
+      const data = (await response.json()) as { interrupted?: boolean };
+      if (!response.ok || !data.interrupted) {
+        await reloadThreadSnapshot(targetThreadId);
+      }
+    } catch {
+      await reloadThreadSnapshot(targetThreadId);
+    } finally {
       setBusy(false);
       setRunningTurnIds(new Set());
-      setStatus(t(config.locale, 'stop'));
+      activeTurnThreadIdRef.current = '';
       addEvent({
         kind: 'interrupt',
         title: config.locale === 'zh' ? '已停止' : 'Interrupted',
@@ -923,7 +1117,6 @@ function App() {
       });
     }
   }
-
   async function decideApproval(requestId: string, approved: boolean) {
     const response = await fetch(`/api/approvals/${requestId}`, {
       method: 'POST',
@@ -937,7 +1130,6 @@ function App() {
       setPendingApprovals((current) => current.filter((item) => item.requestId !== requestId));
     }
   }
-
   async function threadAction(action: 'compact' | 'fork' | 'rollback', count = 1) {
     if (!threadId) return;
     setBusy(true);
@@ -964,13 +1156,19 @@ function App() {
       setBusy(false);
     }
   }
-
   function rollbackToTurn(turnId: string) {
     const index = turns.findIndex((turn) => turn.turnId === turnId);
     const count = index >= 0 ? Math.max(1, turns.length - index) : 1;
+    const userText = items.find((item) => item.type === 'user_message' && item.turnId === turnId)?.text;
+    if (userText) {
+      setInput(userText);
+      window.requestAnimationFrame(() => {
+        composerInputRef.current?.focus();
+        resizeTextareaToContent(composerInputRef.current);
+      });
+    }
     void threadAction('rollback', count);
   }
-
   async function branchFromTurn(turnId: string) {
     if (!threadId) return;
     const index = turns.findIndex((turn) => turn.turnId === turnId);
@@ -1011,11 +1209,11 @@ function App() {
       setBusy(false);
     }
   }
-
   async function copyMessage(text: string) {
     if (!text) return;
     try {
       await navigator.clipboard.writeText(text);
+      showToast(config.locale === 'zh' ? '已复制到剪贴板' : 'Copied to clipboard');
       addEvent({
         kind: 'copy',
         title: config.locale === 'zh' ? '已复制' : 'Copied',
@@ -1031,7 +1229,6 @@ function App() {
       });
     }
   }
-
   async function deleteConversation(id: string) {
     if (!id) return;
     const accepted = await requestDecisionDialog({
@@ -1042,12 +1239,10 @@ function App() {
       tone: 'danger',
     });
     if (!accepted) return;
-
     const previousThreads = threads;
     const previousThreadId = threadId;
     const nextState = optimisticDeleteThread(threads, id, threadId);
     setThreads(nextState.threads);
-
     if (id === threadId) {
       eventSourceRef.current?.close();
       eventSourceRef.current = null;
@@ -1068,11 +1263,11 @@ function App() {
         setEvents([]);
       }
     }
-
     try {
       const response = await fetch(`/api/threads/${id}`, { method: 'DELETE' });
       if (!response.ok) throw new Error('Delete failed');
       await refreshThreads();
+      await refreshBotStatus();
     } catch (error) {
       setThreads(previousThreads);
       if (previousThreadId) {
@@ -1086,14 +1281,31 @@ function App() {
       });
     }
   }
-
   async function renameConversation(id: string, title: string) {
     const response = await fetch(`/api/threads/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title }) });
     const data = (await response.json().catch(() => ({}))) as { thread?: ThreadMeta; error?: string };
     if (!response.ok || !data.thread) throw new Error(data.error ?? 'Rename failed');
     setThreads((current) => current.map((thread) => thread.threadId === id ? data.thread! : thread));
   }
-
+  async function toggleThreadMemoryExcluded(excluded: boolean) {
+    if (!threadId) return;
+    const response = await fetch(`/api/threads/${threadId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tags: { memoryExcluded: excluded ? 'true' : 'false' } }),
+    });
+    const data = (await response.json().catch(() => ({}))) as { thread?: ThreadMeta; error?: string };
+    if (!response.ok || !data.thread) {
+      addEvent({
+        kind: 'error',
+        title: config.locale === 'zh' ? '记忆设置失败' : 'Memory setting failed',
+        detail: data.error ?? 'Unable to update thread memory setting',
+        tone: 'danger',
+      });
+      return;
+    }
+    setThreads((current) => current.map((thread) => thread.threadId === threadId ? data.thread! : thread));
+  }
   async function saveModelPreset() {
     const defaultName = `${activeProvider?.name ?? config.provider} / ${config.model}`;
     const name = await requestTextDialog({
@@ -1115,18 +1327,15 @@ function App() {
     const data = (await response.json()) as { presets?: ModelPreset[] };
     setModelPresets(data.presets ?? []);
   }
-
   function applyModelPreset(preset: ModelPreset) {
     setConfig((current) => ({ ...current, ...preset.config }));
   }
-
   async function deleteModelPreset(id: string) {
     const response = await fetch(`/api/model-presets/${id}`, { method: 'DELETE' });
     if (!response.ok) return;
     const data = (await response.json()) as { presets?: ModelPreset[] };
     setModelPresets(data.presets ?? []);
   }
-
   function selectProvider(providerId: string) {
     const normalizedProviderId = providerId === 'doubao' ? 'volcengine' : providerId;
     const provider = providers.find((item) => item.id === normalizedProviderId);
@@ -1136,7 +1345,6 @@ function App() {
       baseUrl: provider?.baseUrl ?? current.baseUrl,
     }));
   }
-
   async function saveProviderKey(providerId: string, apiKey: string) {
     const response = await fetch(`/api/keys/${providerId}`, {
       method: 'POST',
@@ -1148,7 +1356,6 @@ function App() {
       setKeyStates(data.keys ?? []);
     }
   }
-
   async function clearProviderKey(providerId: string) {
     const response = await fetch(`/api/keys/${providerId}`, { method: 'DELETE' });
     if (response.ok) {
@@ -1156,7 +1363,14 @@ function App() {
       setKeyStates(data.keys ?? []);
     }
   }
-
+  const shortcutThemeMode = resolveThemeShortcutMode(config.themeMode);
+  const themeShortcutLabel = shortcutThemeMode === 'dark'
+    ? (config.locale === 'zh' ? '深色' : 'Dark')
+    : (config.locale === 'zh' ? '浅色' : 'Light');
+  const themeShortcutTitle = config.locale === 'zh'
+    ? `主题：${themeShortcutLabel}，点击切换`
+    : `Theme: ${themeShortcutLabel}. Click to switch`;
+  const themeShortcutIcon = shortcutThemeMode === 'dark' ? 'moon' : 'sun';
   return (
     <main className={[
       'appShell',
@@ -1172,9 +1386,11 @@ function App() {
         <WorkspaceThreadList
           activeThreadId={threadId} busy={busy} currentWorkspaceRoot={config.workspaceRoot} locale={config.locale}
           rememberedRoots={rememberedWorkspaceRoots} runningTurnIds={runningTurnIds} searchQuery={threadFilter}
-          sidebarCollapsed={sidebarCollapsed} threads={threads}
+          sidebarCollapsed={sidebarCollapsed} threads={threads} weixinActiveThreadId={botConfig?.weixin.activeThreadId ?? ''} dingtalkActiveThreadId={botConfig?.dingtalk.activeThreadId ?? ''}
           onCreatePlainChat={() => void createPlainConversation()}
-          onCreateInWorkspace={(workspaceRoot) => void createConversation(workspaceRoot, 'project')} onDeleteThread={(id) => void deleteConversation(id)}
+          onCreateInWorkspace={(workspaceRoot) => void createConversation(workspaceRoot, 'project')}
+          onCreateWorkflowProject={() => void createWorkflowProject()}
+          onDeleteThread={(id) => void deleteConversation(id)}
           onForgetWorkspace={(workspaceRoot) => setRememberedWorkspaceRoots((current) => forgetWorkspaceRoot(current, workspaceRoot))}
           onOpenSettings={() => setSettingsOpen(true)}
           onPickWorkspace={() => void createConversationWithWorkspacePicker()}
@@ -1183,8 +1399,17 @@ function App() {
           onToggleSidebar={() => setSidebarCollapsed((value) => !value)}
         />
       </aside>
-
-      <section className={rightPaneVisible ? `workspace ${rightPaneTab === 'files' ? 'rightPaneFiles' : ''}` : 'workspace rightPaneHidden'}>
+      <section
+        className={[
+          'workspace',
+          rightPaneVisible ? '' : 'rightPaneHidden',
+          rightPaneVisible && !isWorkflowProject && rightPaneTab === 'files' ? 'rightPaneFiles' : '',
+          isWorkflowProject ? 'workflowSplit' : '',
+        ].filter(Boolean).join(' ')}
+        style={{
+          gridTemplateColumns: rightPaneGridTemplateColumns,
+        }}
+      >
         <header className="topbar">
           <div className="conversationTitle">
             <strong>{activeThread?.title || t(config.locale, 'noConversation')}</strong>
@@ -1194,16 +1419,27 @@ function App() {
           {cacheSummary ? <span className="tokenPill cache">{cacheSummary}</span> : null}
           {pressureSummary ? <span className="tokenPill warn">{pressureSummary}</span> : null}
           <div className="actions">
+            <button
+              className="iconButton themeQuickButton"
+              onClick={() => setConfig((current) => ({ ...current, themeMode: nextThemeMode(current.themeMode) }))}
+              title={themeShortcutTitle}
+              aria-label={themeShortcutTitle}
+            >
+              <Icon name={themeShortcutIcon} />
+              <span className="themeQuickLabel">{themeShortcutLabel}</span>
+            </button>
             <button className="iconButton" onClick={() => void threadAction('compact')} disabled={!threadId || busy} title={t(config.locale, 'compact')} aria-label={t(config.locale, 'compact')}><Icon name="refresh" /></button>
             <button className="iconButton helpButton" onClick={() => setSettingsHelpOpen(true)} title={config.locale === 'zh' ? '设置说明' : 'Settings guide'} aria-label={config.locale === 'zh' ? '设置说明' : 'Settings guide'}><Icon name="question" /></button>
+            <button className={runMonitor.open ? 'iconButton panelButton active' : 'iconButton panelButton'} onClick={runMonitor.openDrawer} disabled={!threadId} title={config.locale === 'zh' ? '运行监控' : 'Run monitor'} aria-label={config.locale === 'zh' ? '运行监控' : 'Run monitor'}><Icon name="activity" /></button>
             <button className={rightPaneVisible ? 'iconButton panelButton active' : 'iconButton panelButton'} onClick={() => setRightPaneVisible((value) => !value)} title={config.locale === 'zh' ? '显示/隐藏右侧栏' : 'Show/hide right panel'} aria-label={config.locale === 'zh' ? '显示/隐藏右侧栏' : 'Show/hide right panel'}><Icon name="panel" /></button>
           </div>
         </header>
-
         <div className="contentGrid">
           <section className="transcript" ref={transcriptRef}>
             {items.length === 0 ? (
-              <div className="empty">{t(config.locale, 'empty')}</div>
+              <div className="empty">{isWorkflowProject
+                ? (config.locale === 'zh' ? '从下方输入工作流目标，或描述节点修改要求。' : 'Describe a workflow goal or node change below.')
+                : t(config.locale, 'empty')}</div>
             ) : (
               transcriptGroups.map((group, index) => (
                 group.kind === 'user' ? (
@@ -1214,6 +1450,8 @@ function App() {
                     onBranch={branchFromTurn}
                     onCopy={copyMessage}
                     onRollback={rollbackToTurn}
+                    userAvatarId={config.userAvatarId}
+                    customUserAvatarDataUrl={config.customUserAvatarDataUrl}
                   />
                 ) : (
                   <AssistantTurnView
@@ -1232,9 +1470,21 @@ function App() {
               ))
             )}
           </section>
-          {rightPaneVisible ? <RightPane activeTab={rightPaneTab} agentStageRows={agentStageRows} locale={config.locale} workspaceRoot={activeWorkspaceRoot} onTabChange={setRightPaneTab} /> : null}
+          {rightPaneVisible ? (
+            <>
+              <button
+                type="button"
+                className="rightPaneDivider"
+                aria-label={config.locale === 'zh' ? '调整右侧栏宽度' : 'Resize right panel'}
+                title={config.locale === 'zh' ? '拖拽调整右侧栏宽度' : 'Drag to resize right panel'}
+                onPointerDown={startRightPaneResize}
+              />
+              {isWorkflowProject ? <WorkflowSidePane locale={config.locale} workflow={activeWorkflow} planDraft={workflowPlanDraft} components={workflowPlanDraft?.components ?? workflowComponents} blueprint={workflowPlanDraft?.blueprint ?? workflowBlueprint} runEvents={runMonitor.events} saving={workflowSaving} runtimeBusy={workflowRuntimeBusy} onCancelPlan={() => setWorkflowPlanDraft(null)} onCommitPlan={() => void commitWorkflowPlan()} onSave={(workflow) => void saveWorkflow(workflow)} onControl={(action, nodeId) => void controlWorkflowRuntime(action, nodeId)} onSelectionChange={setWorkflowSelectedNodeIds} /> : (
+                <RightPane activeTab={rightPaneTab} activeThread={activeThread} agentStageRows={agentStageRows} locale={config.locale} workspaceRoot={activeWorkspaceRoot} onTabChange={setRightPaneTab} onToggleMemoryExcluded={(excluded) => void toggleThreadMemoryExcluded(excluded)} />
+              )}
+            </>
+          ) : null}
         </div>
-
         {pendingApprovals.length > 0 ? (
           <section className="approvalPanel" aria-label={t(config.locale, 'approvalRequired')}>
             {pendingApprovals.map((approval) => (
@@ -1253,125 +1503,28 @@ function App() {
             ))}
           </section>
         ) : null}
-
-        <footer
-          className={['composer', draggingImage ? 'dragging' : '', !rightPaneVisible ? 'compactWidth' : rightPaneTab === 'files' ? 'wideWidth' : 'balancedWidth'].filter(Boolean).join(' ')}
-          onDragEnter={(event) => {
-            event.preventDefault();
-            setDraggingImage(true);
-          }}
-          onDragOver={(event) => event.preventDefault()}
-          onDragLeave={() => setDraggingImage(false)}
-          onDrop={handleDrop}
-        >
-          <div className="composerMain">
-            <div className="composerInner">
-              {images.length > 0 ? (
-                <div className="imageStrip">
-                  {images.map((img, i) => (
-                    <div className="imageThumb" key={i}>
-                      <img src={img.dataUrl} alt={img.name} />
-                      <button className="imageRemove" onClick={() => removeImage(i)} title={t(config.locale, 'remove')} aria-label={t(config.locale, 'remove')}>
-                        <Icon name="x" />
-                      </button>
-                      <span>{img.name}</span>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-              {slashVisible && filteredSlashOptions.length > 0 ? (
-                <div className="slashPalette" role="listbox" aria-label="Slash commands">
-                  {filteredSlashOptions.map((option) => (
-                    <button
-                      className={'hideCommand' in option && option.hideCommand ? 'slashOption compact' : 'slashOption'}
-                      key={option.id}
-                      onClick={() => selectSlashOption(option)}
-                    >
-                      <strong>{option.title}</strong>
-                      {'hideCommand' in option && option.hideCommand ? null : <span>{option.command}</span>}
-                      <small>{option.detail}</small>
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-              <div className={activeSlashOption ? 'commandInputRow active' : 'commandInputRow'}>
-                {activeSlashOption ? (
-                  <div className="commandChip" title={activeSlashOption.command.trim()}>
-                    <span>{activeSlashOption.command.trim()}</span>
-                    <button
-                      type="button"
-                      title={t(config.locale, 'cancel')}
-                      aria-label={t(config.locale, 'cancel')}
-                      onClick={() => {
-                        setActiveSlashOption(null);
-                        setInput('');
-                        composerInputRef.current?.focus();
-                      }}
-                    >
-                      <Icon name="x" />
-                    </button>
-                  </div>
-                ) : null}
-                <textarea
-                  ref={composerInputRef}
-                  value={input}
-                  rows={1}
-                  onChange={(event) => { setInput(event.target.value); window.requestAnimationFrame(() => resizeTextareaToContent(composerInputRef.current)); }}
-                  onInput={() => resizeTextareaToContent(composerInputRef.current)}
-                  onPaste={handlePaste}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' && !event.shiftKey) {
-                      event.preventDefault();
-                      if (busy) return;
-                      void submitComposer();
-                    }
-                  }}
-                  placeholder={activeSlashOption ? (config.locale === 'zh' ? '输入自然语言参数...' : 'Describe what to add...') : t(config.locale, 'placeholder')}
-                />
-              </div>
-            </div>
-            <button
-              className="sendButton"
-              onClick={() => busy ? void stopTurn() : void submitComposer()}
-              disabled={!busy && (!input.trim() && images.length === 0)}
-              title={busy ? t(config.locale, 'stop') : t(config.locale, 'send')}
-              aria-label={busy ? t(config.locale, 'stop') : t(config.locale, 'send')}
-            >
-              <Icon name={busy ? 'stop' : 'send'} />
-            </button>
-          </div>
-          <div className="composerBottom">
-            <div className="composerMeta">
-              <span>{config.model}</span>
-            </div>
-            <div className="composerActions">
-              <button className="fileButton" title={config.locale === 'zh' ? '连接微信远程助手' : 'Connect WeChat assistant'} aria-label={config.locale === 'zh' ? '连接微信远程助手' : 'Connect WeChat assistant'} onClick={openWeixinRemote}><Icon name="spark" /></button>
-              <label className="fileButton" title={t(config.locale, 'attachImage')} aria-label={t(config.locale, 'attachImage')}>
-                <input type="file" accept="image/*" multiple onChange={handleFileSelect} hidden />
-                <Icon name="clip" />
-              </label>
-              <DropdownSelect<PermissionPresetId> ariaLabel={t(config.locale, 'mode')} className="modeSelect" title={t(config.locale, 'mode')} value={config.permissions} onChange={(permissions) => setConfig({ ...config, permissions })} options={[{ value: 'read_only', label: config.locale === 'zh' ? '只读' : 'Read' }, { value: 'workspace', label: config.locale === 'zh' ? '默认' : 'Default' }, { value: 'danger_full_access', label: config.locale === 'zh' ? '自主' : 'Auto' }]} />
-              <DropdownSelect<ReasoningEffort> ariaLabel={config.locale === 'zh' ? '思考程度' : 'Reasoning effort'} className="modeSelect reasoningSelect" title={config.locale === 'zh' ? '思考程度' : 'Reasoning effort'} value={config.reasoningEffort} onChange={(reasoningEffort) => setConfig({ ...config, reasoningEffort })} options={[{ value: 'low', label: config.locale === 'zh' ? '快速' : 'Fast' }, { value: 'medium', label: config.locale === 'zh' ? '均衡' : 'Balanced' }, { value: 'high', label: config.locale === 'zh' ? '深度' : 'Deep' }]} />
-              <DropdownSelect<RunProfile> ariaLabel={config.locale === 'zh' ? '运行模式' : 'Run profile'} className="modeSelect runProfileSelect" title={runProfileDescription(config.runProfile, config.locale)} value={config.runProfile} onChange={(runProfile) => setConfig({ ...config, runProfile })} options={[{ value: 'cache_first', label: runProfileLabel('cache_first', config.locale) }, { value: 'runtime_os', label: runProfileLabel('runtime_os', config.locale) }]} />
-            </div>
-          </div>
-        </footer>
+        <ComposerBar activeSlashOption={activeSlashOption} activeThreadId={threadId} applyModelPreset={applyModelPreset} botConfig={botConfig} botStatus={botStatus} busy={busy} composerInputRef={composerInputRef} config={config} draggingImage={draggingImage} filteredSlashOptions={filteredSlashOptions} handleDrop={handleDrop} handleFileSelect={handleFileSelect} handlePaste={handlePaste} images={images} input={input} modelPresets={modelPresets} openRemoteAssistants={openRemoteAssistants} removeImage={removeImage} rightPaneTab={rightPaneTab} rightPaneVisible={rightPaneVisible} selectSlashOption={selectSlashOption} setActiveSlashOption={setActiveSlashOption} setConfig={setConfig} setDraggingImage={setDraggingImage} setInput={setInput} slashVisible={slashVisible} stopTurn={stopTurn} submitComposer={submitComposer} workflowMode={isWorkflowProject} workflowPlanning={workflowPlanning} />
       </section>
-
       {settingsOpen ? (
         <SettingsDrawer
           botConfig={botConfig} botStatus={botStatus} config={config} keyStates={keyStates} locale={config.locale}
           mcps={mcps} mcpStatuses={mcpStatuses} modelPresets={modelPresets} providers={providers} skillsList={skillsList}
           refreshSkills={refreshSkills} refreshMcpStatus={refreshMcpStatus} refreshBotStatus={refreshBotStatus}
           applyModelPreset={applyModelPreset} clearProviderKey={clearProviderKey} deleteModelPreset={deleteModelPreset}
-          saveModelPreset={saveModelPreset} saveProviderKey={saveProviderKey} saveBotConfig={saveBotConfig}
+          deleteSkill={deleteSkill}
+          saveModelPreset={saveModelPreset} saveProviderKey={saveProviderKey} saveBotConfig={saveBotConfig} saveSkillDraft={saveSkillDraft}
+          webProviderState={webProviderState} saveWebProviderKey={saveWebProviderKey} clearWebProviderKey={clearWebProviderKey}
           selectProvider={selectProvider} setConfig={setConfig} setMcps={setMcps} setOpen={setSettingsOpen}
           pendingMcpDraft={pendingMcpDraft}
           consumePendingMcpDraft={() => setPendingMcpDraft(null)}
+          showAdminControls={showAdminControls}
+          startDingtalkStream={startDingtalkStream} stopDingtalkStream={stopDingtalkStream} testDingtalkMessage={testDingtalkMessage}
         />
       ) : null}
       {settingsHelpOpen ? <SettingsHelpDialog locale={config.locale} onClose={() => setSettingsHelpOpen(false)} /> : null}
+      <RunMonitorDrawer locale={config.locale} open={runMonitor.open} adminMode={runMonitor.adminMode} adminToken={runMonitor.adminToken} runs={runMonitor.runs} events={runMonitor.events} selectedRunId={runMonitor.selectedRunId} loading={runMonitor.loading} onClose={() => runMonitor.setOpen(false)} onRefresh={() => void runMonitor.refresh(runMonitor.selectedRunId)} onSelectRun={(runId) => void runMonitor.refresh(runId)} onControlRun={(action, run) => void runMonitor.controlRun(action, run)} onAdminTokenChange={runMonitor.setAdminToken} />
       {dialog ? <AppDialog dialog={dialog} onClose={() => setDialog(null)} /> : null}
+      {toast ? <div className="toastNotice" key={toast.id}>{toast.text}</div> : null}
       {weixinConnectState ? <WeixinConnectDialog locale={config.locale} state={weixinConnectState} onClose={() => setWeixinConnectState(null)} /> : null}
       {skillDraft ? (
         <SkillDraftDialog
@@ -1384,7 +1537,6 @@ function App() {
     </main>
   );
 }
-
 function isGitHubUrl(value: string): boolean {
   try {
     return new URL(value.trim()).hostname === 'github.com';
@@ -1392,5 +1544,4 @@ function isGitHubUrl(value: string): boolean {
     return false;
   }
 }
-
-createRoot(document.getElementById('root')!).render(<App />);
+createRoot(document.getElementById('root')!).render(<AuthGate locale={defaultConfig.locale ?? 'zh'} themeMode={defaultConfig.themeMode}><App /></AuthGate>);

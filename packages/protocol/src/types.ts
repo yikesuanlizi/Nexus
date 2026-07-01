@@ -1,102 +1,145 @@
 // ─── Thread ──────────────────────────────────────────────────────────────────
+// Thread（线程/会话）：代表一次完整的对话，由若干个 Turn 组成
 /** Unique identifier for a thread. */
+// 线程唯一 ID，全局字符串
 export type ThreadId = string;
 
 /** Thread metadata persisted in SQLite. */
+// 线程元信息，持久化到 SQLite
 export interface ThreadMeta {
   threadId: ThreadId;
+  /** Isolation boundary for local-first multi-tenant runtime. */
+  // 本地优先多租户运行时的隔离边界（可选）
+  tenantId?: string;
   /** Human-readable title (may be auto-generated). */
+  // 人类可读的标题（可自动生成）
   title: string;
   /** Workspace root for this thread. */
+  // 本线程的工作区根目录
   workspaceRoot: string;
   /** Current status. */
+  // 当前状态
   status: ThreadStatus;
   /** Number of turns in this thread. */
+  // 本线程已执行的回合数
   turnCount: number;
   /** ISO-8601 */
+  // 创建时间（ISO-8601 格式）
   createdAt: string;
   /** ISO-8601 */
+  // 最近一次更新时间（ISO-8601 格式）
   updatedAt: string;
   /** ISO-8601, null if never archived. */
+  // 归档时间（ISO-8601），未归档时为 null
   archivedAt: string | null;
   /** Whether this thread is ephemeral (in-memory only). */
+  // 是否为临时线程（只存内存，不落盘）
   ephemeral: boolean;
   /** Arbitrary key-value tags. */
+  // 自定义键值标签
   tags: Record<string, string>;
   /** Parent thread ID when this thread was spawned as a subagent. */
+  // 父线程 ID：当前线程如果是子代理时，记录其父线程
   parentThreadId?: ThreadId | null;
   /** Human-friendly nickname for a spawned subagent. */
+  // 子代理的人类友好昵称
   agentNickname?: string | null;
   /** Role label/purpose for a spawned subagent. */
+  // 子代理的角色标签/用途
   agentRole?: string | null;
 }
 
+// 线程状态枚举：active（活跃）/ archived（已归档）/ compacted（已压缩）
 export type ThreadStatus = 'active' | 'archived' | 'compacted';
 
+// 父子线程派生关系的状态：open（开放）/ closed（已关闭）
 export type ThreadSpawnEdgeStatus = 'open' | 'closed';
 
+// 父子线程的派生关系边：描述一个子线程由哪个父线程生成
 export interface ThreadSpawnEdge {
+  tenantId?: string;
   parentThreadId: ThreadId;
   childThreadId: ThreadId;
   status: ThreadSpawnEdgeStatus;
   /** ISO-8601 */
+  // 边创建时间
   createdAt: string;
   /** ISO-8601 */
+  // 边最近更新时间
   updatedAt: string;
 }
 
 // ─── Turn ────────────────────────────────────────────────────────────────────
+// Turn（回合）：线程内的一次用户输入与多轮模型/工具交互
 export type TurnId = string;
 
+// 回合元信息
 export interface TurnMeta {
   turnId: TurnId;
   threadId: ThreadId;
   /** Zero-based index within the thread. */
+  // 在线程内的回合序号（从 0 开始）
   index: number;
   /** The user input that started this turn. */
+  // 触发本回合的用户输入
   userInput: UserInput;
   status: TurnStatus;
   /** ISO-8601 */
+  // 开始时间
   startedAt: string;
   /** ISO-8601, null while still running. */
+  // 完成时间，运行中时为 null
   completedAt: string | null;
 }
 
+// 回合状态：running（进行中）/ completed（已完成）/ failed（失败）/ cancelled（已取消）/ interrupted（被打断）
 export type TurnStatus = 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
 
 /** A single user input. */
+// 一次用户输入：纯文本或多模态
 export type UserInput = TextInput | MultimodalInput;
 
+// 纯文本输入
 export interface TextInput {
   type: 'text';
   text: string;
   /** One-shot instruction injected for this turn only. */
+  // 本回合一次性注入的临时指令（不持久化）
   modeInstruction?: string;
 }
 
+// 多模态输入：可包含文本、图片等
 export interface MultimodalInput {
   type: 'multimodal';
   parts: InputPart[];
   /** One-shot instruction injected for this turn only. */
+  // 本回合一次性注入的临时指令
   modeInstruction?: string;
 }
 
+// 多模态输入的部件：文本 / 在线图片 / 本地图片路径
 export type InputPart =
   | { type: 'text'; text: string }
   | { type: 'image_url'; image_url: { url: string; detail?: 'low' | 'high' } }
   | { type: 'image_path'; path: string };
 
 // ─── Item ────────────────────────────────────────────────────────────────────
+// Item（条目）：回合内的最小可记录单元，存到 JSONL 持久化
 /** Unique item identifier within a thread. */
+// 条目唯一 ID，在线程内唯一
 export type ItemId = string;
 
 /** All item types — the canonical persisted item union. */
+// 所有条目类型的并集，持久化时按 type 字段区分
 export type ThreadItem =
   | UserMessageItem
   | AgentMessageItem
   | ReasoningItem
   | CommandExecutionItem
   | FileChangeItem
+  | WorkflowCheckpointItem
+  | ProjectCheckpointItem
+  | RollbackConflictItem
   | ContextCompactionItem
   | ToolCallItem
   | CollabToolCallItem
@@ -105,26 +148,32 @@ export type ThreadItem =
   | TodoListItem
   | ErrorItem;
 
+// 用户消息条目：来自用户的输入
 export interface UserMessageItem {
   id: ItemId;
   type: 'user_message';
   turnId: TurnId;
   text: string;
   /** ISO-8601 timestamp used by transcript action rows. */
+  // 时间戳（ISO-8601），用于会话转录
   timestamp?: string;
 }
 
+// 智能体消息条目：来自模型的回复
 export interface AgentMessageItem {
   id: ItemId;
   type: 'agent_message';
   turnId: TurnId;
   text: string;
   /** Optional structured output (JSON). */
+  // 可选的结构化输出（JSON）
   structuredOutput?: unknown;
   /** ISO-8601 timestamp used by transcript action rows. */
+  // 时间戳（ISO-8601）
   timestamp?: string;
 }
 
+// 推理过程条目：模型的思考过程（chain-of-thought）
 export interface ReasoningItem {
   id: ItemId;
   type: 'reasoning';
@@ -133,8 +182,10 @@ export interface ReasoningItem {
   timestamp?: string;
 }
 
+// 命令执行状态：in_progress（进行中）/ completed（已完成）/ failed（失败）
 export type CommandStatus = 'in_progress' | 'completed' | 'failed';
 
+// shell 命令执行条目
 export interface CommandExecutionItem {
   id: ItemId;
   type: 'command_execution';
@@ -146,9 +197,12 @@ export interface CommandExecutionItem {
   timestamp?: string;
 }
 
+// 补丁变更类型：add（新增）/ delete（删除）/ update（更新）
 export type PatchChangeKind = 'add' | 'delete' | 'update';
+// 补丁应用状态：completed（成功）/ failed（失败）
 export type PatchApplyStatus = 'completed' | 'failed';
 
+// 单个文件变更 hunk（差异段）
 export interface FileChangeHunk {
   path: string;
   startLine?: number;
@@ -158,6 +212,7 @@ export interface FileChangeHunk {
   summary?: string;
 }
 
+// 文件更新变更单元
 export interface FileUpdateChange {
   path: string;
   kind: PatchChangeKind;
@@ -167,6 +222,7 @@ export interface FileUpdateChange {
   summary?: string;
 }
 
+// 文件变更条目：一次工具调用可能产生多处文件变更
 export interface FileChangeItem {
   id: ItemId;
   type: 'file_change';
@@ -178,6 +234,54 @@ export interface FileChangeItem {
   timestamp?: string;
 }
 
+// 工作流检查点条目：用于工作流的回放/恢复
+export interface WorkflowCheckpointItem {
+  id: ItemId;
+  type: 'workflow_checkpoint';
+  turnId: TurnId;
+  turnCount: number;
+  workflow: unknown;
+  timestamp?: string;
+}
+
+// 工程级检查点里的单个文件快照
+export interface ProjectFileCheckpoint {
+  path: string;
+  kind: PatchChangeKind;
+  beforeContent: string | null;
+  afterContent: string | null;
+  beforeHash: string | null;
+  afterHash: string | null;
+}
+
+// 工程级检查点条目：记录某回合下所有被改动文件的快照
+export interface ProjectCheckpointItem {
+  id: ItemId;
+  type: 'project_checkpoint';
+  turnId: TurnId;
+  turnCount: number;
+  workspaceRoot: string;
+  files: ProjectFileCheckpoint[];
+  timestamp?: string;
+}
+
+// 回滚冲突条目：回滚时遇到文件被修改、哈希不一致等冲突
+export interface RollbackConflictItem {
+  id: ItemId;
+  type: 'rollback_conflict';
+  turnId: TurnId;
+  turnCount: number;
+  message: string;
+  conflicts: Array<{
+    path: string;
+    reason: string;
+    expectedHash?: string | null;
+    actualHash?: string | null;
+  }>;
+  timestamp?: string;
+}
+
+// 通用工件引用：跨线程/跨工具的轻量指针，避免传递大段内容
 export interface ArtifactRef {
   kind: 'file_segment' | 'tool_result' | 'mcp_result';
   path?: string;
@@ -188,6 +292,7 @@ export interface ArtifactRef {
   sourceToolCallId?: ItemId;
 }
 
+// 文件片段引用：精确定位到文件某一段
 export interface FileSegmentRef extends ArtifactRef {
   kind: 'file_segment';
   path: string;
@@ -195,18 +300,20 @@ export interface FileSegmentRef extends ArtifactRef {
   endLine: number;
 }
 
+// 上下文压缩摘要：把多轮对话压缩为固定字段的结构化摘要
 export interface CompactionSummary {
-  userGoal: string;
-  completedWork: string;
-  keyConstraints: string;
-  filesAndArtifacts: string;
-  toolResults: string;
-  subagentResults: string;
-  openTasks: string;
-  risks: string;
-  raw: string;
+  userGoal: string;            // 用户目标
+  completedWork: string;       // 已完成工作
+  keyConstraints: string;      // 关键约束
+  filesAndArtifacts: string;   // 涉及的文件与工件
+  toolResults: string;         // 工具调用结果
+  subagentResults: string;     // 子代理结果
+  openTasks: string;           // 待办任务
+  risks: string;               // 风险点
+  raw: string;                 // 原始摘要
 }
 
+// 上下文压缩计划：哪些回合要被压缩、哪些保留
 export interface CompactionPlan {
   compactedTurnIds: TurnId[];
   retainedTurnIds: TurnId[];
@@ -215,8 +322,10 @@ export interface CompactionPlan {
   trigger: 'manual' | 'auto';
 }
 
+// 压缩策略：llm（用模型生成摘要）/ local（本地规则摘要）
 export type CompactionStrategy = 'llm' | 'local';
 
+// 已压缩区间：记录压缩后的状态以便回看
 export interface CompactedRange {
   compactedTurnIds: TurnId[];
   retainedTurnIds: TurnId[];
@@ -229,6 +338,7 @@ export interface CompactedRange {
   strategy: CompactionStrategy;
 }
 
+// 上下文压缩事件条目：写入到 JSONL 的压缩记录
 export interface ContextCompactionItem {
   id: ItemId;
   type: 'context_compaction';
@@ -240,11 +350,122 @@ export interface ContextCompactionItem {
   summary?: CompactionSummary;
   tokensBefore: number;
   tokensAfter: number;
-  error?: { message: string };
+  error?: { message: string; code?: string };
   timestamp?: string;
 }
 
+// 记忆记录类型：偏好/项目事实/工作流模式/失败教训/环境备注
+export type MemoryRecordType =
+  | 'preference'
+  | 'project_fact'
+  | 'workflow_pattern'
+  | 'failure_lesson'
+  | 'environment_note';
+
+// 记忆记录状态：active（启用）/ deleted（已删除）
+export type MemoryRecordStatus = 'active' | 'deleted';
+// 记忆作用域：global（全局）/ workspace（工作区）/ thread（线程）
+export type MemoryRecordScope = 'global' | 'workspace' | 'thread';
+
+// 记忆记录：从长期记忆中检索出的单元
+export interface MemoryRecord {
+  tenantId?: string;
+  id: string;
+  type: MemoryRecordType;
+  text: string;
+  status: MemoryRecordStatus;
+  scope: MemoryRecordScope;
+  sourceThreadId?: ThreadId;
+  sourceTurnIds: TurnId[];
+  workspaceRoot?: string;
+  tags: string[];
+  confidence: number;
+  usageCount: number;
+  lastUsedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// 记忆检索选项
+export interface MemorySearchOptions {
+  workspaceRoot?: string;
+  limit?: number;
+  types?: MemoryRecordType[];
+}
+
+// ─── Episode Memory ─────────────────────────────────────────────────────────
+// Episode（任务段）记忆：把一段连续的回合打包成可检索、可切换的上下文单元
+
+export type EpisodeLifecycle = 'open' | 'sealed' | 'stale' | 'rolled_back';
+export type EpisodeTemperature = 'warm' | 'cold';
+export type ThreadMemoryMode = 'enabled' | 'disabled' | 'polluted';
+
+export interface EpisodeRecord {
+  tenantId?: string;
+  id: string;
+  workspaceRoot: string;
+  sourceThreadId: ThreadId;
+  sourceTurnStart: TurnId;
+  sourceTurnEnd: TurnId;
+  sourceTurnStartIndex: number;
+  sourceTurnEndIndex: number;
+  lifecycle: EpisodeLifecycle;
+  temperature: EpisodeTemperature;
+  title: string;
+  objective: string;
+  summary: string;
+  facts: string[];
+  decisions: string[];
+  artifacts: string[];
+  openTasks: string[];
+  entities: string[];
+  keywords: string[];
+  boundaryReason: string;
+  fingerprint: string;
+  topicKey: string;
+  usageCount: number;
+  lastActivatedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ThreadWorkingSetSnapshot {
+  threadId: ThreadId;
+  generation: number;
+  activeEpisodeIds: string[];
+  injectedEpisodeIds: string[];
+  frozenPromptBlock: string;
+  builtFromTurnId: TurnId;
+  builtFromTurnIndex: number;
+  taskFingerprint: string;
+  /** Stable identity of the active task segment (objective + goal + artifacts). */
+  episodeIdentity?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type EpisodeMemoryMode = 'enabled' | 'disabled' | 'polluted';
+
+export interface EpisodeSearchOptions {
+  workspaceRoot?: string;
+  threadId?: ThreadId;
+  lifecycle?: EpisodeLifecycle[];
+  temperature?: EpisodeTemperature[];
+  limit?: number;
+  tokenBudget?: number;
+  excludeEpisodeIds?: string[];
+  activeEpisodeIds?: string[];
+  injectedEpisodeIds?: string[];
+}
+
+export interface EpisodeSearchResult {
+  score: number;
+  reason: string;
+  episode: EpisodeRecord;
+}
+
 /** Generic tool call (non-MCP tools registered in the local OS). */
+// 通用工具调用条目：MCP 之外的本地工具调用
 export interface ToolCallItem {
   id: ItemId;
   type: 'tool_call';
@@ -257,8 +478,19 @@ export interface ToolCallItem {
   timestamp?: string;
 }
 
-export type CollabToolName = 'spawn_agent' | 'send_input' | 'resume_agent' | 'wait' | 'close_agent';
+// 协作类工具名：spawn_agent / send_input / wait 等子代理协作原语
+export type CollabToolName =
+  | 'spawn_agent'
+  | 'send_input'
+  | 'send_message'
+  | 'followup_task'
+  | 'resume_agent'
+  | 'wait'
+  | 'wait_agent'
+  | 'list_agents'
+  | 'close_agent';
 
+// 协作工具调用条目：记录一次子代理协作动作
 export interface CollabToolCallItem {
   id: ItemId;
   type: 'collab_tool_call';
@@ -271,10 +503,11 @@ export interface CollabToolCallItem {
   prompt?: string;
   agentStatus?: ThreadSpawnEdgeStatus | TurnStatus | 'running';
   result?: unknown;
-  error?: { message: string };
+  error?: { message: string; code?: string };
   timestamp?: string;
 }
 
+// 智能体交接信封：父代理把任务交给子代理时携带的上下文包
 export interface AgentTransferEnvelope {
   schemaVersion: 1;
   senderThreadId: ThreadId;
@@ -302,6 +535,7 @@ export interface AgentTransferEnvelope {
   };
 }
 
+// MCP 工具调用条目：调用 MCP 服务器上的工具
 export interface McpToolCallItem {
   id: ItemId;
   type: 'mcp_tool_call';
@@ -318,6 +552,7 @@ export interface McpToolCallItem {
   timestamp?: string;
 }
 
+// Web 搜索条目：记录一次网络搜索动作
 export interface WebSearchItem {
   id: ItemId;
   type: 'web_search';
@@ -326,11 +561,13 @@ export interface WebSearchItem {
   timestamp?: string;
 }
 
+// 待办条目项
 export interface TodoItemEntry {
   text: string;
   completed: boolean;
 }
 
+// 待办清单条目：模型维护的 to-do 列表
 export interface TodoListItem {
   id: ItemId;
   type: 'todo_list';
@@ -339,81 +576,122 @@ export interface TodoListItem {
   timestamp?: string;
 }
 
+// 错误条目：在回合内出现的可恢复/不可恢复错误
 export interface ErrorItem {
   id: ItemId;
   type: 'error';
   turnId: TurnId;
   message: string;
+  info?: NexusErrorInfo;
+  recoverable?: boolean;
   timestamp?: string;
 }
 
 // ─── Events ──────────────────────────────────────────────────────────────────
+// Events（事件）：运行时对外推送的所有流式事件类型
+
+// Nexus 错误分类：用于错误处理与重试策略
+export type NexusErrorKind =
+  | 'ContextWindowExceeded'              // 上下文窗口超出
+  | 'UsageLimitExceeded'                 // 用量上限
+  | 'ServerOverloaded'                   // 服务端过载
+  | 'HttpConnectionFailed'               // HTTP 连接失败
+  | 'ResponseStreamConnectionFailed'     // 流式响应连接失败
+  | 'InternalServerError'                // 服务端内部错误
+  | 'Unauthorized'                       // 未授权
+  | 'BadRequest'                         // 错误请求
+  | 'SandboxError'                       // 沙箱错误
+  | 'ResponseStreamDisconnected'         // 流式响应中断
+  | 'ResponseTooManyFailedAttempts'      // 重试次数耗尽
+  | 'ActiveTurnNotSteerable'             // 活跃回合不可被引导
+  | 'ThreadRollbackFailed'               // 线程回滚失败
+  | 'Other';                             // 其它
+
+// 错误附加信息
+export interface NexusErrorInfo {
+  kind: NexusErrorKind;
+  httpStatusCode?: number;  // HTTP 状态码
+  turnKind?: string;        // 触发错误的回合类型
+}
+
 /** Token usage for a turn. */
+// 单回合 token 用量统计
 export interface Usage {
-  inputTokens: number;
-  cachedInputTokens: number;
-  outputTokens: number;
-  reasoningOutputTokens: number;
+  inputTokens: number;              // 输入 token
+  cachedInputTokens: number;        // 命中缓存的输入 token
+  outputTokens: number;             // 输出 token
+  reasoningOutputTokens: number;    // 推理过程 token
   cacheStrategy?: 'deepseek-native' | 'openai-compatible' | 'anthropic-cache-control' | 'mixed';
 }
 
+// 单回合用量记录
 export interface TurnUsage {
   turnId: TurnId;
   usage: Usage;
   timestamp: string;
 }
 
+// 线程级累计用量：包含每个回合与总计
 export interface ThreadUsage {
   threadId: ThreadId;
   total: Usage;
   turns: TurnUsage[];
   updatedAt: string;
-  includedThreadIds?: ThreadId[];
+  includedThreadIds?: ThreadId[];   // 跨线程汇总时列出包含的线程
 }
 
+// 重试策略：指数退避 + 上下限
 export interface RetryPolicy {
-  maxAttempts: number;
-  initialDelayMs: number;
-  maxDelayMs: number;
+  maxAttempts: number;       // 最大尝试次数
+  initialDelayMs: number;    // 初始退避毫秒
+  maxDelayMs: number;        // 最大退避毫秒
 }
 
+// 模型重试事件：流式上报让前端展示
 export interface ModelRetryEvent {
   type: 'model.retry';
   threadId: ThreadId;
   turnId: TurnId;
-  attempt: number;
-  maxAttempts: number;
-  delayMs: number;
-  status?: number;
-  error?: string;
+  attempt: number;            // 当前重试次数
+  maxAttempts: number;        // 最大重试次数
+  delayMs: number;            // 本次等待毫秒
+  status?: number;            // 上次失败的 HTTP 状态码
+  error?: string;             // 上次失败原因
 }
 
+// 上下文 token 估算更新事件：用于前端展示上下文使用率
 export interface ContextTokenEstimateUpdatedEvent {
   type: 'context.token_estimate.updated';
   threadId: ThreadId;
   turnId: TurnId;
   estimate: {
-    inputTokens: number;
-    messageCount: number;
-    imageCount: number;
-    charCount: number;
+    inputTokens: number;     // 估算的输入 token
+    messageCount: number;    // 消息数
+    imageCount: number;      // 图片数
+    charCount: number;       // 字符数
   };
 }
 
+// 上下文压缩压力事件：分级提示 ok/soft/hard
 export interface ContextCompactionPressureEvent {
   type: 'context.compaction_pressure';
   threadId: ThreadId;
   turnId: TurnId;
   pressure: {
-    estimatedTokens: number;
-    maxTokens: number;
-    softThreshold: number;
-    hardThreshold: number;
-    ratio: number;
+    estimatedTokens: number;   // 估算 token
+    maxTokens: number;         // 上下文窗口
+    softThreshold: number;     // 软阈值（提示）
+    hardThreshold: number;     // 硬阈值（强制压缩）
+    ratio: number;             // 占用比例
     status: 'ok' | 'soft' | 'hard';
+    window?: {
+      ordinal: number;         // 窗口序号
+      prefillInputTokens: number | null;  // 预填 token
+    };
   };
 }
 
+// 审批日志条目：记录一次审批请求与最终结果
 export interface ApprovalLogEntry {
   requestId: string;
   threadId: ThreadId;
@@ -428,6 +706,7 @@ export interface ApprovalLogEntry {
   resolvedAt: string;
 }
 
+// 子代理事件：把子线程事件透传到父线程
 export interface ChildAgentEvent {
   type: 'child_agent.event';
   threadId: ThreadId;
@@ -437,28 +716,34 @@ export interface ChildAgentEvent {
   event: Record<string, unknown>;
 }
 
+// 缓存诊断事件：system / tools 哈希变化时上报
 export interface CacheDiagnosticsEvent {
   type: 'cache.diagnostics';
   threadId: ThreadId;
   turnId: TurnId;
   shape: {
-    systemHash: string;
-    toolsHash: string;
-    prefixHash: string;
+    systemHash: string;    // 系统提示哈希
+    toolsHash: string;     // 工具 schema 哈希
+    prefixHash: string;    // 前缀哈希
   };
-  stable: boolean;
-  reasons: Array<'system' | 'tools'>;
+  stable: boolean;         // 是否稳定
+  reasons: Array<'system' | 'tools'>;  // 不稳定原因
 }
 
 /** Union of all streaming events. */
+// 所有流式事件的并集，type 字段是判别式
 export type ThreadEvent =
   | ThreadStartedEvent
   | TurnStartedEvent
   | TurnCompletedEvent
   | TurnFailedEvent
+  | WarningEvent
+  | StreamErrorEvent
+  | ModelOutputRejectedEvent
   | ItemStartedEvent
   | ItemUpdatedEvent
   | ItemCompletedEvent
+  | ItemDiscardedEvent
   | AgentMessageDeltaEvent
   | CommandOutputDeltaEvent
   | TokenUsageUpdatedEvent
@@ -469,17 +754,23 @@ export type ThreadEvent =
   | ApprovalResolvedEvent
   | ApprovalRequiredEvent
   | CompactedEvent
+  | ContextCompactedV2Event
+  | ThreadRollbackCompletedEvent
+  | ThreadRollbackFailedEvent
   | ResumedEvent
+  | EpisodeWorkingSetRebuiltEvent
   | ChildAgentEvent
   | CacheDiagnosticsEvent
   | ErrorEvent;
 
+// 线程已创建事件
 export interface ThreadStartedEvent {
   type: 'thread.started';
   threadId: ThreadId;
   thread: ThreadMeta;
 }
 
+// 回合开始事件
 export interface TurnStartedEvent {
   type: 'turn.started';
   threadId: ThreadId;
@@ -487,6 +778,7 @@ export interface TurnStartedEvent {
   turnIndex: number;
 }
 
+// 回合完成事件
 export interface TurnCompletedEvent {
   type: 'turn.completed';
   threadId: ThreadId;
@@ -495,13 +787,44 @@ export interface TurnCompletedEvent {
   status?: 'completed' | 'interrupted';
 }
 
+// 回合失败事件
 export interface TurnFailedEvent {
   type: 'turn.failed';
   threadId: ThreadId;
   turnId: TurnId;
-  error: { message: string };
+  error: { message: string; info?: NexusErrorInfo };
 }
 
+// 通用警告事件
+export interface WarningEvent {
+  type: 'warning';
+  threadId?: ThreadId;
+  turnId?: TurnId;
+  message: string;
+  info?: NexusErrorInfo;
+}
+
+// 流式响应错误事件
+export interface StreamErrorEvent {
+  type: 'stream.error';
+  threadId: ThreadId;
+  turnId: TurnId;
+  message: string;
+  recoverable: boolean;
+  error: { message: string; info?: NexusErrorInfo };
+  additionalDetails?: string;
+}
+
+// 模型输出被拒绝事件：模型产出违反协议时触发
+export interface ModelOutputRejectedEvent {
+  type: 'model.output.rejected';
+  threadId: ThreadId;
+  turnId: TurnId;
+  message: string;
+  error: { message: string; info?: NexusErrorInfo };
+}
+
+// 条目开始事件
 export interface ItemStartedEvent {
   type: 'item.started';
   threadId: ThreadId;
@@ -509,6 +832,7 @@ export interface ItemStartedEvent {
   item: ThreadItem;
 }
 
+// 条目更新事件（流式内容追加）
 export interface ItemUpdatedEvent {
   type: 'item.updated';
   threadId: ThreadId;
@@ -516,6 +840,7 @@ export interface ItemUpdatedEvent {
   item: ThreadItem;
 }
 
+// 条目完成事件
 export interface ItemCompletedEvent {
   type: 'item.completed';
   threadId: ThreadId;
@@ -523,7 +848,16 @@ export interface ItemCompletedEvent {
   item: ThreadItem;
 }
 
+// 条目丢弃事件：撤回流式阶段产生、但最终不应保留的临时条目
+export interface ItemDiscardedEvent {
+  type: 'item.discarded';
+  threadId: ThreadId;
+  turnId: TurnId;
+  itemId: ItemId;
+}
+
 /** Streaming text delta from the agent. */
+// 模型消息流式增量
 export interface AgentMessageDeltaEvent {
   type: 'agent_message.delta';
   threadId: ThreadId;
@@ -533,6 +867,7 @@ export interface AgentMessageDeltaEvent {
 }
 
 /** Streaming output from a running command. */
+// shell 命令输出流式增量
 export interface CommandOutputDeltaEvent {
   type: 'command_output.delta';
   threadId: ThreadId;
@@ -541,12 +876,14 @@ export interface CommandOutputDeltaEvent {
   delta: string;
 }
 
+// 线程 token 用量更新事件
 export interface TokenUsageUpdatedEvent {
   type: 'thread.token_usage.updated';
   threadId: ThreadId;
   usage: ThreadUsage;
 }
 
+// 回合文件 diff 增量更新事件
 export interface TurnDiffUpdatedEvent {
   type: 'turn.diff.updated';
   threadId: ThreadId;
@@ -554,6 +891,7 @@ export interface TurnDiffUpdatedEvent {
   diff: string;
 }
 
+// 审批已处理事件
 export interface ApprovalResolvedEvent {
   type: 'approval.resolved';
   threadId: ThreadId;
@@ -565,6 +903,7 @@ export interface ApprovalResolvedEvent {
 }
 
 /** HITL approval is needed before executing a command/tool. */
+// 需要人工审批事件：执行命令/工具前下发到前端
 export interface ApprovalRequiredEvent {
   type: 'approval.required';
   threadId: ThreadId;
@@ -572,18 +911,24 @@ export interface ApprovalRequiredEvent {
   itemId: ItemId;
   requestId: string;
   /** What needs approval. */
+  // 待审批类型
   kind: 'command' | 'file_write' | 'tool_call' | 'network';
   /** Human-readable description. */
+  // 人类可读描述
   description: string;
   /** The raw command or tool arguments. */
+  // 待执行的命令或工具参数原文
   payload: unknown;
   /** The sandbox decision that triggered this. */
+  // 沙箱做出的决策：提示审批 / 直接禁止
   decision: 'prompt' | 'forbidden';
   /** Optional justification from the policy. */
+  // 策略层的解释（可选）
   justification?: string;
 }
 
 /** Emitted when context is compacted mid-conversation. */
+// 上下文压缩完成事件（旧版）
 export interface CompactedEvent {
   type: 'thread.compacted';
   threadId: ThreadId;
@@ -595,25 +940,71 @@ export interface CompactedEvent {
   tokensAfter: number;
 }
 
+// 上下文压缩 V2 事件：分阶段上报 started/completed/failed
+export interface ContextCompactedV2Event {
+  type: 'thread.compacted.v2';
+  threadId: ThreadId;
+  turnId: TurnId;
+  phase: 'started' | 'completed' | 'failed';
+  trigger: 'manual' | 'auto';
+  strategy?: CompactionStrategy;
+  compactedTurns?: number;
+  tokensBefore?: number;
+  tokensAfter?: number;
+  item?: { id: ItemId } & Partial<ContextCompactionItem>;
+  error?: { message: string; info?: NexusErrorInfo };
+}
+
+// 线程回滚完成事件
+export interface ThreadRollbackCompletedEvent {
+  type: 'thread.rollback.completed';
+  threadId: ThreadId;
+  turnId?: TurnId;
+  checkpointTurnCount: number;
+}
+
+// 线程回滚失败事件
+export interface ThreadRollbackFailedEvent {
+  type: 'thread.rollback.failed';
+  threadId: ThreadId;
+  turnId?: TurnId;
+  error: { message: string; info?: NexusErrorInfo };
+}
+
 /** Emitted when a thread is resumed from storage. */
+// 线程从存储恢复事件
 export interface ResumedEvent {
   type: 'thread.resumed';
   threadId: ThreadId;
   turnIndex: number;
 }
 
+/** Emitted when the episode working set is rebuilt for a turn. */
+// Episode 工作集重建事件
+export interface EpisodeWorkingSetRebuiltEvent {
+  type: 'episode.working_set_rebuilt';
+  threadId: ThreadId;
+  turnId: TurnId;
+  generation: number;
+  activeEpisodeIds: string[];
+  frozenPromptBlock: string;
+}
+
 /** Unrecoverable error. */
+// 不可恢复错误事件
 export interface ErrorEvent {
   type: 'error';
   message: string;
 }
 
 // ─── JSON-RPC Transport ──────────────────────────────────────────────────────
+// JSON-RPC 传输层：本地 API 服务的请求/响应/通知协议
 export type JsonRpcMessage =
   | JsonRpcRequest
   | JsonRpcResponse
   | JsonRpcNotification;
 
+// JSON-RPC 2.0 请求
 export interface JsonRpcRequest {
   jsonrpc: '2.0';
   id: string | number;
@@ -621,6 +1012,7 @@ export interface JsonRpcRequest {
   params?: unknown;
 }
 
+// JSON-RPC 2.0 响应
 export interface JsonRpcResponse {
   jsonrpc: '2.0';
   id: string | number;
@@ -628,12 +1020,14 @@ export interface JsonRpcResponse {
   error?: JsonRpcError;
 }
 
+// JSON-RPC 2.0 通知（无 id，无需响应）
 export interface JsonRpcNotification {
   jsonrpc: '2.0';
   method: string;
   params?: unknown;
 }
 
+// JSON-RPC 错误对象
 export interface JsonRpcError {
   code: number;
   message: string;
@@ -641,6 +1035,9 @@ export interface JsonRpcError {
 }
 
 // ─── Approval ────────────────────────────────────────────────────────────────
+// Approval（审批）：人机审批协议
+
+// 审批请求
 export interface ApprovalRequest {
   requestId: string;
   threadId: ThreadId;
@@ -653,6 +1050,7 @@ export interface ApprovalRequest {
   justification?: string;
 }
 
+// 审批响应
 export interface ApprovalResponse {
   requestId: string;
   approved: boolean;
@@ -660,7 +1058,10 @@ export interface ApprovalResponse {
 }
 
 // ─── Checkpoint ─────────────────────────────────────────────────────────────
+// Checkpoint（检查点）：JSONL rollout 中的恢复位标
+
 /** Checkpoint marking resume position in JSONL rollout. */
+// 检查点：标记恢复位置
 export interface Checkpoint {
   threadId: ThreadId;
   turnId: TurnId;
@@ -671,6 +1072,7 @@ export interface Checkpoint {
   expiresAt?: string;
 }
 
+// JSONL 中的检查点行
 export interface CheckpointLine {
   type: 'checkpoint';
   threadId: ThreadId;
@@ -682,8 +1084,10 @@ export interface CheckpointLine {
   expiresAt?: string;
 }
 
+// 检查点状态：running/completed/interrupted/failed/stale
 export type CheckpointStatus = 'running' | 'completed' | 'interrupted' | 'failed' | 'stale';
 
+// 线程运行时状态：用于恢复决策
 export interface ThreadRuntimeState {
   threadId: ThreadId;
   status: 'idle' | 'running' | 'completed' | 'interrupted' | 'failed' | 'stale';

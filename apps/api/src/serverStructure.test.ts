@@ -8,4 +8,10 @@ describe('server module structure', () => {
     expect(source.split('\n').length).toBeLessThanOrEqual(780);
     expect(source).toContain('handleCompactThread');
   });
+
+  it('creates workflow project shells without requiring a saved workflow definition', () => {
+    const source = readFileSync(join(process.cwd(), 'apps/api/src/server.ts'), 'utf-8');
+    expect(source).toContain('workflowProject?: boolean');
+    expect(source).toContain("body.workflowProject ? { workflowProject: 'true' } : {}");
+  });
 });

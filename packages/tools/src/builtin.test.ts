@@ -2,12 +2,37 @@ import { afterEach, describe, expect, it } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { applyPatchTool, readFileTool, searchContentTool, webFetchTool, webSearchTool } from './builtin.js';
+import {
+  applyPatchTool,
+  currentTimeTool,
+  listFilesTool,
+  readFileTool,
+  searchContentTool,
+  shellCommandTool,
+  webFetchTool,
+  webSearchTool,
+  writeFileTool,
+} from './builtin.js';
 
 const originalFetch = globalThis.fetch;
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+});
+
+describe('builtin tool parallel safety', () => {
+  it('opts readonly inspection tools into parallel execution and keeps mutating tools serial', () => {
+    expect(currentTimeTool.supportsParallelToolCalls).toBe(true);
+    expect(readFileTool.supportsParallelToolCalls).toBe(true);
+    expect(listFilesTool.supportsParallelToolCalls).toBe(true);
+    expect(searchContentTool.supportsParallelToolCalls).toBe(true);
+    expect(webSearchTool.supportsParallelToolCalls).toBe(true);
+    expect(webFetchTool.supportsParallelToolCalls).toBe(true);
+
+    expect(writeFileTool.supportsParallelToolCalls).not.toBe(true);
+    expect(shellCommandTool.supportsParallelToolCalls).not.toBe(true);
+    expect(applyPatchTool.supportsParallelToolCalls).not.toBe(true);
+  });
 });
 
 describe('webSearchTool', () => {
@@ -84,6 +109,35 @@ describe('webSearchTool', () => {
     expect(result.output).toContain('Opened page: https://example.com/react-bits');
     expect(result.output).toContain('Title: React Bits');
     expect(result.output).toContain('Text animations include DecryptText.');
+  });
+
+  it('uses Firecrawl when the tool context selects the enhanced provider', async () => {
+    globalThis.fetch = async (input, init) => {
+      expect(String(input)).toBe('https://api.firecrawl.dev/v1/scrape');
+      expect((init?.headers as Record<string, string>).authorization).toBe('Bearer stored-firecrawl-key');
+      return Response.json({
+        success: true,
+        data: {
+          markdown: '# Firecrawl Page\nEnhanced content.',
+          metadata: { title: 'Firecrawl Page' },
+        },
+      });
+    };
+
+    const result = await webSearchTool.execute(
+      { action: 'open_page', url: 'https://example.com/enhanced' },
+      {
+        workspaceRoot: process.cwd(),
+        threadId: 'thread',
+        turnId: 'turn',
+        approved: false,
+        webProvider: { provider: 'firecrawl', firecrawl: { apiKey: 'stored-firecrawl-key' } },
+      },
+    );
+
+    expect(result.status).toBe('completed');
+    expect(result.output).toContain('Provider: firecrawl');
+    expect(result.output).toContain('Enhanced content.');
   });
 
   it('finds text in a page through the Codex-style web_search action', async () => {
@@ -174,6 +228,33 @@ describe('readFileTool', () => {
           sha256: expect.any(String),
         }),
       ],
+    });
+  });
+});
+
+describe('listFilesTool', () => {
+  it('lists workspace directories and files with a bounded output', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'nexus-list-files-'));
+    await fs.mkdir(path.join(root, 'src'));
+    await fs.writeFile(path.join(root, 'package.json'), '{}\n', 'utf-8');
+    await fs.writeFile(path.join(root, 'src', 'index.ts'), 'export {};\n', 'utf-8');
+
+    const result = await listFilesTool.execute(
+      { path: '.', recursive: true, maxEntries: 10 },
+      { workspaceRoot: root, threadId: 'thread', turnId: 'turn', approved: false },
+    );
+
+    expect(result.status).toBe('completed');
+    expect(result.output).toContain('Files in .:');
+    expect(result.output).toContain('src/');
+    expect(result.output).toContain('package.json');
+    expect(result.output).toContain(path.join('src', 'index.ts'));
+    expect(result.data).toMatchObject({
+      recursive: true,
+      entries: expect.arrayContaining([
+        expect.objectContaining({ path: 'src', kind: 'directory' }),
+        expect.objectContaining({ path: 'package.json', kind: 'file' }),
+      ]),
     });
   });
 });

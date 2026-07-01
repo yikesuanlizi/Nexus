@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@nexus/protocol": "0.1.0",
-    "@nexus/storage": "0.1.0"
+    "@nexus/storage": "0.1.0",
+    "dingtalk-stream": "^2.1.6-beta.1"
   }
 }

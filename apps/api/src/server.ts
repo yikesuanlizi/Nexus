@@ -1,32 +1,42 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import * as fs from 'node:fs';
 import { URL } from 'node:url';
-import { AgentLoop, McpRuntimeManager, type ThreadState } from '@nexus/runtime';
-import { ModelGateway, listProviders, resolveApiKey, removeApiKey, saveApiKey, type ModelConfig } from '@nexus/model-gateway';
-import { DEFAULT_PRESET, getPreset, AutoApproveHandler, type SandboxConfig } from '@nexus/sandbox';
-import { createStore } from '@nexus/storage';
-import { forkThread, rollbackTurns } from '@nexus/memory';
-import { LocalHookRegistry, LocalSkillRegistry } from '@nexus/extensions';
+import { type ThreadState } from '@nexus/runtime';
+import { listProviders, type ModelGateway } from '@nexus/model-gateway';
+import { createStore, resolveStorageOptions } from '@nexus/storage';
+import { forkThread } from '@nexus/memory';
 import type { ThreadEvent, ThreadId, ThreadItem, TurnMeta, UserInput } from '@nexus/protocol';
-import { WebApprovalBroker } from './approval.js';
-import { handleCompactThread } from './compactRoute.js';
-import { readJson, sendError, sendJson } from './http.js';
-import { installGracefulShutdown } from './shutdown.js';
-import { handlePickWorkspaceDirectory } from './workspacePicker.js';
-import { handlePatchThread } from './threadMetadata.js';
-import { handleBotRoute } from './botRoute.js';
-import { handleWorkspaceFilesRoute } from './workspaceFiles.js';
-import { buildSkillDraftSystemPrompt, createSkillInstallTurnItems, createTemplateSkillDraft, installSkillsFromGitHubUrl, prepareSkillDraftRequest, safeGeneratedSkillDraft, writeSkillDraft, type InstallSkillsResult, type SkillDraft } from './skills.js';
-import { shouldRetitleThread, titleFromInput } from './threadTitle.js';
-import { buildThreadChildInfos } from './threadChildren.js';
-import { buildUserInputFromTurnRequest } from './turnInput.js';
-import { usageForThreadTree, usageFromThread } from './usage.js';
-import { DEFAULT_RUN_CONFIG_KEY, createConfigRepository, defaultConfig, hiddenChatWorkspaceRoot, publicRunConfig, resolveConfig, type AgentRunConfig, type ApiKeyState, type TurnRequest } from './config.js';
+import { WebApprovalBroker } from './services/approval.js';
+import { handleCompactThread } from './routes/compactRoute.js';
+import { readJson, sendError, sendJson } from './shared/http.js';
+import { DEFAULT_TENANT_ID, tenantEventKey, type TenantContext } from './shared/tenant.js';
+import { installGracefulShutdown } from './runtime/shutdown.js';
+import { handlePickWorkspaceDirectory } from './routes/workspacePicker.js';
+import { handlePatchThread } from './routes/threadMetadata.js';
+import { autoStartDingtalkForTenant, handleBotRoute } from './routes/botRoute.js';
+import { clearRemoteBotBindingsForDeletedThread } from './routes/threadDeletion.js';
+import { handleWorkspaceFilesRoute } from './routes/workspaceFiles.js';
+import { handleSettingsRoute } from './routes/settingsRoute.js';
+import { handleWorkflowRoute } from './routes/workflowRoute.js';
+import { handleRunMonitorRoute } from './routes/runMonitorRoute.js';
+import { handleMemoryRoute } from './routes/memoryRoute.js';
+import { handleRollbackThreadRuntimeAction, handleRunControlAction } from './routes/threadRuntimeActions.js';
+import { buildSkillDraftSystemPrompt, createSkillInstallTurnItems, createTemplateSkillDraft, deleteSkill, installSkillsFromGitHubUrl, prepareSkillDraftRequest, safeGeneratedSkillDraft, writeSkillDraft, type InstallSkillsResult, type SkillDraft } from './services/skills.js';
+import { shouldRetitleThread, titleFromInput } from './services/threadTitle.js';
+import { buildThreadChildInfos } from './services/threadChildren.js';
+import { buildUserInputFromTurnRequest } from './services/turnInput.js';
+import { usageForThreadTree, usageFromThread } from './services/usage.js';
+import { defaultConfig, hiddenChatWorkspaceRoot, publicRunConfig, resolveConfig, type AgentRunConfig, type TurnRequest } from './config/config.js';
+import { createTenantRuntime } from './runtime/tenantRuntime.js';
+import { applyCorsHeaders, resolveCorsOptions } from './shared/cors.js';
+import { handleRequestGate } from './routes/requestGate.js';
+import { resolveDeploymentConfig } from './config/deployment.js';
+import { handleDeploymentRoute } from './routes/deploymentRoute.js';
+import { handleStatusRoute } from './routes/statusRoute.js';
+import { handleKeysRoute } from './routes/keysRoute.js';
 
-const { store } = createStore(defaultConfig.dataDir);
-const configRepo = createConfigRepository(store);
-const eventClients = new Map<ThreadId, Set<ServerResponse>>();
-const mcpManager = new McpRuntimeManager();
+const storageOptions = resolveStorageOptions();
+const { store: rootStore } = createStore(defaultConfig.dataDir);
+const eventClients = new Map<string, Set<ServerResponse>>();
 const approvalBroker = new WebApprovalBroker(60_000, (entry) => {
   publishEvent({
     type: 'approval.resolved',
@@ -39,83 +49,10 @@ const approvalBroker = new WebApprovalBroker(60_000, (entry) => {
   });
 });
 
-let defaultAgent: AgentLoop | null = null;
-async function getDefaultAgent(): Promise<AgentLoop> {
-  if (!defaultAgent) {
-    const { agent } = await createAgent();
-    defaultAgent = agent;
-  }
-  return defaultAgent;
-}
-const {
-  deleteModelPreset,
-  getDefaultRunConfig,
-  getThreadRunConfig,
-  listMcpServers,
-  listModelPresets,
-  publicThreadRunConfig,
-  saveMcpServers,
-  saveThreadRunConfig,
-  upsertModelPreset,
-} = configRepo;
-
-async function saveDefaultRunConfig(configPatch: Partial<AgentRunConfig>): Promise<AgentRunConfig> {
-  const next = await configRepo.saveDefaultRunConfig(configPatch);
-  defaultAgent = null;
-  return next;
-}
-async function createAgent(configPatch: Partial<AgentRunConfig> = {}): Promise<{ agent: AgentLoop; model: ModelGateway; config: AgentRunConfig }> {
-  const base = await getDefaultRunConfig();
-  const config = resolveConfig({ ...base, ...configPatch });
-  if (config.workspaceRoot === hiddenChatWorkspaceRoot(config.dataDir)) {
-    fs.mkdirSync(config.workspaceRoot, { recursive: true });
-  }
-  const modelConfig: ModelConfig = {
-    provider: config.provider,
-    model: config.model,
-    baseUrl: config.baseUrl ?? '',
-    apiKey: config.apiKey,
-    maxTokens: 8192,
-    temperature: 0.2,
-    timeoutMs: 120_000,
-    reasoningEffort: config.reasoningEffort,
-  };
-  const model = new ModelGateway(modelConfig);
-  const preset = getPreset(config.permissions) ?? DEFAULT_PRESET;
-  const sandbox: SandboxConfig = {
-    preset,
-    workspaceRoot: config.workspaceRoot,
-    execPolicyRules: [
-      { pattern: [['git', 'jj']], decision: 'allow', justification: 'VCS commands are allowed.' },
-      { pattern: ['npm', 'run'], decision: 'prompt', justification: 'npm scripts may have side effects.' },
-      { pattern: ['rm', ['-rf', '-r']], decision: 'forbidden', justification: 'Recursive delete is too dangerous.' },
-    ],
-  };
-  const skills = new LocalSkillRegistry();
-  await skills.loadFromDirectory(config.skillsRoot);
-  const hooks = new LocalHookRegistry();
-  await mcpManager.configure(await listMcpServers());
-  const agent = new AgentLoop({
-    workspaceRoot: config.workspaceRoot,
-    sandbox,
-    model,
-    store,
-    approvalHandler: preset.approval === 'never' ? new AutoApproveHandler() : approvalBroker,
-    skills,
-    hooks,
-    locale: config.locale ?? 'zh',
-    webSearchMode: config.webSearchMode,
-    runProfile: config.runProfile,
-    mcpTools: mcpManager.toolDefinitions(),
-  });
-  agent.onEvent((event) => publishEvent(event));
-  return { agent, model, config };
-}
-
-function publishEvent(event: ThreadEvent): void {
+function publishEvent(event: ThreadEvent, tenantId: string = DEFAULT_TENANT_ID): void {
   const threadId = 'threadId' in event ? event.threadId : undefined;
   if (!threadId) return;
-  const clients = eventClients.get(threadId);
+  const clients = eventClients.get(tenantEventKey(tenantId, threadId));
   if (!clients) return;
   const line = `data: ${JSON.stringify(event)}\n\n`;
   for (const client of clients) {
@@ -123,25 +60,11 @@ function publishEvent(event: ThreadEvent): void {
   }
 }
 
-function maskKey(key: string): string {
-  return key.length > 8 ? `${key.slice(0, 4)}...${key.slice(-4)}` : '****';
-}
-
-function listApiKeyStates(): ApiKeyState[] {
-  return listProviders()
-    .filter((provider) => !provider.isLocal)
-    .map((provider) => {
-      const key = resolveApiKey(provider.id);
-      const fromEnv = provider.apiKeyEnvVar ? Boolean(process.env[provider.apiKeyEnvVar]) : false;
-      return {
-        providerId: provider.id,
-        envVar: provider.apiKeyEnvVar,
-        configured: Boolean(key),
-        source: key ? (fromEnv ? 'env' : 'config') : null,
-        masked: key ? maskKey(key) : null,
-      };
-    });
-}
+const tenantRuntime = createTenantRuntime({
+  rootStore,
+  approvalBroker,
+  publishEvent,
+});
 
 function serializeThreadState(state: ThreadState): unknown {
   return {
@@ -175,7 +98,11 @@ function extractJsonObject(text: string): Record<string, unknown> | null {
   }
 }
 
-async function draftSkill(description: string, configPatch?: Partial<AgentRunConfig>): Promise<{
+async function draftSkill(
+  description: string,
+  configPatch: Partial<AgentRunConfig> | undefined,
+  tenantContext: TenantContext = { tenantId: DEFAULT_TENANT_ID },
+): Promise<{
   draft: SkillDraft;
   source: 'model' | 'template';
   error?: string;
@@ -185,7 +112,7 @@ async function draftSkill(description: string, configPatch?: Partial<AgentRunCon
   const templateDraft = createTemplateSkillDraft(prepared, locale);
 
   try {
-    const { model } = await createAgent(configPatch);
+    const { model } = await tenantRuntime.createAgent(configPatch, tenantContext);
     const response = await model.chat({
       messages: [
         {
@@ -296,19 +223,20 @@ function createSkillInstallFailureItems(
   ];
 }
 
-function publishCompletedItems(threadId: ThreadId, turnId: string, items: ThreadItem[]): void {
+function publishCompletedItems(threadId: ThreadId, turnId: string, items: ThreadItem[], tenantId: string = DEFAULT_TENANT_ID): void {
   for (const item of items) {
-    publishEvent({ type: 'item.completed', threadId, turnId, item });
+    publishEvent({ type: 'item.completed', threadId, turnId, item }, tenantId);
   }
 }
 
-function closeThreadEventClients(threadId: ThreadId): void {
-  const clients = eventClients.get(threadId);
+function closeThreadEventClients(threadId: ThreadId, tenantId: string = DEFAULT_TENANT_ID): void {
+  const key = tenantEventKey(tenantId, threadId);
+  const clients = eventClients.get(key);
   if (!clients) return;
   for (const client of clients) {
     client.end();
   }
-  eventClients.delete(threadId);
+  eventClients.delete(key);
 }
 
 function generateServerId(): string {
@@ -316,31 +244,56 @@ function generateServerId(): string {
 }
 
 async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  if (req.method === 'OPTIONS') { sendJson(res, 204, {}); return; }
-
   const url = new URL(req.url ?? '/', 'http://localhost');
   const segments = url.pathname.split('/').filter(Boolean);
+  const deployment = await resolveDeploymentConfig(rootStore, storageOptions.mode);
+  const corsOptions = resolveCorsOptions(process.env, deployment.authMode === 'token');
+  applyCorsHeaders(req, res, corsOptions);
 
-  if (await handleBotRoute({ req, res, url, segments, store, getDefaultRunConfig, createAgent: async (config) => ({ agent: (await createAgent(config)).agent }) })) return;
+  if (await handleStatusRoute({ req, res, pathname: url.pathname, deployment, storageOptions, getDefaultRunConfig: () => tenantRuntime.configRepoForTenant({ tenantId: DEFAULT_TENANT_ID }).getDefaultRunConfig() })) return;
+
+  if (await handleDeploymentRoute({ req, res, pathname: url.pathname, store: rootStore, storageMode: storageOptions.mode })) return;
+
+  const gate = await handleRequestGate({ req, res, url, segments, rootStore, storageOptions, authConfig: deployment.authConfig, corsOptions });
+  if (gate.handled) return;
+  const { tenantContext, authIdentity } = gate;
+
+  const store = tenantRuntime.storeForTenant(tenantContext);
+  const configRepo = tenantRuntime.configRepoForTenant(tenantContext);
+  const {
+    deleteModelPreset,
+    getDefaultRunConfig,
+    getThreadRunConfig,
+    listMcpServers,
+    listModelPresets,
+    publicThreadRunConfig,
+    saveMcpServers,
+    saveThreadRunConfig,
+    upsertModelPreset,
+  } = configRepo;
+  const saveTenantDefaultRunConfig = (configPatch: Partial<AgentRunConfig>) => tenantRuntime.saveDefaultRunConfig(configPatch, tenantContext);
+  const resetTenantDefaultAgent = () => tenantRuntime.resetDefaultAgent(tenantContext);
+  const createTenantAgent = (config?: Partial<AgentRunConfig>) => tenantRuntime.createAgent(config ?? {}, tenantContext);
+  const getTenantDefaultAgent = () => tenantRuntime.getDefaultAgent(tenantContext);
+  const publishTenantEvent = (event: ThreadEvent) => publishEvent(event, tenantContext.tenantId);
+  const tenantMcpManager = tenantRuntime.mcpManagerForTenant(tenantContext);
+  if (await handleBotRoute({
+    req,
+    res,
+    url,
+    segments,
+    store,
+    getDefaultRunConfig,
+    getThreadRunConfig,
+    createAgent: async (config) => ({ agent: (await createTenantAgent(config)).agent }),
+    tenantId: tenantContext.tenantId,
+    storageMode: storageOptions.mode,
+    publishEvent: publishTenantEvent,
+  })) return;
   if (await handleWorkspaceFilesRoute({ req, res, url })) return;
 
-  if (req.method === 'GET' && url.pathname === '/api/status') {
-    sendJson(res, 200, { ok: true, defaultConfig: publicRunConfig(await getDefaultRunConfig()) });
-    return;
-  }
-
-  if (req.method === 'GET' && url.pathname === '/api/settings') {
-    const stored = await store.getSetting<Partial<AgentRunConfig>>(DEFAULT_RUN_CONFIG_KEY);
-    sendJson(res, 200, { config: publicRunConfig(await getDefaultRunConfig()), stored: Boolean(stored) });
-    return;
-  }
-
-  if (req.method === 'PATCH' && url.pathname === '/api/settings') {
-    const body = await readJson<{ config?: Partial<AgentRunConfig> }>(req);
-    const config = await saveDefaultRunConfig(body.config ?? {});
-    sendJson(res, 200, { ok: true, config: publicRunConfig(config) });
-    return;
-  }
+  if (await handleSettingsRoute({ req, res, pathname: url.pathname, store, getDefaultRunConfig, saveDefaultRunConfig: saveTenantDefaultRunConfig, resetDefaultAgent: resetTenantDefaultAgent })) return;
+  if (await handleMemoryRoute({ req, res, url, pathname: url.pathname, store, getDefaultRunConfig, saveDefaultRunConfig: saveTenantDefaultRunConfig })) return;
 
   if (req.method === 'POST' && url.pathname === '/api/workspaces/pick') return handlePickWorkspaceDirectory(res);
 
@@ -350,24 +303,27 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   }
 
   if (req.method === 'GET' && url.pathname === '/api/mcp/status') {
-    await mcpManager.configure(await listMcpServers());
-    sendJson(res, 200, { servers: mcpManager.statuses() });
+    const detail = url.searchParams.get('detail');
+    await tenantMcpManager.configure(await listMcpServers(), { startEnabled: detail === 'full' });
+    sendJson(res, 200, { servers: tenantMcpManager.statuses() });
     return;
   }
 
   if (req.method === 'PATCH' && url.pathname === '/api/mcp') {
     const body = await readJson<{ servers?: unknown }>(req);
     const servers = await saveMcpServers(body.servers ?? []);
-    defaultAgent = null;
-    await mcpManager.configure(servers);
-    sendJson(res, 200, { ok: true, servers, statuses: mcpManager.statuses() });
+    resetTenantDefaultAgent();
+    await tenantMcpManager.configure(servers, { startEnabled: false });
+    sendJson(res, 200, { ok: true, servers, statuses: tenantMcpManager.statuses() });
     return;
   }
 
   if (req.method === 'GET' && url.pathname === '/api/skills') {
     const config = await getDefaultRunConfig();
-    const skills = new LocalSkillRegistry();
-    await skills.loadFromDirectory(config.skillsRoot);
+    const skills = await tenantRuntime.skillCacheForTenant(tenantContext).loadFromDirectory(
+      config.skillsRoot,
+      { forceReload: url.searchParams.get('forceReload') === '1' },
+    );
     sendJson(res, 200, { skillsRoot: config.skillsRoot, skills: skills.list() });
     return;
   }
@@ -379,7 +335,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       sendError(res, 400, 'Skill description is required');
       return;
     }
-    sendJson(res, 200, await draftSkill(description, body.config));
+    sendJson(res, 200, await draftSkill(description, body.config, tenantContext));
     return;
   }
 
@@ -393,7 +349,8 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     try {
       const config = resolveConfig({ ...await getDefaultRunConfig(), ...(body.config ?? {}) });
       const result = await installSkillsFromGitHubUrl(config.skillsRoot, skillUrl);
-      defaultAgent = null;
+      tenantRuntime.skillCacheForTenant(tenantContext).clear(config.skillsRoot);
+      resetTenantDefaultAgent();
       sendJson(res, 200, { ok: true, ...result });
     } catch (error) {
       sendError(res, 400, error instanceof Error ? error.message : String(error));
@@ -413,8 +370,22 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       description: body.description ?? body.name,
       body: body.body,
     });
-    defaultAgent = null;
+    tenantRuntime.skillCacheForTenant(tenantContext).clear(config.skillsRoot);
+    resetTenantDefaultAgent();
     sendJson(res, 200, { ok: true, skill: saved });
+    return;
+  }
+
+  if (req.method === 'DELETE' && segments[0] === 'api' && segments[1] === 'skills' && segments[2]) {
+    try {
+      const config = await getDefaultRunConfig();
+      const removed = await deleteSkill(config.skillsRoot, decodeURIComponent(segments[2]));
+      tenantRuntime.skillCacheForTenant(tenantContext).clear(config.skillsRoot);
+      resetTenantDefaultAgent();
+      sendJson(res, 200, { ok: true, skill: removed });
+    } catch (error) {
+      sendError(res, 400, error instanceof Error ? error.message : String(error));
+    }
     return;
   }
 
@@ -443,32 +414,11 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     return;
   }
 
-  if (req.method === 'GET' && url.pathname === '/api/keys') {
-    sendJson(res, 200, { keys: listApiKeyStates() });
-    return;
-  }
-
-  if (req.method === 'POST' && segments[0] === 'api' && segments[1] === 'keys' && segments[2]) {
-    const body = await readJson<{ apiKey?: string }>(req);
-    const apiKey = body.apiKey?.trim();
-    if (!apiKey) {
-      sendError(res, 400, 'API key is required');
-      return;
-    }
-    saveApiKey(segments[2], apiKey);
-    sendJson(res, 200, { ok: true, keys: listApiKeyStates() });
-    return;
-  }
-
-  if (req.method === 'DELETE' && segments[0] === 'api' && segments[1] === 'keys' && segments[2]) {
-    removeApiKey(segments[2]);
-    sendJson(res, 200, { ok: true, keys: listApiKeyStates() });
-    return;
-  }
+  if (await handleKeysRoute(req, res, segments, url.pathname)) return;
 
   if (req.method === 'POST' && url.pathname === '/api/health') {
     const body = await readJson<{ config?: Partial<AgentRunConfig> }>(req);
-    const { model } = await createAgent(body.config);
+    const { model } = await createTenantAgent(body.config);
     sendJson(res, 200, await model.healthCheck());
     return;
   }
@@ -477,6 +427,26 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     sendJson(res, 200, { threads: await store.listThreads({ limit: 50 }) });
     return;
   }
+
+  if (await handleWorkflowRoute({
+    req,
+    res,
+    segments,
+    store,
+    createPlannerModel: async () => (await createTenantAgent()).model,
+  })) return;
+
+  if (await handleRunMonitorRoute({
+    req,
+    res,
+    url,
+    segments,
+    store,
+    tenantContext,
+    isAdmin: authIdentity?.role === 'admin',
+    adminToken: process.env.NEXUS_ADMIN_TOKEN,
+    onControlRun: (action, request) => handleRunControlAction(action, request, getTenantDefaultAgent),
+  })) return;
 
   if (req.method === 'GET' && url.pathname === '/api/approvals') {
     sendJson(res, 200, { approvals: approvalBroker.listPending(), history: approvalBroker.listHistory() });
@@ -495,7 +465,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   }
 
   if (req.method === 'POST' && url.pathname === '/api/threads') {
-    const body = await readJson<{ title?: string; config?: Partial<AgentRunConfig>; conversationKind?: 'chat' | 'project' }>(req);
+    const body = await readJson<{ title?: string; config?: Partial<AgentRunConfig>; conversationKind?: 'chat' | 'project'; workflowProject?: boolean }>(req);
     const conversationKind = body.conversationKind === 'chat' ? 'chat' : 'project';
     const effectiveConfig = body.config
       ? resolveConfig({ ...await getDefaultRunConfig(), ...body.config })
@@ -503,10 +473,10 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     if (conversationKind === 'chat') {
       effectiveConfig.workspaceRoot = hiddenChatWorkspaceRoot(effectiveConfig.dataDir);
     }
-    const agent = body.config ? (await createAgent(effectiveConfig)).agent : await getDefaultAgent();
+    const agent = body.config ? (await createTenantAgent(effectiveConfig)).agent : await getTenantDefaultAgent();
     const thread = await agent.startThread(body.title ?? 'Nexus', {
       workspaceRoot: conversationKind === 'chat' ? '' : effectiveConfig.workspaceRoot,
-      tags: conversationKind === 'chat' ? { conversationKind: 'chat' } : {},
+      tags: conversationKind === 'chat' ? { conversationKind: 'chat' } : body.workflowProject ? { workflowProject: 'true' } : {},
     });
     const config = await saveThreadRunConfig(thread.threadId, effectiveConfig);
     sendJson(res, 200, { thread: await store.getThread(thread.threadId), config: publicThreadRunConfig(config, await store.getThread(thread.threadId)) });
@@ -515,6 +485,14 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
 
   if (segments[0] === 'api' && segments[1] === 'threads' && segments[2]) {
     const threadId = segments[2];
+    if (await handleWorkflowRoute({
+      req,
+      res,
+      segments,
+      store,
+      createPlannerModel: async () => (await createTenantAgent()).model,
+    })) return;
+
     if (req.method === 'GET' && segments.length === 3) {
       const thread = await store.getThread(threadId);
       if (!thread) {
@@ -553,7 +531,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
         return;
       }
       const recursive = url.searchParams.get('recursive') === '1';
-      const agent = await getDefaultAgent();
+      const agent = await getTenantDefaultAgent();
       const children = await buildThreadChildInfos({
         parentThreadId: threadId,
         recursive,
@@ -567,10 +545,11 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     if (req.method === 'DELETE' && segments.length === 3) {
       const thread = await store.getThread(threadId);
       if (!thread) { sendError(res, 404, 'Thread not found'); return; }
-      const agent = await getDefaultAgent();
+      const agent = await getTenantDefaultAgent();
       agent.interrupt(threadId);
-      closeThreadEventClients(threadId);
+      closeThreadEventClients(threadId, tenantContext.tenantId);
       await store.deleteThread(threadId);
+      await clearRemoteBotBindingsForDeletedThread(store, threadId);
       sendJson(res, 200, { ok: true });
       return;
     }
@@ -585,7 +564,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     }
 
     if (req.method === 'GET' && segments[3] === 'state') {
-      const agent = await getDefaultAgent();
+      const agent = await getTenantDefaultAgent();
       const thread = await store.getThread(threadId);
       sendJson(res, 200, { state: await agent.getRuntimeState(threadId), usage: usageFromThread(thread) });
       return;
@@ -598,15 +577,15 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       Connection: 'keep-alive',
-      'Access-Control-Allow-Origin': '*',
     });
     res.write('data: {"type":"connected"}\n\n');
-    const clients = eventClients.get(threadId) ?? new Set<ServerResponse>();
+    const eventKey = tenantEventKey(tenantContext.tenantId, threadId);
+    const clients = eventClients.get(eventKey) ?? new Set<ServerResponse>();
     clients.add(res);
-    eventClients.set(threadId, clients);
+    eventClients.set(eventKey, clients);
     req.on('close', () => {
       clients.delete(res);
-      if (clients.size === 0) eventClients.delete(threadId);
+      if (clients.size === 0) eventClients.delete(eventKey);
     });
     return;
   }
@@ -647,12 +626,12 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       };
       await store.saveTurn(turn);
       await store.updateThreadMetadata(threadId, { turnCount: thread.turnCount + 1 });
-      publishEvent({ type: 'turn.started', threadId, turnId, turnIndex: thread.turnCount });
+      publishTenantEvent({ type: 'turn.started', threadId, turnId, turnIndex: thread.turnCount });
 
       try {
         const result = await installSkillsFromGitHubUrl(config.skillsRoot, skillUrl);
-        defaultAgent = null;
-        const { model } = await createAgent(config);
+        resetTenantDefaultAgent();
+        const { model } = await createTenantAgent(config);
         const agentText = await createSkillInstallReply(model, result, skillUrl, config.locale);
         const items = createSkillInstallTurnItems({
           turnId,
@@ -663,21 +642,21 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
           timestamp: startedAt,
         });
         await store.appendItems(threadId, items);
-        publishCompletedItems(threadId, turnId, items);
+        publishCompletedItems(threadId, turnId, items, tenantContext.tenantId);
         turn.status = 'completed';
         turn.completedAt = new Date().toISOString();
         await store.saveTurn(turn);
-        publishEvent({ type: 'turn.completed', threadId, turnId, usage: null, status: 'completed' });
+        publishTenantEvent({ type: 'turn.completed', threadId, turnId, usage: null, status: 'completed' });
         sendJson(res, 200, { ok: true, items, ...result });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         const items = createSkillInstallFailureItems(turnId, inputText, message, startedAt);
         await store.appendItems(threadId, items);
-        publishCompletedItems(threadId, turnId, items);
+        publishCompletedItems(threadId, turnId, items, tenantContext.tenantId);
         turn.status = 'failed';
         turn.completedAt = new Date().toISOString();
         await store.saveTurn(turn);
-        publishEvent({ type: 'turn.failed', threadId, turnId, error: { message } });
+        publishTenantEvent({ type: 'turn.failed', threadId, turnId, error: { message } });
         sendError(res, 400, message);
       }
       return;
@@ -693,7 +672,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       if (thread && nextTitle && shouldRetitleThread(thread.title)) {
         await store.updateThreadMetadata(threadId, { title: nextTitle });
       }
-      const agent = (await createAgent(config)).agent;
+      const agent = (await createTenantAgent(config)).agent;
       const result = await agent.runTurn(threadId, buildUserInputFromTurnRequest(body));
       sendJson(res, 200, result);
       return;
@@ -702,7 +681,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     if (action === 'interrupt') {
       const body = await readJson<{ config?: Partial<AgentRunConfig> }>(req);
       const config = body.config ? await saveThreadRunConfig(threadId, body.config) : await getThreadRunConfig(threadId);
-      const agent = (await createAgent(config)).agent;
+      const agent = (await createTenantAgent(config)).agent;
       sendJson(res, 200, { interrupted: agent.interrupt(threadId) });
       return;
     }
@@ -710,7 +689,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     if (action === 'resume-running') {
       const body = await readJson<{ input?: string; config?: Partial<AgentRunConfig> }>(req);
       const config = body.config ? await saveThreadRunConfig(threadId, body.config) : await getThreadRunConfig(threadId);
-      const agent = (await createAgent(config)).agent;
+      const agent = (await createTenantAgent(config)).agent;
       const input: UserInput | undefined =
         body.input && body.input.trim() ? { type: 'text', text: body.input } : undefined;
       const result = await agent.resumeRunning(threadId, input);
@@ -721,7 +700,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     if (action === 'resume-tree') {
       const body = await readJson<{ config?: Partial<AgentRunConfig> }>(req);
       const config = body.config ? await saveThreadRunConfig(threadId, body.config) : await getThreadRunConfig(threadId);
-      const agent = (await createAgent(config)).agent;
+      const agent = (await createTenantAgent(config)).agent;
       sendJson(res, 200, await agent.resumeTree(threadId));
       return;
     }
@@ -734,8 +713,8 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
         store,
         getThreadRunConfig,
         saveThreadRunConfig,
-        createModel: async (config) => (await createAgent(config)).model,
-        publishEvent,
+        createModel: async (config) => (await createTenantAgent(config)).model,
+        publishEvent: publishTenantEvent,
         generateId: generateServerId,
       });
       return;
@@ -749,8 +728,13 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     }
 
     if (action === 'rollback') {
-      const body = await readJson<{ count?: number }>(req);
-      sendJson(res, 200, await rollbackTurns(threadId, store, body.count ?? 1));
+      const config = await getThreadRunConfig(threadId);
+      await handleRollbackThreadRuntimeAction({
+        req,
+        res,
+        threadId,
+        createAgent: async () => (await createTenantAgent(config)).agent,
+      });
       return;
     }
   }
@@ -767,6 +751,19 @@ const server = createServer((req, res) => {
 
 server.listen(port, () => {
   console.log(`Nexus API listening on http://localhost:${port}`);
+  // 启动时为 default 租户主动触发钉钉 autoStart（其他租户在首次请求时懒启动）
+  // Chinese translation: proactively trigger dingtalk auto-start for default tenant on boot
+  const defaultTenantStore = tenantRuntime.storeForTenant({ tenantId: DEFAULT_TENANT_ID });
+  const defaultCfgRepo = tenantRuntime.configRepoForTenant({ tenantId: DEFAULT_TENANT_ID });
+  void autoStartDingtalkForTenant({
+    store: defaultTenantStore,
+    tenantId: DEFAULT_TENANT_ID,
+    getDefaultRunConfig: () => defaultCfgRepo.getDefaultRunConfig(),
+    createAgent: async (config) => ({ agent: (await tenantRuntime.createAgent(config ?? {}, { tenantId: DEFAULT_TENANT_ID })).agent }),
+    publishEvent: (event) => publishEvent(event, DEFAULT_TENANT_ID),
+  }).catch((err) => {
+    console.warn('[dingtalk] default tenant auto-start failed:', err instanceof Error ? err.message : String(err));
+  });
 });
 
-installGracefulShutdown({ server, store });
+installGracefulShutdown({ server, store: rootStore });

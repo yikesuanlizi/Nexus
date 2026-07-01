@@ -3,19 +3,24 @@ import { Dirent } from 'node:fs';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 import type { ToolDefinition, ToolContext, ToolResult } from './registry.js';
+import { WebProviderRouter } from './web/provider.js';
 
 // ─── current_time ──────────────────────────────────────────────────────────
+// 中文注释：获取当前本地日期和时间。用于简单的时间/日期查询，替代 shell 命令。
 export const currentTimeTool: ToolDefinition = {
   name: 'current_time',
   description: 'Get the current local date and time. Use this for simple time/date questions instead of shell commands.',
   parameters: {
     type: 'object',
     properties: {
+      // 中文注释：可选的 BCP-47 语言环境，例如 zh-CN 或 en-US。
       locale: { type: 'string', description: 'Optional BCP-47 locale, e.g. zh-CN or en-US.' },
+      // 中文注释：可选的 IANA 时区，例如 Asia/Shanghai。
       timeZone: { type: 'string', description: 'Optional IANA timezone, e.g. Asia/Shanghai.' },
     },
   },
   requiredPolicy: 'readonly',
+  supportsParallelToolCalls: true,
   async execute(args): Promise<ToolResult> {
     const now = new Date();
     const locale = typeof args.locale === 'string' && args.locale.trim() ? args.locale : 'zh-CN';
@@ -38,21 +43,34 @@ export const currentTimeTool: ToolDefinition = {
 };
 
 // ─── read_file ──────────────────────────────────────────────────────────────
+// 中文注释：读取工作区中文件的内容。
 export const readFileTool: ToolDefinition = {
   name: 'read_file',
   description: 'Read the contents of a file in the workspace.',
   parameters: {
     type: 'object',
     properties: {
+      // 中文注释：相对于工作区根路径，或绝对路径。
       filePath: { type: 'string', description: 'Path relative to workspace root, or absolute.' },
+      // 中文注释：起始行号（从 1 开始计数）。
       offset: { type: 'number', description: 'Line number to start reading from (1-indexed).' },
+      // 中文注释：最多读取的行数。
       limit: { type: 'number', description: 'Maximum number of lines to read.' },
     },
     required: ['filePath'],
   },
   requiredPolicy: 'readonly',
+  supportsParallelToolCalls: true,
   async execute(args, ctx): Promise<ToolResult> {
-    const filePath = resolvePath(ctx.workspaceRoot, String(args.filePath));
+    const rawPath = firstString(args.filePath, args.path, args.filename);
+    if (!rawPath) {
+      return {
+        output: 'Missing filePath for read_file',
+        status: 'failed',
+        error: { message: 'filePath is required', code: 'INVALID_ARGUMENTS' },
+      };
+    }
+    const filePath = resolvePath(ctx.workspaceRoot, rawPath);
     const content = await fs.readFile(filePath, 'utf-8');
     const allLines = content.split('\n');
     let lines = allLines;
@@ -81,14 +99,95 @@ export const readFileTool: ToolDefinition = {
   },
 };
 
+// ─── list_files ─────────────────────────────────────────────────────────────
+// 中文注释：列出工作区中的文件和目录。用于在读取文件之前检查目录结构。
+export const listFilesTool: ToolDefinition = {
+  name: 'list_files',
+  description:
+    'List files and directories in the workspace. Use this to inspect directory structure before reading files.',
+  parameters: {
+    type: 'object',
+    properties: {
+      // 中文注释：要列出的目录，相对于工作区根路径或为绝对路径。默认为工作区根路径。
+      path: {
+        type: 'string',
+        description: 'Directory to list, relative to workspace root or absolute. Defaults to workspace root.',
+      },
+      // 中文注释：是否递归列出嵌套目录。默认为 false。
+      recursive: { type: 'boolean', description: 'Whether to recursively list nested directories. Defaults to false.' },
+      // 中文注释：最多返回的条目数，范围 1 到 1000。默认为 200。
+      maxEntries: { type: 'number', description: 'Maximum entries to return, from 1 to 1000. Defaults to 200.' },
+      // 中文注释：是否包含点文件（隐藏文件）和点目录。默认为 false。
+      includeHidden: { type: 'boolean', description: 'Include dotfiles and dot-directories. Defaults to false.' },
+    },
+  },
+  requiredPolicy: 'readonly',
+  supportsParallelToolCalls: true,
+  timeoutMs: 30_000,
+  maxOutputLength: 20_000,
+  async execute(args, ctx): Promise<ToolResult> {
+    const rawPath = firstString(args.path, args.dir, args.directory, args.filePath) ?? '.';
+    const targetPath = resolvePath(ctx.workspaceRoot, rawPath);
+    const recursive = args.recursive === true;
+    const includeHidden = args.includeHidden === true;
+    const maxEntriesRaw = Number(args.maxEntries ?? args.limit);
+    const maxEntries = Number.isFinite(maxEntriesRaw)
+      ? Math.min(1000, Math.max(1, Math.floor(maxEntriesRaw)))
+      : 200;
+
+    const entries: ListedFileEntry[] = [];
+    await collectFileEntries(targetPath, {
+      root: targetPath,
+      recursive,
+      includeHidden,
+      maxEntries,
+      entries,
+    });
+
+    const relTarget = path.relative(ctx.workspaceRoot, targetPath) || '.';
+    if (entries.length === 0) {
+      return {
+        output: `No files found in ${relTarget}`,
+        status: 'completed',
+        data: { path: targetPath, entries },
+      };
+    }
+
+    const output = [
+      `Files in ${relTarget}:`,
+      ...entries.map((entry) => {
+        const marker = entry.kind === 'directory' ? '/' : '';
+        const size = entry.kind === 'file' && entry.size !== undefined ? ` ${entry.size} bytes` : '';
+        return `${entry.path}${marker}${size}`;
+      }),
+      entries.length >= maxEntries ? `... [limited to ${maxEntries} entries]` : undefined,
+    ].filter((line) => line !== undefined).join('\n');
+
+    return {
+      output,
+      status: 'completed',
+      data: {
+        path: targetPath,
+        recursive,
+        maxEntries,
+        entries,
+        truncated: entries.length >= maxEntries,
+      },
+    };
+  },
+};
+
 // ─── write_file ─────────────────────────────────────────────────────────────
+// 中文注释：写入或覆盖工作区中的文件。
 export const writeFileTool: ToolDefinition = {
   name: 'write_file',
   description: 'Write or overwrite a file in the workspace.',
   parameters: {
     type: 'object',
     properties: {
+      // 中文注释：相对于工作区根路径。
       filePath: { type: 'string', description: 'Path relative to workspace root.' },
+      // 中文注释：要写入的文件内容。
       content: { type: 'string', description: 'File content to write.' },
     },
     required: ['filePath', 'content'],
@@ -104,6 +203,7 @@ export const writeFileTool: ToolDefinition = {
 };
 
 // ─── shell_command ──────────────────────────────────────────────────────────
+// 中文注释：执行 shell 命令。命令在工作区根目录运行，输出将被捕获并返回。
 export const shellCommandTool: ToolDefinition = {
   name: 'shell_command',
   description:
@@ -111,7 +211,9 @@ export const shellCommandTool: ToolDefinition = {
   parameters: {
     type: 'object',
     properties: {
+      // 中文注释：要执行的 shell 命令。
       command: { type: 'string', description: 'The shell command to execute.' },
+      // 中文注释：命令的工作目录（相对于工作区或为绝对路径）。
       cwd: {
         type: 'string',
         description: 'Working directory for the command (relative to workspace or absolute).',
@@ -164,6 +266,7 @@ export const shellCommandTool: ToolDefinition = {
 };
 
 // ─── search_content ─────────────────────────────────────────────────────────
+// 中文注释：在工作区文件中搜索文本模式（子串或正则表达式）。
 export const searchContentTool: ToolDefinition = {
   name: 'search_content',
   description:
@@ -171,24 +274,38 @@ export const searchContentTool: ToolDefinition = {
   parameters: {
     type: 'object',
     properties: {
+      // 中文注释：要搜索的文本或正则表达式模式。
       pattern: { type: 'string', description: 'Text or regex pattern to search for.' },
+      // 中文注释：要搜索的目录（相对于工作区根路径，默认根路径）。
       path: {
         type: 'string',
         description: 'Directory to search in (relative to workspace root, default: root).',
       },
+      // 中文注释：逗号分隔的文件扩展名，例如 ".ts,.js"。
       fileTypes: { type: 'string', description: 'Comma-separated file extensions (e.g. ".ts,.js").' },
+      // 中文注释：是否区分大小写搜索（默认 false）。
       caseSensitive: { type: 'boolean', description: 'Case-sensitive search (default false).' },
+      // 中文注释：每个匹配项周围的上下文行数。
       contextLines: { type: 'number', description: 'Lines of context around each match.' },
     },
     required: ['pattern'],
   },
   requiredPolicy: 'readonly',
+  supportsParallelToolCalls: true,
   timeoutMs: 30_000,
   maxOutputLength: 30_000,
   async execute(args, ctx): Promise<ToolResult> {
-    const pattern = String(args.pattern);
-    const searchPath = args.path
-      ? resolvePath(ctx.workspaceRoot, String(args.path))
+    const pattern = firstString(args.pattern, args.query, args.search, args.text);
+    if (!pattern) {
+      return {
+        output: 'Missing pattern for search_content',
+        status: 'failed',
+        error: { message: 'pattern is required', code: 'INVALID_ARGUMENTS' },
+      };
+    }
+    const rawSearchPath = firstString(args.path, args.dir, args.directory);
+    const searchPath = rawSearchPath
+      ? resolvePath(ctx.workspaceRoot, rawSearchPath)
       : ctx.workspaceRoot;
 
     // Simple recursive grep using Node
@@ -220,6 +337,7 @@ export const searchContentTool: ToolDefinition = {
 };
 
 // ─── web_search ────────────────────────────────────────────────────────────
+// 中文注释：Codex 风格的网页访问工具。使用 action="search" 发现网页，action="open_page" 读取指定 URL，action="find_in_page" 在指定 URL 中查找文本。若用户提供了 URL，优先使用 open_page 而非 search。
 export const webSearchTool: ToolDefinition = {
   name: 'web_search',
   description:
@@ -227,19 +345,25 @@ export const webSearchTool: ToolDefinition = {
   parameters: {
     type: 'object',
     properties: {
+      // 中文注释：要执行的网页动作。当提供 url 时默认为 open_page，否则为 search。
       action: {
         type: 'string',
         enum: ['search', 'open_page', 'find_in_page'],
         description: 'Web action to perform. Defaults to open_page when url is provided, otherwise search.',
       },
+      // 中文注释：action="search" 时的搜索查询。
       query: { type: 'string', description: 'Search query for action="search".' },
+      // 中文注释：action="search" 时可选的搜索查询列表。
       queries: {
         type: 'array',
         description: 'Optional list of search queries for action="search".',
         items: { type: 'string' },
       },
+      // 中文注释：action="open_page" 或 action="find_in_page" 时的 HTTP/HTTPS URL。
       url: { type: 'string', description: 'HTTP/HTTPS URL for action="open_page" or action="find_in_page".' },
+      // 中文注释：action="find_in_page" 时的文本或类正则表达式模式。
       pattern: { type: 'string', description: 'Text or regex-like pattern for action="find_in_page".' },
+      // 中文注释：最多返回的结果数，范围 1 到 8。默认为 5。
       maxResults: {
         type: 'number',
         description: 'Maximum number of results to return, from 1 to 8. Default is 5.',
@@ -247,6 +371,7 @@ export const webSearchTool: ToolDefinition = {
     },
   },
   requiredPolicy: 'readonly',
+  supportsParallelToolCalls: true,
   timeoutMs: 20_000,
   maxOutputLength: 12_000,
   async execute(args, ctx): Promise<ToolResult> {
@@ -280,8 +405,9 @@ export const webSearchTool: ToolDefinition = {
       ? Math.min(8, Math.max(1, Math.floor(maxResultsRaw)))
       : 5;
     try {
+      const router = createWebProviderRouter(ctx);
       const results = dedupeSearchResults((await Promise.all(
-        queries.map((query) => fetchSearchResults(query)),
+        queries.map((query) => router.search({ query, maxResults, signal: ctx.signal })),
       )).flat()).slice(0, maxResults);
       if (results.length === 0) {
         return {
@@ -319,6 +445,7 @@ export const webSearchTool: ToolDefinition = {
 };
 
 // ─── web_fetch ─────────────────────────────────────────────────────────────
+// 中文注释：从指定的 HTTP/HTTPS URL 获取并提取可读文本。当用户提供 URL 时或在 web_search 找到有希望的结果后使用此工具。
 export const webFetchTool: ToolDefinition = {
   name: 'web_fetch',
   description:
@@ -326,11 +453,13 @@ export const webFetchTool: ToolDefinition = {
   parameters: {
     type: 'object',
     properties: {
+      // 中文注释：要获取的 HTTP 或 HTTPS URL。
       url: { type: 'string', description: 'The HTTP or HTTPS URL to fetch.' },
     },
     required: ['url'],
   },
   requiredPolicy: 'readonly',
+  supportsParallelToolCalls: true,
   timeoutMs: 25_000,
   maxOutputLength: 18_000,
   async execute(args, ctx): Promise<ToolResult> {
@@ -340,6 +469,7 @@ export const webFetchTool: ToolDefinition = {
 };
 
 // ─── apply_patch ────────────────────────────────────────────────────────────
+// 中文注释：将统一 diff 格式的补丁应用到工作区文件。每个 hunk 块指定目标文件及变更内容。
 export const applyPatchTool: ToolDefinition = {
   name: 'apply_patch',
   description:
@@ -347,6 +477,7 @@ export const applyPatchTool: ToolDefinition = {
   parameters: {
     type: 'object',
     properties: {
+      // 中文注释：统一 diff 格式的补丁文本。
       patch: { type: 'string', description: 'Unified diff patch text.' },
     },
     required: ['patch'],
@@ -379,6 +510,7 @@ export const applyPatchTool: ToolDefinition = {
 export const BUILTIN_TOOLS: ToolDefinition[] = [
   currentTimeTool,
   readFileTool,
+  listFilesTool,
   writeFileTool,
   shellCommandTool,
   searchContentTool,
@@ -391,6 +523,13 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
 function resolvePath(workspaceRoot: string, filePath: string): string {
   if (path.isAbsolute(filePath)) return filePath;
   return path.resolve(workspaceRoot, filePath);
+}
+
+function firstString(...values: unknown[]): string | null {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return null;
 }
 
 interface WalkOptions {
@@ -470,6 +609,63 @@ async function walkAndSearch(
   }
 }
 
+interface ListedFileEntry {
+  path: string;
+  kind: 'file' | 'directory';
+  size?: number;
+}
+
+async function collectFileEntries(
+  dir: string,
+  opts: {
+    root: string;
+    recursive: boolean;
+    includeHidden: boolean;
+    maxEntries: number;
+    entries: ListedFileEntry[];
+  },
+): Promise<void> {
+  if (opts.entries.length >= opts.maxEntries) return;
+  let dirents: Dirent[];
+  try {
+    dirents = await fs.readdir(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+
+  const sorted = dirents
+    .filter((entry) => opts.includeHidden || !entry.name.startsWith('.'))
+    .filter((entry) => !shouldSkipDirectory(entry.name))
+    .sort((a, b) => {
+      if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+
+  for (const entry of sorted) {
+    if (opts.entries.length >= opts.maxEntries) return;
+    const fullPath = path.join(dir, entry.name);
+    const relPath = path.relative(opts.root, fullPath) || entry.name;
+    if (entry.isDirectory()) {
+      opts.entries.push({ path: relPath, kind: 'directory' });
+      if (opts.recursive) {
+        await collectFileEntries(fullPath, opts);
+      }
+    } else if (entry.isFile()) {
+      let size: number | undefined;
+      try {
+        size = (await fs.stat(fullPath)).size;
+      } catch {
+        size = undefined;
+      }
+      opts.entries.push({ path: relPath, kind: 'file', size });
+    }
+  }
+}
+
+function shouldSkipDirectory(name: string): boolean {
+  return name === 'node_modules' || name === 'dist' || name === 'build' || name === '.git';
+}
+
 interface SearchMatch {
   path: string;
   line: number;
@@ -499,62 +695,6 @@ function safeRegex(pattern: string, flags: string): RegExp | null {
       return null;
     }
   }
-}
-
-interface WebSearchResult {
-  title: string;
-  url: string;
-  snippet: string;
-}
-
-interface SearchSource {
-  name: string;
-  url: (query: string) => string;
-  parse: (html: string) => WebSearchResult[];
-}
-
-const SEARCH_SOURCES: SearchSource[] = [
-  {
-    name: 'DuckDuckGo',
-    url: (query) => `https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
-    parse: parseDuckDuckGoResults,
-  },
-  {
-    name: 'Bing',
-    url: (query) => `https://www.bing.com/search?q=${encodeURIComponent(query)}`,
-    parse: parseBingResults,
-  },
-];
-
-async function fetchSearchResults(query: string): Promise<WebSearchResult[]> {
-  const failures: string[] = [];
-
-  for (const source of SEARCH_SOURCES) {
-    try {
-      const response = await fetch(source.url(query), {
-        headers: {
-          'user-agent': 'Mozilla/5.0 Nexus/0.1',
-          accept: 'text/html,application/xhtml+xml',
-        },
-      });
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status} ${response.statusText}`.trim());
-      }
-
-      const html = await response.text();
-      const results = source.parse(html);
-      if (results.length > 0) return results;
-      failures.push(`${source.name}: no results parsed`);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      failures.push(`${source.name}: ${message}`);
-    }
-  }
-
-  if (failures.length > 0) {
-    throw new Error(failures.join('; '));
-  }
-  return [];
 }
 
 function collectSearchQueries(args: Record<string, unknown>): string[] {
@@ -592,50 +732,36 @@ async function fetchUrlAsToolResult(rawUrl: string, ctx: ToolContext): Promise<T
     };
   }
 
-  const controller = new AbortController();
-  const abortFromContext = () => controller.abort(ctx.signal?.reason);
-  if (ctx.signal) {
-    if (ctx.signal.aborted) controller.abort(ctx.signal.reason);
-    else ctx.signal.addEventListener('abort', abortFromContext, { once: true });
-  }
-
   try {
-    const response = await fetch(url.toString(), {
-      headers: {
-        'user-agent': 'Mozilla/5.0 Nexus/0.1',
-        accept: 'text/html,application/xhtml+xml,text/plain,application/json;q=0.9,*/*;q=0.8',
-      },
-      signal: controller.signal,
-    });
-    const contentType = response.headers.get('content-type') ?? '';
-    const body = await response.text();
-    const title = contentType.includes('html') ? extractHtmlTitle(body) : undefined;
-    const text = contentType.includes('html') ? htmlToReadableText(body) : body.trim();
-    const returnedText = limitToolText(text, 16_000);
+    const page = await createWebProviderRouter(ctx).openPage({ url: url.toString(), signal: ctx.signal });
     const output = [
-      `Opened page: ${url.toString()}`,
-      `Status: ${response.status} ${response.statusText}`.trim(),
-      contentType ? `Content-Type: ${contentType}` : undefined,
-      title ? `Title: ${title}` : undefined,
+      `Opened page: ${page.finalUrl ?? page.url}`,
+      page.status !== undefined ? `Status: ${page.status} ${page.statusText ?? ''}`.trim() : undefined,
+      page.contentType ? `Content-Type: ${page.contentType}` : undefined,
+      `Provider: ${page.provider}`,
+      page.title ? `Title: ${page.title}` : undefined,
       '',
-      returnedText || '[empty response body]',
+      page.text || '[empty response body]',
     ].filter((line) => line !== undefined).join('\n');
 
     return {
       output,
-      status: response.ok ? 'completed' : 'failed',
+      status: page.status === undefined || page.status < 400 ? 'completed' : 'failed',
       data: {
         action: 'open_page',
-        url: url.toString(),
-        status: response.status,
-        contentType,
-        title,
-        text: returnedText,
-        truncated: text.length > returnedText.length,
+        url: page.url,
+        finalUrl: page.finalUrl,
+        status: page.status,
+        contentType: page.contentType,
+        provider: page.provider,
+        title: page.title,
+        text: page.text,
+        truncated: page.truncated,
+        metadata: page.metadata,
       },
-      error: response.ok
+      error: page.status === undefined || page.status < 400
         ? undefined
-        : { message: `HTTP ${response.status} ${response.statusText}`.trim(), code: 'WEB_FETCH_FAILED' },
+        : { message: `HTTP ${page.status} ${page.statusText ?? ''}`.trim(), code: 'WEB_FETCH_FAILED' },
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -644,8 +770,6 @@ async function fetchUrlAsToolResult(rawUrl: string, ctx: ToolContext): Promise<T
       status: 'failed',
       error: { message, code: 'WEB_FETCH_FAILED' },
     };
-  } finally {
-    if (ctx.signal) ctx.signal.removeEventListener('abort', abortFromContext);
   }
 }
 
@@ -657,24 +781,24 @@ async function findInPageAsToolResult(rawUrl: string, pattern: string, ctx: Tool
       error: { message: 'pattern is required for action="find_in_page"', code: 'INVALID_ARGUMENTS' },
     };
   }
-  const fetched = await fetchUrlAsToolResult(rawUrl, ctx);
-  if (fetched.status !== 'completed') return fetched;
-  const data = fetched.data && typeof fetched.data === 'object'
-    ? fetched.data as { url?: string; title?: string; text?: string }
-    : {};
-  const text = data.text ?? '';
-  const lines = text.split('\n');
-  const patternLower = pattern.toLowerCase();
-  const matches = lines
-    .map((line, index) => ({ line, lineNumber: index + 1 }))
-    .filter((entry) => entry.line.toLowerCase().includes(patternLower))
-    .slice(0, 20);
+  let result: Awaited<ReturnType<WebProviderRouter['findInPage']>>;
+  try {
+    result = await createWebProviderRouter(ctx).findInPage({ url: rawUrl, pattern, signal: ctx.signal });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return {
+      output: `web_search find_in_page failed for "${rawUrl}": ${message}`,
+      status: 'failed',
+      error: { message, code: 'WEB_FETCH_FAILED' },
+    };
+  }
   const output = [
-    `Find in page: "${pattern}" in ${data.url ?? rawUrl}`,
-    data.title ? `Title: ${data.title}` : undefined,
+    `Find in page: "${pattern}" in ${result.url}`,
+    `Provider: ${result.provider}`,
+    result.title ? `Title: ${result.title}` : undefined,
     '',
-    matches.length > 0
-      ? matches.map((match) => `${match.lineNumber}: ${match.line}`).join('\n')
+    result.matches.length > 0
+      ? result.matches.map((match) => `${match.lineNumber}: ${match.line}`).join('\n')
       : 'No matches found.',
   ].filter((line) => line !== undefined).join('\n');
   return {
@@ -682,124 +806,19 @@ async function findInPageAsToolResult(rawUrl: string, pattern: string, ctx: Tool
     status: 'completed',
     data: {
       action: 'find_in_page',
-      url: data.url ?? rawUrl,
+      url: result.url,
+      provider: result.provider,
       pattern,
-      matches,
+      matches: result.matches,
     },
   };
 }
 
-function parseDuckDuckGoResults(html: string): WebSearchResult[] {
-  const results: WebSearchResult[] = [];
-  const blockRegex = /<div[^>]+class="[^"]*\bresult\b[^"]*"[^>]*>([\s\S]*?)(?=<div[^>]+class="[^"]*\bresult\b|<\/body>|$)/gi;
-  const fallbackRegex = /<a[^>]+class="[^"]*\bresult__a\b[^"]*"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?(?:<(?:a|div)[^>]+class="[^"]*\bresult__snippet\b[^"]*"[^>]*>([\s\S]*?)<\/(?:a|div)>|$)/gi;
-
-  for (const match of html.matchAll(blockRegex)) {
-    const block = match[1] ?? '';
-    const linkMatch = block.match(/<a[^>]+class="[^"]*\bresult__a\b[^"]*"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
-    if (!linkMatch) continue;
-
-    const snippetMatch = block.match(/<(?:a|div)[^>]+class="[^"]*\bresult__snippet\b[^"]*"[^>]*>([\s\S]*?)<\/(?:a|div)>/i);
-    const result = normalizeSearchResult(linkMatch[2] ?? '', linkMatch[1] ?? '', snippetMatch?.[1] ?? '');
-    if (result) results.push(result);
-  }
-
-  if (results.length > 0) return dedupeSearchResults(results);
-
-  for (const match of html.matchAll(fallbackRegex)) {
-    const result = normalizeSearchResult(match[2] ?? '', match[1] ?? '', match[3] ?? '');
-    if (result) results.push(result);
-  }
-
-  return dedupeSearchResults(results);
+function createWebProviderRouter(ctx: ToolContext): WebProviderRouter {
+  return new WebProviderRouter(ctx.webProvider);
 }
 
-function parseBingResults(html: string): WebSearchResult[] {
-  const results: WebSearchResult[] = [];
-  const blockRegex = /<li[^>]+class="[^"]*\bb_algo\b[^"]*"[^>]*>([\s\S]*?)(?=<li[^>]+class="[^"]*\bb_algo\b|<\/ol>|$)/gi;
-
-  for (const match of html.matchAll(blockRegex)) {
-    const block = match[1] ?? '';
-    const linkMatch = block.match(/<h2[^>]*>\s*<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>\s*<\/h2>/i);
-    if (!linkMatch) continue;
-
-    const snippetMatch = block.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
-    const result = normalizeSearchResult(linkMatch[2] ?? '', linkMatch[1] ?? '', snippetMatch?.[1] ?? '');
-    if (result) results.push(result);
-  }
-
-  return dedupeSearchResults(results);
-}
-
-function normalizeSearchResult(titleHtml: string, urlHtml: string, snippetHtml: string): WebSearchResult | null {
-  const title = cleanHtml(titleHtml);
-  const url = normalizeDuckDuckGoUrl(decodeHtml(urlHtml));
-  const snippet = cleanHtml(snippetHtml);
-  if (!title || !url) return null;
-  return { title, url, snippet };
-}
-
-function extractHtmlTitle(html: string): string | undefined {
-  const title = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1];
-  const cleaned = title ? cleanHtml(title) : '';
-  return cleaned || undefined;
-}
-
-function htmlToReadableText(html: string): string {
-  const withoutNoise = html
-    .replace(/<script\b[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style\b[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<noscript\b[\s\S]*?<\/noscript>/gi, ' ')
-    .replace(/<svg\b[\s\S]*?<\/svg>/gi, ' ')
-    .replace(/<template\b[\s\S]*?<\/template>/gi, ' ');
-  const withBreaks = withoutNoise
-    .replace(/<(?:br|hr)\b[^>]*>/gi, '\n')
-    .replace(/<\/(?:p|div|section|article|header|footer|main|aside|li|tr|h[1-6])>/gi, '\n');
-  return decodeHtml(withBreaks.replace(/<[^>]*>/g, ' '))
-    .split('\n')
-    .map((line) => line.replace(/[ \t]+/g, ' ').trim())
-    .filter(Boolean)
-    .join('\n');
-}
-
-function limitToolText(text: string, maxLength: number): string {
-  if (text.length <= maxLength) return text;
-  return `${text.slice(0, maxLength)}\n... [truncated ${text.length - maxLength} chars]`;
-}
-
-function cleanHtml(value: string): string {
-  return decodeHtml(value.replace(/<[^>]*>/g, ' '))
-    .replace(/\s+/g, ' ')
-    .replace(/\s+([.,!?;:])/g, '$1')
-    .trim();
-}
-
-function decodeHtml(value: string): string {
-  return value
-    .replace(/&#x([0-9a-f]+);/gi, (_, hex: string) => String.fromCodePoint(Number.parseInt(hex, 16)))
-    .replace(/&#(\d+);/g, (_, code: string) => String.fromCodePoint(Number.parseInt(code, 10)))
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&apos;/g, "'")
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&ensp;/g, ' ')
-    .replace(/&emsp;/g, ' ')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&amp;/g, '&');
-}
-
-function normalizeDuckDuckGoUrl(rawUrl: string): string {
-  try {
-    const url = new URL(rawUrl.startsWith('//') ? `https:${rawUrl}` : rawUrl, 'https://duckduckgo.com');
-    const redirected = url.searchParams.get('uddg');
-    return redirected ? decodeURIComponent(redirected) : url.toString();
-  } catch {
-    return rawUrl;
-  }
-}
-
-function dedupeSearchResults(results: WebSearchResult[]): WebSearchResult[] {
+function dedupeSearchResults<T extends { url: string }>(results: T[]): T[] {
   const seen = new Set<string>();
   return results.filter((result) => {
     if (seen.has(result.url)) return false;

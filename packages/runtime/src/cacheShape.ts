@@ -1,12 +1,17 @@
 import { createHash } from 'node:crypto';
 import type { ChatMessage, ToolDefinition } from '@nexus/model-gateway';
 
+// 提示词缓存形状描述：用于判断两次模型调用的 system prompt / tool schema 是否稳定
 export interface PromptCacheShape {
   systemHash: string;
+  // systemHash：system prompt 内容的稳定哈希值
   toolsHash: string;
+  // toolsHash：工具 schema 的稳定哈希值
   prefixHash: string;
+  // prefixHash：以上两者拼接后的哈希值，用于快速对比
 }
 
+// 构建一个 PromptCacheShape：提取 system message、工具定义并分别哈希
 export function buildPromptCacheShape(
   messages: Pick<ChatMessage, 'role' | 'content'>[],
   tools: ToolDefinition[],
@@ -23,6 +28,7 @@ export function buildPromptCacheShape(
   };
 }
 
+// 对比两次 PromptCacheShape：返回是否稳定以及变化的原因（system 或 tools）
 export function comparePromptCacheShape(
   previous: PromptCacheShape | undefined,
   next: PromptCacheShape,
@@ -34,10 +40,12 @@ export function comparePromptCacheShape(
   return { stable: reasons.length === 0, reasons };
 }
 
+// 内部工具：计算字符串 sha256 十六进制摘要
 function sha256(value: string): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
+// 内部工具：按属性名排序后序列化对象，保证相同语义得到相同字符串
 function stableStringify(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;

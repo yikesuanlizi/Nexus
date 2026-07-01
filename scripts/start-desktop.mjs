@@ -1,0 +1,140 @@
+import { spawn } from 'node:child_process';
+import { createServer as createNetServer } from 'node:net';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+import './link-workspaces.mjs';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const isWindows = process.platform === 'win32';
+const DEFAULT_WEIXIN_BRIDGE_PORT = 18790;
+const children = new Set();
+let stopping = false;
+
+function bin(name) {
+  return path.join(root, 'node_modules', '.bin', isWindows ? `${name}.CMD` : name);
+}
+
+function run(command, args, options = {}) {
+  const child = isWindows && command.toLowerCase().endsWith('.cmd')
+    ? spawn(command, args, {
+        cwd: options.cwd ?? root,
+        stdio: 'inherit',
+        shell: true,
+        env: { ...process.env, ...options.env },
+      })
+    : spawn(command, args, {
+        cwd: options.cwd ?? root,
+        stdio: 'inherit',
+        shell: false,
+        env: { ...process.env, ...options.env },
+      });
+  children.add(child);
+  child.on('exit', (code) => {
+    children.delete(child);
+    if (code && !options.allowExit) {
+      stopChildren(child);
+      process.exit(code);
+    }
+  });
+  return child;
+}
+
+function stopChildren(except) {
+  if (stopping) return;
+  stopping = true;
+  for (const child of children) {
+    if (child !== except && !child.killed) killChildTree(child);
+  }
+}
+
+function killChildTree(child) {
+  if (!child?.pid) return;
+  if (isWindows) {
+    spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
+      stdio: 'ignore',
+      windowsHide: true,
+    }).on('error', () => {
+      try { child.kill(); } catch { /* ignore */ }
+    });
+    return;
+  }
+  try { child.kill(); } catch { /* ignore */ }
+}
+
+async function isPortFree(port) {
+  return new Promise((resolve) => {
+    const server = createNetServer();
+    server.once('error', () => resolve(false));
+    server.once('listening', () => {
+      server.close(() => resolve(true));
+    });
+    server.listen({ host: '127.0.0.1', port });
+  });
+}
+
+async function isPortFreeAnyAddress(port) {
+  return new Promise((resolve) => {
+    const server = createNetServer();
+    server.once('error', () => resolve(false));
+    server.once('listening', () => {
+      server.close(() => resolve(true));
+    });
+    server.listen(port);
+  });
+}
+
+async function chooseWeixinBridgePort() {
+  const explicit = process.env.NEXUS_WEIXIN_BRIDGE_PORT;
+  const preferred = Number(explicit || DEFAULT_WEIXIN_BRIDGE_PORT);
+  if (!Number.isInteger(preferred) || preferred <= 0) return DEFAULT_WEIXIN_BRIDGE_PORT;
+  if (await isPortFree(preferred)) return preferred;
+  if (explicit) return preferred;
+  for (let port = DEFAULT_WEIXIN_BRIDGE_PORT + 1; port < DEFAULT_WEIXIN_BRIDGE_PORT + 40; port += 1) {
+    if (await isPortFree(port)) {
+      console.warn(`[desktop] Weixin bridge port ${preferred} is occupied; using ${port} for this Nexus desktop session.`);
+      return port;
+    }
+  }
+  return preferred;
+}
+
+const build = run(bin('tsc'), ['-b'], { allowExit: true });
+build.on('exit', async (code) => {
+  if (code) process.exit(code);
+  const apiPort = process.env.NEXUS_API_PORT ?? '4127';
+  if (!await isPortFreeAnyAddress(Number(apiPort))) {
+    console.error(`[api] Port ${apiPort} is already in use. Nexus may already be running.`);
+    console.error(`[api] Stop the existing Nexus process first, or start with NEXUS_API_PORT=<free-port>.`);
+    process.exit(1);
+  }
+  const logDir = path.join(root, '.nexus', 'logs');
+  const weixinBridgePort = await chooseWeixinBridgePort();
+  const weixinBridgeUrl = `http://127.0.0.1:${weixinBridgePort}/api/v1/admin/rpc`;
+
+  const api = run('node', ['apps/api/dist/server.js'], {
+    env: {
+      NEXUS_API_PORT: apiPort,
+      NEXUS_WEIXIN_BRIDGE_PORT: String(weixinBridgePort),
+      NEXUS_WEIXIN_BRIDGE_URL: weixinBridgeUrl,
+      NEXUS_LOG_DIR: process.env.NEXUS_LOG_DIR ?? logDir,
+    },
+  });
+  const weixinBridge = run('node', ['apps/desktop/bridge/weixin-bridge.mjs'], {
+    env: {
+      NEXUS_API_URL: `http://127.0.0.1:${apiPort}`,
+      NEXUS_WEIXIN_BRIDGE_PORT: String(weixinBridgePort),
+      NEXUS_LOG_DIR: process.env.NEXUS_LOG_DIR ?? logDir,
+    },
+  });
+  const desktopUi = run(bin('vite'), ['--host', '127.0.0.1', '--port', '5178'], {
+    cwd: path.join(root, 'apps', 'desktop'),
+    env: { FORCE_COLOR: '1' },
+  });
+
+  const stop = () => {
+    stopChildren();
+  };
+
+  process.on('SIGINT', stop);
+  process.on('SIGTERM', stop);
+});

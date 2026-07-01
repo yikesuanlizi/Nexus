@@ -1,3 +1,4 @@
+// 引入类型与工具函数
 import {
   ModelConfig,
   type ChatCompletionRequest,
@@ -17,17 +18,21 @@ import {
   resolveBaseUrl,
   protocolFor,
 } from './types.js';
+// 引入 provider 注册表与 API key 解析
 import { getProvider, resolveApiKey } from './providers.js';
 
 /** Core model gateway — unified interface over OpenAI-compatible + Anthropic APIs. */
+// 核心模型网关：在 OpenAI 兼容协议和 Anthropic API 之上统一成一个对外接口
+// 模型网关核心：把 OpenAI 兼容与 Anthropic 协议统一成一个接口
 export class ModelGateway {
   private config: ModelConfig;
   private baseUrl: string;
   private protocol: 'openai' | 'anthropic';
   private cacheStrategy: CacheStrategy;
 
+  // 构造时自动解析 baseURL、API key、协议、缓存策略
   constructor(config: ModelConfig) {
-    // Resolve provider entry for auto-config
+    // 解析 provider 条目
     const providerEntry = getProvider(config.provider);
     const resolvedBaseUrl = config.baseUrl || providerEntry?.baseUrl || resolveBaseUrl(config);
     const resolvedApiKey = resolveApiKey(config.provider, config.apiKey);
@@ -41,6 +46,8 @@ export class ModelGateway {
   // ─── Public API ───────────────────────────────────────────────────────────
 
   /** Non-streaming chat completion. Works identically for both protocols. */
+  // 非流式对话补全：两种协议调用方使用方式完全一致
+  // 非流式对话补全：按协议自动路由到 openaiChat / anthropicChat
   async chat(
     req: Omit<ChatCompletionRequest, 'model' | 'stream'>,
     options?: ModelRequestOptions,
@@ -52,6 +59,8 @@ export class ModelGateway {
   }
 
   /** Streaming chat completion — unified StreamEvent for both protocols. */
+  // 流式对话补全：对两种协议统一产出 StreamEvent
+  // 流式对话补全：统一输出 StreamEvent，调用方无需感知协议差异
   async *chatStream(
     req: Omit<ChatCompletionRequest, 'model' | 'stream'>,
     options?: ModelRequestOptions,
@@ -64,6 +73,8 @@ export class ModelGateway {
   }
 
   /** Test connectivity. */
+  // 连通性测试：探测远端是否可达，并列出可用模型
+  // 健康检查：探测远端可达性并列出可用模型
   async healthCheck(): Promise<{ ok: boolean; models?: string[]; error?: string }> {
     try {
       const url = this.protocol === 'anthropic'
@@ -71,7 +82,7 @@ export class ModelGateway {
         : this.baseUrl.replace(/\/v1\/?$/, '') + '/v1/models';
       const headers: Record<string, string> = this.baseHeaders();
       if (this.protocol === 'anthropic') {
-        // Minimal ping — Anthropic needs a real request, just HEAD is enough
+        // Anthropic 真实探测需要带 body，这里只做 HEAD 探活
         const resp = await fetch(url, { method: 'HEAD', headers, signal: AbortSignal.timeout(5000) });
         return { ok: resp.status < 500, models: [] };
       }
@@ -86,6 +97,8 @@ export class ModelGateway {
 
   // ─── OpenAI path ──────────────────────────────────────────────────────────
 
+  // OpenAI 非流式补全：补齐 model/max_tokens/temperature/top_p/reasoning_effort 后请求
+// 英文说明：在填充默认模型参数后，调用 fetch 并把异构 usage 归一化
   private async openaiChat(
     req: Omit<ChatCompletionRequest, 'model' | 'stream'>,
     options?: ModelRequestOptions,
@@ -104,6 +117,7 @@ export class ModelGateway {
     return { ...json, usage: normalizeUsage(json.usage, this.cacheStrategy) };
   }
 
+  // OpenAI 流式补全：把 SSE 流解析为统一 StreamEvent
   private async *openaiChatStream(
     req: Omit<ChatCompletionRequest, 'model' | 'stream'>,
     options?: ModelRequestOptions,
@@ -126,13 +140,14 @@ export class ModelGateway {
     yield* parseOpenAIStream(reader, this.cacheStrategy);
   }
 
+  // OpenAI POST /chat/completions：带超时与错误文本截断
   private async openaiFetch(body: ChatCompletionRequest, options?: ModelRequestOptions): Promise<Response> {
     const url = `${this.baseUrl}/chat/completions`;
     const resp = await this.fetchWithRetry(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...this.baseHeaders() },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(this.config.timeoutMs ?? 120_000),
+      signal: withTimeoutSignal(options?.signal, this.config.timeoutMs ?? 120_000),
     }, options);
     if (!resp.ok) {
       const text = await resp.text().catch(() => '');
@@ -143,6 +158,7 @@ export class ModelGateway {
 
   // ─── Anthropic path ───────────────────────────────────────────────────────
 
+  // Anthropic 非流式补全：先把请求体转成 Anthropic 格式
   private async anthropicChat(
     req: Omit<ChatCompletionRequest, 'model' | 'stream'>,
     options?: ModelRequestOptions,
@@ -153,6 +169,7 @@ export class ModelGateway {
     return convertAnthropicResponse(anthroResp, this.config.model, this.cacheStrategy);
   }
 
+  // Anthropic 流式补全
   private async *anthropicChatStream(
     req: Omit<ChatCompletionRequest, 'model' | 'stream'>,
     options?: ModelRequestOptions,
@@ -170,6 +187,7 @@ export class ModelGateway {
     yield* parseAnthropicStream(reader, this.cacheStrategy);
   }
 
+  // Anthropic POST /messages：需要带 anthropic-version header
   private async anthropicFetch(body: AnthropicMessageRequest, options?: ModelRequestOptions): Promise<Response> {
     const url = `${this.baseUrl}/messages`;
     const resp = await this.fetchWithRetry(url, {
@@ -180,7 +198,7 @@ export class ModelGateway {
         ...this.baseHeaders(),
       },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(this.config.timeoutMs ?? 120_000),
+      signal: withTimeoutSignal(options?.signal, this.config.timeoutMs ?? 120_000),
     }, options);
     if (!resp.ok) {
       const text = await resp.text().catch(() => '');
@@ -189,6 +207,7 @@ export class ModelGateway {
     return resp;
   }
 
+  // 带指数退避的重试 fetch：默认 3 次，最大退避 3 秒
   private async fetchWithRetry(url: string, init: RequestInit, options?: ModelRequestOptions): Promise<Response> {
     const policy = {
       maxAttempts: Math.max(1, Math.floor(this.config.retry?.maxAttempts ?? 3)),
@@ -224,6 +243,7 @@ export class ModelGateway {
 
   // ─── Headers ──────────────────────────────────────────────────────────────
 
+  // 构造基础请求头：Anthropic 用 x-api-key，OpenAI 用 Bearer
   private baseHeaders(): Record<string, string> {
     const h: Record<string, string> = { ...this.config.extraHeaders };
     if (this.protocol === 'anthropic') {
@@ -235,16 +255,32 @@ export class ModelGateway {
   }
 }
 
+// 合并「父级 signal」与「超时 signal」，任一触发即中断
+function withTimeoutSignal(parent: AbortSignal | undefined, timeoutMs: number): AbortSignal {
+  const timeout = AbortSignal.timeout(timeoutMs);
+  if (!parent) return timeout;
+  if (parent.aborted) return parent;
+  const controller = new AbortController();
+  const abortFromParent = () => controller.abort(parent.reason);
+  const abortFromTimeout = () => controller.abort(timeout.reason);
+  parent.addEventListener('abort', abortFromParent, { once: true });
+  timeout.addEventListener('abort', abortFromTimeout, { once: true });
+  return controller.signal;
+}
+
+// 可重试 HTTP 错误包装：带原始状态码
 class HttpRetryError extends Error {
   constructor(readonly status: number) {
     super(`retryable HTTP ${status}`);
   }
 }
 
+// 是否为可重试状态码：408/409/425/429/5xx
 function isRetryableStatus(status: number): boolean {
   return status === 408 || status === 409 || status === 425 || status === 429 || status >= 500;
 }
 
+// 是否为可重试的 fetch 错误：401/403/400 不重试，其它大多可重试
 function isRetryableFetchError(error: unknown): boolean {
   if (error instanceof DOMException && error.name === 'TimeoutError') return true;
   if (error instanceof Error) {
@@ -253,16 +289,19 @@ function isRetryableFetchError(error: unknown): boolean {
   return true;
 }
 
+// 指数退避：initial * 2^(attempt-1)，但不超过 maxDelayMs
 function backoffDelay(attempt: number, initialDelayMs: number, maxDelayMs: number): number {
   if (initialDelayMs <= 0) return 0;
   return Math.min(maxDelayMs, initialDelayMs * 2 ** Math.max(0, attempt - 1));
 }
 
+// 简单 sleep 工具
 function sleep(ms: number): Promise<void> {
   if (ms <= 0) return Promise.resolve();
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// 估算 chat 消息的 token 数：粗略按 4 字符/token + 每条消息 3 token + 图片 85 token
 export function estimateChatTokens(messages: ChatMessage[]): TokenEstimate {
   let charCount = 0;
   let imageCount = 0;
@@ -289,6 +328,7 @@ export function estimateChatTokens(messages: ChatMessage[]): TokenEstimate {
   };
 }
 
+// 解析缓存策略：auto 时按 provider/model 推断
 export function resolveCacheStrategy(
   config: Pick<ModelConfig, 'provider' | 'model' | 'cacheStrategy'>,
   protocol: 'openai' | 'anthropic' = protocolFor(config.provider),
@@ -301,6 +341,7 @@ export function resolveCacheStrategy(
   return 'openai-compatible';
 }
 
+// 把各 provider 异构的 usage 字段归一化：识别 deepseek/anthropic/openai 三种缓存字段
 export function normalizeUsage(raw: unknown, cacheStrategy?: CacheStrategy): NormalizedUsage | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
   const usage = raw as Record<string, unknown>;
@@ -327,6 +368,7 @@ export function normalizeUsage(raw: unknown, cacheStrategy?: CacheStrategy): Nor
   };
 }
 
+// 仅基于 usage 字段推断缓存策略（未显式指定时使用）
 function inferCacheStrategyFromUsage(usage: Record<string, unknown>): CacheStrategy | undefined {
   if (numberField(usage.prompt_cache_hit_tokens) || numberField(usage.prompt_cache_miss_tokens)) return 'deepseek-native';
   if (numberField(usage.cache_read_input_tokens)) return 'anthropic-cache-control';
@@ -337,12 +379,14 @@ function inferCacheStrategyFromUsage(usage: Record<string, unknown>): CacheStrat
   return undefined;
 }
 
+// 数字字段安全读取：非有限数返回 0
 function numberField(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
 }
 
 // ─── OpenAI → Anthropic Conversion ──────────────────────────────────────────
 
+// 把 OpenAI 形态的请求转成 Anthropic 形态
 function convertToAnthropic(
   req: Omit<ChatCompletionRequest, 'model' | 'stream'>,
   config: ModelConfig,
@@ -351,7 +395,7 @@ function convertToAnthropic(
   const messages = req.messages;
   let system: AnthropicMessageRequest['system'];
 
-  // Extract system message
+  // 抽离 system 消息：Anthropic 用顶层 system 字段
   const systemMsg = messages.find((m) => m.role === 'system');
   if (systemMsg) {
     const systemText = typeof systemMsg.content === 'string'
@@ -364,14 +408,14 @@ function convertToAnthropic(
     }
   }
 
-  // Convert remaining messages
+  // 转换其余消息
   const anthroMessages: AnthropicMessageRequest['messages'] = [];
   for (const msg of messages) {
     if (msg.role === 'system') continue;
 
     const blocks: AnthropicContentBlock[] = [];
 
-    // Text content
+    // 文本内容
     if (typeof msg.content === 'string') {
       blocks.push({ type: 'text', text: msg.content });
     } else if (Array.isArray(msg.content)) {
@@ -379,6 +423,7 @@ function convertToAnthropic(
         if (part.type === 'text') {
           blocks.push({ type: 'text', text: part.text });
         } else if (part.type === 'image_url') {
+          // Anthropic 不支持在线图片，降级为占位文本
           blocks.push({
             type: 'text',
             text: `[Image: ${part.image_url.url}]`,
@@ -387,13 +432,14 @@ function convertToAnthropic(
       }
     }
 
-    // Tool calls (assistant message)
+    // 工具调用（assistant 消息）
     if (msg.tool_calls && msg.tool_calls.length > 0) {
       for (const tc of msg.tool_calls) {
         let input: Record<string, unknown>;
         try {
           input = JSON.parse(tc.function.arguments);
         } catch {
+          // 解析失败：原样包到 _raw
           input = { _raw: tc.function.arguments };
         }
         blocks.push({
@@ -405,7 +451,7 @@ function convertToAnthropic(
       }
     }
 
-    // Tool result (tool message)
+    // 工具结果（tool 消息）
     if (msg.role === 'tool' && msg.tool_call_id) {
       const text = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
       blocks.push({
@@ -417,10 +463,10 @@ function convertToAnthropic(
 
     if (blocks.length === 0) continue;
 
-    // Normalize role — Anthropic only allows 'user' | 'assistant'
+    // 归一化角色：Anthropic 只允许 user/assistant，tool 归到 user
     const role: 'user' | 'assistant' = msg.role === 'tool' ? 'user' : (msg.role as 'user' | 'assistant');
 
-    // Merge consecutive same-role messages
+    // 合并相邻同角色消息
     const last = anthroMessages[anthroMessages.length - 1];
     if (last && last.role === role) {
       last.content.push(...blocks);
@@ -429,11 +475,12 @@ function convertToAnthropic(
     }
   }
 
+  // 给最后一条 user 文本块打 cache_control 标记
   if (cacheStrategy === 'anthropic-cache-control') {
     markLastUserTextBlockCacheable(anthroMessages);
   }
 
-  // Convert tools
+  // 转换 tools 定义
   const tools: AnthropicMessageRequest['tools'] = req.tools?.map((t) => ({
     name: t.function.name,
     description: t.function.description,
@@ -456,6 +503,7 @@ function convertToAnthropic(
   };
 }
 
+// 找到最后一条 user 消息的最后一个 text 块，标记为可缓存
 function markLastUserTextBlockCacheable(messages: AnthropicMessageRequest['messages']): void {
   for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex--) {
     const message = messages[messageIndex];
@@ -470,6 +518,7 @@ function markLastUserTextBlockCacheable(messages: AnthropicMessageRequest['messa
 }
 
 // ─── Anthropic → OpenAI Response Conversion ─────────────────────────────────
+// 把 Anthropic 响应转成统一 ChatCompletionResponse
 function convertAnthropicResponse(
   anthroResp: AnthropicMessageResponse,
   model: string,
@@ -506,6 +555,7 @@ function convertAnthropicResponse(
           content: text || '',
           tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
         },
+        // stop_reason: tool_use → tool_calls，其它都映射为 stop
         finish_reason: anthroResp.stop_reason === 'tool_use' ? 'tool_calls' : 'stop',
       },
     ],
@@ -515,12 +565,14 @@ function convertAnthropicResponse(
 
 // ─── Stream Parsers ─────────────────────────────────────────────────────────
 
+// 解析 OpenAI 风格 SSE 流：data: <json>，以 [DONE] 结尾
 async function* parseOpenAIStream(
   reader: ReadableStreamDefaultReader<Uint8Array>,
   cacheStrategy: CacheStrategy,
 ): AsyncGenerator<StreamEvent> {
   const decoder = new TextDecoder();
   let buffer = '';
+  // 累积同一工具调用的多个 delta
   const toolCalls: Map<number, { id: string; name: string; args: string }> = new Map();
 
   try {
@@ -553,13 +605,14 @@ async function* parseOpenAIStream(
               }
             }
             if (choice.finish_reason) {
+              // 把累积的工具调用 flush 出来
               for (const [, tc] of toolCalls) {
                 if (tc.name) yield { type: 'tool_call_end', id: tc.id, name: tc.name, arguments: tc.args };
               }
               yield { type: 'done', usage: normalizeUsage(chunk.usage, cacheStrategy) };
             }
           }
-        } catch { /* skip malformed */ }
+        } catch { /* 跳过非法 JSON */ }
       }
     }
   } catch (err) {
@@ -569,6 +622,7 @@ async function* parseOpenAIStream(
   }
 }
 
+// 解析 Anthropic 风格 SSE 流：先 event: <type> 后 data: <json>
 async function* parseAnthropicStream(
   reader: ReadableStreamDefaultReader<Uint8Array>,
   cacheStrategy: CacheStrategy,
@@ -577,6 +631,7 @@ async function* parseAnthropicStream(
   let buffer = '';
   const toolCalls: Map<number, { id: string; name: string; args: string }> = new Map();
   let currentToolIndex = 0;
+  // 用 message_start / message_delta 累积 usage
   let usage: {
     input_tokens: number;
     output_tokens: number;
@@ -596,7 +651,7 @@ async function* parseAnthropicStream(
         const trimmed = line.trim();
         if (!trimmed) continue;
 
-        // Anthropic SSE: "event: <type>" then "data: <json>"
+        // Anthropic SSE：先 "event: <type>" 后 "data: <json>"
         if (trimmed.startsWith('event: ')) continue;
 
         if (!trimmed.startsWith('data: ')) continue;
@@ -607,10 +662,12 @@ async function* parseAnthropicStream(
 
           switch (event.type) {
             case 'message_start':
+              // 首次拿到完整 usage
               if (event.message?.usage) usage = event.message.usage;
               break;
 
             case 'content_block_start': {
+              // 工具调用开始
               const block = event.content_block;
               if (block?.type === 'tool_use') {
                 const idx = currentToolIndex++;
@@ -621,13 +678,14 @@ async function* parseAnthropicStream(
             }
 
             case 'content_block_delta': {
+              // 文本或工具参数增量
               const delta = event.delta;
               if (!delta) break;
               if (delta.type === 'text_delta' && delta.text) {
                 yield { type: 'delta', content: delta.text };
               }
               if (delta.type === 'input_json_delta' && delta.partial_json) {
-                // Find the current tool call being built
+                // 拼到当前正在构建的工具调用
                 const entry = toolCalls.get(currentToolIndex - 1);
                 if (entry) {
                   entry.args += delta.partial_json;
@@ -638,17 +696,18 @@ async function* parseAnthropicStream(
             }
 
             case 'content_block_stop':
-              // end of one content block
+              // 单个内容块结束（无需处理）
               break;
 
             case 'message_delta':
+              // 用最终 usage 覆盖之前的
               if (event.usage) {
                 usage = { ...(usage ?? { input_tokens: 0, output_tokens: 0 }), ...event.usage };
               }
               break;
 
             case 'message_stop':
-              // Flush tool calls
+              // flush 工具调用并发出 done
               for (const [, tc] of toolCalls) {
                 if (tc.name) {
                   yield { type: 'tool_call_end', id: tc.id, name: tc.name, arguments: tc.args };
@@ -661,9 +720,10 @@ async function* parseAnthropicStream(
               break;
 
             case 'ping':
+              // 心跳
               break;
           }
-        } catch { /* skip malformed */ }
+        } catch { /* 跳过非法 JSON */ }
       }
     }
   } catch (err) {

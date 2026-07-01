@@ -1,12 +1,18 @@
+// 通用下拉选择组件：支持分组、标题/详细描述、点击外部关闭
+// Generic dropdown select: supports grouping, label/detail, click-outside close
+
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { Icon } from './Icon.js';
 
 export interface DropdownOption<T extends string = string> {
+  current?: boolean;
   detail?: string;
   group?: string;
   label: string;
   value: T;
 }
+// 单个下拉选项：value 为值，label 为显示文本，detail 是辅助描述，group 用于分组，current 标记"当前配置"
+// Single dropdown option: value is the value, label is display text, detail is auxiliary description, group for grouping, current marks "current config"
 
 export function DropdownSelect<T extends string>({
   ariaLabel,
@@ -28,6 +34,8 @@ export function DropdownSelect<T extends string>({
   const ref = useRef<HTMLDivElement>(null);
   const selected = options.find((option) => option.value === value) ?? options[0];
 
+  // 点击组件外部时关闭下拉（避免事件冒泡被截获导致无法关闭）
+  // Closes the dropdown on click outside (prevents event capture from blocking close)
   useEffect(() => {
     if (!open) return;
     function close(event: PointerEvent) {
@@ -61,7 +69,7 @@ export function DropdownSelect<T extends string>({
                 {showGroup ? <div className="dropdownGroup">{option.group}</div> : null}
                 <button
                   aria-selected={option.value === value}
-                  className={option.value === value ? 'dropdownOption active' : 'dropdownOption'}
+                  className={['dropdownOption', option.value === value ? 'active' : '', option.current ? 'current' : ''].filter(Boolean).join(' ')}
                   onClick={() => {
                     onChange(option.value);
                     setOpen(false);

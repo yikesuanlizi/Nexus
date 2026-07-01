@@ -1,4 +1,5 @@
 /** Supported locales. */
+// 支持的语言环境
 export type Locale = 'zh' | 'en';
 
 export const ALL_LOCALES: Locale[] = ['zh', 'en'];
@@ -175,6 +176,7 @@ const TABLES: Record<Locale, Record<string, string>> = {
 export type UiKey = keyof typeof zh;
 
 // ─── I18n API ───────────────────────────────────────────────────────────────
+// 国际化（I18n）API 接口
 export interface I18n {
   locale: Locale;
   t(key: UiKey, params?: Record<string, string | number>): string;
@@ -195,6 +197,7 @@ export function createI18n(locale: Locale): I18n {
 }
 
 /** System prompt key — zh uses 'agent.system_prompt' (with "用中文回答"), en uses 'agent.system_prompt_en'. */
+// 系统提示词键：中文环境使用 'agent.system_prompt'（含"用中文回答"），英文环境使用 'agent.system_prompt_en'
 export function systemPromptKey(locale: Locale): 'agent.system_prompt' | 'agent.system_prompt_en' {
   return locale === 'zh' ? 'agent.system_prompt' : 'agent.system_prompt_en';
 }

@@ -1,5 +1,47 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { summarizeToolItem } from './ItemView.js';
+import { ItemView, summarizeToolItem } from './ItemView.js';
+
+const here = dirname(fileURLToPath(import.meta.url));
+
+describe('agent message avatars', () => {
+  it('renders the Nexus robot mood avatar for assistant history and streaming turns', () => {
+    const source = readFileSync(join(here, 'ItemView.tsx'), 'utf-8');
+
+    expect(source).toContain('messageAgentAvatar');
+    expect(source).toContain('<RobotMoodIcon variant={moodVariant} />');
+    expect(source).toContain("text.trim() ? 'working' : 'thinking'");
+  });
+
+  it('renders the working icon inline on the active streaming output line', () => {
+    const source = readFileSync(join(here, 'ItemView.tsx'), 'utf-8');
+    const styles = readFileSync(join(here, '..', 'styles.css'), 'utf-8');
+
+    expect(source).toContain('showStreamingOutputIcon');
+    expect(source).toContain('function StreamingOutputIcon()');
+    expect(source).toContain('streamingOutputIcon');
+    expect(source).toContain('M18 62 L8 66');
+    expect(source).toContain('values="84; 115; 115"');
+    expect(source).toContain('from="0 82 82" to="360 82 82"');
+    expect(source).toContain("item.id === streamingAgentItemId");
+    expect(styles).toContain('.streamingOutputLine');
+    expect(styles).toContain('grid-template-columns: 34px minmax(0, 1fr);');
+  });
+
+  it('renders user messages with the configured user avatar on the right side', () => {
+    const source = readFileSync(join(here, 'ItemView.tsx'), 'utf-8');
+    const styles = readFileSync(join(here, '..', 'styles.css'), 'utf-8');
+
+    expect(source).toContain('messageUserAvatar');
+    expect(source).toContain('<UserAvatar avatarId={userAvatarId} customDataUrl={customUserAvatarDataUrl} size="sm" />');
+    expect(styles).toContain('.messageBlock.user > .messageUserAvatar');
+    expect(styles).toContain('grid-template-columns: minmax(0, 1fr) 38px;');
+  });
+});
 
 describe('tool item summaries', () => {
   it('shows the searched content for search_content calls', () => {

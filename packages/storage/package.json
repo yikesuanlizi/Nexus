@@ -13,7 +13,8 @@
   },
   "dependencies": {
     "@nexus/protocol": "0.1.0",
-    "better-sqlite3": "^11.10.0"
+    "better-sqlite3": "^11.10.0",
+    "pg": "^8.13.1"
   }
 }
 

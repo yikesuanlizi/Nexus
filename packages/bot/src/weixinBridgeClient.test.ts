@@ -42,7 +42,10 @@ describe('WeixinBridgeClient', () => {
       const body = await readBody(req);
       calls.push(String(body.method));
       if (body.method === 'web.login.start') writeJson(res, { ok: true, qrDataUrl: 'data:image/png;base64,qr', sessionKey: 's1' });
-      else if (body.method === 'web.login.wait') writeJson(res, { connected: true, accountId: 'wx_1', sessionKey: 's1' });
+      else if (body.method === 'web.login.wait') {
+        expect(body).toMatchObject({ params: { sessionKey: 's1', timeoutMs: 6_500 } });
+        writeJson(res, { connected: true, accountId: 'wx_1', sessionKey: 's1' });
+      }
       else writeJson(res, { ok: true });
     });
     const client = new WeixinBridgeClient({ rpcUrl, timeoutMs: 5_000 });
@@ -69,5 +72,30 @@ describe('WeixinBridgeClient', () => {
       method: 'web.message.send',
       params: { accountId: 'wx', to: 'friend', text: '你好' },
     });
+  });
+
+  it('throws when the bridge rejects a WeChat send request', async () => {
+    const rpcUrl = await withBridge(async (_req, res) => {
+      writeJson(res, { ok: true, result: { ok: false, message: 'WeChat account is not configured.' } });
+    });
+    const client = new WeixinBridgeClient({ rpcUrl, timeoutMs: 5_000 });
+
+    await expect(client.sendMessage({ accountId: 'missing', to: 'friend', text: '你好' })).rejects.toThrow(
+      'WeChat account is not configured.',
+    );
+  });
+
+  it('reads monitor diagnostics from the bridge', async () => {
+    let payload: Record<string, unknown> | null = null;
+    const rpcUrl = await withBridge(async (req, res) => {
+      payload = await readBody(req);
+      writeJson(res, { monitors: [{ accountId: 'wx', running: true, webhookCount: 1 }] });
+    });
+    const client = new WeixinBridgeClient({ rpcUrl, timeoutMs: 5_000 });
+
+    await expect(client.status()).resolves.toMatchObject({
+      monitors: [{ accountId: 'wx', running: true, webhookCount: 1 }],
+    });
+    expect(payload).toMatchObject({ method: 'channels.status' });
   });
 });

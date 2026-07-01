@@ -1,15 +1,20 @@
+// 引入 zod：用于声明式数据校验，与 types.ts 的 TypeScript 类型一一对应
 import { z } from 'zod';
 
 // ─── Primitives ──────────────────────────────────────────────────────────────
+// 基础 ID schema：threadId/turnId/itemId 都要求非空字符串
 export const threadIdSchema = z.string().min(1);
 export const turnIdSchema = z.string().min(1);
 export const itemIdSchema = z.string().min(1);
 
 // ─── Thread ──────────────────────────────────────────────────────────────────
+// 线程状态枚举
 export const threadStatusSchema = z.enum(['active', 'archived', 'compacted']);
 
+// 线程元信息 schema
 export const threadMetaSchema = z.object({
   threadId: threadIdSchema,
+  tenantId: z.string().optional(),
   title: z.string(),
   workspaceRoot: z.string(),
   status: threadStatusSchema,
@@ -24,9 +29,12 @@ export const threadMetaSchema = z.object({
   agentRole: z.string().nullable().optional(),
 });
 
+// 父子线程派生边状态
 export const threadSpawnEdgeStatusSchema = z.enum(['open', 'closed']);
 
+// 父子线程派生边 schema
 export const threadSpawnEdgeSchema = z.object({
+  tenantId: z.string().optional(),
   parentThreadId: threadIdSchema,
   childThreadId: threadIdSchema,
   status: threadSpawnEdgeStatusSchema,
@@ -35,14 +43,17 @@ export const threadSpawnEdgeSchema = z.object({
 });
 
 // ─── Turn ────────────────────────────────────────────────────────────────────
+// 回合状态枚举
 export const turnStatusSchema = z.enum(['running', 'completed', 'failed', 'cancelled', 'interrupted']);
 
+// 纯文本输入 schema
 export const textInputSchema = z.object({
   type: z.literal('text'),
   text: z.string(),
   modeInstruction: z.string().optional(),
 });
 
+// 多模态输入的部件 schema（按 type 判别）
 export const inputPartSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('text'), text: z.string() }),
   z.object({
@@ -55,17 +66,20 @@ export const inputPartSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('image_path'), path: z.string() }),
 ]);
 
+// 多模态输入 schema
 export const multimodalInputSchema = z.object({
   type: z.literal('multimodal'),
   parts: z.array(inputPartSchema),
   modeInstruction: z.string().optional(),
 });
 
+// 用户输入总 schema：text / multimodal 二选一
 export const userInputSchema = z.discriminatedUnion('type', [
   textInputSchema,
   multimodalInputSchema,
 ]);
 
+// 回合元信息 schema
 export const turnMetaSchema = z.object({
   turnId: turnIdSchema,
   threadId: threadIdSchema,
@@ -77,10 +91,14 @@ export const turnMetaSchema = z.object({
 });
 
 // ─── Items ───────────────────────────────────────────────────────────────────
+// 命令状态枚举
 export const commandStatusSchema = z.enum(['in_progress', 'completed', 'failed']);
+// 补丁应用状态
 export const patchApplyStatusSchema = z.enum(['completed', 'failed']);
+// 补丁变更类型
 export const patchChangeKindSchema = z.enum(['add', 'delete', 'update']);
 
+// 通用工件引用 schema
 export const artifactRefSchema = z.object({
   kind: z.enum(['file_segment', 'tool_result', 'mcp_result']),
   path: z.string().optional(),
@@ -91,6 +109,7 @@ export const artifactRefSchema = z.object({
   sourceToolCallId: itemIdSchema.optional(),
 });
 
+// 文件变更 hunk schema
 export const fileChangeHunkSchema = z.object({
   path: z.string(),
   startLine: z.number().int().min(1).optional(),
@@ -100,6 +119,7 @@ export const fileChangeHunkSchema = z.object({
   summary: z.string().optional(),
 });
 
+// 文件更新变更单元 schema
 export const fileUpdateChangeSchema = z.object({
   path: z.string(),
   kind: patchChangeKindSchema,
@@ -109,11 +129,13 @@ export const fileUpdateChangeSchema = z.object({
   summary: z.string().optional(),
 });
 
+// 待办项 schema
 export const todoItemEntrySchema = z.object({
   text: z.string(),
   completed: z.boolean(),
 });
 
+// 智能体消息条目 schema
 export const agentMessageItemSchema = z.object({
   id: itemIdSchema,
   type: z.literal('agent_message'),
@@ -123,6 +145,7 @@ export const agentMessageItemSchema = z.object({
   timestamp: z.string().optional(),
 });
 
+// 用户消息条目 schema
 export const userMessageItemSchema = z.object({
   id: itemIdSchema,
   type: z.literal('user_message'),
@@ -131,6 +154,7 @@ export const userMessageItemSchema = z.object({
   timestamp: z.string().optional(),
 });
 
+// 推理条目 schema
 export const reasoningItemSchema = z.object({
   id: itemIdSchema,
   type: z.literal('reasoning'),
@@ -139,6 +163,7 @@ export const reasoningItemSchema = z.object({
   timestamp: z.string().optional(),
 });
 
+// 命令执行条目 schema
 export const commandExecutionItemSchema = z.object({
   id: itemIdSchema,
   type: z.literal('command_execution'),
@@ -150,6 +175,7 @@ export const commandExecutionItemSchema = z.object({
   timestamp: z.string().optional(),
 });
 
+// 文件变更条目 schema
 export const fileChangeItemSchema = z.object({
   id: itemIdSchema,
   type: z.literal('file_change'),
@@ -161,6 +187,54 @@ export const fileChangeItemSchema = z.object({
   timestamp: z.string().optional(),
 });
 
+// 工作流检查点条目 schema
+export const workflowCheckpointItemSchema = z.object({
+  id: itemIdSchema,
+  type: z.literal('workflow_checkpoint'),
+  turnId: turnIdSchema,
+  turnCount: z.number().int().min(0),
+  workflow: z.unknown(),
+  timestamp: z.string().optional(),
+});
+
+// 工程级检查点里的单文件快照 schema
+export const projectFileCheckpointSchema = z.object({
+  path: z.string(),
+  kind: patchChangeKindSchema,
+  beforeContent: z.string().nullable(),
+  afterContent: z.string().nullable(),
+  beforeHash: z.string().nullable(),
+  afterHash: z.string().nullable(),
+});
+
+// 工程级检查点条目 schema
+export const projectCheckpointItemSchema = z.object({
+  id: itemIdSchema,
+  type: z.literal('project_checkpoint'),
+  turnId: turnIdSchema,
+  turnCount: z.number().int().min(0),
+  workspaceRoot: z.string(),
+  files: z.array(projectFileCheckpointSchema),
+  timestamp: z.string().optional(),
+});
+
+// 回滚冲突条目 schema
+export const rollbackConflictItemSchema = z.object({
+  id: itemIdSchema,
+  type: z.literal('rollback_conflict'),
+  turnId: turnIdSchema,
+  turnCount: z.number().int().min(0),
+  message: z.string(),
+  conflicts: z.array(z.object({
+    path: z.string(),
+    reason: z.string(),
+    expectedHash: z.string().nullable().optional(),
+    actualHash: z.string().nullable().optional(),
+  })),
+  timestamp: z.string().optional(),
+});
+
+// 上下文压缩摘要 schema
 export const compactionSummarySchema = z.object({
   userGoal: z.string(),
   completedWork: z.string(),
@@ -173,8 +247,10 @@ export const compactionSummarySchema = z.object({
   raw: z.string(),
 });
 
+// 压缩策略 schema
 export const compactionStrategySchema = z.enum(['llm', 'local']);
 
+// 已压缩区间 schema
 export const compactedRangeSchema = z.object({
   compactedTurnIds: z.array(turnIdSchema),
   retainedTurnIds: z.array(turnIdSchema),
@@ -187,6 +263,7 @@ export const compactedRangeSchema = z.object({
   strategy: compactionStrategySchema,
 });
 
+// 上下文压缩事件条目 schema
 export const contextCompactionItemSchema = z.object({
   id: itemIdSchema,
   type: z.literal('context_compaction'),
@@ -202,6 +279,7 @@ export const contextCompactionItemSchema = z.object({
   timestamp: z.string().optional(),
 });
 
+// 通用工具调用条目 schema
 export const toolCallItemSchema = z.object({
   id: itemIdSchema,
   type: z.literal('tool_call'),
@@ -214,11 +292,12 @@ export const toolCallItemSchema = z.object({
   timestamp: z.string().optional(),
 });
 
+// 协作工具调用条目 schema
 export const collabToolCallItemSchema = z.object({
   id: itemIdSchema,
   type: z.literal('collab_tool_call'),
   turnId: turnIdSchema,
-  tool: z.enum(['spawn_agent', 'send_input', 'resume_agent', 'wait', 'close_agent']),
+  tool: z.enum(['spawn_agent', 'send_input', 'send_message', 'followup_task', 'resume_agent', 'wait', 'wait_agent', 'list_agents', 'close_agent']),
   status: commandStatusSchema,
   senderThreadId: threadIdSchema,
   receiverThreadId: threadIdSchema.optional(),
@@ -230,6 +309,7 @@ export const collabToolCallItemSchema = z.object({
   timestamp: z.string().optional(),
 });
 
+// MCP 工具调用条目 schema
 export const mcpToolCallItemSchema = z.object({
   id: itemIdSchema,
   type: z.literal('mcp_tool_call'),
@@ -248,6 +328,7 @@ export const mcpToolCallItemSchema = z.object({
   timestamp: z.string().optional(),
 });
 
+// Web 搜索条目 schema
 export const webSearchItemSchema = z.object({
   id: itemIdSchema,
   type: z.literal('web_search'),
@@ -256,6 +337,7 @@ export const webSearchItemSchema = z.object({
   timestamp: z.string().optional(),
 });
 
+// 待办清单条目 schema
 export const todoListItemSchema = z.object({
   id: itemIdSchema,
   type: z.literal('todo_list'),
@@ -264,20 +346,27 @@ export const todoListItemSchema = z.object({
   timestamp: z.string().optional(),
 });
 
+// 错误条目 schema
 export const errorItemSchema = z.object({
   id: itemIdSchema,
   type: z.literal('error'),
   turnId: turnIdSchema,
   message: z.string(),
+  info: z.lazy(() => nexusErrorInfoSchema).optional(),
+  recoverable: z.boolean().optional(),
   timestamp: z.string().optional(),
 });
 
+// 条目总 schema：按 type 判别
 export const threadItemSchema = z.discriminatedUnion('type', [
   userMessageItemSchema,
   agentMessageItemSchema,
   reasoningItemSchema,
   commandExecutionItemSchema,
   fileChangeItemSchema,
+  workflowCheckpointItemSchema,
+  projectCheckpointItemSchema,
+  rollbackConflictItemSchema,
   contextCompactionItemSchema,
   toolCallItemSchema,
   collabToolCallItemSchema,
@@ -288,6 +377,29 @@ export const threadItemSchema = z.discriminatedUnion('type', [
 ]);
 
 // ─── Events ──────────────────────────────────────────────────────────────────
+// Nexus 错误信息 schema
+export const nexusErrorInfoSchema = z.object({
+  kind: z.enum([
+    'ContextWindowExceeded',
+    'UsageLimitExceeded',
+    'ServerOverloaded',
+    'HttpConnectionFailed',
+    'ResponseStreamConnectionFailed',
+    'InternalServerError',
+    'Unauthorized',
+    'BadRequest',
+    'SandboxError',
+    'ResponseStreamDisconnected',
+    'ResponseTooManyFailedAttempts',
+    'ActiveTurnNotSteerable',
+    'ThreadRollbackFailed',
+    'Other',
+  ]),
+  httpStatusCode: z.number().int().optional(),
+  turnKind: z.string().optional(),
+});
+
+// 单回合 token 用量 schema
 export const usageSchema = z.object({
   inputTokens: z.number().int().min(0),
   cachedInputTokens: z.number().int().min(0),
@@ -296,12 +408,14 @@ export const usageSchema = z.object({
   cacheStrategy: z.enum(['deepseek-native', 'openai-compatible', 'anthropic-cache-control', 'mixed']).optional(),
 });
 
+// 单回合用量记录 schema
 export const turnUsageSchema = z.object({
   turnId: turnIdSchema,
   usage: usageSchema,
   timestamp: z.string(),
 });
 
+// 线程级累计用量 schema
 export const threadUsageSchema = z.object({
   threadId: threadIdSchema,
   total: usageSchema,
@@ -310,17 +424,20 @@ export const threadUsageSchema = z.object({
   includedThreadIds: z.array(threadIdSchema).optional(),
 });
 
+// 事件共有的基础字段
 const baseThreadEvent = z.object({
   threadId: threadIdSchema,
   turnId: turnIdSchema.optional(),
 });
 
+// 线程已创建事件 schema
 export const threadStartedEventSchema = z.object({
   type: z.literal('thread.started'),
   threadId: threadIdSchema,
   thread: threadMetaSchema,
 });
 
+// 回合开始事件 schema
 export const turnStartedEventSchema = z.object({
   type: z.literal('turn.started'),
   threadId: threadIdSchema,
@@ -328,6 +445,7 @@ export const turnStartedEventSchema = z.object({
   turnIndex: z.number().int().min(0),
 });
 
+// 回合完成事件 schema
 export const turnCompletedEventSchema = z.object({
   type: z.literal('turn.completed'),
   threadId: threadIdSchema,
@@ -336,13 +454,44 @@ export const turnCompletedEventSchema = z.object({
   status: z.enum(['completed', 'interrupted']).optional(),
 });
 
+// 回合失败事件 schema
 export const turnFailedEventSchema = z.object({
   type: z.literal('turn.failed'),
   threadId: threadIdSchema,
   turnId: turnIdSchema,
-  error: z.object({ message: z.string() }),
+  error: z.object({ message: z.string(), info: nexusErrorInfoSchema.optional() }),
 });
 
+// 警告事件 schema
+export const warningEventSchema = z.object({
+  type: z.literal('warning'),
+  threadId: threadIdSchema.optional(),
+  turnId: turnIdSchema.optional(),
+  message: z.string(),
+  info: nexusErrorInfoSchema.optional(),
+});
+
+// 流式错误事件 schema
+export const streamErrorEventSchema = z.object({
+  type: z.literal('stream.error'),
+  threadId: threadIdSchema,
+  turnId: turnIdSchema,
+  message: z.string(),
+  recoverable: z.boolean(),
+  error: z.object({ message: z.string(), info: nexusErrorInfoSchema.optional() }),
+  additionalDetails: z.string().optional(),
+});
+
+// 模型输出被拒绝事件 schema
+export const modelOutputRejectedEventSchema = z.object({
+  type: z.literal('model.output.rejected'),
+  threadId: threadIdSchema,
+  turnId: turnIdSchema,
+  message: z.string(),
+  error: z.object({ message: z.string(), info: nexusErrorInfoSchema.optional() }),
+});
+
+// 条目开始/更新/完成事件 schema
 export const itemStartedEventSchema = z.object({
   type: z.literal('item.started'),
   threadId: threadIdSchema,
@@ -364,6 +513,14 @@ export const itemCompletedEventSchema = z.object({
   item: threadItemSchema,
 });
 
+export const itemDiscardedEventSchema = z.object({
+  type: z.literal('item.discarded'),
+  threadId: threadIdSchema,
+  turnId: turnIdSchema,
+  itemId: itemIdSchema,
+});
+
+// 智能体消息流式增量事件 schema
 export const agentMessageDeltaEventSchema = z.object({
   type: z.literal('agent_message.delta'),
   threadId: threadIdSchema,
@@ -372,6 +529,7 @@ export const agentMessageDeltaEventSchema = z.object({
   delta: z.string(),
 });
 
+// 命令输出流式增量事件 schema
 export const commandOutputDeltaEventSchema = z.object({
   type: z.literal('command_output.delta'),
   threadId: threadIdSchema,
@@ -380,12 +538,14 @@ export const commandOutputDeltaEventSchema = z.object({
   delta: z.string(),
 });
 
+// token 用量更新事件 schema
 export const tokenUsageUpdatedEventSchema = z.object({
   type: z.literal('thread.token_usage.updated'),
   threadId: threadIdSchema,
   usage: threadUsageSchema,
 });
 
+// 回合 diff 更新事件 schema
 export const turnDiffUpdatedEventSchema = z.object({
   type: z.literal('turn.diff.updated'),
   threadId: threadIdSchema,
@@ -393,6 +553,7 @@ export const turnDiffUpdatedEventSchema = z.object({
   diff: z.string(),
 });
 
+// 子代理事件 schema
 export const childAgentEventSchema = z.object({
   type: z.literal('child_agent.event'),
   threadId: threadIdSchema,
@@ -402,6 +563,7 @@ export const childAgentEventSchema = z.object({
   event: z.record(z.string(), z.unknown()),
 });
 
+// 缓存诊断事件 schema
 export const cacheDiagnosticsEventSchema = z.object({
   type: z.literal('cache.diagnostics'),
   threadId: threadIdSchema,
@@ -415,6 +577,7 @@ export const cacheDiagnosticsEventSchema = z.object({
   reasons: z.array(z.enum(['system', 'tools'])),
 });
 
+// 模型重试事件 schema
 export const modelRetryEventSchema = z.object({
   type: z.literal('model.retry'),
   threadId: threadIdSchema,
@@ -426,6 +589,7 @@ export const modelRetryEventSchema = z.object({
   error: z.string().optional(),
 });
 
+// 上下文 token 估算更新事件 schema
 export const contextTokenEstimateUpdatedEventSchema = z.object({
   type: z.literal('context.token_estimate.updated'),
   threadId: threadIdSchema,
@@ -438,6 +602,7 @@ export const contextTokenEstimateUpdatedEventSchema = z.object({
   }),
 });
 
+// 上下文压缩压力事件 schema
 export const contextCompactionPressureEventSchema = z.object({
   type: z.literal('context.compaction_pressure'),
   threadId: threadIdSchema,
@@ -449,9 +614,14 @@ export const contextCompactionPressureEventSchema = z.object({
     hardThreshold: z.number().nonnegative(),
     ratio: z.number().nonnegative(),
     status: z.enum(['ok', 'soft', 'hard']),
+    window: z.object({
+      ordinal: z.number().int().positive(),
+      prefillInputTokens: z.number().int().nonnegative().nullable(),
+    }).optional(),
   }),
 });
 
+// 审批已处理事件 schema
 export const approvalResolvedEventSchema = z.object({
   type: z.literal('approval.resolved'),
   threadId: threadIdSchema,
@@ -462,6 +632,7 @@ export const approvalResolvedEventSchema = z.object({
   status: z.enum(['approved', 'denied', 'timeout']),
 });
 
+// 需要人工审批事件 schema
 export const approvalRequiredEventSchema = z.object({
   type: z.literal('approval.required'),
   threadId: threadIdSchema,
@@ -475,6 +646,7 @@ export const approvalRequiredEventSchema = z.object({
   justification: z.string().optional(),
 });
 
+// 上下文压缩完成事件 schema（旧版）
 export const compactedEventSchema = z.object({
   type: z.literal('thread.compacted'),
   threadId: threadIdSchema,
@@ -483,25 +655,73 @@ export const compactedEventSchema = z.object({
   tokensAfter: z.number().int().min(0),
 });
 
+// 上下文压缩 V2 事件 schema
+export const contextCompactedV2EventSchema = z.object({
+  type: z.literal('thread.compacted.v2'),
+  threadId: threadIdSchema,
+  turnId: turnIdSchema,
+  phase: z.enum(['started', 'completed', 'failed']),
+  trigger: z.enum(['manual', 'auto']),
+  strategy: z.enum(['llm', 'local']).optional(),
+  compactedTurns: z.number().int().min(0).optional(),
+  tokensBefore: z.number().int().min(0).optional(),
+  tokensAfter: z.number().int().min(0).optional(),
+  item: z.object({ id: itemIdSchema }).passthrough().optional(),
+  error: z.object({ message: z.string(), info: nexusErrorInfoSchema.optional() }).optional(),
+});
+
+// 线程回滚完成事件 schema
+export const threadRollbackCompletedEventSchema = z.object({
+  type: z.literal('thread.rollback.completed'),
+  threadId: threadIdSchema,
+  turnId: turnIdSchema.optional(),
+  checkpointTurnCount: z.number().int().min(0),
+});
+
+// 线程回滚失败事件 schema
+export const threadRollbackFailedEventSchema = z.object({
+  type: z.literal('thread.rollback.failed'),
+  threadId: threadIdSchema,
+  turnId: turnIdSchema.optional(),
+  error: z.object({ message: z.string(), info: nexusErrorInfoSchema.optional() }),
+});
+
+// 线程恢复事件 schema
 export const resumedEventSchema = z.object({
   type: z.literal('thread.resumed'),
   threadId: threadIdSchema,
   turnIndex: z.number().int().min(0),
 });
 
+// Episode 工作集重建事件 schema
+export const episodeWorkingSetRebuiltEventSchema = z.object({
+  type: z.literal('episode.working_set_rebuilt'),
+  threadId: threadIdSchema,
+  turnId: turnIdSchema,
+  generation: z.number().int().min(0),
+  activeEpisodeIds: z.array(z.string()),
+  frozenPromptBlock: z.string(),
+});
+
+// 不可恢复错误事件 schema
 export const errorEventSchema = z.object({
   type: z.literal('error'),
   message: z.string(),
 });
 
+// 线程事件总 schema：按 type 判别
 export const threadEventSchema = z.discriminatedUnion('type', [
   threadStartedEventSchema,
   turnStartedEventSchema,
   turnCompletedEventSchema,
   turnFailedEventSchema,
+  warningEventSchema,
+  streamErrorEventSchema,
+  modelOutputRejectedEventSchema,
   itemStartedEventSchema,
   itemUpdatedEventSchema,
   itemCompletedEventSchema,
+  itemDiscardedEventSchema,
   agentMessageDeltaEventSchema,
   commandOutputDeltaEventSchema,
   tokenUsageUpdatedEventSchema,
@@ -514,17 +734,23 @@ export const threadEventSchema = z.discriminatedUnion('type', [
   approvalResolvedEventSchema,
   approvalRequiredEventSchema,
   compactedEventSchema,
+  contextCompactedV2EventSchema,
+  threadRollbackCompletedEventSchema,
+  threadRollbackFailedEventSchema,
   resumedEventSchema,
+  episodeWorkingSetRebuiltEventSchema,
   errorEventSchema,
 ]);
 
 // ─── JSON-RPC ────────────────────────────────────────────────────────────────
+// JSON-RPC 错误对象 schema
 export const jsonRpcErrorSchema = z.object({
   code: z.number().int(),
   message: z.string(),
   data: z.unknown().optional(),
 });
 
+// JSON-RPC 请求 schema
 export const jsonRpcRequestSchema = z.object({
   jsonrpc: z.literal('2.0'),
   id: z.union([z.string(), z.number()]),
@@ -532,6 +758,7 @@ export const jsonRpcRequestSchema = z.object({
   params: z.unknown().optional(),
 });
 
+// JSON-RPC 响应 schema
 export const jsonRpcResponseSchema = z.object({
   jsonrpc: z.literal('2.0'),
   id: z.union([z.string(), z.number()]),
@@ -539,18 +766,21 @@ export const jsonRpcResponseSchema = z.object({
   error: jsonRpcErrorSchema.optional(),
 });
 
+// JSON-RPC 通知 schema
 export const jsonRpcNotificationSchema = z.object({
   jsonrpc: z.literal('2.0'),
   method: z.string(),
   params: z.unknown().optional(),
 });
 
+// JSON-RPC 消息总 schema：按 method 判别
 export const jsonRpcMessageSchema = z.discriminatedUnion('method', [
   jsonRpcRequestSchema,
   jsonRpcNotificationSchema,
 ]);
 
 // ─── Approval ────────────────────────────────────────────────────────────────
+// 审批请求 schema
 export const approvalRequestSchema = z.object({
   requestId: z.string(),
   threadId: threadIdSchema,
@@ -563,8 +793,10 @@ export const approvalRequestSchema = z.object({
   justification: z.string().optional(),
 });
 
+// 检查点状态 schema
 export const checkpointStatusSchema = z.enum(['running', 'completed', 'interrupted', 'failed', 'stale']);
 
+// 审批响应 schema
 export const approvalResponseSchema = z.object({
   requestId: z.string(),
   approved: z.boolean(),

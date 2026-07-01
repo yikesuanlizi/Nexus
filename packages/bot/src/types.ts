@@ -13,6 +13,16 @@ export interface BotInboundMessage {
   messageId: string;
   chatType: BotChatType;
   threadId?: string;
+  attachments?: Array<{
+    type: 'file' | 'image';
+    fileName: string;
+    fileSize?: number;
+    mimeType?: string;
+    downloadCode?: string;
+    downloadUrl?: string;
+    mediaId?: string;
+  }>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface BotOutboundMessage {
@@ -21,6 +31,7 @@ export interface BotOutboundMessage {
   text: string;
   accountId?: string;
   threadId?: ThreadId;
+  metadata?: Record<string, unknown>;
 }
 
 export interface BotTurnResult {
@@ -93,4 +104,3 @@ export interface WeixinLoginWaitResult {
 export type WeixinBridgeSendResult =
   | { ok: true; messageId: string }
   | { ok: false; message: string };
-

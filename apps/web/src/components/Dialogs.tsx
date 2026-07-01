@@ -1,8 +1,11 @@
+// 对话框组件：确认框 / 文本输入框
+// Dialog components: confirm dialog / text-input dialog
+
 import React, { useEffect, useRef, useState } from 'react';
-import type { Locale } from '../config.js';
-import { t } from '../i18n.js';
-import { runProfileDescription } from '../runProfiles.js';
-import type { SkillDraft } from '../types.js';
+import type { Locale } from '../config/config.js';
+import { t } from '../shared/i18n.js';
+import { runProfileDescription } from '../config/runProfiles.js';
+import type { SkillDraft } from '../shared/types.js';
 import { Icon } from './Icon.js';
 
 export type AppDialogState =
@@ -24,11 +27,15 @@ export type AppDialogState =
       cancelLabel: string;
       resolve: (value: string | null) => void;
     };
+// AppDialogState 可区分确认框与文本输入框，resolve 用于返回结果给调用方
+// AppDialogState distinguishes between confirm and text-input dialogs; resolve returns the result to the caller
 
 export function AppDialog({ dialog, onClose }: { dialog: AppDialogState; onClose(): void }) {
   const [value, setValue] = useState(dialog.kind === 'text' ? dialog.value : '');
   const inputRef = useRef<HTMLInputElement | null>(null);
 
+  // 打开后自动聚焦文本输入框（仅在文本输入类型时需要）
+  // Autofocus the text input when opened (only needed for text-input type)
   useEffect(() => {
     if (dialog.kind === 'text') {
       inputRef.current?.focus();
@@ -37,6 +44,8 @@ export function AppDialog({ dialog, onClose }: { dialog: AppDialogState; onClose
   }, [dialog.kind]);
 
   function cancel() {
+    // 取消分支：decision 返回 false，text 返回 null
+    // Cancel branch: decision returns false, text returns null
     if (dialog.kind === 'decision') {
       dialog.resolve(false);
     } else {
@@ -46,6 +55,8 @@ export function AppDialog({ dialog, onClose }: { dialog: AppDialogState; onClose
   }
 
   function submit() {
+    // 提交分支：decision 返回 true，text 返回输入值
+    // Submit branch: decision returns true, text returns the input value
     if (dialog.kind === 'decision') {
       dialog.resolve(true);
     } else {
@@ -98,6 +109,9 @@ export function AppDialog({ dialog, onClose }: { dialog: AppDialogState; onClose
 }
 
 export function SettingsHelpDialog({ locale, onClose }: { locale: Locale; onClose(): void }) {
+  // 设置帮助对话框：展示运行模式、思考程度、权限、联网、上下文压缩等中文/英文说明
+  // Settings help dialog: shows Chinese/English explanations for run modes, reasoning, permissions, web search, context compaction
+
   const zh = locale === 'zh';
   const sections = [
     {
@@ -165,6 +179,8 @@ export function SkillDraftDialog({
   onCancel(): void;
   onSave(draft: SkillDraft): Promise<void>;
 }) {
+  // 编辑并保存 Skill 草稿（名字、描述、SKILL.md 正文）
+  // Edit and save a skill draft (name, description, SKILL.md body)
   const [current, setCurrent] = useState(draft);
   const [saving, setSaving] = useState(false);
 

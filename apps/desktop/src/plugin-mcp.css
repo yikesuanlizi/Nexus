@@ -1,0 +1,809 @@
+.settingsDrawer .pluginCatalogShell {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  height: 100%;
+}
+
+.settingsDrawer .pluginCatalogShell,
+.settingsDrawer .pluginCatalogShell * {
+  box-sizing: border-box;
+}
+
+.settingsDrawer .pluginCatalogShell {
+  --bg: #ffffff;
+  --card-bg: #ffffff;
+  --text-main: #1f2937;
+  --text-sub: #6b7280;
+  --border: #e5e7eb;
+  --border-strong: #d1d5db;
+  --accent: #3b82f6;
+  --accent-2: #2563eb;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --gray-100: #f3f4f6;
+  --gray-200: #e5e7eb;
+  --gray-300: #d1d5db;
+  --gray-400: #9ca3af;
+  --gray-500: #6b7280;
+  --gray-600: #4b5563;
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  font-family: "Nunito", system-ui, sans-serif;
+  color: var(--text-main);
+}
+
+[data-theme="dark"] .settingsDrawer .pluginCatalogShell,
+.appShell.theme-dark .settingsDrawer .pluginCatalogShell {
+  --bg: #182235;
+  --card-bg: #1e293b;
+  --text-main: #f8fafc;
+  --text-sub: #cbd5e1;
+  --border: #475569;
+  --border-strong: #64748b;
+  --accent: #5b7cfa;
+  --accent-2: #4f6ee8;
+  --success: #34d399;
+  --warning: #fbbf24;
+  --danger: #f87171;
+  --gray-100: #243247;
+  --gray-200: #334155;
+  --gray-300: #475569;
+  --gray-400: #a8b4c5;
+  --gray-500: #d7dfeb;
+  --gray-600: #e2e8f0;
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 16px 40px -18px rgba(2, 8, 23, 0.78);
+}
+
+[data-theme="dark"] .settingsDrawer .pluginCatalogShell .search,
+.appShell.theme-dark .settingsDrawer .pluginCatalogShell .search {
+  background-color: #182235 !important;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23cbd5e1' stroke-width='2' stroke-linecap='round'><circle cx='11' cy='11' r='8'/><line x1='21' y1='21' x2='16.65' y2='16.65'/></svg>");
+}
+
+[data-theme="dark"] .settingsDrawer .pluginCatalogShell .section-count,
+[data-theme="dark"] .settingsDrawer .pluginCatalogShell .pluginNotice,
+[data-theme="dark"] .settingsDrawer .pluginCatalogShell .card,
+[data-theme="dark"] .settingsDrawer .pluginCatalogShell .pluginControlCard,
+[data-theme="dark"] .settingsDrawer .pluginCatalogShell .providerCard code,
+.appShell.theme-dark .settingsDrawer .pluginCatalogShell .section-count,
+.appShell.theme-dark .settingsDrawer .pluginCatalogShell .pluginNotice,
+.appShell.theme-dark .settingsDrawer .pluginCatalogShell .card,
+.appShell.theme-dark .settingsDrawer .pluginCatalogShell .pluginControlCard,
+.appShell.theme-dark .settingsDrawer .pluginCatalogShell .providerCard code {
+  background: #1e293b !important;
+}
+
+[data-theme="dark"] .settingsDrawer .pluginCatalogShell .icon,
+.appShell.theme-dark .settingsDrawer .pluginCatalogShell .icon {
+  color: #f8fafc;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+}
+
+[data-theme="dark"] .settingsDrawer .pluginCatalogShell .nav-item:hover,
+.appShell.theme-dark .settingsDrawer .pluginCatalogShell .nav-item:hover {
+  background: #172033;
+}
+
+[data-theme="dark"] .settingsDrawer .pluginCatalogShell .nav-item.active,
+.appShell.theme-dark .settingsDrawer .pluginCatalogShell .nav-item.active {
+  border-color: #5b7cfa;
+  background: #5b7cfa;
+  box-shadow: inset 0 0 0 1px rgba(191, 219, 254, 0.14);
+}
+
+[data-theme="dark"] .settingsDrawer .pluginCatalogShell .nav-item .count,
+.appShell.theme-dark .settingsDrawer .pluginCatalogShell .nav-item .count {
+  background: #172033;
+  color: #cbd5e1;
+}
+
+[data-theme="dark"] .settingsDrawer .pluginCatalogShell .nav-item.active .count,
+.appShell.theme-dark .settingsDrawer .pluginCatalogShell .nav-item.active .count {
+  background: rgba(24, 34, 53, 0.28);
+  color: #ffffff;
+}
+
+[data-theme="dark"] .settingsDrawer .pluginCatalogShell .tag,
+.appShell.theme-dark .settingsDrawer .pluginCatalogShell .tag {
+  background: #172033;
+  border-color: #475569;
+  color: #e2e8f0;
+}
+
+[data-theme="dark"] .settingsDrawer .pluginCatalogShell .btn,
+.appShell.theme-dark .settingsDrawer .pluginCatalogShell .btn {
+  background: #1e293b;
+  border-color: #475569;
+  color: #f8fafc;
+}
+
+[data-theme="dark"] .settingsDrawer .pluginCatalogShell .btn:hover,
+.appShell.theme-dark .settingsDrawer .pluginCatalogShell .btn:hover {
+  background: #172033;
+}
+
+[data-theme="dark"] .settingsDrawer .pluginCatalogShell .btn-primary,
+.appShell.theme-dark .settingsDrawer .pluginCatalogShell .btn-primary {
+  background: #5b7cfa;
+  border-color: #5b7cfa;
+  color: #ffffff;
+}
+
+[data-theme="dark"] .settingsDrawer .pluginCatalogShell .btn-primary:hover,
+.appShell.theme-dark .settingsDrawer .pluginCatalogShell .btn-primary:hover {
+  background: #4f6ee8;
+  border-color: #4f6ee8;
+  color: #ffffff;
+}
+
+[data-theme="dark"] .settingsDrawer .pluginCatalogShell .btn-danger,
+.appShell.theme-dark .settingsDrawer .pluginCatalogShell .btn-danger {
+  background: #ef4444;
+  border-color: #ef4444;
+  color: #ffffff;
+}
+
+[data-theme="dark"] .settingsDrawer .pluginCatalogShell .btn-danger:hover,
+.appShell.theme-dark .settingsDrawer .pluginCatalogShell .btn-danger:hover {
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #ffffff;
+}
+
+[data-theme="dark"] .settingsDrawer .pluginCatalogShell .btn-muted,
+.appShell.theme-dark .settingsDrawer .pluginCatalogShell .btn-muted {
+  background: #172033;
+  color: #cbd5e1;
+}
+
+[data-theme="dark"] .settingsDrawer .pluginCatalogShell .btn-muted:hover,
+.appShell.theme-dark .settingsDrawer .pluginCatalogShell .btn-muted:hover {
+  background: #1e293b;
+  color: #f8fafc;
+}
+
+[data-theme="dark"] .settingsDrawer .pluginCatalogShell .pluginField input,
+[data-theme="dark"] .settingsDrawer .pluginCatalogShell .pluginControlCard input,
+[data-theme="dark"] .settingsDrawer .pluginCatalogShell .pluginControlCard textarea,
+[data-theme="dark"] .settingsDrawer .pluginCatalogShell .pluginControlCard select,
+[data-theme="dark"] .settingsDrawer .pluginCatalogShell .pluginControlCard .dropdownButton,
+.appShell.theme-dark .settingsDrawer .pluginCatalogShell .pluginField input,
+.appShell.theme-dark .settingsDrawer .pluginCatalogShell .pluginControlCard input,
+.appShell.theme-dark .settingsDrawer .pluginCatalogShell .pluginControlCard textarea,
+.appShell.theme-dark .settingsDrawer .pluginCatalogShell .pluginControlCard select,
+.appShell.theme-dark .settingsDrawer .pluginCatalogShell .pluginControlCard .dropdownButton {
+  background: #182235 !important;
+  border-color: #475569 !important;
+  color: #f8fafc !important;
+}
+
+[data-theme="dark"] .settingsDrawer .pluginCatalogShell .emptyHint,
+.appShell.theme-dark .settingsDrawer .pluginCatalogShell .emptyHint {
+  border-color: #334155;
+  background: rgba(24, 34, 53, 0.45);
+  color: #cbd5e1;
+}
+
+[data-theme="dark"] .settingsDrawer .pluginCatalogShell .btn:disabled,
+.appShell.theme-dark .settingsDrawer .pluginCatalogShell .btn:disabled {
+  opacity: 0.78;
+}
+
+.settingsDrawer .pluginCatalogShell .pluginCatalogApp {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  max-width: 1080px;
+  margin: 0 auto;
+  justify-self: stretch;
+}
+
+.settingsDrawer .pluginCatalogShell .pluginPane,
+.settingsDrawer .pluginCatalogShell .pluginInnerSection,
+.settingsDrawer .pluginCatalogShell .pluginPane > .settingsSection {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+.settingsDrawer .pluginCatalogShell .pluginPane,
+.settingsDrawer .pluginCatalogShell .pluginInnerSection {
+  display: grid;
+  gap: 16px;
+  width: 100%;
+  min-width: 0;
+  align-content: start;
+}
+
+.settingsDrawer .pluginCatalogShell .pluginPane {
+  min-height: 0;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.settingsDrawer .pluginCatalogShell .header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 28px;
+}
+
+.settingsDrawer .pluginCatalogShell .title-group {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+}
+
+.settingsDrawer .pluginCatalogShell .title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--text-main);
+  font-size: 26px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+}
+
+.settingsDrawer .pluginCatalogShell .title-dot {
+  width: 12px;
+  height: 12px;
+  margin-left: 4px;
+  border: 2px solid var(--text-main);
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.settingsDrawer .pluginCatalogShell .breadcrumb {
+  color: var(--text-sub);
+  font-size: 12px;
+  font-family: "JetBrains Mono", monospace;
+  font-weight: 600;
+}
+
+.settingsDrawer .pluginCatalogShell .header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.settingsDrawer .pluginCatalogShell .search {
+  width: 240px;
+  height: 40px;
+  padding: 0 14px 0 38px;
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  background-color: var(--card-bg) !important;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round'><circle cx='11' cy='11' r='8'/><line x1='21' y1='21' x2='16.65' y2='16.65'/></svg>");
+  background-repeat: no-repeat;
+  background-position: 12px center;
+  box-shadow: none;
+  color: var(--text-main) !important;
+  font-size: 13px;
+  font-weight: 600;
+  outline: none;
+  transition: all 0.15s;
+}
+
+.settingsDrawer .pluginCatalogShell .search:focus {
+  border-color: var(--accent) !important;
+  box-shadow: none !important;
+}
+
+.settingsDrawer .pluginCatalogShell .search::placeholder {
+  color: var(--text-sub);
+  font-weight: 500;
+}
+
+.settingsDrawer .pluginCatalogShell .layout {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: 28px;
+  margin-top: 0;
+  min-height: 0;
+}
+
+.settingsDrawer .pluginCatalogShell .sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.settingsDrawer .pluginCatalogShell .sidebar-label {
+  padding: 10px 14px;
+  color: var(--text-sub);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.settingsDrawer .pluginCatalogShell .nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 14px;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-sub);
+  font-size: 14px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.18s;
+}
+
+.settingsDrawer .pluginCatalogShell .nav-item:hover {
+  background: var(--gray-100);
+  color: var(--text-main);
+}
+
+.settingsDrawer .pluginCatalogShell .nav-item.active {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.settingsDrawer .pluginCatalogShell .nav-item .count {
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: var(--gray-100);
+  color: var(--text-sub);
+  font-size: 11px;
+  font-family: "JetBrains Mono", monospace;
+  font-weight: 700;
+}
+
+.settingsDrawer .pluginCatalogShell .nav-item.active .count {
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+}
+
+.settingsDrawer .pluginCatalogShell .content {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+}
+
+.settingsDrawer .pluginCatalogShell .section-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 2px solid var(--border);
+}
+
+.settingsDrawer .pluginCatalogShell .section-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.settingsDrawer .pluginCatalogShell .section-title {
+  margin: 0;
+  color: var(--text-main);
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+}
+
+.settingsDrawer .pluginCatalogShell .section-count {
+  padding: 6px 14px;
+  border: 2px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--card-bg);
+  color: var(--text-main);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.settingsDrawer .pluginCatalogShell .section-count b {
+  color: var(--accent);
+  font-weight: 900;
+}
+
+.settingsDrawer .pluginCatalogShell .pluginNotice {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  background: var(--card-bg);
+  color: var(--text-sub);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.settingsDrawer .pluginCatalogShell .cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.settingsDrawer .pluginCatalogShell .card,
+.settingsDrawer .pluginCatalogShell .pluginControlCard {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  padding: 16px;
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  background: var(--card-bg) !important;
+  box-shadow: none !important;
+  overflow: hidden;
+}
+
+.settingsDrawer .pluginCatalogShell .card {
+  cursor: pointer;
+  transition: all 0.18s;
+}
+
+.settingsDrawer .pluginCatalogShell .card:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md) !important;
+}
+
+.settingsDrawer .pluginCatalogShell .card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.settingsDrawer .pluginCatalogShell .icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  border: 2px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--gray-100);
+  color: var(--text-main);
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.settingsDrawer .pluginCatalogShell .icon svg,
+.settingsDrawer .pluginCatalogShell .nav-item svg {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+}
+
+.settingsDrawer .pluginCatalogShell .card-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.settingsDrawer .pluginCatalogShell .card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  color: var(--text-main);
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.settingsDrawer .pluginCatalogShell .card-desc {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--text-sub);
+  font-size: 12.5px;
+  line-height: 1.5;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.settingsDrawer .pluginCatalogShell .card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: auto;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.settingsDrawer .pluginCatalogShell .card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text-sub);
+  font-size: 11px;
+  font-family: "JetBrains Mono", monospace;
+  font-weight: 700;
+}
+
+.settingsDrawer .pluginCatalogShell .card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settingsDrawer .pluginCatalogShell .tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 8px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--gray-100);
+  color: var(--text-main);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+
+.settingsDrawer .pluginCatalogShell .toolStateTag.active {
+  border-color: var(--success);
+  background: color-mix(in srgb, var(--success) 16%, var(--card-bg));
+  color: var(--success);
+}
+
+.settingsDrawer .pluginCatalogShell .toolStateTag.ok {
+  border-color: var(--success);
+  background: color-mix(in srgb, var(--success) 12%, var(--card-bg));
+  color: var(--success);
+}
+
+.settingsDrawer .pluginCatalogShell .toolStateTag.warn {
+  border-color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 12%, var(--card-bg));
+  color: var(--warning);
+}
+
+.settingsDrawer .pluginCatalogShell .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px;
+  border: 2px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--card-bg);
+  color: var(--text-main);
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.settingsDrawer .pluginCatalogShell .btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.settingsDrawer .pluginCatalogShell .btn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.settingsDrawer .pluginCatalogShell .btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.settingsDrawer .pluginCatalogShell .btn-primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.settingsDrawer .pluginCatalogShell .btn-primary:hover {
+  background: var(--accent-2);
+  color: #ffffff;
+}
+
+.settingsDrawer .pluginCatalogShell .btn-danger {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: #ffffff;
+  padding: 0 10px;
+}
+
+.settingsDrawer .pluginCatalogShell .btn-danger:hover {
+  border-color: #dc2626;
+  background: #dc2626;
+  color: #ffffff;
+}
+
+.settingsDrawer .pluginCatalogShell .btn-muted {
+  border-color: var(--border);
+  background: var(--gray-100);
+  color: var(--gray-600);
+  padding: 0 10px;
+}
+
+.settingsDrawer .pluginCatalogShell .btn-muted:hover {
+  border-color: var(--gray-400);
+  background: var(--gray-100);
+  color: var(--text-main);
+}
+
+.settingsDrawer .pluginCatalogShell .toggle {
+  position: relative;
+  width: 46px;
+  height: 26px;
+  flex-shrink: 0;
+  border: 2px solid var(--border-strong);
+  border-radius: 14px;
+  background: var(--gray-200);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.settingsDrawer .pluginCatalogShell .toggle::after {
+  content: "";
+  position: absolute;
+  top: 1.5px;
+  left: 1.5px;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--bg);
+  transition: all 0.2s;
+}
+
+.settingsDrawer .pluginCatalogShell .toggle.on {
+  background: var(--success);
+}
+
+.settingsDrawer .pluginCatalogShell .toggle.on::after {
+  left: 23px;
+}
+
+.settingsDrawer .pluginCatalogShell .status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid var(--bg);
+  border-radius: 999px;
+}
+
+.settingsDrawer .pluginCatalogShell .status-dot.online {
+  background: var(--success);
+}
+
+.settingsDrawer .pluginCatalogShell .status-dot.offline {
+  background: var(--text-sub);
+}
+
+.settingsDrawer .pluginCatalogShell .status-dot.warning {
+  background: var(--warning);
+}
+
+.settingsDrawer .pluginCatalogShell .status-dot.error {
+  background: var(--danger);
+}
+
+.settingsDrawer .pluginCatalogShell .pluginField {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text-sub);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.settingsDrawer .pluginCatalogShell .pluginField input,
+.settingsDrawer .pluginCatalogShell .pluginControlCard input,
+.settingsDrawer .pluginCatalogShell .pluginControlCard textarea,
+.settingsDrawer .pluginCatalogShell .pluginControlCard select,
+.settingsDrawer .pluginCatalogShell .pluginControlCard .dropdownButton,
+.settingsDrawer .pluginCatalogShell .providerCard code {
+  width: 100%;
+  min-width: 0;
+  border-color: var(--border-strong) !important;
+  background: var(--card-bg) !important;
+  color: var(--text-main) !important;
+  box-shadow: none !important;
+}
+
+.settingsDrawer .pluginCatalogShell .pluginControlCard .dropdownSelect,
+.settingsDrawer .pluginCatalogShell .providerCard,
+.settingsDrawer .pluginCatalogShell .keyBox,
+.settingsDrawer .pluginCatalogShell .keyActions {
+  min-width: 0;
+}
+
+.settingsDrawer .pluginCatalogShell .pluginControlCard .keyActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settingsDrawer .pluginCatalogShell .pluginControlCard .keyActions input {
+  flex: 1 1 220px;
+}
+
+.settingsDrawer .pluginCatalogShell .providerCard {
+  display: grid;
+  gap: 12px;
+}
+
+.settingsDrawer .pluginCatalogShell .providerCard strong {
+  color: var(--text-main);
+}
+
+.settingsDrawer .pluginCatalogShell .providerCard code {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  padding: 4px 8px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 8px;
+  font-size: 11px;
+  font-family: "JetBrains Mono", monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settingsDrawer .pluginCatalogShell .providerCard small {
+  color: var(--text-sub);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.settingsDrawer .pluginCatalogShell .emptyHint {
+  margin: 0;
+  padding: 32px 20px;
+  border: 2px dashed var(--border);
+  border-radius: 12px;
+  color: var(--text-sub);
+  text-align: center;
+  font-weight: 700;
+}
+
+@media (max-width: 980px) {
+  .settingsDrawer .pluginCatalogShell .layout {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+
+  .settingsDrawer .pluginCatalogShell .cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .settingsDrawer .pluginCatalogShell .header,
+  .settingsDrawer .pluginCatalogShell .section-header,
+  .settingsDrawer .pluginCatalogShell .card-foot {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .settingsDrawer .pluginCatalogShell .search {
+    width: 100%;
+  }
+
+  .settingsDrawer .pluginCatalogShell .section-header-actions {
+    justify-content: space-between;
+  }
+}
