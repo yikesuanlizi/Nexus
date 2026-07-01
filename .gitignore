@@ -9,7 +9,6 @@ target/
 package-lock.json.*
 .env
 .data/
-.mini-codex/
 .nexus/
 .npm-cache/
 .playwright-cli/

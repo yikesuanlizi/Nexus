@@ -133,23 +133,25 @@ Nexus 把“微信账号登录”和“对话绑定”分开处理：
 - 工具循环、web_search/web_fetch 和长任务由 runtime 的最大迭代、工具治理和缓存/压缩策略共同约束。
 - 缓存优先模式适合微信远程助手的快速交互；长运行模式适合复杂编程任务。
 
-## 工程取舍
+## 能力概览
 
-| 能力领域 | Nexus 当前实现 |
+| 能力领域 | 当前实现状态 |
 |---|---|
-| 对外协议 | 本地 HTTP API + SSE 事件，前后端分离 |
-| 安全沙箱 | TypeScript 策略引擎与权限预设 |
-| 鉴权体系 | 单机默认关闭鉴权，多租户使用本地 token + JWT |
-| 多租户隔离 | storage 层按 tenant_id 强制过滤 |
-| Thread / Turn / Item 模型 | 已实现并简化，支持可恢复对话 |
-| 执行策略 | 保留基础版本，shell 命令按规则 allow / prompt / forbidden |
-| SQLite + JSONL thread-store | 作为单机轻量模式保留 |
-| Postgres 多租户 thread-store | 已有 storage adapter 与 Docker Compose 部署模板 |
-| checkpoint / resume | 已实现基础版本 |
-| 上下文压缩 | 已有简化版本，仍需增强三级压缩与结构化传递 |
-| Skills / Hooks | 已有基础入口，仍需完善多 skills 调度和懒加载 |
-| MCP 治理 | Web 可配置，懒加载和运行时治理仍需继续补 |
-| Plan 模式 | 待实现 |
+| 对外协议 | 本地 HTTP API + SSE 事件流，前后端分离架构 |
+| 安全沙箱 | TypeScript 策略引擎 + 三档权限预设（read_only / workspace / danger_full_access） |
+| 鉴权体系 | 单机模式无鉴权，多租户模式使用 token + JWT |
+| 多租户隔离 | storage 层强制按 tenant_id 过滤，API/runtime 按 tenant 缓存 |
+| Thread / Turn / Item 模型 | 完整实现，支持对话、轮次、事件的持久化与恢复 |
+| 执行策略 | shell 命令按规则 allow / prompt / forbidden 控制 |
+| 本地存储 | SQLite + JSONL，适合单机桌面使用 |
+| 多租户存储 | Postgres adapter + Docker Compose 部署模板 |
+| Checkpoint / Resume | 每轮/每次工具调用写入检查点，支持中断恢复与冷恢复 |
+| 上下文压缩 | 三级压缩框架已实现（轻记忆 + episode + 结构化 summary） |
+| Skills / Hooks | 支持本地 Skill 目录、AGENTS.md、hooks 扩展入口 |
+| MCP 治理 | Web 配置界面 + 运行时懒加载 + 连接状态监控 |
+| Plan 模式 | 规划中 |
+| 微信远程助手 | 桌面端支持个人微信桥接，消息进入绑定的 Nexus 对话 |
+| 钉钉机器人 | 多租户模式支持钉钉 Stream 模式接入与 AI Card 流式回复 |
 
 ## 后续重点
 
