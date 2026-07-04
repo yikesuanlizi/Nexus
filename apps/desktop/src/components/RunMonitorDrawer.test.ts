@@ -2,7 +2,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { RunMonitorDrawer } from './RunMonitorDrawer.js';
-import type { RunEvent, RunRecord } from '../shared/types.js';
+import type { RunEvent, RunRecord, ThreadWithRuns } from '../shared/types.js';
 
 const run: RunRecord = {
   runId: 'run-1',
@@ -41,6 +41,15 @@ const events: RunEvent[] = [{
   createdAt: '2026-06-16T00:00:01.000Z',
 }];
 
+const threads: ThreadWithRuns[] = [{
+  threadId: 'thread-1',
+  title: 'Test Thread',
+  tenantId: 'tenantA',
+  status: 'active',
+  runCount: 1,
+  lastActiveAt: '2026-06-16T00:00:01.000Z',
+}];
+
 describe('RunMonitorDrawer', () => {
   it('renders a control-oriented monitor drawer without replacing chat or workflow layout', () => {
     const html = renderToStaticMarkup(React.createElement(RunMonitorDrawer, {
@@ -50,11 +59,20 @@ describe('RunMonitorDrawer', () => {
       runs: [run],
       events,
       selectedRunId: 'run-1',
+      threads,
+      expandedThreadId: 'thread-1',
+      expandedEventId: '',
+      autoRefresh: false,
+      autoRefreshInterval: 5000,
       loading: false,
       onClose: vi.fn(),
       onRefresh: vi.fn(),
       onSelectRun: vi.fn(),
       onControlRun: vi.fn(),
+      onToggleThread: vi.fn(),
+      onToggleEvent: vi.fn(),
+      onAutoRefreshChange: vi.fn(),
+      onAutoRefreshIntervalChange: vi.fn(),
     }));
 
     expect(html).toContain('运行监控');
@@ -75,11 +93,20 @@ describe('RunMonitorDrawer', () => {
       runs: [run],
       events: [],
       selectedRunId: '',
+      threads: [],
+      expandedThreadId: '',
+      expandedEventId: '',
+      autoRefresh: false,
+      autoRefreshInterval: 5000,
       loading: false,
       onClose: vi.fn(),
       onRefresh: vi.fn(),
       onSelectRun: vi.fn(),
       onControlRun: vi.fn(),
+      onToggleThread: vi.fn(),
+      onToggleEvent: vi.fn(),
+      onAutoRefreshChange: vi.fn(),
+      onAutoRefreshIntervalChange: vi.fn(),
     }));
 
     expect(html).toContain('管理员全局视图');

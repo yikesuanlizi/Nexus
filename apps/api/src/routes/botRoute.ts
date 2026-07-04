@@ -7,7 +7,7 @@ import type { ThreadEvent, ThreadItem, Usage } from '@nexus/protocol';
 import type { ThreadStore } from '@nexus/storage';
 import { currentTimeTool, ToolRegistry } from '@nexus/tools';
 import {
-  DINGTALK_FORWARD_TOOL_NAME,
+  DINGTALK_TOOL_NAME,
   createDingtalkForwardTools,
   dingtalkForwardingSystemPrompt,
 } from '../services/dingtalkForwardTool.js';
@@ -926,6 +926,12 @@ interface BotConfigLike {
     webhookSecret?: string;
     autoStart?: boolean;
   };
+  dwsCli?: {
+    enabled: boolean;
+    binaryPath: string;
+    clientId: string;
+    clientSecret: string;
+  };
 }
 
 async function rememberDingtalkGroupConversation(
@@ -1075,6 +1081,7 @@ async function knownDingtalkMentionUsers(
   return users;
 }
 
+// 拼装钉钉 Agent 的 system prompt — Chinese: assemble DingTalk agent system prompt
 function dingtalkAgentPrompt(config: BotConfigLike, locale: string): string {
   const targetGroupName = config.dingtalk.targetGroupName?.trim() || '未命名群';
   const targetConfigured = Boolean(config.dingtalk.targetGroupConversationId?.trim());
@@ -1084,7 +1091,7 @@ function dingtalkAgentPrompt(config: BotConfigLike, locale: string): string {
       'You are handling a DingTalk remote-assistant conversation.',
       `Configured target group: ${targetConfigured ? targetGroupName : 'not configured'}.`,
       dingtalkForwardingSystemPrompt(locale),
-      `Only call ${DINGTALK_FORWARD_TOOL_NAME} for the current user message. Never repeat or reuse earlier tool calls from chat history.`,
+      `Only call ${DINGTALK_TOOL_NAME} for the current user message. Never repeat or reuse earlier tool calls from chat history.`,
     ].join('\n');
   }
   return [
@@ -1092,7 +1099,7 @@ function dingtalkAgentPrompt(config: BotConfigLike, locale: string): string {
     '你正在处理钉钉远程助手会话。',
     `已配置目标群：${targetConfigured ? targetGroupName : '未配置'}`,
     dingtalkForwardingSystemPrompt(locale),
-    `只允许针对当前用户消息调用 ${DINGTALK_FORWARD_TOOL_NAME}，绝不要复用或重复执行历史消息里的工具调用。`,
+    `只允许针对当前用户消息调用 ${DINGTALK_TOOL_NAME}，绝不要复用或重复执行历史消息里的工具调用。`,
   ].join('\n');
 }
 
@@ -1222,7 +1229,7 @@ function dingtalkToBotMessage(msg: DingtalkInboundMessage): BotInboundMessage {
 function sanitizeDingtalkAgentReply(text: string, locale: string): string {
   const cleaned = text
     .replace(
-      /\n?\[Tool dingtalk_forward_to_group [^\]]+\]\s*\nDingTalk group message tool result redacted\. Do not reuse this prior tool call or reveal internal routing details\.\n?/g,
+      /\n?\[Tool dingtalk [^\]]+\]\s*\nDingTalk tool result redacted\. Do not reuse this prior tool call or reveal internal routing details\.\n?/g,
       '\n',
     )
     .replace(/\n{3,}/g, '\n\n')

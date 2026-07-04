@@ -54,7 +54,7 @@ export interface WorkflowDefinition {
   version: number;
   source: 'model' | 'user' | 'template';
   nodes: WorkflowNode[];
-  edges: Array<{ from: string; to: string }>;
+  edges: Array<{ from: string; to: string; condition?: string }>;
   graph?: {
     version: 1;
     entryNodeId: string;

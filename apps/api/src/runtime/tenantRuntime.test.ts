@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_BOT_CONFIG } from '../config/botConfig.js';
 import { BOT_CONFIG_KEY } from '../config/botConfig.js';
-import { DINGTALK_FORWARD_TOOL_NAME } from '../services/dingtalkForwardTool.js';
+import { DINGTALK_TOOL_NAME } from '../services/dingtalkForwardTool.js';
 import { createTenantToolRegistry } from './tenantRuntime.js';
 
 describe('tenant runtime tools', () => {
@@ -25,7 +25,7 @@ describe('tenant runtime tools', () => {
 
     const registry = createTenantToolRegistry(store as never);
 
-    expect(registry.get(DINGTALK_FORWARD_TOOL_NAME)).toBeTruthy();
+    expect(registry.get(DINGTALK_TOOL_NAME)).toBeTruthy();
     expect(registry.get('dingtalk_send_group_message')).toBeUndefined();
     expect(registry.get('read_file')).toBeTruthy();
   });

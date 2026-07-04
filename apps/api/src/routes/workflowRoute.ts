@@ -25,6 +25,7 @@ import {
   type WorkflowPlannerModel,
   type WorkflowRuntimeAction,
   type WorkflowSnapshot,
+  type WorkflowNodeExecutors,
 } from '@nexus/runtime';
 import { readJson, sendError, sendJson } from '../shared/http.js';
 
@@ -255,6 +256,7 @@ export async function runThreadWorkflowRuntimeAction(
   request: ThreadWorkflowRuntimeRequest,
   registry: WorkflowComponentRegistry = createBuiltinWorkflowComponentRegistry(),
   now = new Date(),
+  executors?: WorkflowNodeExecutors,
 ): Promise<ThreadWorkflowRuntimeResponse> {
   const thread = await store.getThread(threadId);
   if (!thread) return { ok: false, code: 'ThreadNotFound', error: 'Thread not found' };
@@ -322,6 +324,7 @@ export async function runThreadWorkflowRuntimeAction(
         definition,
         run: resumed,
         registry,
+        executors,
         now,
         threadId,
         tenantId: thread.tenantId,
@@ -343,6 +346,7 @@ export async function runThreadWorkflowRuntimeAction(
         definition: snapshot.definition,
         run: testRun,
         registry,
+        executors,
         now,
         threadId,
         tenantId: thread.tenantId,
@@ -371,11 +375,15 @@ export async function runThreadWorkflowRuntimeAction(
       const saved = await saveThreadWorkflowSnapshot(store, threadId, workflow, registry);
       return { ok: true, thread: saved, workflow, run: tested.run, events: emitted, blueprint: compileWorkflowBlueprint(snapshot.definition, registry) };
     } else if (request.action === 'run_node') {
+      if (snapshot.run.status === 'running') {
+        return { ok: false, code: 'WorkflowRunAlreadyRunning', error: 'Cannot run single node while workflow run is active', workflow: snapshot, run: snapshot.run };
+      }
       workflow = (await runWorkflowNode({
         definition,
         run: ensureRunnableWorkflowRun(snapshot, registry),
         nodeId: request.nodeId,
         registry,
+        executors,
         now,
         threadId,
         tenantId: thread.tenantId,
@@ -389,6 +397,7 @@ export async function runThreadWorkflowRuntimeAction(
         definition,
         run: formalRun,
         registry,
+        executors,
         now,
         threadId,
         tenantId: thread.tenantId,
@@ -445,6 +454,7 @@ export async function handleWorkflowRoute({
   store,
   createPlannerModel,
   createWorkflowRegistry,
+  createWorkflowExecutors,
 }: {
   req: IncomingMessage;
   res: ServerResponse;
@@ -452,9 +462,11 @@ export async function handleWorkflowRoute({
   store: ThreadStore;
   createPlannerModel?: () => Promise<WorkflowPlannerModel>;
   createWorkflowRegistry?: () => WorkflowComponentRegistry;
+  createWorkflowExecutors?: () => Promise<WorkflowNodeExecutors>;
 }): Promise<boolean> {
   if (segments[0] !== 'api') return false;
   const registry = await loadWorkflowComponentRegistry(store, createWorkflowRegistry?.() ?? createBuiltinWorkflowComponentRegistry());
+  const workflowExecutors = createWorkflowExecutors ? await createWorkflowExecutors() : undefined;
 
   // api/workflow/components — 组件列表/新增/更新/删除
   // — Chinese: api/workflow/components — list/create/update/delete components
@@ -564,7 +576,7 @@ export async function handleWorkflowRoute({
   // — Chinese: POST /api/threads/:id/workflow/run — formal run (requires published)
   if (req.method === 'POST' && segments.length === 5 && segments[4] === 'run') {
     const body = await readWorkflowRuntimeBody(req);
-    const result = await runThreadWorkflowRuntimeAction(store, threadId, { action: 'run', input: body.input }, registry);
+    const result = await runThreadWorkflowRuntimeAction(store, threadId, { action: 'run', input: body.input }, registry, new Date(), workflowExecutors);
     sendWorkflowRuntimeResponse(res, result);
     return true;
   }
@@ -573,7 +585,7 @@ export async function handleWorkflowRoute({
   // — Chinese: POST /api/threads/:id/workflow/test-run — test-run workflow in isolated run
   if (req.method === 'POST' && segments.length === 5 && segments[4] === 'test-run') {
     const body = await readWorkflowRuntimeBody(req);
-    const result = await runThreadWorkflowRuntimeAction(store, threadId, { action: 'test_run', input: body.input }, registry);
+    const result = await runThreadWorkflowRuntimeAction(store, threadId, { action: 'test_run', input: body.input }, registry, new Date(), workflowExecutors);
     sendWorkflowRuntimeResponse(res, result);
     return true;
   }
@@ -582,7 +594,7 @@ export async function handleWorkflowRoute({
   // — Chinese: POST /api/threads/:id/workflow/publish — publish workflow definition
   if (req.method === 'POST' && segments.length === 5 && segments[4] === 'publish') {
     const body: { changelog?: string } = await readJson<{ changelog?: string }>(req).catch(() => ({}));
-    const result = await runThreadWorkflowRuntimeAction(store, threadId, { action: 'publish', changelog: body.changelog }, registry);
+    const result = await runThreadWorkflowRuntimeAction(store, threadId, { action: 'publish', changelog: body.changelog }, registry, new Date(), workflowExecutors);
     sendWorkflowRuntimeResponse(res, result);
     return true;
   }
@@ -593,7 +605,7 @@ export async function handleWorkflowRoute({
     const body = await readWorkflowRuntimeBody(req);
     const result = await runThreadWorkflowRuntimeAction(store, threadId, segments[6] === 'retry'
       ? { action: 'retry_node', nodeId: segments[5] }
-      : { action: 'run_node', nodeId: segments[5], input: body.input }, registry);
+      : { action: 'run_node', nodeId: segments[5], input: body.input }, registry, new Date(), workflowExecutors);
     sendWorkflowRuntimeResponse(res, result);
     return true;
   }
@@ -610,7 +622,7 @@ export async function handleWorkflowRoute({
     const body = await readWorkflowRuntimeBody(req);
     const result = await runThreadWorkflowRuntimeAction(store, threadId, segments[6] === 'cancel'
       ? { action: 'cancel' }
-      : { action: 'resume', input: body.input }, registry);
+      : { action: 'resume', input: body.input }, registry, new Date(), workflowExecutors);
     sendWorkflowRuntimeResponse(res, result);
     return true;
   }

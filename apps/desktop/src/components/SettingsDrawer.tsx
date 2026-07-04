@@ -40,6 +40,12 @@ const defaultBotConfig: BotConfig = {
     activeThreadId: '',
     autoStart: true,
   },
+  dwsCli: {
+    enabled: false,
+    binaryPath: '',
+    clientId: '',
+    clientSecret: '',
+  },
   qq: { enabled: false },
 };
 
@@ -315,6 +321,23 @@ export function SettingsDrawer({
     setBotDraft(next);
     await saveBotConfig(next);
     setDingtalkNotice(locale === 'zh' ? '钉钉设置已更新。' : 'DingTalk settings updated.');
+  }
+
+  function patchDwsCli(patch: Partial<BotConfig['dwsCli']>) {
+    setBotDraft({
+      ...botDraft,
+      dwsCli: { ...botDraft.dwsCli, ...patch },
+    });
+  }
+
+  async function updateDwsCliConfig(patch: Partial<BotConfig['dwsCli']>) {
+    const next = {
+      ...botDraft,
+      dwsCli: { ...botDraft.dwsCli, ...patch },
+    };
+    setBotDraft(next);
+    await saveBotConfig(next);
+    setDingtalkNotice(locale === 'zh' ? '钉钉 CLI 设置已更新。' : 'DingTalk CLI settings updated.');
   }
 
   async function handleStartDingtalkStream() {
@@ -1457,6 +1480,59 @@ export function SettingsDrawer({
                   <p className="botNotice">{dingtalkNotice}</p>
                 ) : null}
               </div>
+
+              {/* 钉钉 CLI (dws) 面板 */}
+              {botConfig?.dingtalk?.enabled ? (
+              <div className="botPanel dingtalkBotPanel">
+                <div className="botPanelHeader">
+                  <div className="botPanelTitle">
+                    <h4>{locale === 'zh' ? '钉钉 CLI (dws)' : 'DingTalk CLI (dws)'}</h4>
+                    <span>{locale === 'zh' ? '与机器人搭配使用，Agent 通过 CLI 操作钉钉企业数据' : 'Works alongside the bot; Agent operates DingTalk enterprise data via CLI'}</span>
+                  </div>
+                  <label className="toggle botToggle">
+                    <input
+                      type="checkbox"
+                      checked={botDraft.dwsCli.enabled}
+                      onChange={(event) => void updateDwsCliConfig({ enabled: event.target.checked })}
+                    />
+                    <span>{locale === 'zh' ? '启用 dws CLI' : 'Enable dws CLI'}</span>
+                  </label>
+                </div>
+
+                <div className="formGrid">
+                  <label className="fieldLabel">
+                    <span>{locale === 'zh' ? 'dws 可执行文件路径' : 'dws binary path'}</span>
+                    <input
+                      type="text"
+                      value={botDraft.dwsCli.binaryPath}
+                      placeholder={locale === 'zh' ? '例如：/usr/local/bin/dws' : 'e.g. /usr/local/bin/dws'}
+                      onChange={(event) => patchDwsCli({ binaryPath: event.target.value })}
+                      onBlur={() => void updateDwsCliConfig({ binaryPath: botDraft.dwsCli.binaryPath })}
+                    />
+                  </label>
+                  <label className="fieldLabel">
+                    <span>Client ID (AppKey)</span>
+                    <input
+                      type="text"
+                      value={botDraft.dwsCli.clientId}
+                      placeholder={locale === 'zh' ? '钉钉开放平台 AppKey' : 'DingTalk AppKey'}
+                      onChange={(event) => patchDwsCli({ clientId: event.target.value })}
+                      onBlur={() => void updateDwsCliConfig({ clientId: botDraft.dwsCli.clientId })}
+                    />
+                  </label>
+                  <label className="fieldLabel">
+                    <span>Client Secret (AppSecret)</span>
+                    <input
+                      type="password"
+                      value={botDraft.dwsCli.clientSecret}
+                      placeholder={locale === 'zh' ? '钉钉开放平台 AppSecret' : 'DingTalk AppSecret'}
+                      onChange={(event) => patchDwsCli({ clientSecret: event.target.value })}
+                      onBlur={() => void updateDwsCliConfig({ clientSecret: botDraft.dwsCli.clientSecret })}
+                    />
+                  </label>
+                </div>
+              </div>
+              ) : null}
             </section>
             ) : null}
           </div>

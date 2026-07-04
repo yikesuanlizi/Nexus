@@ -822,11 +822,12 @@ describe('bot route', () => {
       .find((config) => config.systemPromptSuffix);
     expect(agentConfig).toBeTruthy();
     const runtimeConfig = agentConfig!;
-    expect(runtimeConfig.systemPromptSuffix).toEqual(expect.stringContaining('dingtalk_forward_to_group'));
+    expect(runtimeConfig.systemPromptSuffix).toEqual(expect.stringContaining('dingtalk'));
+    expect(runtimeConfig.systemPromptSuffix).toEqual(expect.stringContaining('send_message'));
     expect(runtimeConfig.systemPromptSuffix).toEqual(expect.stringContaining('不要搜索代码'));
     const tools = runtimeConfig.tools as { get(name: string): unknown } | undefined;
-    expect(tools?.get('dingtalk_forward_to_group')).toBeTruthy();
-    expect(tools?.get('dingtalk_send_group_message')).toBeUndefined();
+    expect(tools?.get('dingtalk')).toBeTruthy();
+    expect(tools?.get('dingtalk_forward_to_group')).toBeUndefined();
     expect(tools?.get('current_time')).toBeTruthy();
     expect(tools?.get('read_file')).toBeUndefined();
     expect(tools?.get('search_content')).toBeUndefined();
@@ -952,7 +953,7 @@ describe('bot route', () => {
     });
     const createAgent = vi.fn(async (config) => {
       const tools = config.tools as { execute(name: string, args: Record<string, unknown>, ctx: Record<string, unknown>): Promise<unknown> };
-      const toolResult = await tools.execute('dingtalk_forward_to_group', { message: '安博威的爸爸', targetGroupName: '打完我去打DD·', source: 'dingtalk_dm' }, {
+      const toolResult = await tools.execute('dingtalk', { action: 'send_message', message: '安博威的爸爸', mentions: [] }, {
         workspaceRoot: '',
         threadId: 'thread_ding',
         turnId: 'turn_1',
@@ -1056,10 +1057,10 @@ describe('bot route', () => {
           getRuntimeState: () => ({ status: 'idle' }),
           runTurn: vi.fn(async (_threadId: string, input: { type: 'text'; text: string }) => {
             if (input.text.includes('发群')) {
-              const toolResult = await tools.execute('dingtalk_forward_to_group', {
+              const toolResult = await tools.execute('dingtalk', {
+                action: 'send_message',
                 fileMode: 'current_message_files',
-                source: 'dingtalk_dm',
-                intent: 'send_message',
+                message: '',
               }, {
                 workspaceRoot: '',
                 threadId: 'thread_ding',
@@ -1176,8 +1177,8 @@ describe('bot route', () => {
             text: [
               '好的，马上发！',
               '',
-              '[Tool dingtalk_forward_to_group completed]',
-              'DingTalk group message tool result redacted. Do not reuse this prior tool call or reveal internal routing details.',
+              '[Tool dingtalk completed]',
+              'DingTalk tool result redacted. Do not reuse this prior tool call or reveal internal routing details.',
               '',
               '已发送！在群里艾特了安博巍。',
             ].join('\n'),
@@ -1210,8 +1211,8 @@ describe('bot route', () => {
     });
 
     const reply = (response.body as { result?: { reply?: string } }).result?.reply ?? '';
-    expect(reply).not.toContain('[Tool dingtalk_forward_to_group');
-    expect(reply).not.toContain('DingTalk group message tool result redacted');
+    expect(reply).not.toContain('[Tool dingtalk');
+    expect(reply).not.toContain('DingTalk tool result redacted');
     expect(reply).not.toContain('internal routing');
     expect(reply).toBe('已发送！在群里艾特了安博巍。');
     fetchMock.mockRestore();
@@ -1244,10 +1245,10 @@ describe('bot route', () => {
       }
       throw new Error(`unexpected fetch ${href}`);
     });
-    const createAgent = vi.fn(async (config) => {
-      const runtimeConfig = JSON.stringify(config);
-      expect(runtimeConfig).toContain('dingtalk_forward_to_group');
-      expect(runtimeConfig).not.toContain('安博威的爸爸');
+    const createAgent = vi.fn(async (config: Record<string, unknown>) => {
+      const tools = config.tools as { get(name: string): unknown } | undefined;
+      expect(tools?.get('dingtalk')).toBeTruthy();
+      expect(String(config.systemPromptSuffix)).not.toContain('安博威的爸爸');
       return {
         agent: {
           getRuntimeState: () => ({ status: 'idle' }),
@@ -1350,6 +1351,314 @@ describe('bot route', () => {
         lastDetectedGroupAt: '2026-06-27T00:00:00.000Z',
       },
     });
+    fetchMock.mockRestore();
+    shutdownAllDingtalkClients();
+  });
+
+  it('unified dingtalk tool includes dws capabilities when dwsCli is enabled', async () => {
+    shutdownAllDingtalkClients();
+    const store = new BotRouteStore();
+    store.settings.set(BOT_CONFIG_KEY, {
+      ...DEFAULT_BOT_CONFIG,
+      dingtalk: {
+        ...DEFAULT_BOT_CONFIG.dingtalk,
+        enabled: true,
+        connectionMode: 'webhook',
+        clientId: 'ding_app_key',
+        clientSecret: 'ding_app_secret',
+        robotCode: 'ding_robot',
+        targetGroupName: '测试群',
+        targetGroupConversationId: 'cid_group_target',
+      },
+      dwsCli: {
+        enabled: true,
+        binaryPath: '/usr/local/bin/dws',
+        clientId: 'dws_client_id',
+        clientSecret: 'dws_client_secret',
+      },
+    });
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+      const href = String(url);
+      if (href.endsWith('/v1.0/oauth2/accessToken')) {
+        return new Response(JSON.stringify({ accessToken: 'token_1', expireIn: 7200 }), { status: 200 });
+      }
+      if (href.endsWith('/v1.0/robot/oToMessages/batchSend')) {
+        return new Response(JSON.stringify({ processQueryKey: 'dm_reply' }), { status: 200 });
+      }
+      throw new Error(`unexpected fetch ${href}`);
+    });
+    const runTurn = vi.fn(async () => ({
+      items: [{ type: 'agent_message' as const, text: '好的，我来执行 dws 命令。', id: 'a', turnId: 't' }],
+      usage: null,
+    }));
+    const createAgent = vi.fn(async (config) => ({
+      agent: {
+        getRuntimeState: () => ({ status: 'idle' }),
+        runTurn,
+      },
+      debugConfig: config,
+    }));
+    const response = res();
+    const path = routePath('/api/bot/dingtalk/webhook');
+
+    await handleBotRoute({
+      req: req('POST', '/api/bot/dingtalk/webhook', {
+        msgtype: 'text',
+        text: { content: '用 dws 查一下今天的日程' },
+        msgId: 'msg_dws_1',
+        conversationType: '1',
+        conversationId: 'cid_dm_test',
+        senderStaffId: 'staff_1',
+        senderNick: '测试用户',
+      }),
+      res: response,
+      url: path.url,
+      segments: path.segments,
+      store: store as unknown as ThreadStore,
+      getDefaultRunConfig: async () => runConfig,
+      createAgent,
+    });
+
+    expect(response.status).toBe(200);
+    const agentConfig = createAgent.mock.calls
+      .map((call) => call[0] as Record<string, unknown>)
+      .find((config) => config.systemPromptSuffix);
+    expect(agentConfig).toBeTruthy();
+    const runtimeConfig = agentConfig!;
+    const tools = runtimeConfig.tools as { get(name: string): { parameters: Record<string, unknown> } | undefined } | undefined;
+
+    // 验证只有一个统一的 dingtalk 工具，没有独立的 dws 工具
+    expect(tools?.get('dingtalk')).toBeTruthy();
+    expect(tools?.get('dws_exec')).toBeUndefined();
+    expect(tools?.get('dws_schema')).toBeUndefined();
+    expect(tools?.get('dws_auth_status')).toBeUndefined();
+    expect(tools?.get('dingtalk_forward_to_group')).toBeUndefined();
+
+    // 验证统一工具包含 dws 相关参数
+    const dingtalkTool = tools?.get('dingtalk');
+    expect(dingtalkTool?.parameters).toBeTruthy();
+    const params = dingtalkTool!.parameters as { properties?: Record<string, { enum?: string[] }> };
+    expect(params.properties?.action).toBeTruthy();
+    expect(params.properties?.dwsArgs).toBeTruthy();
+    expect(params.properties?.dwsDryRun).toBeTruthy();
+    expect(params.properties?.dwsJq).toBeTruthy();
+    expect(params.properties?.dwsToolPath).toBeTruthy();
+
+    // 验证系统提示中包含 dws 相关说明
+    expect(runtimeConfig.systemPromptSuffix).toEqual(expect.stringContaining('企业数据操作'));
+    expect(runtimeConfig.systemPromptSuffix).toEqual(expect.stringContaining('dws_exec'));
+
+    // 验证 current_time 仍然存在
+    expect(tools?.get('current_time')).toBeTruthy();
+
+    fetchMock.mockRestore();
+    shutdownAllDingtalkClients();
+  });
+
+  it('unified dingtalk tool works with send_message when dwsCli is disabled', async () => {
+    shutdownAllDingtalkClients();
+    const store = new BotRouteStore();
+    store.settings.set(BOT_CONFIG_KEY, {
+      ...DEFAULT_BOT_CONFIG,
+      dingtalk: {
+        ...DEFAULT_BOT_CONFIG.dingtalk,
+        enabled: true,
+        connectionMode: 'webhook',
+        clientId: 'ding_app_key',
+        clientSecret: 'ding_app_secret',
+        robotCode: 'ding_robot',
+        targetGroupName: '测试群',
+        targetGroupConversationId: 'cid_group_target',
+      },
+      dwsCli: {
+        enabled: false,
+        binaryPath: '',
+        clientId: '',
+        clientSecret: '',
+      },
+    });
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+      const href = String(url);
+      if (href.endsWith('/v1.0/oauth2/accessToken')) {
+        return new Response(JSON.stringify({ accessToken: 'token_1', expireIn: 7200 }), { status: 200 });
+      }
+      if (href.endsWith('/v1.0/robot/oToMessages/batchSend')) {
+        return new Response(JSON.stringify({ processQueryKey: 'dm_reply' }), { status: 200 });
+      }
+      throw new Error(`unexpected fetch ${href}`);
+    });
+    const runTurn = vi.fn(async () => ({
+      items: [{ type: 'agent_message' as const, text: '好的。', id: 'a', turnId: 't' }],
+      usage: null,
+    }));
+    const createAgent = vi.fn(async (config) => ({
+      agent: {
+        getRuntimeState: () => ({ status: 'idle' }),
+        runTurn,
+      },
+      debugConfig: config,
+    }));
+    const response = res();
+    const path = routePath('/api/bot/dingtalk/webhook');
+
+    await handleBotRoute({
+      req: req('POST', '/api/bot/dingtalk/webhook', {
+        msgtype: 'text',
+        text: { content: '你好' },
+        msgId: 'msg_dws_disabled_1',
+        conversationType: '1',
+        conversationId: 'cid_dm_test2',
+        senderStaffId: 'staff_1',
+        senderNick: '测试用户',
+      }),
+      res: response,
+      url: path.url,
+      segments: path.segments,
+      store: store as unknown as ThreadStore,
+      getDefaultRunConfig: async () => runConfig,
+      createAgent,
+    });
+
+    expect(response.status).toBe(200);
+    const agentConfig = createAgent.mock.calls
+      .map((call) => call[0] as Record<string, unknown>)
+      .find((config) => config.systemPromptSuffix);
+    expect(agentConfig).toBeTruthy();
+    const runtimeConfig = agentConfig!;
+    const tools = runtimeConfig.tools as { get(name: string): { parameters: Record<string, unknown> } | undefined } | undefined;
+
+    // 验证只有一个统一的 dingtalk 工具，没有独立的 dws 工具
+    expect(tools?.get('dingtalk')).toBeTruthy();
+    expect(tools?.get('dws_exec')).toBeUndefined();
+    expect(tools?.get('dws_schema')).toBeUndefined();
+    expect(tools?.get('dws_auth_status')).toBeUndefined();
+    expect(tools?.get('dingtalk_forward_to_group')).toBeUndefined();
+
+    // 验证统一工具包含 send_message 和 dws 相关参数
+    const dingtalkTool = tools?.get('dingtalk');
+    expect(dingtalkTool?.parameters).toBeTruthy();
+    const params = dingtalkTool!.parameters as { properties?: Record<string, { enum?: string[] }> };
+    expect(params.properties?.action).toBeTruthy();
+    const actionEnum = params.properties?.action?.enum ?? [];
+    expect(actionEnum).toContain('send_message');
+    expect(actionEnum).toContain('dws_exec');
+    expect(actionEnum).toContain('dws_schema');
+    expect(actionEnum).toContain('dws_auth_status');
+    expect(params.properties?.message).toBeTruthy();
+    expect(params.properties?.mentions).toBeTruthy();
+    expect(params.properties?.dwsArgs).toBeTruthy();
+    expect(params.properties?.dwsDryRun).toBeTruthy();
+    expect(params.properties?.dwsJq).toBeTruthy();
+
+    // 验证系统提示中包含 dws 相关说明
+    expect(runtimeConfig.systemPromptSuffix).toEqual(expect.stringContaining('企业数据操作'));
+    expect(runtimeConfig.systemPromptSuffix).toEqual(expect.stringContaining('dws_exec'));
+
+    // 验证 current_time 仍然存在
+    expect(tools?.get('current_time')).toBeTruthy();
+
+    fetchMock.mockRestore();
+    shutdownAllDingtalkClients();
+  });
+
+  it('unified dingtalk tool is injected into group chat agent (Stream mode scenario)', async () => {
+    shutdownAllDingtalkClients();
+    const store = new BotRouteStore();
+    store.settings.set(BOT_CONFIG_KEY, {
+      ...DEFAULT_BOT_CONFIG,
+      dingtalk: {
+        ...DEFAULT_BOT_CONFIG.dingtalk,
+        enabled: true,
+        connectionMode: 'webhook',
+        clientId: 'ding_app_key',
+        clientSecret: 'ding_app_secret',
+        robotCode: 'ding_robot',
+        targetGroupName: '测试群',
+        targetGroupConversationId: 'cid_group_target',
+      },
+      dwsCli: {
+        enabled: true,
+        binaryPath: '/usr/local/bin/dws',
+        clientId: 'dws_client_id',
+        clientSecret: 'dws_client_secret',
+      },
+    });
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+      const href = String(url);
+      if (href.endsWith('/v1.0/oauth2/accessToken')) {
+        return new Response(JSON.stringify({ accessToken: 'token_1', expireIn: 7200 }), { status: 200 });
+      }
+      if (href.endsWith('/v1.0/robot/groupMessages/send')) {
+        return new Response(JSON.stringify({ processQueryKey: 'group_reply' }), { status: 200 });
+      }
+      throw new Error(`unexpected fetch ${href}`);
+    });
+    const runTurn = vi.fn(async () => ({
+      items: [{ type: 'agent_message' as const, text: '好的，我来用 dws 查查。', id: 'a', turnId: 't' }],
+      usage: null,
+    }));
+    const createAgent = vi.fn(async (config) => ({
+      agent: {
+        getRuntimeState: () => ({ status: 'idle' }),
+        runTurn,
+      },
+      debugConfig: config,
+    }));
+    const response = res();
+    const path = routePath('/api/bot/dingtalk/webhook');
+
+    await handleBotRoute({
+      req: req('POST', '/api/bot/dingtalk/webhook', {
+        msgtype: 'text',
+        text: { content: '@机器人 用dws查一下今天谁请假了' },
+        msgId: 'msg_group_dws_1',
+        conversationType: '2',
+        conversationId: 'cid_group_target',
+        sessionWebhook: 'https://oapi.dingtalk.com/robot/send?access_token=session-token',
+        senderStaffId: 'staff_1',
+        senderNick: '张三',
+        chatbotUserId: 'bot_user',
+        atUsers: [{ dingtalkId: 'bot_user', staffId: 'bot_staff' }],
+      }),
+      res: response,
+      url: path.url,
+      segments: path.segments,
+      store: store as unknown as ThreadStore,
+      getDefaultRunConfig: async () => runConfig,
+      createAgent,
+      createId: () => 'thread_group_dws_test',
+      now: () => '2026-07-03T00:00:00.000Z',
+    });
+
+    expect(response.status).toBe(200);
+    const agentConfig = createAgent.mock.calls
+      .map((call) => call[0] as Record<string, unknown>)
+      .find((config) => config.systemPromptSuffix);
+    expect(agentConfig).toBeTruthy();
+    const runtimeConfig = agentConfig!;
+    const tools = runtimeConfig.tools as { get(name: string): { parameters: Record<string, unknown> } | undefined } | undefined;
+
+    // 验证群聊场景下只有一个统一的 dingtalk 工具
+    expect(tools?.get('dingtalk')).toBeTruthy();
+    expect(tools?.get('dws_exec')).toBeUndefined();
+    expect(tools?.get('dingtalk_forward_to_group')).toBeUndefined();
+
+    // 验证统一工具包含 dws 相关参数（Stream/Webhook 模式工具注入逻辑相同，都走 createDingtalkAgentTools）
+    const dingtalkTool = tools?.get('dingtalk');
+    expect(dingtalkTool?.parameters).toBeTruthy();
+    const params = dingtalkTool!.parameters as { properties?: Record<string, { enum?: string[] }> };
+    const actionEnum = params.properties?.action?.enum ?? [];
+    expect(actionEnum).toContain('send_message');
+    expect(actionEnum).toContain('dws_exec');
+
+    // 验证系统提示中包含 dws 相关说明
+    expect(runtimeConfig.systemPromptSuffix).toEqual(expect.stringContaining('企业数据操作'));
+    expect(runtimeConfig.systemPromptSuffix).toEqual(expect.stringContaining('dws_exec'));
+    expect(runtimeConfig.systemPromptSuffix).toEqual(expect.stringContaining('搜索联系人、管理日程、待办、AI表格、文档、考勤等'));
+
+    // 验证 current_time 仍然存在
+    expect(tools?.get('current_time')).toBeTruthy();
+
     fetchMock.mockRestore();
     shutdownAllDingtalkClients();
   });

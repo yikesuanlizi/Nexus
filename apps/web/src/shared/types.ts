@@ -194,6 +194,15 @@ export type RunStatus = 'pending' | 'running' | 'completed' | 'failed' | 'interr
 export type RunKind = 'turn' | 'model' | 'tool' | 'workflow' | 'subagent' | 'middleware' | 'checkpoint' | 'control';
 export type RunCaller = 'lead_agent' | 'subagent' | 'middleware' | 'tool' | 'workflow';
 
+export interface ThreadWithRuns {
+  threadId: string;
+  title: string;
+  tenantId: string;
+  status: string;
+  runCount: number;
+  lastActiveAt: string;
+}
+
 export interface RunRecord {
   runId: string;
   tenantId: string;
@@ -341,10 +350,20 @@ export interface DingtalkBotConfig extends BotPlatformConfig {
   autoStart: boolean;
 }
 
+// 钉钉 CLI (dws) 配置 — 与机器人搭配使用
+// Chinese: DingTalk CLI (dws) config — works alongside the bot
+export interface DwsCliConfig {
+  enabled: boolean;
+  binaryPath: string;
+  clientId: string;
+  clientSecret: string;
+}
+
 export interface BotConfig {
   weixin: WeixinBotConfig;
   feishu: BotPlatformConfig;
   dingtalk: DingtalkBotConfig;
+  dwsCli: DwsCliConfig;
   qq: BotPlatformConfig;
 }
 

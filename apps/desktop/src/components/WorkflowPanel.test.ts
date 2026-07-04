@@ -142,7 +142,7 @@ describe('WorkflowPanel', () => {
     expect(html).toContain('计划草案');
     expect(html).not.toContain('流程步骤');
     expect(html).toContain('步骤 1');
-    expect(html).toContain('workflowConnector');
+    expect(html).toContain('workflowEdgeIndicator');
     expect(html).toContain('当前步骤');
     expect(html).toContain('开发模式');
     expect(html).toContain('发布模式');

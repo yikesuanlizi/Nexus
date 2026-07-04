@@ -82,7 +82,7 @@ describe('web WorkflowPanel', () => {
     expect(html).toContain('tool failed');
     expect(html).toContain('workflowCanvasShell');
     expect(html).toContain('workflowCanvasStage');
-    expect(html).toContain('workflowConnector');
+    expect(html).toContain('workflowEdgeIndicator');
     expect(html).toContain('开发模式');
     expect(html).toContain('发布模式');
     expect(html).toContain('transform:translate(0px, 0px) scale(1)');

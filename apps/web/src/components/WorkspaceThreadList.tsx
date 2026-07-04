@@ -28,6 +28,7 @@ export function WorkspaceThreadList({
   searchQuery,
   sidebarCollapsed,
   threads,
+  unreadThreadIds,
   weixinActiveThreadId,
   dingtalkActiveThreadId,
   onCreatePlainChat,
@@ -51,6 +52,7 @@ export function WorkspaceThreadList({
   searchQuery: string;
   sidebarCollapsed: boolean;
   threads: ThreadMeta[];
+  unreadThreadIds: Set<string>;
   weixinActiveThreadId?: string;
   dingtalkActiveThreadId?: string;
   onCreatePlainChat(): void;
@@ -138,6 +140,7 @@ export function WorkspaceThreadList({
           remoteBindings={remoteBindings}
           runningTurnIds={runningTurnIds}
           threads={workflowThreads}
+          unreadThreadIds={unreadThreadIds}
           onCreateWorkflowProject={onCreateWorkflowProject}
           onDeleteThread={onDeleteThread}
           onRenameThread={(thread) => setRenaming(thread)}
@@ -151,6 +154,7 @@ export function WorkspaceThreadList({
           locale={locale}
           runningTurnIds={runningTurnIds}
           threads={plainChats}
+          unreadThreadIds={unreadThreadIds}
           title={locale === 'zh' ? '对话' : 'Chats'}
           remoteBindings={remoteBindings}
           onCreate={onCreatePlainChat}
@@ -185,6 +189,7 @@ export function WorkspaceThreadList({
             locale={locale}
             remoteBindings={remoteBindings}
             runningTurnIds={runningTurnIds}
+            unreadThreadIds={unreadThreadIds}
             onCreateInWorkspace={onCreateInWorkspace}
             onDeleteThread={onDeleteThread}
             onForgetWorkspace={onForgetWorkspace}
@@ -286,6 +291,7 @@ function ThreadModuleView({
   remoteBindings,
   runningTurnIds,
   threads,
+  unreadThreadIds,
   title,
   onCreate,
   onDeleteThread,
@@ -300,6 +306,7 @@ function ThreadModuleView({
   remoteBindings: RemoteThreadBinding[];
   runningTurnIds: Set<string>;
   threads: ThreadMeta[];
+  unreadThreadIds: Set<string>;
   title: string;
   onCreate(): void;
   onDeleteThread(threadId: string): void;
@@ -327,7 +334,7 @@ function ThreadModuleView({
             <button type="button" onClick={onCreate}>{locale === 'zh' ? '新建' : 'New'}</button>
           </div>
         ) : visibleThreads.map((thread) => {
-          const activity = threadActivityFor(thread, activeThreadId, busy, runningTurnIds);
+          const activity = threadActivityFor(thread, activeThreadId, busy, runningTurnIds, unreadThreadIds);
           return (
             <ThreadRow
               activity={activity}
@@ -355,6 +362,7 @@ function WorkflowProjectList({
   remoteBindings,
   runningTurnIds,
   threads,
+  unreadThreadIds,
   onCreateWorkflowProject,
   onDeleteThread,
   onRenameThread,
@@ -368,6 +376,7 @@ function WorkflowProjectList({
   remoteBindings: RemoteThreadBinding[];
   runningTurnIds: Set<string>;
   threads: ThreadMeta[];
+  unreadThreadIds: Set<string>;
   onCreateWorkflowProject(): void;
   onDeleteThread(threadId: string): void;
   onRenameThread(thread: ThreadMeta): void;
@@ -395,7 +404,7 @@ function WorkflowProjectList({
           </div>
         ) : sorted.map((thread) => (
           <ThreadRow
-            activity={threadActivityFor(thread, activeThreadId, busy, runningTurnIds)}
+            activity={threadActivityFor(thread, activeThreadId, busy, runningTurnIds, unreadThreadIds)}
             active={thread.threadId === activeThreadId}
             remoteBindings={remoteBindingsForThread(remoteBindings, thread.threadId)}
             key={thread.threadId}
@@ -420,6 +429,7 @@ function WorkspaceGroupView({
   locale,
   remoteBindings,
   runningTurnIds,
+  unreadThreadIds,
   onCreateInWorkspace,
   onDeleteThread,
   onForgetWorkspace,
@@ -436,6 +446,7 @@ function WorkspaceGroupView({
   locale: Locale;
   remoteBindings: RemoteThreadBinding[];
   runningTurnIds: Set<string>;
+  unreadThreadIds: Set<string>;
   onCreateInWorkspace(workspaceRoot: string): void;
   onDeleteThread(threadId: string): void;
   onForgetWorkspace(workspaceRoot: string): void;
@@ -474,7 +485,7 @@ function WorkspaceGroupView({
               </button>
             </div>
           ) : visibleThreads.map((thread) => {
-            const activity = threadActivityFor(thread, activeThreadId, busy, runningTurnIds);
+            const activity = threadActivityFor(thread, activeThreadId, busy, runningTurnIds, unreadThreadIds);
             return (
               <ThreadRow
                 activity={activity}
@@ -577,9 +588,16 @@ export function ThreadActivityDot({ state }: { state: ThreadActivityState }) {
   return <span className={state === 'running' ? 'threadActivityDot running' : 'threadActivityDot unread'} aria-hidden="true" />;
 }
 
-function threadActivityFor(thread: ThreadMeta, activeThreadId: string, busy: boolean, runningTurnIds: Set<string>): ThreadActivityState {
+function threadActivityFor(
+  thread: ThreadMeta,
+  activeThreadId: string,
+  busy: boolean,
+  runningTurnIds: Set<string>,
+  unreadThreadIds: Set<string>,
+): ThreadActivityState {
   if (thread.status === 'running') return 'running';
   if (thread.threadId === activeThreadId && (busy || runningTurnIds.size > 0)) return 'running';
+  if (thread.threadId !== activeThreadId && unreadThreadIds.has(thread.threadId)) return 'unread';
   return 'idle';
 }
 

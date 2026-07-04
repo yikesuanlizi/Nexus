@@ -1174,16 +1174,18 @@
   }
 
   .threadActivityDot {
-    @apply h-2 w-2 shrink-0 rounded-full;
+    @apply h-2.5 w-2.5 shrink-0 rounded-full;
   }
 
   .threadActivityDot.running {
-    @apply border border-emerald-400 bg-transparent;
-    animation: threadPulse 1s linear infinite;
+    @apply border-2 border-emerald-400 border-t-transparent bg-transparent;
+    animation: threadSpin 0.8s linear infinite;
   }
 
   .threadActivityDot.unread {
     @apply bg-blue-500;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+    animation: threadUnreadPulse 2s ease-in-out infinite;
   }
 
   .weixinThreadBadge,
@@ -1218,10 +1220,13 @@
     @apply border-0 bg-transparent p-0 text-[12px] font-semibold text-slate-500 shadow-none;
   }
 
-  @keyframes threadPulse {
-    0% { transform: scale(.9); opacity: .55; }
-    50% { transform: scale(1.2); opacity: 1; }
-    100% { transform: scale(.9); opacity: .55; }
+  @keyframes threadSpin {
+    to { transform: rotate(360deg); }
+  }
+
+  @keyframes threadUnreadPulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.85); }
   }
 
   .workspace {
@@ -5062,6 +5067,18 @@
     @apply h-8 rounded-md border border-slate-200 bg-slate-50 px-3 text-xs font-bold text-slate-700 shadow-none;
   }
 
+  .runMonitorAutoRefresh {
+    @apply flex items-center gap-1.5 text-[11px] font-semibold text-slate-600;
+  }
+
+  .runMonitorAutoRefresh input[type="checkbox"] {
+    @apply m-0 h-3.5 w-3.5 cursor-pointer accent-blue-500;
+  }
+
+  .runMonitorRefreshInterval {
+    @apply h-8 rounded-md border border-slate-200 bg-slate-50 px-2 text-[11px] font-semibold text-slate-700;
+  }
+
   .runMonitorStats {
     @apply grid grid-cols-3 gap-2 border-b border-slate-200 p-3;
   }
@@ -5110,6 +5127,54 @@
     @apply truncate text-[11px] font-semibold text-slate-500;
   }
 
+  .runMonitorThreadGroup {
+    @apply grid gap-1;
+  }
+
+  .runMonitorThreadHeader {
+    @apply flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-3 text-left shadow-none transition-colors;
+  }
+
+  .runMonitorThreadHeader:hover {
+    @apply border-slate-300 bg-slate-50;
+  }
+
+  .threadCaret {
+    @apply text-[10px] text-slate-400 transition-transform;
+  }
+
+  .threadTitle {
+    @apply flex-1 truncate text-xs font-bold text-slate-950;
+  }
+
+  .threadMeta {
+    @apply truncate text-[11px] font-semibold text-slate-500;
+  }
+
+  .runMonitorThreadRuns {
+    @apply grid gap-1 pl-4;
+  }
+
+  .runMonitorThreadRuns .runMonitorRunItem {
+    @apply grid gap-1 rounded-lg border border-slate-200 bg-white p-2 text-left shadow-none transition-colors;
+  }
+
+  .runMonitorThreadRuns .runMonitorRunItem:hover {
+    @apply border-slate-300 bg-slate-50;
+  }
+
+  .runMonitorThreadRuns .runMonitorRunItem.active {
+    @apply border-blue-400 bg-blue-50;
+  }
+
+  .runMonitorThreadRuns .runMonitorRunItem span {
+    @apply truncate text-[11px] font-bold text-slate-950;
+  }
+
+  .runMonitorThreadRuns .runMonitorRunItem small {
+    @apply truncate text-[10px] font-semibold text-slate-500;
+  }
+
   .runMonitorDetail {
     @apply grid min-h-0 grid-rows-[auto_minmax(0,1fr)];
   }
@@ -5123,7 +5188,7 @@
   }
 
   .runMonitorEvent {
-    @apply grid gap-1 rounded-lg border border-slate-200 bg-slate-50 p-3;
+    @apply grid gap-1 rounded-lg border border-slate-200 bg-slate-50 p-3 transition-all;
   }
 
   .runMonitorEvent.warning {
@@ -5134,16 +5199,64 @@
     @apply border-rose-200 bg-rose-50;
   }
 
-  .runMonitorEvent div {
+  .runMonitorEventHeader {
+    @apply flex w-full items-center justify-between gap-2 border-0 bg-transparent p-0 text-left shadow-none;
+  }
+
+  .runMonitorEventHeader > div {
     @apply flex items-center justify-between gap-2;
   }
 
-  .runMonitorEvent p {
+  .eventCaret {
+    @apply text-[10px] text-slate-400 transition-transform;
+  }
+
+  .runMonitorEventMessage {
     @apply m-0 text-xs font-medium leading-5 text-slate-700;
   }
 
   .runMonitorEvent time {
     @apply text-[10px] font-semibold text-slate-400;
+  }
+
+  .runMonitorEventDetails {
+    @apply mt-2 grid gap-2 border-t border-slate-200 pt-2;
+  }
+
+  .runMonitorEvent.warning .runMonitorEventDetails {
+    @apply border-amber-200;
+  }
+
+  .runMonitorEvent.error .runMonitorEventDetails {
+    @apply border-rose-200;
+  }
+
+  .eventDetailRow {
+    @apply grid grid-cols-[80px_1fr] gap-2 items-start;
+  }
+
+  .eventDetailLabel {
+    @apply text-[10px] font-bold uppercase tracking-wide text-slate-500;
+  }
+
+  .eventDetailValue {
+    @apply text-[11px] font-medium text-slate-700 break-words;
+  }
+
+  .eventDetailMessage {
+    @apply whitespace-pre-wrap;
+  }
+
+  .eventDetailMetadata {
+    @apply m-0 max-h-[300px] overflow-auto rounded-md bg-slate-100 p-2 text-[10px] font-mono leading-4 text-slate-700;
+  }
+
+  .runMonitorEvent.warning .eventDetailMetadata {
+    @apply bg-amber-100 text-amber-900;
+  }
+
+  .runMonitorEvent.error .eventDetailMetadata {
+    @apply bg-rose-100 text-rose-900;
   }
 
   .runMonitorEmpty {
@@ -5187,10 +5300,15 @@
   .appShell.theme-dark .runMonitorControlActions button,
   .appShell.theme-dark .runMonitorAdminToken input,
   .appShell.theme-dark .runMonitorStats div,
-  .appShell.theme-dark .runMonitorEvent {
+  .appShell.theme-dark .runMonitorEvent,
+  .appShell.theme-dark .runMonitorRefreshInterval {
     border-color: rgba(255,255,255,.08);
     background: #171a1f;
     color: #d8dee8;
+  }
+
+  .appShell.theme-dark .runMonitorAutoRefresh {
+    color: #9099a8;
   }
 
   .appShell.theme-dark .runMonitorRunList button.active {
@@ -5198,8 +5316,76 @@
     background: #1c2230;
   }
 
+  .appShell.theme-dark .runMonitorThreadHeader,
+  .appShell.theme-dark .runMonitorThreadRuns .runMonitorRunItem {
+    border-color: rgba(255,255,255,.08);
+    background: #111318;
+  }
+
+  .appShell.theme-dark .runMonitorThreadHeader:hover {
+    border-color: rgba(255,255,255,.15);
+    background: #171a1f;
+  }
+
+  .appShell.theme-dark .threadTitle,
+  .appShell.theme-dark .runMonitorThreadRuns .runMonitorRunItem span {
+    color: #f5f7fb;
+  }
+
+  .appShell.theme-dark .threadMeta,
+  .appShell.theme-dark .threadCaret,
+  .appShell.theme-dark .runMonitorThreadRuns .runMonitorRunItem small {
+    color: #9099a8;
+  }
+
+  .appShell.theme-dark .runMonitorThreadRuns .runMonitorRunItem:hover {
+    border-color: rgba(255,255,255,.15);
+    background: #171a1f;
+  }
+
+  .appShell.theme-dark .runMonitorThreadRuns .runMonitorRunItem.active {
+    border-color: rgba(91,141,255,.45);
+    background: #1c2230;
+  }
+
   .appShell.theme-dark .runMonitorEvent p {
     color: #d8dee8;
+  }
+
+  .appShell.theme-dark .runMonitorEventHeader {
+    background: transparent;
+    border-color: transparent;
+  }
+
+  .appShell.theme-dark .eventCaret {
+    color: #9099a8;
+  }
+
+  .appShell.theme-dark .runMonitorEventDetails {
+    border-top-color: rgba(255,255,255,.08);
+  }
+
+  .appShell.theme-dark .eventDetailLabel {
+    color: #7a8291;
+  }
+
+  .appShell.theme-dark .eventDetailValue {
+    color: #d8dee8;
+  }
+
+  .appShell.theme-dark .eventDetailMetadata {
+    background: #0d0f13;
+    color: #c8cfd9;
+  }
+
+  .appShell.theme-dark .runMonitorEvent.warning .eventDetailMetadata {
+    background: rgba(251, 191, 36, 0.1);
+    color: #fcd34d;
+  }
+
+  .appShell.theme-dark .runMonitorEvent.error .eventDetailMetadata {
+    background: rgba(244, 63, 94, 0.1);
+    color: #fda4af;
   }
 
   .workflowPanel {
@@ -6511,6 +6697,182 @@
     width: 100%;
     height: 100%;
     overflow: visible;
+  }
+
+  .mainRobotInteractive {
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .mainRobotInteractive .face-group {
+    display: none;
+  }
+
+  .mainRobotInteractive.idle .face-idle,
+  .mainRobotInteractive.wave .face-wave,
+  .mainRobotInteractive.angry .face-angry,
+  .mainRobotInteractive.surprised .face-surprised,
+  .mainRobotInteractive.wink .face-wink,
+  .mainRobotInteractive.dizzy .face-dizzy {
+    display: block;
+  }
+
+  .mainRobotInteractive .hand {
+    transform-box: fill-box;
+    transform-origin: 50% 100%;
+  }
+
+  .mainRobotInteractive .left-hand {
+    animation: idleHandL 3s ease-in-out infinite;
+  }
+
+  .mainRobotInteractive .right-hand {
+    animation: idleHandR 2.5s ease-in-out infinite;
+  }
+
+  @keyframes idleHandL {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-3px); }
+  }
+
+  @keyframes idleHandR {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(3px); }
+  }
+
+  .mainRobotInteractive.wave .left-hand {
+    animation: waveHand 0.4s ease-in-out 4;
+  }
+
+  @keyframes waveHand {
+    0%, 100% { transform: translateY(-12px) rotate(-25deg); }
+    50% { transform: translateY(-12px) rotate(25deg); }
+  }
+
+  .mainRobotInteractive.surprised .left-hand,
+  .mainRobotInteractive.surprised .right-hand {
+    animation: handsUp 1.8s ease-out;
+  }
+
+  @keyframes handsUp {
+    0% { transform: translateY(0); }
+    20% { transform: translateY(-18px); }
+    80% { transform: translateY(-18px); }
+    100% { transform: translateY(0); }
+  }
+
+  .mainRobotInteractive.dizzy .body-group {
+    animation: dizzySpin 1s linear infinite;
+    transform-origin: 60px 65px;
+  }
+
+  @keyframes dizzySpin {
+    0%, 100% { transform: rotate(0deg); }
+    25% { transform: rotate(-5deg); }
+    75% { transform: rotate(5deg); }
+  }
+
+  .mainRobotInteractive.angry .body-group {
+    animation: angryShake 0.1s linear infinite;
+    transform-origin: 60px 65px;
+  }
+
+  @keyframes angryShake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-1px); }
+    75% { transform: translateX(1px); }
+  }
+
+  .mainRobotInteractive.clicked {
+    animation: pop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  }
+
+  @keyframes pop {
+    0%   { transform: scale(1); }
+    40%  { transform: scale(0.9, 1.1); }
+    100% { transform: scale(1); }
+  }
+
+  .mainRobotInteractive.blush .blush-left,
+  .mainRobotInteractive.blush .blush-right {
+    r: 5;
+    opacity: 1;
+  }
+
+  .agentNudgeBubble {
+    position: absolute;
+    top: -4px;
+    right: -8px;
+    display: flex;
+    align-items: center;
+    padding: 6px 12px;
+    border: none;
+    border-radius: 16px;
+    background: linear-gradient(135deg, #fbbf24, #f59e0b);
+    color: #0f172a;
+    font-family: 'Poppins', system-ui, sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+    cursor: pointer;
+    white-space: nowrap;
+    box-shadow: 0 4px 12px rgba(251, 191, 36, .4);
+    animation: nudgeBounce 1.8s ease-in-out infinite;
+    z-index: 10;
+  }
+
+  .agentNudgeBubble:hover {
+    transform: scale(1.05);
+    box-shadow: 0 6px 16px rgba(251, 191, 36, .5);
+  }
+
+  .agentNudgeBubble:active {
+    transform: scale(0.97);
+  }
+
+  .nudgeText {
+    position: static !important;
+    display: inline !important;
+    left: auto !important;
+    top: auto !important;
+    width: auto !important;
+    height: auto !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    color: inherit;
+    font-size: inherit;
+    font-weight: inherit;
+  }
+
+  .nudgeArrow {
+    position: absolute !important;
+    left: 50% !important;
+    bottom: -6px !important;
+    top: auto !important;
+    width: 0 !important;
+    height: 0 !important;
+    margin-left: -5px;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 6px solid #f59e0b;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  @keyframes nudgeBounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-4px); }
+  }
+
+  .appShell.theme-dark .agentNudgeBubble {
+    background: linear-gradient(135deg, #fbbf24, #d97706);
+    box-shadow: 0 4px 12px rgba(251, 191, 36, .3);
+  }
+
+  .appShell.theme-dark .nudgeArrow {
+    border-top-color: #d97706;
   }
 
   .agentStageAvatarInfo {

@@ -58,7 +58,7 @@ const zh = {
   'help.cmd_help': '  显示交互帮助',
   'help.cmd_quit': '  退出',
   'agent.system_prompt':
-    '你是一个本地运行的编程助手。你可以使用工具来读写文件、运行 Shell 命令、搜索代码、应用补丁。\n\n' +
+    '你是 Nexus，一个本地运行的全能 Agent OS。你可以使用工具来处理代码、管理文件、执行命令、搜索内容、操作企业数据、调用技能等。\n\n' +
     '规则:\n' +
     '- 编辑文件前先读取。\n' +
     '- 使用绝对路径或工作区相对路径。\n' +
@@ -69,7 +69,7 @@ const zh = {
     '- 优先选择简洁、清晰的解决方案。\n' +
     '- 用中文回答。',
   'agent.system_prompt_en':
-    'You are a coding assistant running locally. You have access to tools for reading/writing files, running shell commands, searching code, and applying patches.\n\n' +
+    'You are Nexus, a fully-featured local Agent OS. You can use tools to work with code, manage files, execute commands, search content, operate enterprise data, invoke skills, and more.\n\n' +
     'Rules:\n' +
     '- Read files before editing them.\n' +
     '- Use absolute or workspace-relative paths.\n' +
@@ -137,7 +137,7 @@ const en: Record<keyof typeof zh, string> = {
   'help.cmd_help': '  Show interactive help',
   'help.cmd_quit': '  Exit',
   'agent.system_prompt':
-    'You are a coding assistant running locally. You have access to tools for reading/writing files, running shell commands, searching code, and applying patches.\n\n' +
+    'You are Nexus, a fully-featured local Agent OS. You can use tools to work with code, manage files, execute commands, search content, operate enterprise data, invoke skills, and more.\n\n' +
     'Rules:\n' +
     '- Read files before editing them.\n' +
     '- Use absolute or workspace-relative paths.\n' +
@@ -148,7 +148,7 @@ const en: Record<keyof typeof zh, string> = {
     '- Always use ESM imports.\n' +
     '- Prefer simple, clear solutions.',
   'agent.system_prompt_en':
-    'You are a coding assistant running locally. You have access to tools for reading/writing files, running shell commands, searching code, and applying patches.\n\n' +
+    'You are Nexus, a fully-featured local Agent OS. You can use tools to work with code, manage files, execute commands, search content, operate enterprise data, invoke skills, and more.\n\n' +
     'Rules:\n' +
     '- Read files before editing them.\n' +
     '- Use absolute or workspace-relative paths.\n' +

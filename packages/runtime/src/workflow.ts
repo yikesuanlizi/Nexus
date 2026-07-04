@@ -98,6 +98,7 @@ export interface WorkflowNodeRun {
   blockedReason?: string;
   startedAt?: string;
   completedAt?: string;
+  retryCount?: number;
 }
 
 export interface WorkflowExecutionRun {
@@ -677,7 +678,16 @@ export function compileWorkflowBlueprint(
   }
 
   const outgoing = buildOutgoingEdges(definition.edges);
-  const topology = deriveWorkflowTopology(definition);
+  let topology: string[] = [];
+  try {
+    topology = deriveWorkflowTopology(definition);
+  } catch (error) {
+    diagnostics.push({
+      severity: 'error',
+      code: 'dependency_cycle',
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
   const referencedVariables = [...new Set(definition.nodes.flatMap((node) => extractWorkflowVariableRefs([
     node.prompt,
     node.inputRequirements,
@@ -824,28 +834,34 @@ export async function executeWorkflowNode(
   }
 
   try {
-    const result = await executor({
-      definition,
-      run: next,
-      node,
-      component,
-      previousResults: previousWorkflowResults(definition, next, node),
-      threadId: runtimeContext.threadId,
-      tenantId: runtimeContext.tenantId,
-      runId: next.id,
-      input: runtimeContext.input,
-      variables: runtimeContext.variables,
-      materializedInput: renderWorkflowTemplate(node.prompt || node.inputRequirements || '', {
+    const timeoutMs = typeof node.config?.timeoutMs === 'number' ? node.config.timeoutMs : 120000;
+    const result = await Promise.race([
+      executor({
         definition,
         run: next,
         node,
-        input: runtimeContext.input,
-        variables: runtimeContext.variables,
+        component,
+        previousResults: previousWorkflowResults(definition, next, node),
         threadId: runtimeContext.threadId,
         tenantId: runtimeContext.tenantId,
+        runId: next.id,
+        input: runtimeContext.input,
+        variables: runtimeContext.variables,
+        materializedInput: renderWorkflowTemplate(node.prompt || node.inputRequirements || '', {
+          definition,
+          run: next,
+          node,
+          input: runtimeContext.input,
+          variables: runtimeContext.variables,
+          threadId: runtimeContext.threadId,
+          tenantId: runtimeContext.tenantId,
+        }),
+        emitEvent: publish,
       }),
-      emitEvent: publish,
-    });
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`Workflow node ${nodeId} timed out after ${timeoutMs}ms`)), timeoutMs),
+      ),
+    ]);
     if (result.status === 'blocked') {
       const reason = result.blockedReason ?? result.error ?? 'Workflow node blocked';
       next = blockWorkflowNode(next, nodeId, reason, now);
@@ -912,9 +928,37 @@ export async function runNextWorkflowNodes(options: WorkflowRuntimeOptions): Pro
       ? runnableWorkflowNodes(options.definition, run).filter((node) => node.id === options.nodeId)
       : runnableWorkflowNodes(options.definition, run);
     if (!runnable.length) break;
-    for (const node of runnable) {
-      const result = await executeWorkflowNode(options.definition, run, node.id, executors, registry, options.now ?? new Date(), emit, runtimeContext);
+    if (runnable.length === 1) {
+      const result = await executeWorkflowNode(options.definition, run, runnable[0].id, executors, registry, options.now ?? new Date(), emit, runtimeContext);
       run = result.run;
+      if (run.status === 'failed' || run.status === 'blocked' || run.status === 'completed') break;
+    } else {
+      const results = await Promise.all(
+        runnable.map((node) => executeWorkflowNode(options.definition, run, node.id, executors, registry, options.now ?? new Date(), emit, runtimeContext)),
+      );
+      const nodeRunMap = new Map<string, { status: WorkflowStepStatus; result?: string; error?: string; blockedReason?: string; startedAt?: string; completedAt?: string }>();
+      for (const result of results) {
+        for (const nodeRun of result.run.nodeRuns) {
+          const existing = nodeRunMap.get(nodeRun.nodeId);
+          if (!existing || (existing.status === 'pending' && nodeRun.status !== 'pending')) {
+            nodeRunMap.set(nodeRun.nodeId, nodeRun);
+          }
+        }
+      }
+      run = {
+        ...run,
+        nodeRuns: run.nodeRuns.map((nr) => nodeRunMap.has(nr.nodeId) ? { ...nr, ...nodeRunMap.get(nr.nodeId)! } : nr),
+        updatedAt: (options.now ?? new Date()).toISOString(),
+      };
+      const hasFailed = results.some((r) => r.run.status === 'failed');
+      const hasBlocked = results.some((r) => r.run.status === 'blocked');
+      if (hasFailed) {
+        run = { ...run, status: 'failed' };
+      } else if (hasBlocked) {
+        run = { ...run, status: 'blocked' };
+      } else if (run.nodeRuns.every((nr) => nr.status === 'completed')) {
+        run = { ...run, status: 'completed' };
+      }
       if (run.status === 'failed' || run.status === 'blocked' || run.status === 'completed') break;
     }
   }
@@ -986,6 +1030,12 @@ export function retryWorkflowNode(
   if (target.status !== 'failed' && target.status !== 'blocked') {
     throw new Error(`Workflow node is not retryable: ${nodeId}`);
   }
+  const node = definition.nodes.find((candidate) => candidate.id === nodeId);
+  const maxRetries = typeof node?.config?.maxRetries === 'number' ? node.config.maxRetries : 3;
+  const currentRetries = target.retryCount ?? 0;
+  if (currentRetries >= maxRetries) {
+    throw new Error(`Workflow node ${nodeId} exceeded max retries (${maxRetries})`);
+  }
   const descendants = workflowNodeDescendants(definition, nodeId);
   const resetIds = new Set([nodeId, ...descendants]);
   const next = {
@@ -993,7 +1043,7 @@ export function retryWorkflowNode(
     status: 'planned' as const,
     updatedAt: now.toISOString(),
     nodeRuns: run.nodeRuns.map((nodeRun) => resetIds.has(nodeRun.nodeId)
-      ? { nodeId: nodeRun.nodeId, status: 'pending' as const }
+      ? { nodeId: nodeRun.nodeId, status: 'pending' as const, retryCount: nodeRun.nodeId === nodeId ? currentRetries + 1 : (nodeRun.retryCount ?? 0) }
       : nodeRun),
   };
   emit?.({
@@ -1681,7 +1731,10 @@ function deriveWorkflowTopology(definition: WorkflowDefinition): string[] {
       if (nextDependencies.size === 0) queue.push(nextId);
     }
   }
-  return order.length === definition.nodes.length ? order : definition.nodes.map((node) => node.id);
+  if (order.length !== definition.nodes.length) {
+    throw new Error('Workflow dependency cycle detected in topology derivation');
+  }
+  return order;
 }
 
 function collectWorkflowMissingInputs(definition: WorkflowDefinition): string[] {

@@ -73,6 +73,8 @@ patchGlobalFetch(); function App() {
   const [threadChildren, setThreadChildren] = useState<ThreadChildInfo[]>([]);
   const [, setEvents] = useState<EventLine[]>([]);
   const [runningTurnIds, setRunningTurnIds] = useState<Set<string>>(() => new Set());
+  const [unreadThreadIds, setUnreadThreadIds] = useState<Set<string>>(() => new Set());
+  const prevThreadStatusesRef = useRef<Record<string, string>>({});
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [threadFilter, setThreadFilter] = useState('');
   const [input, setInput] = useState('');
@@ -277,6 +279,27 @@ patchGlobalFetch(); function App() {
     const data = (await response.json()) as { threads: ThreadMeta[] };
     setThreads(data.threads ?? []);
   }, []);
+  // 检测线程从 running 变为非 running：标记未查看的线程为未读
+  // Chinese: detect running→idle transitions and mark non-active threads as unread
+  useEffect(() => {
+    const prev = prevThreadStatusesRef.current;
+    const next: Record<string, string> = {};
+    const newlyCompleted: string[] = [];
+    for (const thread of threads) {
+      next[thread.threadId] = thread.status;
+      if (prev[thread.threadId] === 'running' && thread.status !== 'running' && thread.threadId !== threadId) {
+        newlyCompleted.push(thread.threadId);
+      }
+    }
+    if (newlyCompleted.length > 0) {
+      setUnreadThreadIds((current) => {
+        const updated = new Set(current);
+        for (const id of newlyCompleted) updated.add(id);
+        return updated;
+      });
+    }
+    prevThreadStatusesRef.current = next;
+  }, [threads, threadId]);
   const refreshApprovals = useCallback(async () => {
     const response = await fetch('/api/approvals');
     if (!response.ok) return;
@@ -487,6 +510,14 @@ patchGlobalFetch(); function App() {
     async (id: string) => {
       if (!id) return;
       setThreadId(id);
+      // 选中线程时清除其未读标记
+      // Chinese: clear unread indicator when the thread is opened
+      setUnreadThreadIds((current) => {
+        if (!current.has(id)) return current;
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
       setWorkflowPlanDraft(null);
       setEvents([]);
       setCacheDiagnostics(null);
@@ -1386,7 +1417,8 @@ patchGlobalFetch(); function App() {
         <WorkspaceThreadList
           activeThreadId={threadId} busy={busy} currentWorkspaceRoot={config.workspaceRoot} locale={config.locale}
           rememberedRoots={rememberedWorkspaceRoots} runningTurnIds={runningTurnIds} searchQuery={threadFilter}
-          sidebarCollapsed={sidebarCollapsed} threads={threads} weixinActiveThreadId={botConfig?.weixin.activeThreadId ?? ''} dingtalkActiveThreadId={botConfig?.dingtalk.activeThreadId ?? ''}
+          sidebarCollapsed={sidebarCollapsed} threads={threads} unreadThreadIds={unreadThreadIds}
+          weixinActiveThreadId={botConfig?.weixin.activeThreadId ?? ''} dingtalkActiveThreadId={botConfig?.dingtalk.activeThreadId ?? ''}
           onCreatePlainChat={() => void createPlainConversation()}
           onCreateInWorkspace={(workspaceRoot) => void createConversation(workspaceRoot, 'project')}
           onCreateWorkflowProject={() => void createWorkflowProject()}
@@ -1522,7 +1554,7 @@ patchGlobalFetch(); function App() {
         />
       ) : null}
       {settingsHelpOpen ? <SettingsHelpDialog locale={config.locale} onClose={() => setSettingsHelpOpen(false)} /> : null}
-      <RunMonitorDrawer locale={config.locale} open={runMonitor.open} adminMode={runMonitor.adminMode} adminToken={runMonitor.adminToken} runs={runMonitor.runs} events={runMonitor.events} selectedRunId={runMonitor.selectedRunId} loading={runMonitor.loading} onClose={() => runMonitor.setOpen(false)} onRefresh={() => void runMonitor.refresh(runMonitor.selectedRunId)} onSelectRun={(runId) => void runMonitor.refresh(runId)} onControlRun={(action, run) => void runMonitor.controlRun(action, run)} onAdminTokenChange={runMonitor.setAdminToken} />
+      <RunMonitorDrawer locale={config.locale} open={runMonitor.open} adminMode={runMonitor.adminMode} adminToken={runMonitor.adminToken} runs={runMonitor.runs} events={runMonitor.events} selectedRunId={runMonitor.selectedRunId} threads={runMonitor.threads} expandedThreadId={runMonitor.expandedThreadId} expandedEventId={runMonitor.expandedEventId} loading={runMonitor.loading} autoRefresh={runMonitor.autoRefresh} autoRefreshInterval={runMonitor.autoRefreshInterval} onClose={() => runMonitor.setOpen(false)} onRefresh={() => void runMonitor.refresh(runMonitor.selectedRunId)} onSelectRun={(runId) => void runMonitor.refresh(runId, { autoExpandThread: true })} onControlRun={(action, run) => void runMonitor.controlRun(action, run)} onAdminTokenChange={runMonitor.setAdminToken} onToggleThread={runMonitor.toggleThread} onToggleEvent={runMonitor.toggleEvent} onAutoRefreshChange={runMonitor.setAutoRefresh} onAutoRefreshIntervalChange={runMonitor.setAutoRefreshInterval} />
       {dialog ? <AppDialog dialog={dialog} onClose={() => setDialog(null)} /> : null}
       {toast ? <div className="toastNotice" key={toast.id}>{toast.text}</div> : null}
       {weixinConnectState ? <WeixinConnectDialog locale={config.locale} state={weixinConnectState} onClose={() => setWeixinConnectState(null)} /> : null}

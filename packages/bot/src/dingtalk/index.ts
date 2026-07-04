@@ -2,6 +2,7 @@ export { DingtalkAICardStream, type DingtalkAICardStreamOptions, type DingtalkAI
 export { DingtalkStreamClient } from './streamClient.js';
 export { DingtalkTokenManager } from './token.js';
 export { adaptMarkdownForDingtalk } from './markdown.js';
+export { execDws, dwsExec, dwsSchema, dwsAuthStatus, dwsListProducts, isDwsAvailable, type DwsExecResult, type DwsCliOptions } from './dwsCli.js';
 export type {
   DingtalkAICardCreateOptions,
   DingtalkAICardCreateResult,

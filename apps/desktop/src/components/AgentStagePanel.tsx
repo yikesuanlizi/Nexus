@@ -1,3 +1,7 @@
+// Agent 舞台面板：展示主 Agent 状态卡、子 Agent 网格与运行统计
+// Agent stage panel: shows main Agent status card, child agent grid, run stats
+
+import { useCallback, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { Locale } from '../config/config.js';
 import { formatTimestamp } from '../shared/i18n.js';
@@ -18,6 +22,23 @@ export function AgentStagePanel({
   const doneCount = statRows.filter((row) => row.tone === 'success').length;
   const issueCount = statRows.filter((row) => row.tone === 'warning' || row.tone === 'danger').length;
   const gridRows = childRows;
+
+  const [showNudge, setShowNudge] = useState(() => {
+    if (childRows.length > 0) return false;
+    try {
+      return localStorage.getItem('nexus.agentNudgeDismissed') !== '1';
+    } catch {
+      return true;
+    }
+  });
+
+  const handleNudgeClick = useCallback(() => {
+    setShowNudge(false);
+    try {
+      localStorage.setItem('nexus.agentNudgeDismissed', '1');
+    } catch { /* ignore */ }
+  }, []);
+
   return (
     <section className="agentStage" aria-label={locale === 'zh' ? 'Agent 舞台' : 'Agent stage'}>
       <div className="agentStageHeader">
@@ -31,7 +52,18 @@ export function AgentStagePanel({
       </div>
       <article className={['agentStageAvatarCard', mainRow.tone].join(' ')}>
         <div className="agentStageHeroAvatar" aria-hidden="true">
-          <RobotMoodIcon variant="main" />
+          <RobotMoodIcon variant="main" onInteract={handleNudgeClick} />
+          {showNudge && childRows.length === 0 && (
+            <button
+              type="button"
+              className="agentNudgeBubble"
+              onClick={handleNudgeClick}
+              aria-label={locale === 'zh' ? '戳一戳' : 'Tap me'}
+            >
+              <span className="nudgeText">{locale === 'zh' ? '戳一戳我' : 'Tap me!'}</span>
+              <span className="nudgeArrow" />
+            </button>
+          )}
         </div>
         <div className="agentStageAvatarInfo">
           <strong>
@@ -89,8 +121,12 @@ export function AgentStagePanel({
 }
 
 export type RobotMoodVariant = 'main' | 'idle' | 'working' | 'thinking' | 'done' | 'sleep';
+// 机器人表情变体：主 Agent / 空闲 / 运行 / 思考 / 完成 / 休眠
+// Robot mood variants: main / idle / working / thinking / done / sleep
 
 function moodVariantForTone(tone: AgentStageRow['tone']): RobotMoodVariant {
+  // 根据行状态（运行/完成/注意/休眠）映射到机器人图标变体
+  // Maps the row tone (running / success / warning-or-danger / muted) to a robot icon variant
   if (tone === 'running') return 'working';
   if (tone === 'success') return 'done';
   if (tone === 'warning' || tone === 'danger') return 'thinking';
@@ -99,48 +135,24 @@ function moodVariantForTone(tone: AgentStageRow['tone']): RobotMoodVariant {
 }
 
 function mainAgentTitle(locale: Locale): string {
+  // 主 Agent 标题文本（多语言）
+  // Main agent title text (i18n)
   return locale === 'zh' ? 'Nexus 主控 Agent' : 'Nexus Primary Agent';
 }
 
 function mainAgentStatusText(row: AgentStageRow, locale: Locale): string {
+  // 主 Agent 副标题：状态 + 最近动作
+  // Main agent sub-title: status + latest action
   const status = row.statusLabel || (locale === 'zh' ? '待机中' : 'Standby');
   const action = row.latestAction || (locale === 'zh' ? '等待指令' : 'Awaiting command');
   return `${status} · ${action}`;
 }
 
-export function RobotMoodIcon({ variant }: { variant: RobotMoodVariant }) {
+export function RobotMoodIcon({ variant, onInteract }: { variant: RobotMoodVariant; onInteract?: () => void }) {
+  // 输出带动态动画效果（CSS 动画）的机器人 SVG
+  // Outputs a robot SVG with animations (CSS-powered)
   if (variant === 'main') {
-    return (
-      <svg className="robotMoodSvg mainRobotSvg" viewBox="-10 -20 140 140" aria-hidden="true">
-        <ellipse cx="60" cy="110" rx="26" ry="5" fill="#cbd5e1" opacity="0.6">
-          <animate attributeName="rx" values="26; 20; 26" dur="3s" repeatCount="indefinite" />
-          <animate attributeName="opacity" values="0.6; 0.3; 0.6" dur="3s" repeatCount="indefinite" />
-        </ellipse>
-        <g>
-          <animateTransform attributeName="transform" type="translate" values="0,2; 0,-8; 0,2" dur="3s" repeatCount="indefinite" />
-          <path d="M60 35 L60 15" stroke="#0f172a" strokeWidth="5" strokeLinecap="round" />
-          <circle cx="60" cy="15" r="7" fill="#fbbf24" stroke="#0f172a" strokeWidth="4">
-            <animate attributeName="fill" values="#fbbf24; #fef08a; #fbbf24" dur="1.5s" repeatCount="indefinite" />
-          </circle>
-          <rect x="25" y="35" width="70" height="60" rx="22" fill="#ffffff" stroke="#0f172a" strokeWidth="5" />
-          <rect x="35" y="48" width="50" height="32" rx="10" fill="#0f172a" />
-          <ellipse cx="48" cy="64" rx="5" ry="7" fill="#38bdf8">
-            <animate attributeName="ry" values="7; 1; 7; 7" keyTimes="0; 0.05; 0.1; 1" dur="4s" repeatCount="indefinite" />
-          </ellipse>
-          <ellipse cx="72" cy="64" rx="5" ry="7" fill="#38bdf8">
-            <animate attributeName="ry" values="7; 1; 7; 7" keyTimes="0; 0.05; 0.1; 1" dur="4s" repeatCount="indefinite" />
-          </ellipse>
-          <circle cx="42" cy="72" r="3" fill="#f43f5e" opacity="0.6" />
-          <circle cx="78" cy="72" r="3" fill="#f43f5e" opacity="0.6" />
-          <circle cx="15" cy="65" r="8" fill="#ffffff" stroke="#0f172a" strokeWidth="4">
-            <animateTransform attributeName="transform" type="translate" values="0,0; 0,-3; 0,0" dur="2s" repeatCount="indefinite" />
-          </circle>
-          <circle cx="105" cy="65" r="8" fill="#ffffff" stroke="#0f172a" strokeWidth="4">
-            <animateTransform attributeName="transform" type="translate" values="0,0; 0,3; 0,0" dur="2.5s" repeatCount="indefinite" />
-          </circle>
-        </g>
-      </svg>
-    );
+    return <InteractiveMainRobot onInteract={onInteract} />;
   }
 
   if (variant === 'working') {
@@ -227,6 +239,146 @@ export function RobotMoodIcon({ variant }: { variant: RobotMoodVariant }) {
         <ellipse cx="48" cy="65" rx="5" ry="7" fill="#38bdf8"><animate attributeName="ry" values="7; 1; 7; 7" dur="4s" repeatCount="indefinite" /></ellipse>
         <ellipse cx="72" cy="65" rx="5" ry="7" fill="#38bdf8"><animate attributeName="ry" values="7; 1; 7; 7" dur="4s" repeatCount="indefinite" /></ellipse>
         <circle cx="42" cy="78" r="3" fill="#f43f5e" opacity="0.5" /><circle cx="78" cy="78" r="3" fill="#f43f5e" opacity="0.5" />
+      </g>
+    </svg>
+  );
+}
+
+type AgentMood = 'idle' | 'wave' | 'angry' | 'surprised' | 'wink' | 'dizzy';
+
+function InteractiveMainRobot({ onInteract }: { onInteract?: () => void }) {
+  const [mood, setMood] = useState<AgentMood>('idle');
+  const [clicked, setClicked] = useState(false);
+  const [blush, setBlush] = useState(false);
+  const isAnimatingRef = useRef(false);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const actions: AgentMood[] = ['wave', 'angry', 'surprised', 'wink', 'dizzy'];
+
+  const handleClick = useCallback(() => {
+    if (isAnimatingRef.current) return;
+    isAnimatingRef.current = true;
+
+    onInteract?.();
+
+    setClicked(true);
+    setTimeout(() => setClicked(false), 400);
+
+    let nextMood: AgentMood = mood;
+    while (nextMood === mood) {
+      nextMood = actions[Math.floor(Math.random() * actions.length)];
+    }
+    setMood(nextMood);
+
+    if (nextMood === 'angry') {
+      setBlush(true);
+    }
+
+    const duration = nextMood === 'wave' ? 1800 : 2000;
+
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => {
+      setMood('idle');
+      setBlush(false);
+      isAnimatingRef.current = false;
+    }, duration);
+  }, [mood, onInteract]);
+
+  return (
+    <svg
+      className={`robotMoodSvg mainRobotInteractive ${mood} ${clicked ? 'clicked' : ''} ${blush ? 'blush' : ''}`}
+      viewBox="-10 -20 140 140"
+      aria-hidden="true"
+      onClick={handleClick}
+    >
+      <ellipse cx="60" cy="110" rx="26" ry="5" fill="#cbd5e1" opacity="0.6">
+        <animate attributeName="rx" values="26; 20; 26" dur="3s" repeatCount="indefinite" />
+        <animate attributeName="opacity" values="0.6; 0.3; 0.6" dur="3s" repeatCount="indefinite" />
+      </ellipse>
+
+      <g className="robotFloatGroup">
+        <animateTransform attributeName="transform" type="translate" values="0,2; 0,-8; 0,2" dur="3s" repeatCount="indefinite" />
+
+        <g fill="none" stroke="#fbbf24" strokeWidth="2" className="antennaRipples">
+          <circle cx="60" cy="15" r="7">
+            <animate attributeName="r" values="7; 24; 24" keyTimes="0; 0.7; 1" dur="2.4s" repeatCount="indefinite" />
+            <animate attributeName="opacity" values="0.8; 0; 0" keyTimes="0; 0.7; 1" dur="2.4s" repeatCount="indefinite" />
+          </circle>
+          <circle cx="60" cy="15" r="7">
+            <animate attributeName="r" values="7; 24; 24" keyTimes="0; 0.7; 1" dur="2.4s" begin="0.8s" repeatCount="indefinite" />
+            <animate attributeName="opacity" values="0.8; 0; 0" keyTimes="0; 0.7; 1" dur="2.4s" begin="0.8s" repeatCount="indefinite" />
+          </circle>
+          <circle cx="60" cy="15" r="7">
+            <animate attributeName="r" values="7; 24; 24" keyTimes="0; 0.7; 1" dur="2.4s" begin="1.6s" repeatCount="indefinite" />
+            <animate attributeName="opacity" values="0.8; 0; 0" keyTimes="0; 0.7; 1" dur="2.4s" begin="1.6s" repeatCount="indefinite" />
+          </circle>
+        </g>
+
+        <path d="M60 35 L60 15" stroke="#0f172a" strokeWidth="5" strokeLinecap="round" />
+        <circle cx="60" cy="15" r="7" fill="#fbbf24" stroke="#0f172a" strokeWidth="4">
+          <animate attributeName="fill" values="#fbbf24; #fef08a; #fbbf24" dur="1.5s" repeatCount="indefinite" />
+        </circle>
+
+        <g className="body-group">
+          <animateTransform attributeName="transform" type="rotate"
+            values="-2 60 65; 2 60 65; -2 60 65" dur="4s" repeatCount="indefinite" />
+
+          <rect x="25" y="35" width="70" height="60" rx="22" fill="#ffffff" stroke="#0f172a" strokeWidth="5" />
+          <rect x="35" y="48" width="50" height="32" rx="10" fill="#0f172a" />
+
+          <g className="face-group face-idle">
+            <ellipse cx="48" cy="64" rx="5" ry="7" fill="#38bdf8">
+              <animate attributeName="ry" values="7; 1; 7; 7" keyTimes="0; 0.05; 0.1; 1" dur="4s" repeatCount="indefinite" />
+              <animate attributeName="cx" values="48; 52; 44; 48" keyTimes="0; 0.33; 0.66; 1" dur="5s" repeatCount="indefinite" />
+            </ellipse>
+            <ellipse cx="72" cy="64" rx="5" ry="7" fill="#38bdf8">
+              <animate attributeName="ry" values="7; 1; 7; 7" keyTimes="0; 0.05; 0.1; 1" dur="4s" repeatCount="indefinite" />
+              <animate attributeName="cx" values="72; 76; 68; 72" keyTimes="0; 0.33; 0.66; 1" dur="5s" repeatCount="indefinite" />
+            </ellipse>
+            <path d="M54 74 Q60 74 66 74" stroke="#38bdf8" strokeWidth="2.5" fill="none" strokeLinecap="round">
+              <animate attributeName="d"
+                values="M54 74 Q60 74 66 74; M54 74 Q60 78 66 74; M54 74 Q60 73 66 74; M54 74 Q60 74 66 74"
+                keyTimes="0; 0.33; 0.66; 1" dur="0.6s" repeatCount="indefinite" />
+            </path>
+          </g>
+
+          <g className="face-group face-wave">
+            <path d="M43 64 Q48 58 53 64" stroke="#38bdf8" strokeWidth="2.5" fill="none" strokeLinecap="round" />
+            <path d="M67 64 Q72 58 77 64" stroke="#38bdf8" strokeWidth="2.5" fill="none" strokeLinecap="round" />
+            <path d="M52 71 Q60 80 68 71" stroke="#38bdf8" strokeWidth="2.5" fill="none" strokeLinecap="round" />
+          </g>
+
+          <g className="face-group face-angry">
+            <path d="M44 60 L52 68 M52 60 L44 68" stroke="#f43f5e" strokeWidth="2.5" strokeLinecap="round" />
+            <path d="M68 60 L76 68 M76 60 L68 68" stroke="#f43f5e" strokeWidth="2.5" strokeLinecap="round" />
+            <path d="M42 56 L53 59" stroke="#f43f5e" strokeWidth="2.5" strokeLinecap="round" />
+            <path d="M78 56 L67 59" stroke="#f43f5e" strokeWidth="2.5" strokeLinecap="round" />
+            <path d="M55 77 Q60 71 65 77" stroke="#f43f5e" strokeWidth="2.5" fill="none" strokeLinecap="round" />
+          </g>
+
+          <g className="face-group face-surprised">
+            <circle cx="48" cy="64" r="4" fill="#38bdf8" />
+            <circle cx="72" cy="64" r="4" fill="#38bdf8" />
+            <circle cx="60" cy="74" r="3" fill="none" stroke="#38bdf8" strokeWidth="2" />
+          </g>
+
+          <g className="face-group face-wink">
+            <path d="M43 64 L53 64" stroke="#38bdf8" strokeWidth="2.5" strokeLinecap="round" />
+            <circle cx="72" cy="64" r="4" fill="#38bdf8" />
+            <path d="M54 74 Q60 78 66 72" stroke="#38bdf8" strokeWidth="2.5" fill="none" strokeLinecap="round" />
+          </g>
+
+          <g className="face-group face-dizzy">
+            <path d="M43 64 Q46 60 49 64 T55 64" stroke="#38bdf8" strokeWidth="2" fill="none" strokeLinecap="round" />
+            <path d="M65 64 Q68 60 71 64 T77 64" stroke="#38bdf8" strokeWidth="2" fill="none" strokeLinecap="round" />
+            <path d="M53 74 Q56 71 59 74 T65 74" stroke="#38bdf8" strokeWidth="2" fill="none" strokeLinecap="round" />
+          </g>
+
+          <circle className="blush-left" cx="42" cy="72" r="3" fill="#f43f5e" opacity="0.6" />
+          <circle className="blush-right" cx="78" cy="72" r="3" fill="#f43f5e" opacity="0.6" />
+        </g>
+
+        <circle className="hand left-hand" cx="15" cy="65" r="8" fill="#ffffff" stroke="#0f172a" strokeWidth="4" />
+        <circle className="hand right-hand" cx="105" cy="65" r="8" fill="#ffffff" stroke="#0f172a" strokeWidth="4" />
       </g>
     </svg>
   );

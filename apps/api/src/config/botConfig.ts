@@ -42,10 +42,23 @@ export interface DingtalkBotConfig extends BotPlatformConfig {
   autoStart: boolean;
 }
 
+// 钉钉 CLI (dws) 配置 — 与机器人搭配使用，Agent 通过 CLI 主动操作钉钉企业数据
+// Chinese: DingTalk CLI (dws) config — works alongside the bot, Agent proactively operates DingTalk enterprise data
+export interface DwsCliConfig {
+  enabled: boolean;
+  /** dws 可执行文件路径，留空则用 PATH 中的 dws */
+  binaryPath: string;
+  /** OAuth 自建应用 AppKey（留空则用交互式登录） */
+  clientId: string;
+  /** OAuth 自建应用 AppSecret */
+  clientSecret: string;
+}
+
 export interface BotConfig {
   weixin: WeixinBotConfig;
   feishu: BotPlatformConfig;
   dingtalk: DingtalkBotConfig;
+  dwsCli: DwsCliConfig;
   qq: BotPlatformConfig;
 }
 
@@ -80,6 +93,12 @@ export const DEFAULT_BOT_CONFIG: BotConfig = {
     autoStart: true,
   },
   qq: { enabled: false },
+  dwsCli: {
+    enabled: false,
+    binaryPath: '',
+    clientId: '',
+    clientSecret: '',
+  },
 };
 
 // 规范化外部输入的机器人配置 — Chinese: normalize incoming bot config
@@ -117,6 +136,7 @@ export function normalizeBotConfig(input: unknown): BotConfig {
       autoStart: normalizeBoolean(dingtalk.autoStart, DEFAULT_BOT_CONFIG.dingtalk.autoStart),
     },
     qq: normalizeSimplePlatform(raw.qq),
+    dwsCli: normalizeDwsCliConfig(raw.dwsCli),
   };
 }
 
@@ -135,6 +155,10 @@ export function publicBotConfig(config: BotConfig): BotConfig {
       targetGroupSessionWebhook: maskSecret(config.dingtalk.targetGroupSessionWebhook),
       lastDetectedGroupSessionWebhook: maskSecret(config.dingtalk.lastDetectedGroupSessionWebhook),
       webhookSecret: maskSecret(config.dingtalk.webhookSecret),
+    },
+    dwsCli: {
+      ...config.dwsCli,
+      clientSecret: maskSecret(config.dwsCli.clientSecret),
     },
   };
 }
@@ -179,12 +203,20 @@ export function mergeBotConfig(current: BotConfig, patch: unknown): BotConfig {
       ? current.dingtalk.lastDetectedGroupSessionWebhook
       : rawDingtalk.lastDetectedGroupSessionWebhook;
   }
+  const rawDwsCli = asRecord(raw.dwsCli);
+  const dwsCliPatch = { ...rawDwsCli } as Record<string, unknown>;
+  if (Object.prototype.hasOwnProperty.call(rawDwsCli, 'clientSecret')) {
+    dwsCliPatch.clientSecret = isMaskedValue(rawDwsCli.clientSecret)
+      ? current.dwsCli.clientSecret
+      : rawDwsCli.clientSecret;
+  }
   return normalizeBotConfig({
     ...current,
     ...raw,
     weixin: { ...current.weixin, ...weixinPatch },
     feishu: { ...current.feishu, ...asRecord(raw.feishu) },
     dingtalk: { ...current.dingtalk, ...dingtalkPatch },
+    dwsCli: { ...current.dwsCli, ...dwsCliPatch },
     qq: { ...current.qq, ...asRecord(raw.qq) },
   });
 }
@@ -193,6 +225,17 @@ export function mergeBotConfig(current: BotConfig, patch: unknown): BotConfig {
 function normalizeSimplePlatform(input: unknown): BotPlatformConfig {
   const raw = asRecord(input);
   return { enabled: normalizeBoolean(raw.enabled, false) };
+}
+
+// 规范化 dws CLI 配置 — Chinese: normalize dws CLI config
+function normalizeDwsCliConfig(input: unknown): DwsCliConfig {
+  const raw = asRecord(input);
+  return {
+    enabled: normalizeBoolean(raw.enabled, DEFAULT_BOT_CONFIG.dwsCli.enabled),
+    binaryPath: normalizeString(raw.binaryPath, DEFAULT_BOT_CONFIG.dwsCli.binaryPath),
+    clientId: normalizeString(raw.clientId, DEFAULT_BOT_CONFIG.dwsCli.clientId),
+    clientSecret: normalizeString(raw.clientSecret, DEFAULT_BOT_CONFIG.dwsCli.clientSecret),
+  };
 }
 
 function normalizeBoolean(value: unknown, fallback: boolean): boolean {

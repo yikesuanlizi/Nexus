@@ -60,7 +60,10 @@ export function WorkflowPanel({
   const [viewMode, setViewMode] = useState<'development' | 'release'>(initialViewMode);
   const [viewport, setViewport] = useState({ x: 0, y: 0, scale: 1 });
   const [dragging, setDragging] = useState(false);
+  const [connectingFrom, setConnectingFrom] = useState<string | null>(null);
+  const [nodeLayout, setNodeLayout] = useState<Record<string, { x: number; y: number }>>({});
   const dragRef = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null);
+  const nodeDragRef = useRef<{ pointerId: number; nodeId: string; startX: number; startY: number; originX: number; originY: number } | null>(null);
   const developmentMode = planDraft ? true : viewMode === 'development';
   const publishedWorkflow = workflow?.publishedDefinition ? { ...workflow, definition: workflow.publishedDefinition } : null;
   const displayedWorkflow = planDraft?.workflow ?? (developmentMode ? workflow : (publishedWorkflow ?? workflow));
@@ -75,6 +78,11 @@ export function WorkflowPanel({
     setSelectedNodeId('');
     setSelectedNodeIds([]);
     setViewport({ x: 0, y: 0, scale: 1 });
+  }, [displayedWorkflow?.definition.id, displayedWorkflow?.definition.version]);
+  useEffect(() => {
+    if (displayedWorkflow?.definition.ui?.layout?.nodes) {
+      setNodeLayout(displayedWorkflow.definition.ui.layout.nodes);
+    }
   }, [displayedWorkflow?.definition.id, displayedWorkflow?.definition.version]);
 
   if (!displayedWorkflow || displayedWorkflow.definition.nodes.length === 0) {
@@ -226,6 +234,86 @@ export function WorkflowPanel({
     onSave(updateWorkflowNodeDraft(workflowView, selectedNode.id, { componentType: type, prompt: selectedNode.prompt }));
   }
 
+  function startNodeDrag(event: PointerEvent<HTMLElement>, nodeId: string): void {
+    if (event.button !== 0) return;
+    const pos = nodeLayout[nodeId] ?? { x: 0, y: 0 };
+    nodeDragRef.current = {
+      pointerId: event.pointerId,
+      nodeId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: pos.x,
+      originY: pos.y,
+    };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }
+
+  function moveNodeDrag(event: PointerEvent<HTMLElement>): void {
+    const drag = nodeDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const dx = (event.clientX - drag.startX) / viewport.scale;
+    const dy = (event.clientY - drag.startY) / viewport.scale;
+    setNodeLayout((prev) => ({
+      ...prev,
+      [drag.nodeId]: { x: drag.originX + dx, y: drag.originY + dy },
+    }));
+  }
+
+  function endNodeDrag(event: PointerEvent<HTMLElement>): void {
+    if (!nodeDragRef.current) return;
+    const nodeId = nodeDragRef.current.nodeId;
+    nodeDragRef.current = null;
+    if (displayedWorkflow && nodeLayout[nodeId]) {
+      onSave({
+        ...displayedWorkflow,
+        definition: {
+          ...displayedWorkflow.definition,
+          ui: {
+            ...displayedWorkflow.definition.ui,
+            layout: {
+              ...displayedWorkflow.definition.ui?.layout,
+              nodes: { ...nodeLayout, [nodeId]: nodeLayout[nodeId] },
+            },
+          },
+        },
+      });
+    }
+  }
+
+  function addEdge(fromNodeId: string, toNodeId: string): void {
+    if (fromNodeId === toNodeId) return;
+    if (!displayedWorkflow) return;
+    const exists = displayedWorkflow.definition.edges.some((e) => e.from === fromNodeId && e.to === toNodeId);
+    if (exists) return;
+    const now = new Date().toISOString();
+    onSave({
+      ...displayedWorkflow,
+      definition: {
+        ...displayedWorkflow.definition,
+        version: displayedWorkflow.definition.version + 1,
+        edges: [...displayedWorkflow.definition.edges, { from: fromNodeId, to: toNodeId }],
+        nodes: displayedWorkflow.definition.nodes.map((n) =>
+          n.id === toNodeId && !n.dependsOn.includes(fromNodeId)
+            ? { ...n, dependsOn: [...n.dependsOn, fromNodeId] }
+            : n,
+        ),
+        updatedAt: now,
+      },
+      publication: { ...(displayedWorkflow.publication ?? { status: 'draft' }), status: 'draft' },
+    });
+  }
+
+  function handleConnectClick(nodeId: string): void {
+    if (connectingFrom === null) {
+      setConnectingFrom(nodeId);
+    } else if (connectingFrom === nodeId) {
+      setConnectingFrom(null);
+    } else {
+      addEdge(connectingFrom, nodeId);
+      setConnectingFrom(null);
+    }
+  }
+
   return (
     <section className="workflowPanel">
       {planDraft ? (
@@ -296,9 +384,32 @@ export function WorkflowPanel({
               const status = workflowNodeStatus(displayedWorkflow, node.id);
               const active = activeNode?.id === node.id;
               const selected = selectedNodeIds.includes(node.id);
+              const incomingEdges = displayedWorkflow.definition.edges.filter((e) => e.to === node.id);
+              const outgoingEdges = displayedWorkflow.definition.edges.filter((e) => e.from === node.id);
+              const pos = nodeLayout[node.id] ?? { x: 0, y: 0 };
+              const isConnecting = connectingFrom === node.id;
               return (
-                <div className="workflowStepWrap" key={node.id}>
-                  <article className={['workflowNode', active ? 'active' : '', selected ? 'selected' : '', status].filter(Boolean).join(' ')}>
+                <div className="workflowStepWrap" key={node.id} style={{ transform: `translate(${pos.x}px, ${pos.y}px)` }}>
+                  {incomingEdges.length > 0 ? (
+                    <div className="workflowEdgeIndicator">
+                      {incomingEdges.map((edge) => {
+                        const fromNode = displayedWorkflow.definition.nodes.find((n) => n.id === edge.from);
+                        return (
+                          <span key={`${edge.from}-${edge.to}`} className="workflowEdgeLabel">
+                            {locale === 'zh' ? '← 来自' : '← from'} {fromNode?.title ?? edge.from}
+                            {edge.condition ? ` (${edge.condition})` : ''}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                  <article
+                    className={['workflowNode', active ? 'active' : '', selected ? 'selected' : '', status, isConnecting ? 'connecting' : ''].filter(Boolean).join(' ')}
+                    onPointerDown={developmentMode ? (e) => startNodeDrag(e, node.id) : undefined}
+                    onPointerMove={developmentMode ? moveNodeDrag : undefined}
+                    onPointerUp={developmentMode ? endNodeDrag : undefined}
+                    onPointerCancel={developmentMode ? endNodeDrag : undefined}
+                  >
                     <div className="workflowNodeTopline">
                       {developmentMode ? (
                         <input
@@ -318,8 +429,23 @@ export function WorkflowPanel({
                       <small>{node.componentType} · {workflowNodeDependencyText(node)}</small>
                       <span>{workflowNodeVariableSummary(node)}</span>
                     </button>
+                    {developmentMode ? (
+                      <button
+                        className={['workflowConnectAnchor', isConnecting ? 'active' : ''].filter(Boolean).join(' ')}
+                        type="button"
+                        title={isConnecting ? (locale === 'zh' ? '点击目标节点完成连线' : 'Click target node to connect') : (locale === 'zh' ? '开始连线' : 'Start connection')}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => { e.stopPropagation(); handleConnectClick(node.id); }}
+                      >
+                        {isConnecting ? (locale === 'zh' ? '取消连线' : 'Cancel') : '+'}
+                      </button>
+                    ) : null}
                   </article>
-                  {index < displayedWorkflow.definition.nodes.length - 1 ? <span className="workflowConnector" aria-hidden="true" /> : null}
+                  {outgoingEdges.length > 1 ? (
+                    <div className="workflowBranchIndicator">
+                      {locale === 'zh' ? `分支到 ${outgoingEdges.length} 个节点` : `Branches to ${outgoingEdges.length} nodes`}
+                    </div>
+                  ) : null}
                 </div>
               );
             })}
@@ -333,6 +459,7 @@ export function WorkflowPanel({
             key={selectedNode.id}
             locale={locale}
             node={selectedNode}
+            allNodes={displayedWorkflow.definition.nodes}
             component={components.find((component) => component.type === selectedNode.componentType)}
             runEvents={runEvents.filter((event) => event.workflowNodeId === selectedNode.id)}
             saving={saving}
@@ -530,6 +657,7 @@ function statusLabel(status: ReturnType<typeof workflowNodeStatus>, locale: Loca
 function WorkflowNodeEditor({
   locale,
   node,
+  allNodes,
   component,
   runEvents,
   saving,
@@ -538,6 +666,7 @@ function WorkflowNodeEditor({
 }: {
   locale: Locale;
   node: WorkflowNode;
+  allNodes: WorkflowNode[];
   component?: WorkflowComponentDefinition;
   runEvents: RunEvent[];
   saving: boolean;
@@ -556,7 +685,7 @@ function WorkflowNodeEditor({
   const [prompt, setPrompt] = useState(node.prompt);
   const [inputRequirements, setInputRequirements] = useState(node.inputRequirements);
   const [outputRequirements, setOutputRequirements] = useState(node.outputRequirements);
-  const [dependsOn, setDependsOn] = useState(node.dependsOn.join(', '));
+  const [dependsOn, setDependsOn] = useState<string[]>(node.dependsOn);
   const [approval, setApproval] = useState<WorkflowApprovalMode>(node.approval);
   const [params, setParams] = useState<Record<string, unknown>>(() => ({ ...(node.params ?? {}) }));
   const fields = component?.ui?.fields ?? [];
@@ -576,7 +705,7 @@ function WorkflowNodeEditor({
           prompt: sealed ? node.prompt : prompt,
           inputRequirements: sealed ? node.inputRequirements : inputRequirements,
           outputRequirements: sealed ? node.outputRequirements : outputRequirements,
-          dependsOn: dependsOn.split(',').map((value) => value.trim()).filter(Boolean),
+          dependsOn,
           approval,
           params,
         });
@@ -663,10 +792,26 @@ function WorkflowNodeEditor({
         <span>{locale === 'zh' ? '输出要求' : 'Output requirements'}</span>
         <textarea value={outputRequirements} onChange={(event) => setOutputRequirements(event.target.value)} rows={3} readOnly={sealed} />
       </label>
-      <label>
-        <span>{locale === 'zh' ? '依赖节点' : 'Dependencies'}</span>
-        <input value={dependsOn} onChange={(event) => setDependsOn(event.target.value)} />
-      </label>
+      <fieldset className="workflowDependsOnPicker">
+        <legend>{locale === 'zh' ? '依赖节点' : 'Dependencies'}</legend>
+        {allNodes.filter((n) => n.id !== node.id).length === 0 ? (
+          <p className="workflowParamEmpty">{locale === 'zh' ? '暂无其他可选节点。' : 'No other nodes available.'}</p>
+        ) : null}
+        {allNodes.filter((n) => n.id !== node.id).map((n) => (
+          <label key={n.id} className="workflowCheck">
+            <input
+              type="checkbox"
+              checked={dependsOn.includes(n.id)}
+              onChange={(event) => {
+                setDependsOn((current) => event.target.checked
+                  ? [...current, n.id]
+                  : current.filter((id) => id !== n.id));
+              }}
+            />
+            <span>{n.title}</span>
+          </label>
+        ))}
+      </fieldset>
       <label className="workflowCheck">
         <input type="checkbox" checked={approval === 'required'} onChange={(event) => setApproval(event.target.checked ? 'required' : 'none')} />
         <span>{locale === 'zh' ? '需要审批' : 'Requires approval'}</span>

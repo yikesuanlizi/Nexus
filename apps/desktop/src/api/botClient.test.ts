@@ -33,6 +33,7 @@ function botConfig(): BotConfig {
       autoStart: true,
     },
     qq: { enabled: false },
+    dwsCli: { enabled: false, binaryPath: '', clientId: '', clientSecret: '' },
   };
 }
 

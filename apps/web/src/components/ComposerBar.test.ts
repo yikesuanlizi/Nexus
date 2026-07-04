@@ -112,6 +112,7 @@ describe('ComposerBar', () => {
         },
         feishu: { enabled: false },
         qq: { enabled: false },
+        dwsCli: { enabled: false, binaryPath: '', clientId: '', clientSecret: '' },
       },
       botStatus: { weixin: { connected: true }, dingtalk: { configured: true, streamRunning: true } },
     });

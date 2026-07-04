@@ -1,8 +1,9 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { URL } from 'node:url';
-import { type ThreadState } from '@nexus/runtime';
+import { type ThreadState, type WorkflowNodeExecutors } from '@nexus/runtime';
 import { listProviders, type ModelGateway } from '@nexus/model-gateway';
 import { createStore, resolveStorageOptions } from '@nexus/storage';
+import { BUILTIN_TOOLS, ToolRegistry, type ToolContext } from '@nexus/tools';
 import { forkThread } from '@nexus/memory';
 import type { ThreadEvent, ThreadId, ThreadItem, TurnMeta, UserInput } from '@nexus/protocol';
 import { WebApprovalBroker } from './services/approval.js';
@@ -275,6 +276,32 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const resetTenantDefaultAgent = () => tenantRuntime.resetDefaultAgent(tenantContext);
   const createTenantAgent = (config?: Partial<AgentRunConfig>) => tenantRuntime.createAgent(config ?? {}, tenantContext);
   const getTenantDefaultAgent = () => tenantRuntime.getDefaultAgent(tenantContext);
+  const createWorkflowExecutors = async (): Promise<WorkflowNodeExecutors> => {
+    const { model, config } = await createTenantAgent();
+    const toolRegistry = new ToolRegistry();
+    for (const tool of BUILTIN_TOOLS) toolRegistry.register(tool);
+    return {
+      prompt: async (ctx) => {
+        const response = await model.chat({
+          messages: [{ role: 'user', content: ctx.materializedInput || ctx.node.prompt }],
+        });
+        const content = response.choices?.[0]?.message?.content;
+        return { result: typeof content === 'string' ? content : JSON.stringify(content ?? '') };
+      },
+      tool: async (ctx) => {
+        const toolName = ctx.node.componentType.replace(/^tool:/, '');
+        const args = (() => { try { return JSON.parse(ctx.materializedInput || '{}'); } catch { return {}; } })();
+        const toolCtx: ToolContext = {
+          workspaceRoot: config.workspaceRoot,
+          threadId: ctx.threadId ?? '',
+          turnId: '',
+          approved: false,
+        };
+        const result = await toolRegistry.execute(toolName, args, toolCtx);
+        return { result: typeof result.output === 'string' ? result.output : JSON.stringify(result.output ?? '') };
+      },
+    };
+  };
   const publishTenantEvent = (event: ThreadEvent) => publishEvent(event, tenantContext.tenantId);
   const tenantMcpManager = tenantRuntime.mcpManagerForTenant(tenantContext);
   if (await handleBotRoute({
@@ -434,6 +461,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     segments,
     store,
     createPlannerModel: async () => (await createTenantAgent()).model,
+    createWorkflowExecutors,
   })) return;
 
   if (await handleRunMonitorRoute({
@@ -491,6 +519,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       segments,
       store,
       createPlannerModel: async () => (await createTenantAgent()).model,
+      createWorkflowExecutors,
     })) return;
 
     if (req.method === 'GET' && segments.length === 3) {
