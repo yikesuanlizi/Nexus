@@ -33,9 +33,11 @@ import { forgetWorkspaceRoot, pickWorkspaceRoot, readRememberedWorkspaceRoots, r
 import { controlThreadWorkflow, createWorkflowDraftErrorItem, createWorkflowDraftReplyItem, createWorkflowDraftUserItem, isUntitledWorkflowProjectTitle, loadThreadWorkflow, parseThreadWorkflow, parseWorkflowCheckpointItems, planWorkflowDraft, saveThreadWorkflow, workflowThreadTitleFromGoal, type WorkflowBlueprintCompileResult, type WorkflowComponentDefinition, type WorkflowPlanDraft, type WorkflowRuntimeAction, type WorkflowSnapshot } from './features/workflow/workflow.js';
 import { authEventSourceUrl, patchGlobalFetch } from './api/authClient.js';
 import { applyAgentMessageDelta, describeEvent, groupTranscriptItems, removeThreadItem, withSyntheticUserMessages, type EventDraft } from './features/chat/threadView.js';
+import { checkForUpdate, type UpdateCheckResult } from './services/updateChecker.js';
 import type { ApiKeyState, ApprovalRequest, EventLine, McpConfig, McpServerStatus, ModelPreset, ProviderEntry, SkillDraft, SkillEntry, ThreadItem, ThreadChildInfo, ThreadMeta, ThreadUsage, TurnMeta } from './shared/types.js';
 import './styles.css';
 type DeploymentStatus = { deploymentMode?: 'single' | 'multi'; authMode?: 'off' | 'token' };
+const APP_VERSION = '0.3.0';
 function resolveThemeShortcutMode(current: RunConfig['themeMode']): 'light' | 'dark' {
   if (current === 'dark') return 'dark';
   if (current === 'light') return 'light';
@@ -105,6 +107,7 @@ patchGlobalFetch(); function App() {
   const [skillDraft, setSkillDraft] = useState<SkillDraft | null>(null);
   const [dialog, setDialog] = useState<AppDialogState | null>(null);
   const [weixinConnectState, setWeixinConnectState] = useState<WeixinLoginState | null>(null);
+  const [updateInfo, setUpdateInfo] = useState<UpdateCheckResult | null>(null);
   const eventCounter = useRef(0);
   const eventSourceRef = useRef<EventSource | null>(null);
   const transcriptRef = useRef<HTMLElement | null>(null);
@@ -693,6 +696,12 @@ patchGlobalFetch(); function App() {
     transcript.scrollTo({ top: transcript.scrollHeight, behavior: 'smooth' });
   }, [lastItemSignature]);
   useEffect(() => { resizeTextareaToContent(composerInputRef.current); }, [activeSlashOption, images.length, input]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void checkForUpdate(APP_VERSION).then(setUpdateInfo).catch(() => undefined);
+    }, 3000);
+    return () => window.clearTimeout(timer);
+  }, []);
   async function createConversation(workspaceRoot = config.workspaceRoot, conversationKind: 'chat' | 'project' = 'project', workflowProject = false) {
     setWorkflowPlanDraft(null);
     setBusy(true);
@@ -1451,6 +1460,17 @@ patchGlobalFetch(); function App() {
           {cacheSummary ? <span className="tokenPill cache">{cacheSummary}</span> : null}
           {pressureSummary ? <span className="tokenPill warn">{pressureSummary}</span> : null}
           <div className="actions">
+            {updateInfo?.hasUpdate ? (
+              <button
+                className="iconButton updateBadge"
+                onClick={() => window.open(updateInfo.releaseUrl, '_blank')}
+                title={config.locale === 'zh' ? `发现新版本 v${updateInfo.latestVersion}，点击前往下载` : `New version v${updateInfo.latestVersion} available, click to download`}
+                aria-label={config.locale === 'zh' ? '发现新版本' : 'New version available'}
+              >
+                <Icon name="download" />
+                <span className="updateBadgeDot" />
+              </button>
+            ) : null}
             <button
               className="iconButton themeQuickButton"
               onClick={() => setConfig((current) => ({ ...current, themeMode: nextThemeMode(current.themeMode) }))}
