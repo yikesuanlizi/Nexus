@@ -286,7 +286,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    color: #f7fafc;
+    color: var(--settings-text);
     font-size: 26px;
     font-weight: 900;
     letter-spacing: -0.02em;
@@ -297,11 +297,11 @@
     height: 12px;
     border: 2px solid currentColor;
     border-radius: 999px;
-    background: #5b8dff;
+    background: var(--settings-accent);
   }
 
   .settingsDrawer .pluginHubBreadcrumb {
-    color: #8b95a5;
+    color: var(--settings-text-sub);
     font-size: 12px;
     font-weight: 700;
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -321,9 +321,9 @@
     width: min(240px, 100%);
     min-width: 0;
     height: 40px;
-    border: 2px solid rgba(255, 255, 255, .1);
+    border: 2px solid var(--settings-border-strong);
     border-radius: 10px;
-    background: rgba(255,255,255,.04);
+    background: var(--settings-panel-muted);
     padding: 0 14px;
   }
 
@@ -333,7 +333,7 @@
     border: 0;
     background: transparent;
     padding: 0;
-    color: #f7fafc;
+    color: var(--settings-text);
     font-size: 13px;
     font-weight: 700;
     box-shadow: none;
@@ -359,7 +359,7 @@
   }
 
   .settingsDrawer .pluginSidebarLabel {
-    color: #8b95a5;
+    color: var(--settings-text-sub);
     font-size: 11px;
     font-weight: 900;
     letter-spacing: .12em;
@@ -374,7 +374,7 @@
     border: 2px solid transparent;
     border-radius: 10px;
     background: transparent;
-    color: #9ca8ba;
+    color: var(--settings-text-sub);
     padding: 10px 14px;
     text-align: left;
     font-size: 14px;
@@ -382,13 +382,13 @@
   }
 
   .settingsDrawer .pluginNavItem:hover:not(:disabled) {
-    background: rgba(255,255,255,.05);
-    color: #f7fafc;
+    background: var(--settings-panel-muted);
+    color: var(--settings-text);
   }
 
   .settingsDrawer .pluginNavItem.active {
-    border-color: #5b8dff;
-    background: #5b8dff;
+    border-color: var(--settings-accent);
+    background: var(--settings-accent);
     color: #ffffff;
   }
 
@@ -416,11 +416,11 @@
     gap: 16px;
     margin-bottom: 20px;
     padding-bottom: 16px;
-    border-bottom: 2px solid rgba(255,255,255,.08);
+    border-bottom: 2px solid var(--settings-border);
   }
 
   .settingsDrawer .pluginSectionHeader h3 {
-    color: #f7fafc;
+    color: var(--settings-text);
     font-size: 22px;
     font-weight: 900;
     letter-spacing: -0.01em;
@@ -428,7 +428,7 @@
 
   .settingsDrawer .pluginSectionHeader p {
     margin-top: 4px;
-    color: #8b95a5;
+    color: var(--settings-text-sub);
     font-size: 12px;
     font-weight: 700;
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -438,9 +438,9 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    border: 2px solid rgba(255,255,255,.12);
+    border: 2px solid var(--settings-border-strong);
     border-radius: 12px;
-    background: rgba(255,255,255,.04);
+    background: var(--settings-panel-muted);
     color: #dbe4ef;
     padding: 6px 14px;
     font-size: 13px;
@@ -448,7 +448,7 @@
   }
 
   .settingsDrawer .pluginSectionCount b {
-    color: #5b8dff;
+    color: var(--settings-accent);
   }
 
   .settingsDrawer .pluginSectionActions {
@@ -483,7 +483,7 @@
     border: 1px solid rgba(91, 141, 255, .18);
     border-radius: 9px;
     background: rgba(91, 141, 255, .08);
-    color: #c7d7ff;
+    color: var(--settings-accent);
     font-size: 11px;
     font-weight: 700;
     padding: 8px 10px;
@@ -500,18 +500,17 @@
     grid-template-columns: minmax(0, 1fr);
     gap: 14px;
     min-height: 0;
-    border: 2px solid rgba(255, 255, 255, .08);
+    border: 2px solid var(--settings-border);
     border-radius: 12px;
-    background: rgba(255,255,255,.03);
+    background: var(--settings-panel);
     padding: 16px;
     transition: all 0.2s ease;
   }
 
   .settingsDrawer .pluginCatalogItem:hover {
-    border-color: #5b8dff;
-    background: rgba(255,255,255,.05);
-    box-shadow: 0 4px 6px -1px rgba(0,0,0,.18);
-    transform: translateY(-2px);
+    border-color: var(--settings-accent);
+    background: color-mix(in srgb, var(--settings-accent) 7%, var(--settings-panel));
+    transform: translateY(-1px);
   }
 
   .settingsDrawer .pluginCatalogMeta {
@@ -521,19 +520,19 @@
   }
 
   .settingsDrawer .pluginCatalogMeta small {
-    color: #7fa7ff;
+    color: var(--settings-accent);
     font-size: 10px;
     font-weight: 900;
     text-transform: uppercase;
   }
 
   .settingsDrawer .pluginCatalogItem strong {
-    color: #f1f4f8;
+    color: var(--settings-text);
     font-size: 14px;
   }
 
   .settingsDrawer .pluginCatalogItem span {
-    color: #a9b4c5;
+    color: var(--settings-text-sub);
     font-size: 12px;
     line-height: 1.5;
     display: -webkit-box;
@@ -548,7 +547,7 @@
     justify-content: space-between;
     margin-top: auto;
     padding-top: 14px;
-    border-top: 1px solid rgba(255,255,255,.08);
+    border-top: 1px solid var(--settings-border);
   }
 
   .settingsDrawer .pluginPane > .settingsSection {
@@ -561,10 +560,10 @@
     display: inline-flex;
     min-height: 24px;
     align-items: center;
-    border: 1px solid rgba(72, 187, 120, .28);
+    border: 1px solid color-mix(in srgb, var(--settings-success) 28%, transparent);
     border-radius: 999px;
-    background: rgba(34, 197, 94, .1);
-    color: #86efac;
+    background: color-mix(in srgb, var(--settings-success) 10%, transparent);
+    color: var(--settings-success);
     font-size: 11px;
     font-weight: 800;
     padding: 0 9px;
@@ -6086,189 +6085,8 @@
     backdrop-filter: none;
   }
 
-  .settingsDrawer {
-    border-color: #272d36;
-    background: #111318;
-    box-shadow: 0 18px 54px rgba(0, 0, 0, .42);
-  }
-
-  .settingsHeader,
-  .settingsNav,
-  .settingsContent {
-    background: #111318;
-  }
-
-  .settingsHeader {
-    border-bottom-color: #272d36;
-  }
-
-  .settingsNav {
-    border-right-color: #272d36;
-  }
-
-  .settingsNav button {
-    color: #9aa5b4;
-  }
-
-  .settingsNav button:hover:not(:disabled),
-  .settingsNav button.active {
-    background: #1a1d23;
-    color: #f5f7fb;
-  }
-
-  .settingsSection,
-  .settingsHero,
-  .providerCard,
-  .compactProviderCard,
-  .keyBox,
-  .presetPanel,
-  .skillItem,
-  .presetItem,
-  .crudItem,
-  .emptyHint,
-  .remoteBotCard,
-  .pluginHub,
-  .pluginPane,
-  .pluginInnerSection,
-  .pluginTabs,
-  .weixinBotPanel,
-  .authTokenCreate,
-  .authTokenItem,
-  .mcpCard {
-    border-color: #2b313a;
-    background: #111318;
-    box-shadow: none;
-  }
-
-  .settingsSection.settingsHero,
-  .settingsDrawer .settingsHero,
-  .settingsDrawer .settingsHero.modelSettingsPanel,
-  .settingsDrawer .modelKeyCard {
-    border-color: #2b313a;
-    background: #111318;
-    box-shadow: none;
-  }
-
-  .settingsDrawer .pluginTabs {
-    background: #111318;
-  }
-
-  .settingsDrawer .pluginHub,
-  .settingsDrawer .pluginPane,
-  .settingsDrawer .pluginInnerSection,
-  .settingsDrawer .compactProviderCard,
-  .settingsDrawer .keyBox,
-  .settingsDrawer .presetPanel,
-  .settingsDrawer .crudItem,
-  .settingsDrawer .emptyHint {
-    background: #111318;
-    box-shadow: none;
-  }
-
-  .settingsDrawer .pluginTabs button:hover:not(:disabled),
-  .settingsDrawer .pluginTabs button.active {
-    background: #1a1d23;
-  }
-
-  .settingsDrawer input,
-  .settingsDrawer textarea,
-  .settingsDrawer select,
-  .settingsDrawer .dropdownButton,
-  .settingsDrawer .providerCard code {
-    border-color: #303640;
-    background: #16191f;
-    color: #e6ebf2;
-    box-shadow: none;
-  }
-
-  .settingsDrawer input:focus,
-  .settingsDrawer textarea:focus,
-  .settingsDrawer select:focus,
-  .settingsDrawer .dropdownSelect:focus-within .dropdownButton {
-    border-color: #4b7cff;
-    box-shadow: 0 0 0 1px rgba(75, 124, 255, .32);
-  }
-
-  .settingsDrawer .dropdownMenu,
-  .dialogPanel {
-    border-color: #303640;
-    background: #111318;
-    box-shadow: 0 16px 42px rgba(0, 0, 0, .42);
-  }
-
-  .settingsDrawer .dropdownOption:hover:not(:disabled),
-  .settingsDrawer .dropdownOption.active {
-    background: #1a1d23;
-  }
-
-  .settingsDrawer .modelSettingsActions {
-    border-top-color: #2b313a;
-  }
-
-  .settingsDrawer .modelSettingsActions .solidButton {
-    border-color: #dce5f2;
-    background: #edf3fb;
-    color: #111827;
-  }
-
-  .settingsDrawer .modelSettingsActions .textButton {
-    color: #c7d2e1;
-  }
-
   .appShell.theme-light .settingsLayer {
     background: rgba(15, 23, 42, .18);
-  }
-
-  .appShell.theme-light .settingsDrawer,
-  .appShell.theme-light .settingsHeader,
-  .appShell.theme-light .settingsNav,
-  .appShell.theme-light .settingsContent,
-  .appShell.theme-light .settingsSection,
-  .appShell.theme-light .settingsHero,
-  .appShell.theme-light .providerCard,
-  .appShell.theme-light .compactProviderCard,
-  .appShell.theme-light .keyBox,
-  .appShell.theme-light .presetPanel,
-  .appShell.theme-light .skillItem,
-  .appShell.theme-light .presetItem,
-  .appShell.theme-light .crudItem,
-  .appShell.theme-light .emptyHint,
-  .appShell.theme-light .remoteBotCard,
-  .appShell.theme-light .pluginPane,
-  .appShell.theme-light .pluginInnerSection,
-  .appShell.theme-light .pluginTabs,
-  .appShell.theme-light .weixinBotPanel,
-  .appShell.theme-light .authTokenCreate,
-  .appShell.theme-light .authTokenItem,
-  .appShell.theme-light .mcpCard,
-  .appShell.theme-light .settingsDrawer .settingsHero.modelSettingsPanel,
-  .appShell.theme-light .settingsDrawer .modelKeyCard {
-    border-color: #d8dee8;
-    background: #ffffff;
-    box-shadow: none;
-  }
-
-  .appShell.theme-light .pluginHub {
-    border: none;
-    background: transparent;
-  }
-
-  .appShell.theme-light .settingsDrawer input,
-  .appShell.theme-light .settingsDrawer textarea,
-  .appShell.theme-light .settingsDrawer select,
-  .appShell.theme-light .settingsDrawer .dropdownButton,
-  .appShell.theme-light .settingsDrawer .providerCard code {
-    border-color: #cbd5e1;
-    background: #f8fafc;
-    color: #0f172a;
-  }
-
-  .appShell.theme-light .settingsNav button:hover:not(:disabled),
-  .appShell.theme-light .settingsNav button.active,
-  .appShell.theme-light .settingsDrawer .pluginTabs button:hover:not(:disabled),
-  .appShell.theme-light .settingsDrawer .pluginTabs button.active {
-    background: #f1f5f9;
-    color: #0f172a;
   }
 
   /* nexus111 skin: shared web/desktop visual pass. */
@@ -7872,7 +7690,7 @@
 
   .settingsHeader h2 {
     color: var(--settings-text);
-    font-size: 18px;
+    font-size: 22px;
     font-weight: 900;
     letter-spacing: -0.01em;
   }
@@ -7957,6 +7775,12 @@
   .botPanelTitle h4,
   .avatarSettingsHeader strong {
     color: var(--settings-text);
+  }
+
+  .settingsSection h3 {
+    font-size: 20px;
+    font-weight: 900;
+    letter-spacing: -0.01em;
   }
 
   .providerCard span,
@@ -8391,10 +8215,119 @@
     gap: 10px;
   }
 
-  .appShell.theme-light .rightPaneMemoryControl {
-    border-color: #d8dee8;
-    background: #ffffff;
-    color: #0f172a;
+  .settingRow {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .settingRow .settingLabel {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--settings-text-sub);
+  }
+
+  .settingRow .settingHelpIcon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    color: var(--settings-text-sub);
+    cursor: help;
+    opacity: 0.7;
+    transition: opacity .15s ease;
+  }
+
+  .settingRow .settingHelpIcon:hover {
+    opacity: 1;
+    color: var(--settings-accent);
+  }
+
+  .settingRow .settingHelpIcon svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .settingTooltip {
+    position: absolute;
+    left: 0;
+    bottom: 100%;
+    z-index: 100;
+    margin-bottom: 6px;
+    padding: 10px 12px;
+    width: 260px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--settings-text);
+    background: var(--settings-panel);
+    border: 1px solid var(--settings-border-strong);
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, .12);
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity .15s ease, transform .15s ease;
+  }
+
+  .settingRow:hover .settingTooltip,
+  .settingRow:focus-within .settingTooltip {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .settingTooltip strong {
+    display: block;
+    margin-bottom: 4px;
+    font-weight: 700;
+    color: var(--settings-text);
+  }
+
+  .memoryAdvancedToggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 12px 0 4px;
+    padding: 8px 12px;
+    border: none;
+    background: transparent;
+    color: var(--settings-text-sub);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: background .15s ease, color .15s ease;
+  }
+
+  .memoryAdvancedToggle:hover {
+    background: var(--settings-panel-muted);
+    color: var(--settings-text);
+  }
+
+  .memoryAdvancedToggle svg {
+    width: 14px;
+    height: 14px;
+    transition: transform .2s ease;
+  }
+
+  .memoryAdvancedToggle.expanded svg {
+    transform: rotate(180deg);
+  }
+
+  .memoryAdvancedPanel {
+    overflow: hidden;
+    max-height: 0;
+    opacity: 0;
+    transition: max-height .3s ease, opacity .2s ease;
+  }
+
+  .memoryAdvancedPanel.expanded {
+    max-height: 600px;
+    opacity: 1;
   }
 
   .streamingOutputLine {

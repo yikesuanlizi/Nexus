@@ -111,11 +111,6 @@ export function AgentStagePanel({
           ))}
         </div>
       ) : null}
-      {childRows.length === 0 ? (
-        <p className="agentStageHint">
-          {locale === 'zh' ? '复杂任务触发多 Agent 后，会在这里显示子 Agent 状态。' : 'Child agent status appears here when a task spawns collaborators.'}
-        </p>
-      ) : null}
     </section>
   );
 }

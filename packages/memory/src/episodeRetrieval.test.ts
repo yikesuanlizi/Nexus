@@ -102,7 +102,7 @@ describe('episode retrieval', () => {
         userInput: 'hello',
         taskFingerprint: 'abc',
       },
-      { ftsCandidateLimit: 10, injectLimit: 2, tokenBudget: 800, rerankEnabled: false },
+      { ftsCandidateLimit: 10, injectLimit: 2, tokenBudget: 800 },
     );
     expect(results).toEqual([]);
   });
@@ -145,7 +145,7 @@ describe('episode retrieval', () => {
         userInput: 'Tell me about the Auth service',
         taskFingerprint: 'auth',
       },
-      { ftsCandidateLimit: 10, injectLimit: 2, tokenBudget: 800, rerankEnabled: false },
+      { ftsCandidateLimit: 10, injectLimit: 2, tokenBudget: 800 },
     );
 
     expect(results.length).toBe(1);
@@ -178,7 +178,7 @@ describe('episode retrieval', () => {
         taskFingerprint: 'utility',
         injectedEpisodeIds: [ep.id],
       },
-      { ftsCandidateLimit: 10, injectLimit: 2, tokenBudget: 800, rerankEnabled: false },
+      { ftsCandidateLimit: 10, injectLimit: 2, tokenBudget: 800 },
     );
 
     expect(results.find((r) => r.episode.id === ep.id)).toBeUndefined();
@@ -226,7 +226,7 @@ describe('episode retrieval', () => {
         userInput: 'E:/langchain/Nexus/src/foo.ts',
         taskFingerprint: 'path',
       },
-      { ftsCandidateLimit: 10, injectLimit: 2, tokenBudget: 800, rerankEnabled: false },
+      { ftsCandidateLimit: 10, injectLimit: 2, tokenBudget: 800 },
     );
 
     expect(results.length).toBeGreaterThan(0);

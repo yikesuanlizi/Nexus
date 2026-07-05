@@ -5,6 +5,7 @@ import type { Locale } from '../config/config.js';
 import type { AgentStageRow, ThreadMeta } from '../shared/types.js';
 import { AgentStagePanel } from './AgentStagePanel.js';
 import { WorkspaceFilesPanel } from './WorkspaceFilesPanel.js';
+import { Icon } from './Icon.js';
 
 export type RightPaneTab = 'status' | 'files';
 // 右侧面板的 Tab 选项：Agent 状态或文件列表
@@ -53,7 +54,20 @@ export function RightPane({
                     onChange={(event) => onToggleMemoryExcluded(event.target.checked)}
                     type="checkbox"
                   />
-                  <span>{locale === 'zh' ? '此线程不生成记忆' : 'Exclude this thread from memory extraction'}</span>
+                  <span className="settingRow">
+                    <span className="settingLabel">
+                      {locale === 'zh' ? '此线程不生成记忆' : 'Exclude this thread from memory extraction'}
+                      <span className="settingHelpIcon">
+                        <Icon name="question" />
+                      </span>
+                    </span>
+                    <span className="settingTooltip">
+                      <strong>{locale === 'zh' ? '此线程不生成记忆' : 'Exclude this thread from memory extraction'}</strong>
+                      {locale === 'zh'
+                        ? '开启后，这个对话的内容不会被提取到长期记忆库里，对话时也不会参考旧记忆。但上下文太长时仍会自动压缩摘要（为了省 token）。'
+                        : 'When enabled, this conversation won\'t be saved to long-term memory, and past memories won\'t be referenced. Auto-compaction still works to save tokens.'}
+                    </span>
+                  </span>
                 </label>
               </div>
             ) : null}
