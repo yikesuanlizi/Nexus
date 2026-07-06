@@ -4,7 +4,7 @@
 import type { Locale } from '../config/config.js';
 import type { AgentStageRow, ThreadMeta } from '../shared/types.js';
 import { AgentStagePanel } from './AgentStagePanel.js';
-import { WorkspaceFilesPanel } from './WorkspaceFilesPanel.js';
+import { WorkspaceFilesPanel, type ExternalPreviewRequest } from './WorkspaceFilesPanel.js';
 import { Icon } from './Icon.js';
 
 export type RightPaneTab = 'status' | 'files';
@@ -19,6 +19,7 @@ export function RightPane({
   workspaceRoot,
   onTabChange,
   onToggleMemoryExcluded,
+  externalPreviewRequest,
 }: {
   activeTab: RightPaneTab;
   agentStageRows: AgentStageRow[];
@@ -27,6 +28,9 @@ export function RightPane({
   workspaceRoot: string;
   onTabChange(tab: RightPaneTab): void;
   onToggleMemoryExcluded?(excluded: boolean): void;
+  /** 外部预览请求 — 从对话条目点击"预览"时传入，自动切换到 files Tab 并加载该文件 */
+  // — Chinese: external preview request — auto-switches to files tab and loads the file
+  externalPreviewRequest?: ExternalPreviewRequest | null;
 }) {
   const memoryExcluded = activeThread?.tags?.memoryExcluded === 'true';
   // 线程级"不提取记忆"开关
@@ -73,7 +77,7 @@ export function RightPane({
             ) : null}
           </>
         )
-        : <WorkspaceFilesPanel locale={locale} workspaceRoot={workspaceRoot} />}
+        : <WorkspaceFilesPanel locale={locale} workspaceRoot={workspaceRoot} externalPreviewRequest={externalPreviewRequest} />}
     </aside>
   );
 }

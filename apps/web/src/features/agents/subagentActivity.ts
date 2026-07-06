@@ -2,6 +2,7 @@ import type { ThreadChildInfo, ThreadItem } from '../../shared/types.js';
 
 const activityTypes = new Set([
   'agent_message',
+  'reasoning',
   'tool_call',
   'command_execution',
   'file_change',

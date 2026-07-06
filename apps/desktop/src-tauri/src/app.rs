@@ -31,6 +31,13 @@ fn desktop_capabilities() -> DesktopCapabilities {
     }
 }
 
+/// 在系统默认编辑器/资源管理器中打开文件或目录。
+/// In-system open: opens a file or directory using the OS default handler.
+#[tauri::command]
+fn open_path(path: String) -> Result<(), String> {
+    open::that(&path).map_err(|err| err.to_string())
+}
+
 fn weixin_bridge_live() -> bool {
     let Ok(mut stream) = TcpStream::connect_timeout(
         &"127.0.0.1:18790".parse().expect("valid bridge address"),
@@ -55,7 +62,7 @@ fn weixin_bridge_live() -> bool {
 
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![desktop_capabilities])
+        .invoke_handler(tauri::generate_handler![desktop_capabilities, open_path])
         .run(tauri::generate_context!())
         .expect("error while running Nexus desktop");
 }

@@ -20,6 +20,7 @@ export async function retrieveEpisodesForWorkingSet(
     ftsCandidateLimit: number;
     injectLimit: number;
     tokenBudget: number;
+    rerankEnabled: boolean;
   },
 ): Promise<EpisodeSearchResult[]> {
   const query = buildQuery(ctx);
@@ -31,8 +32,8 @@ export async function retrieveEpisodesForWorkingSet(
     .sort((a, b) => b.score - a.score || (b.episode.updatedAt.localeCompare(a.episode.updatedAt)));
 
   let selected = ranked;
-  if (selected.length > 1 && marginBetween(selected[0], selected[1]) < 5) {
-    selected = rerankTop(selected);
+  if (options.rerankEnabled && selected.length > 1 && marginBetween(selected[0], selected[1]) < 5) {
+    selected = await rerankTop(selected, ctx);
   }
 
   const limited: EpisodeSearchResult[] = [];
@@ -245,10 +246,12 @@ function dedupeByTopicKey(results: EpisodeSearchResult[]): EpisodeSearchResult[]
   return [...seen.values()];
 }
 
-function rerankTop(results: EpisodeSearchResult[]): EpisodeSearchResult[] {
+async function rerankTop(results: EpisodeSearchResult[], _ctx: RetrievalContext): Promise<EpisodeSearchResult[]> {
+  // v1 rerank placeholder: keep order but ensure top1 is unique; future can call a small model here.
   if (results.length <= 1) return results;
   const [first, second, ...rest] = results;
   if (first.score - second.score < 1) {
+    // tie-break by recency
     const winner = first.episode.updatedAt >= second.episode.updatedAt ? first : second;
     return [winner, ...rest];
   }

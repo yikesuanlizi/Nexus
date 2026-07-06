@@ -29,6 +29,7 @@ export const defaultConfig: RunConfig = {
   episodeColdAfterDays: 7,
   episodeFtsCandidateLimit: 40,
   episodeRerankEnabled: false,
+  systemMonitorEnabled: false,
   themeMode: 'light',
   userAvatarId: 'asteroid',
   customUserAvatarDataUrl: '',

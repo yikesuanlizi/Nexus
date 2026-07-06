@@ -43,3 +43,20 @@ function fallbackCapabilities(reason: DesktopCapabilities['weixinBridge']['reaso
     },
   };
 }
+
+/**
+ * 在系统默认编辑器中打开文件（或目录）。
+ * 仅桌面端（Tauri）可用，Web 端调用返回 false。
+ * — Chinese: open a file (or directory) in the system default editor.
+ * Only available on desktop (Tauri); returns false on web.
+ */
+export async function openInSystemEditor(filePath: string): Promise<boolean> {
+  const invoke = window.__TAURI__?.core?.invoke;
+  if (!invoke) return false;
+  try {
+    await invoke('open_path', { path: filePath });
+    return true;
+  } catch {
+    return false;
+  }
+}

@@ -488,7 +488,8 @@ export type CollabToolName =
   | 'wait'
   | 'wait_agent'
   | 'list_agents'
-  | 'close_agent';
+  | 'close_agent'
+  | 'spawn_remote_agent';
 
 // 协作工具调用条目：记录一次子代理协作动作
 export interface CollabToolCallItem {
@@ -505,6 +506,40 @@ export interface CollabToolCallItem {
   result?: unknown;
   error?: { message: string; code?: string };
   timestamp?: string;
+  /**
+   * 远程 Agent 调用专用：状态变化轨迹。
+   * 每次 status-update 事件追加一条，记录状态、时间戳、中间文本（若有）。
+   * 前端用于展示 working → input-required → completed 的过程。
+   */
+  // — Chinese: remote agent status trail. One entry per status-update event.
+  remoteStatusTrail?: RemoteAgentStatusEntry[];
+  /**
+   * 远程 Agent 调用专用：中间文本片段流。
+   * 每次 status-update.message 携带的中间文本追加一条，前端以流式消息形式展示。
+   * 与 remoteStatusTrail 互补：trail 记录状态，stream 记录文本。
+   */
+  // — Chinese: remote agent intermediate text stream. One entry per status-update.message.
+  remoteTextStream?: RemoteAgentTextChunk[];
+}
+
+/** 远程 Agent 状态轨迹条目。 */
+// — Chinese: remote agent status trail entry
+export interface RemoteAgentStatusEntry {
+  /** ISO-8601 时间戳 */
+  timestamp: string;
+  /** A2A TaskState：working / input-required / completed / failed / canceled 等 */
+  state: string;
+  /** 状态附带的中间文本（来自 status.message.parts.text），可选 */
+  text?: string;
+}
+
+/** 远程 Agent 中间文本片段。 */
+// — Chinese: remote agent intermediate text chunk
+export interface RemoteAgentTextChunk {
+  /** ISO-8601 时间戳 */
+  timestamp: string;
+  /** 文本内容 */
+  text: string;
 }
 
 // 智能体交接信封：父代理把任务交给子代理时携带的上下文包
@@ -1055,6 +1090,71 @@ export interface ApprovalResponse {
   requestId: string;
   approved: boolean;
   reason?: string;
+}
+
+// ─── System Monitor ──────────────────────────────────────────────────────────
+// 系统监控：检测主机 CPU/内存/磁盘状态，辅助 agent 做性能限流决策
+// — Chinese: system monitor: detect host CPU/memory/disk, assist agent throttling
+
+/** 限流级别：从低到高，agent 按级别递减并发/委派能力。 */
+// — Chinese: throttle level: ascending severity, agent degrades capabilities per level
+export type SystemMonitorLevel = 'none' | 'light' | 'moderate' | 'severe';
+
+/** 一次系统采样快照。 */
+// — Chinese: one system sample snapshot
+export interface SystemMonitorSnapshot {
+  /** ISO-8601 采样时间戳 */
+  timestamp: string;
+  /** CPU 总体使用率（百分比 0-100） */
+  cpuUsage: number;
+  /** CPU 核心数 */
+  cpuCount: number;
+  /** 内存总用量（字节） */
+  memTotal: number;
+  /** 内存已用量（字节） */
+  memUsed: number;
+  /** 内存使用率（百分比 0-100） */
+  memUsage: number;
+  /** 磁盘信息（C 盘等） */
+  disks: Array<{
+    /** 挂载点/盘符（如 C:、/） */
+    mount: string;
+    /** 总容量（字节） */
+    size: number;
+    /** 已用容量（字节） */
+    used: number;
+    /** 可用容量（字节） */
+    available: number;
+    /** 使用率（百分比 0-100） */
+    usage: number;
+  }>;
+  /** 系统平均负载（1/5/15 分钟）— Windows 上可能不可用 */
+  loadAvg?: [number, number, number];
+}
+
+/** 完整监控状态：快照 + 限流级别 + 建议。 */
+// — Chinese: full monitor status: snapshot + throttle level + recommendation
+export interface SystemMonitorStatus {
+  /** 当前快照 */
+  snapshot: SystemMonitorSnapshot;
+  /** 当前限流级别 */
+  level: SystemMonitorLevel;
+  /** 人类可读的建议（给 agent 参考） */
+  recommendation: string;
+  /** 监控是否已启用 */
+  enabled: boolean;
+}
+
+/**
+ * 系统监控模块接口（供 ToolContext 使用，避免 tools 包依赖 runtime）。
+ * runtime 里的 SystemMonitor 类实现此接口。
+ */
+// — Chinese: system monitor interface for ToolContext, decouples tools from runtime
+export interface SystemMonitorInterface {
+  /** 获取当前监控状态（快照 + 级别 + 建议） */
+  getStatus(): SystemMonitorStatus;
+  /** 监控是否已启用 */
+  isEnabled(): boolean;
 }
 
 // ─── Checkpoint ─────────────────────────────────────────────────────────────

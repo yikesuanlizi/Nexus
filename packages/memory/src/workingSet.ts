@@ -156,6 +156,7 @@ export async function buildOrReuseWorkingSet(
       ftsCandidateLimit: settings.episodeFtsCandidateLimit,
       injectLimit: settings.episodeInjectLimit,
       tokenBudget: settings.episodeTokenBudget,
+      rerankEnabled: settings.episodeRerankEnabled,
     },
   );
 

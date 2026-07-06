@@ -106,6 +106,10 @@ export interface ThreadItem {
   prompt?: string;
   agentStatus?: string;
   workflow?: unknown;
+  /** 远程 Agent 状态轨迹（仅 spawn_remote_agent 工具） */
+  remoteStatusTrail?: Array<{ timestamp: string; state: string; text?: string }>;
+  /** 远程 Agent 中间文本流（仅 spawn_remote_agent 工具） */
+  remoteTextStream?: Array<{ timestamp: string; text: string }>;
 }
 
 export interface TurnMeta {
@@ -194,6 +198,7 @@ export type RunStatus = 'pending' | 'running' | 'completed' | 'failed' | 'interr
 export type RunKind = 'turn' | 'model' | 'tool' | 'workflow' | 'subagent' | 'middleware' | 'checkpoint' | 'control';
 export type RunCaller = 'lead_agent' | 'subagent' | 'middleware' | 'tool' | 'workflow';
 
+/** 按 thread 分组的运行统计（运行监控左面板用）— Chinese: thread-grouped run stats */
 export interface ThreadWithRuns {
   threadId: string;
   title: string;

@@ -506,6 +506,55 @@ export const applyPatchTool: ToolDefinition = {
   },
 };
 
+// ─── get_system_status ──────────────────────────────────────────────────────
+// 中文注释：查询当前主机系统状态（CPU/内存/磁盘），用于性能感知和限流决策。
+// agent 可主动调用此工具了解主机负载，也可在收到监控模块的主动通知后查询详情。
+export const getSystemStatusTool: ToolDefinition = {
+  name: 'get_system_status',
+  description:
+    'Query current host system status (CPU / memory / disk usage) and the active throttle level. Use this to check host load before spawning subagents or running parallel tool batches, and after receiving a system-pressure notification.',
+  parameters: {
+    type: 'object',
+    properties: {},
+  },
+  requiredPolicy: 'readonly',
+  supportsParallelToolCalls: true,
+  async execute(_args, ctx): Promise<ToolResult> {
+    // 中文注释：监控未启用或未注入时返回提示
+    if (!ctx.systemMonitor || !ctx.systemMonitor.isEnabled()) {
+      return {
+        output: 'System monitor is disabled. Host status tracking is not active.',
+        data: { enabled: false },
+        status: 'completed',
+      };
+    }
+    const status = ctx.systemMonitor.getStatus();
+    const s = status.snapshot;
+    // 中文注释：格式化磁盘信息
+    const diskLines = s.disks.map((d) => {
+      const sizeGb = (d.size / 1024 / 1024 / 1024).toFixed(1);
+      const availGb = (d.available / 1024 / 1024 / 1024).toFixed(1);
+      return `  ${d.mount}: ${d.usage.toFixed(1)}% used (${availGb} GB free / ${sizeGb} GB total)`;
+    });
+    const memTotalGb = (s.memTotal / 1024 / 1024 / 1024).toFixed(1);
+    const memUsedGb = (s.memUsed / 1024 / 1024 / 1024).toFixed(1);
+    const output = [
+      `System Status [${status.level.toUpperCase()}]`,
+      `CPU: ${s.cpuUsage.toFixed(1)}% (${s.cpuCount} cores)`,
+      `Memory: ${s.memUsage.toFixed(1)}% (${memUsedGb} GB / ${memTotalGb} GB)`,
+      `Disks:`,
+      ...diskLines,
+      ``,
+      `Recommendation: ${status.recommendation}`,
+    ].join('\n');
+    return {
+      output,
+      data: status,
+      status: 'completed',
+    };
+  },
+};
+
 // ─── built‑in tool list ─────────────────────────────────────────────────────
 export const BUILTIN_TOOLS: ToolDefinition[] = [
   currentTimeTool,
@@ -517,6 +566,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   webSearchTool,
   webFetchTool,
   applyPatchTool,
+  getSystemStatusTool,
 ];
 
 // ─── Helpers ────────────────────────────────────────────────────────────────

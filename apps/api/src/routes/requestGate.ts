@@ -44,6 +44,12 @@ export async function handleRequestGate(options: {
     return handled();
   }
 
+  // /.well-known/agent-card.json 绕过认证（A2A 规范要求 Agent Card 公开可访问）
+  // — Chinese: agent card discovery bypasses auth (required by A2A spec)
+  if (url.pathname === '/.well-known/agent-card.json') {
+    return { handled: false, tenantContext: parseTenantContext(req), authIdentity: null };
+  }
+
   let tenantContext: TenantContext;
   let authIdentity: AuthIdentity | null = null;
   try {
@@ -77,9 +83,9 @@ export async function handleRequestGate(options: {
     sendError(res, 400, error instanceof Error ? error.message : String(error));
     return handled();
   }
-  // bot 角色仅限 /api/bot 路由 — Chinese: bot role is restricted to /api/bot routes
-  if (authIdentity?.role === 'bot' && !(segments[0] === 'api' && segments[1] === 'bot')) {
-    sendError(res, 403, 'Bot tokens can only access bot routes');
+  // bot 角色仅限 /api/bot 和 /api/a2a 路由 — Chinese: bot role is restricted to /api/bot and /api/a2a routes
+  if (authIdentity?.role === 'bot' && !(segments[0] === 'api' && (segments[1] === 'bot' || segments[1] === 'a2a'))) {
+    sendError(res, 403, 'Bot tokens can only access bot and a2a routes');
     return handled();
   }
   // 其余认证相关路由（如 /api/auth/*、/api/admin/*）

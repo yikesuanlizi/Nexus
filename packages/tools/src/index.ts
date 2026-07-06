@@ -18,6 +18,7 @@ export {
   webSearchTool,
   webFetchTool,
   applyPatchTool,
+  getSystemStatusTool,
 } from './builtin.js';
 export {
   FirecrawlWebProvider,

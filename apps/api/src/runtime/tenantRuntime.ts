@@ -11,6 +11,8 @@ import { createDynamicContextProvider } from '../services/dynamicContext.js';
 import { createDingtalkForwardToolsForStore, dingtalkForwardingSystemPrompt } from '../services/dingtalkForwardTool.js';
 import {
   WEB_PROVIDER_SECRETS_KEY,
+  A2A_CONFIG_KEY,
+  normalizeA2AConfig,
   createConfigRepository,
   hiddenChatWorkspaceRoot,
   resolveConfig,
@@ -151,6 +153,8 @@ export function createTenantRuntime(options: {
     const mcpManager = mcpManagerForTenant(tenantContext);
     await mcpManager.configure(await tenantRepo.listMcpServers(), { startEnabled: false });
     const mcpTools = mcpManager.toolDefinitions({ includeConfigured: true });
+    // 读取 A2A 客户端配置 — Chinese: read A2A client config
+    const a2aConfig = normalizeA2AConfig(await tenantStore.getSetting(A2A_CONFIG_KEY));
     const agent = new AgentLoop({
       workspaceRoot: config.workspaceRoot,
       sandbox,
@@ -176,6 +180,11 @@ export function createTenantRuntime(options: {
         memoryInjectLimit: config.memoryInjectLimit,
         memoryTokenBudget: config.memoryTokenBudget,
       },
+      a2aClientEnabled: a2aConfig.clientEnabled,
+      a2aRemotes: a2aConfig.remotes.map(r => r.url),
+      // 中文注释：从设置面板的开关读取，启用后 agent 会收到主机压力通知并自动限流
+      // — Chinese: read from settings panel toggle; when enabled agent receives host pressure notifications and auto-throttles
+      systemMonitor: { enabled: config.systemMonitorEnabled === true },
     });
     agent.onEvent((event) => options.publishEvent(event, tenantContext.tenantId));
     return { agent, model, config };

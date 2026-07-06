@@ -34,6 +34,9 @@ export interface RunConfig {
   episodeColdAfterDays: number;
   episodeFtsCandidateLimit: number;
   episodeRerankEnabled: boolean;
+  /** Whether system monitor (CPU/memory/disk) throttling is enabled. */
+  /** 中文：是否启用系统监控（CPU/内存/磁盘）限流 */
+  systemMonitorEnabled: boolean;
   themeMode: ThemeMode;
   userAvatarId: UserAvatarId;
   customUserAvatarDataUrl: string;
@@ -69,6 +72,7 @@ const USER_FIELDS: Array<keyof RunConfig> = [
   'episodeColdAfterDays',
   'episodeFtsCandidateLimit',
   'episodeRerankEnabled',
+  'systemMonitorEnabled',
   'themeMode',
   'userAvatarId',
   'customUserAvatarDataUrl',
@@ -92,6 +96,7 @@ export function mergeRunConfigDefaults(
     episodeColdAfterDays: 7,
     episodeFtsCandidateLimit: 40,
     episodeRerankEnabled: false,
+    systemMonitorEnabled: false,
     ...current,
     ...serverDefaults,
   } as RunConfig;

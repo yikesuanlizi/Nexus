@@ -21,6 +21,8 @@ export function ItemView({
   onBranch,
   onCopy,
   onRollback,
+  onPreviewFile,
+  onOpenFile,
   userAvatarId,
   customUserAvatarDataUrl,
 }: {
@@ -29,6 +31,12 @@ export function ItemView({
   onBranch?: (turnId: string) => void;
   onCopy?: (text: string) => void;
   onRollback?: (turnId: string) => void;
+  /** 点击"预览"按钮时调用，参数为文件路径 */
+  // — Chinese: called when "preview" button is clicked, with file path as argument
+  onPreviewFile?: (path: string) => void;
+  /** 点击"在编辑器中打开"按钮时调用，参数为文件路径（仅桌面端） */
+  // — Chinese: called when "open in editor" is clicked, with file path (desktop only)
+  onOpenFile?: (path: string) => void;
   userAvatarId?: string;
   customUserAvatarDataUrl?: string;
 }) {
@@ -85,6 +93,7 @@ export function ItemView({
           </span>
           {toolSummary.status ? <span className="toolSummaryStatus">{toolSummary.status}</span> : null}
         </summary>
+        <ToolItemActions item={item} locale={locale} onPreviewFile={onPreviewFile} onOpenFile={onOpenFile} />
         <pre>{formatItemPayload(item)}</pre>
       </details>
     );
@@ -96,6 +105,7 @@ export function ItemView({
           <strong>{heading.title}</strong>
           <span>{heading.detail}</span>
         </summary>
+        <ToolItemActions item={item} locale={locale} onPreviewFile={onPreviewFile} onOpenFile={onOpenFile} />
         <pre>{formatItemPayload(item)}</pre>
       </details>
     );
@@ -116,12 +126,20 @@ export function AssistantTurnView({
   locale,
   onBranch,
   onCopy,
+  onPreviewFile,
+  onOpenFile,
   childActivityByThread = {},
 }: {
   group: AssistantTurnGroup;
   locale: Locale;
   onBranch?: (turnId: string) => void;
   onCopy?: (text: string) => void;
+  /** 点击"预览"按钮时调用，参数为文件路径 */
+  // — Chinese: called when "preview" button is clicked, with file path as argument
+  onPreviewFile?: (path: string) => void;
+  /** 点击"在编辑器中打开"按钮时调用，参数为文件路径（仅桌面端） */
+  // — Chinese: called when "open in editor" is clicked, with file path (desktop only)
+  onOpenFile?: (path: string) => void;
   childActivityByThread?: Record<string, ThreadItem[]>;
 }) {
   const text = group.items
@@ -179,6 +197,8 @@ export function AssistantTurnView({
                 key={item.id}
                 locale={locale}
                 compact
+                onPreviewFile={onPreviewFile}
+                onOpenFile={onOpenFile}
               />
             );
           }
@@ -400,10 +420,37 @@ export function summarizeToolItem(item: ThreadItem, locale: Locale): ToolSummary
     };
   }
   if (item.type === 'collab_tool_call') {
+    // 中文注释：协作工具的本地化名 + 远程 Agent URL 标记
+    // Chinese: localized name for collab tool + remote agent URL marker
+    const isRemote = item.tool === 'spawn_remote_agent';
+    const nameMap: Record<string, string> = locale === 'zh'
+      ? {
+          spawn_agent: '生成子 Agent',
+          send_input: '发送输入',
+          resume_agent: '恢复子 Agent',
+          wait: '等待子 Agent',
+          list_agents: '列出子 Agent',
+          close_agent: '关闭子 Agent',
+          spawn_remote_agent: '调用远程 Agent',
+        }
+      : {
+          spawn_agent: 'Spawn Agent',
+          send_input: 'Send Input',
+          resume_agent: 'Resume Agent',
+          wait: 'Wait Agent',
+          list_agents: 'List Agents',
+          close_agent: 'Close Agent',
+          spawn_remote_agent: 'Remote Agent',
+        };
+    const label = nameMap[item.tool as string] ?? item.tool ?? 'collab_tool';
+    const valueSource = item.prompt ?? (isRemote ? item.receiverThreadId : item.newThreadId) ?? '';
+    const metaSource = isRemote
+      ? (item.receiverThreadId ?? '')
+      : (item.agentStatus ?? item.receiverThreadId ?? item.newThreadId ?? '');
     return {
-      name: item.tool ?? 'collab_tool',
-      value: truncateInline(String(item.prompt ?? item.receiverThreadId ?? item.newThreadId ?? ''), 120),
-      meta: truncateInline(String(item.agentStatus ?? item.receiverThreadId ?? item.newThreadId ?? ''), 100),
+      name: label,
+      value: truncateInline(String(valueSource), 120),
+      meta: truncateInline(String(metaSource), 100),
       status,
     };
   }
@@ -438,11 +485,15 @@ function ToolDetails({
   compact = false,
   item,
   locale,
+  onPreviewFile,
+  onOpenFile,
 }: {
   childItems?: ThreadItem[];
   compact?: boolean;
   item: ThreadItem;
   locale: Locale;
+  onPreviewFile?: (path: string) => void;
+  onOpenFile?: (path: string) => void;
 }) {
   const heading = itemHeading(item, locale);
   if (item.type === 'file_change') {
@@ -452,6 +503,7 @@ function ToolDetails({
           <strong>{heading.title}</strong>
           <span>{heading.detail}</span>
         </summary>
+        <ToolItemActions item={item} locale={locale} onPreviewFile={onPreviewFile} onOpenFile={onOpenFile} />
         <pre>{formatItemPayload(item)}</pre>
       </details>
     );
@@ -467,9 +519,75 @@ function ToolDetails({
         </span>
         {toolSummary.status ? <span className="toolSummaryStatus">{toolSummary.status}</span> : null}
       </summary>
+      <RemoteAgentStream item={item} locale={locale} />
+      <ToolItemActions item={item} locale={locale} onPreviewFile={onPreviewFile} onOpenFile={onOpenFile} />
       <pre>{formatItemPayload(item)}</pre>
       <ChildActivityList items={childItems} locale={locale} />
     </details>
+  );
+}
+
+/**
+ * 远程 Agent 中间状态展示：
+ * - 状态轨迹（remoteStatusTrail）：working → input-required → completed 的时间线
+ * - 中间文本流（remoteTextStream）：远程 Agent 流式返回的中间文本片段
+ * 仅对 spawn_remote_agent 工具有效，其他工具直接返回 null。
+ */
+// — Chinese: remote agent intermediate state display. Status trail + text stream.
+// Only effective for spawn_remote_agent tool.
+function RemoteAgentStream({ item, locale }: { item: ThreadItem; locale: Locale }) {
+  if (item.type !== 'collab_tool_call' || item.tool !== 'spawn_remote_agent') return null;
+  const trail = item.remoteStatusTrail ?? [];
+  const textStream = item.remoteTextStream ?? [];
+  if (trail.length === 0 && textStream.length === 0) return null;
+
+  const stateLabel = (state: string): { text: string; className: string } => {
+    switch (state) {
+      case 'working':
+        return { text: locale === 'zh' ? '运行中' : 'working', className: 'remoteStatusState working' };
+      case 'input-required':
+        return { text: locale === 'zh' ? '等待输入' : 'input-required', className: 'remoteStatusState inputRequired' };
+      case 'completed':
+        return { text: locale === 'zh' ? '已完成' : 'completed', className: 'remoteStatusState completed' };
+      case 'failed':
+      case 'canceled':
+      case 'rejected':
+        return { text: locale === 'zh' ? `失败(${state})` : `failed(${state})`, className: 'remoteStatusState failed' };
+      default:
+        return { text: state, className: 'remoteStatusState' };
+    }
+  };
+
+  return (
+    <div className="remoteAgentStream">
+      {trail.length > 0 ? (
+        <div className="remoteStatusTrail">
+          <div className="remoteStreamHeader">
+            {locale === 'zh' ? '状态轨迹' : 'Status trail'}
+          </div>
+          {trail.map((entry, idx) => {
+            const label = stateLabel(entry.state);
+            return (
+              <div className="remoteStatusEntry" key={`trail-${idx}`}>
+                <span className={label.className}>{label.text}</span>
+                <span className="remoteStatusTime">{entry.timestamp}</span>
+                {entry.text ? <span className="remoteStatusText">{entry.text}</span> : null}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+      {textStream.length > 0 ? (
+        <div className="remoteTextStream">
+          <div className="remoteStreamHeader">
+            {locale === 'zh' ? '中间文本流' : 'Intermediate text stream'}
+          </div>
+          {textStream.map((chunk, idx) => (
+            <p className="remoteTextChunk" key={`text-${idx}`}>{chunk.text}</p>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -481,6 +599,21 @@ function ChildActivityList({ items, locale }: { items: ThreadItem[]; locale: Loc
       {items.map((item) => {
         if (item.type === 'agent_message') {
           return <p className="childActivityText" key={item.id}>{item.text}</p>;
+        }
+        if (item.type === 'reasoning') {
+          // 中文注释：子 agent 的推理过程，默认折叠，灰色文本
+          // — Chinese: child agent reasoning, collapsed by default, gray text
+          const text = item.text ?? '';
+          if (!text.trim()) return null;
+          return (
+            <details className="childActivityReasoning" key={item.id}>
+              <summary>
+                <Icon name="spark" />
+                <span>{locale === 'zh' ? '推理过程' : 'Reasoning'}</span>
+              </summary>
+              <p className="childActivityReasoningText">{text}</p>
+            </details>
+          );
         }
         if (item.type === 'error') {
           return <p className="childActivityError" key={item.id}>{item.message}</p>;
@@ -570,6 +703,72 @@ function messageMoodVariant(item: ThreadItem, text: string): RobotMoodVariant {
   if (item.status === 'completed') return 'idle';
   if (item.status === 'failed' || item.status === 'cancelled') return 'thinking';
   return 'idle';
+}
+
+/**
+ * 工具条目操作按钮：从 item 中提取文件路径，渲染"预览"和"在编辑器中打开"按钮。
+ * — Chinese: tool item action buttons — extract file paths from item, render "preview" and "open in editor" buttons.
+ */
+function ToolItemActions({
+  item,
+  locale,
+  onPreviewFile,
+  onOpenFile,
+}: {
+  item: ThreadItem;
+  locale: Locale;
+  onPreviewFile?: (path: string) => void;
+  onOpenFile?: (path: string) => void;
+}) {
+  const filePaths = extractFilePaths(item);
+  if (filePaths.length === 0 || (!onPreviewFile && !onOpenFile)) return null;
+  return (
+    <div className="toolItemActions">
+      {filePaths.map((filePath, index) => (
+        <div className="toolItemFilePath" key={`${filePath}-${index}`}>
+          <span className="toolItemFilePathLabel" title={filePath}>{filePath}</span>
+          {onPreviewFile ? (
+            <button
+              className="toolItemActionButton"
+              type="button"
+              title={locale === 'zh' ? '在右侧预览' : 'Preview in right panel'}
+              onClick={() => onPreviewFile(filePath)}
+            >
+              <Icon name="eye" />
+              <span>{locale === 'zh' ? '预览' : 'Preview'}</span>
+            </button>
+          ) : null}
+          {onOpenFile ? (
+            <button
+              className="toolItemActionButton"
+              type="button"
+              title={locale === 'zh' ? '在系统编辑器中打开' : 'Open in system editor'}
+              onClick={() => onOpenFile(filePath)}
+            >
+              <Icon name="folderCode" />
+              <span>{locale === 'zh' ? '打开' : 'Open'}</span>
+            </button>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * 从工具条目中提取文件路径列表。
+ * — Chinese: extract file path list from a tool item.
+ */
+function extractFilePaths(item: ThreadItem): string[] {
+  if (item.type === 'file_change') {
+    return (item.changes ?? []).map((change) => change.path).filter((p) => typeof p === 'string' && p.trim());
+  }
+  if (item.type === 'tool_call' || item.type === 'mcp_tool_call') {
+    const args = readObject(item.arguments);
+    const path = firstArgValue(args, ['filePath', 'path']);
+    return path ? [path] : [];
+  }
+  return [];
 }
 
 function formatItemPayload(item: ThreadItem): string {

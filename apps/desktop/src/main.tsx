@@ -8,6 +8,8 @@ import { AssistantTurnView, ItemView } from './components/ItemView.js';
 import { SettingsDrawer } from './components/SettingsDrawer.js';
 import { WeixinConnectDialog } from './components/WeixinConnectDialog.js';
 import { RightPane, type RightPaneTab } from './components/RightPane.js';
+import type { ExternalPreviewRequest } from './components/WorkspaceFilesPanel.js';
+import { openInSystemEditor } from './api/desktopBridge.js';
 import { WorkflowPanel } from './components/WorkflowPanel.js';
 import { RunMonitorDrawer } from './components/RunMonitorDrawer.js';
 import { WorkspaceThreadList } from './components/WorkspaceThreadList.js';
@@ -32,10 +34,8 @@ import { optimisticDeleteThread } from './features/chat/threads.js';
 import { forgetWorkspaceRoot, pickWorkspaceRoot, readRememberedWorkspaceRoots, rememberWorkspaceRoots, workspacePickerNotice, workspacePickerStatus } from './features/workspaces/workspaces.js';
 import { controlThreadWorkflow, createWorkflowDraftErrorItem, createWorkflowDraftReplyItem, createWorkflowDraftUserItem, createWorkflowThread, isUntitledWorkflowProjectTitle, isWorkflowProjectThread, loadThreadWorkflow, parseThreadWorkflow, parseWorkflowCheckpointItems, planWorkflowDraft, saveThreadWorkflow, workflowThreadTitleFromGoal, type WorkflowBlueprintCompileResult, type WorkflowComponentDefinition, type WorkflowPlanDraft, type WorkflowSnapshot, type WorkflowRuntimeAction } from './features/workflow/workflow.js';
 import { applyAgentMessageDelta, describeEvent, groupTranscriptItems, removeThreadItem, withSyntheticUserMessages, type EventDraft } from './features/chat/threadView.js';
-import { checkForUpdate, type UpdateCheckResult } from './services/updateChecker.js';
 import type { ApiKeyState, ApprovalRequest, EventLine, McpConfig, McpServerStatus, ModelPreset, ProviderEntry, SkillDraft, SkillEntry, ThreadChildInfo, ThreadItem, ThreadMeta, ThreadUsage, TurnMeta } from './shared/types.js';
 import './styles.css';
-const APP_VERSION = '0.3.0';
 function resolveThemeShortcutMode(current: RunConfig['themeMode']): 'light' | 'dark' {
   if (current === 'dark') return 'dark';
   if (current === 'light') return 'light';
@@ -80,12 +80,14 @@ function App() {
   const [status, setStatus] = useState('Idle');
   const [settingsOpen, setSettingsOpen] = useState(false), [settingsHelpOpen, setSettingsHelpOpen] = useState(false);
   const [rightPaneVisible, setRightPaneVisible] = useState(true), [rightPaneTab, setRightPaneTab] = useState<RightPaneTab>('status');
+  // 中文注释：外部预览请求 — 从对话条目点击"预览"时驱动右侧文件面板加载该文件
+  // — Chinese: external preview request — drives right file panel to load a file when "preview" is clicked from chat
+  const [previewRequest, setPreviewRequest] = useState<ExternalPreviewRequest | null>(null);
   const [pendingApprovals, setPendingApprovals] = useState<ApprovalRequest[]>([]), [providers, setProviders] = useState<ProviderEntry[]>([]);
   const [keyStates, setKeyStates] = useState<ApiKeyState[]>([]), [modelPresets, setModelPresets] = useState<ModelPreset[]>([]), [skillsList, setSkillsList] = useState<SkillEntry[]>([]);
   const [mcps, setMcps] = useState<McpConfig[]>(() => normalizeStoredMcps(readStored('nexus.mcps', defaultMcps)));
   const [mcpStatuses, setMcpStatuses] = useState<McpServerStatus[]>([]), [mcpHydrated, setMcpHydrated] = useState(false), [pendingMcpDraft, setPendingMcpDraft] = useState<McpConfig | null>(null);
   const [skillDraft, setSkillDraft] = useState<SkillDraft | null>(null), [dialog, setDialog] = useState<AppDialogState | null>(null), [weixinConnectState, setWeixinConnectState] = useState<WeixinLoginState | null>(null);
-  const [updateInfo, setUpdateInfo] = useState<UpdateCheckResult | null>(null);
   const eventCounter = useRef(0);
   const eventSourceRef = useRef<EventSource | null>(null);
   const transcriptRef = useRef<HTMLElement | null>(null);
@@ -598,12 +600,6 @@ function App() {
     transcript.scrollTo({ top: transcript.scrollHeight, behavior: 'smooth' });
   }, [lastItemSignature]);
   useEffect(() => { resizeTextareaToContent(composerInputRef.current); }, [activeSlashOption, images.length, input]);
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void checkForUpdate(APP_VERSION).then(setUpdateInfo).catch(() => undefined);
-    }, 3000);
-    return () => window.clearTimeout(timer);
-  }, []);
   async function createConversation(workspaceRoot = config.workspaceRoot, conversationKind: 'chat' | 'project' = 'project') {
     setBusy(true);
     setStatus(t(config.locale, 'creating'));
@@ -1160,6 +1156,22 @@ function App() {
       });
     }
   }
+  // 中文注释：点击工具条目"预览"按钮 → 切换右侧栏到文件标签并驱动预览
+  // — Chinese: clicking "preview" on a tool item switches the right panel to Files tab and drives preview
+  function previewFileFromItem(path: string) {
+    if (!path) return;
+    setRightPaneTab('files');
+    setPreviewRequest({ path, pin: true, nonce: Date.now() });
+  }
+  // 中文注释：点击工具条目"打开"按钮 → 调用 Tauri 在系统编辑器中打开
+  // — Chinese: clicking "open" on a tool item invokes Tauri to open in system editor
+  async function openFileFromItem(path: string) {
+    if (!path) return;
+    const ok = await openInSystemEditor(path);
+    if (!ok) {
+      showToast(config.locale === 'zh' ? '无法打开文件，仅桌面端支持。' : 'Unable to open file (desktop only).');
+    }
+  }
   async function deleteConversation(id: string) {
     if (!id) return;
     const accepted = await requestDecisionDialog({
@@ -1352,17 +1364,6 @@ function App() {
           {cacheSummary ? <span className="tokenPill cache">{cacheSummary}</span> : null}
           {pressureSummary ? <span className="tokenPill warn">{pressureSummary}</span> : null}
           <div className="actions">
-            {updateInfo?.hasUpdate ? (
-              <button
-                className="iconButton updateBadge"
-                onClick={() => window.open(updateInfo.releaseUrl, '_blank')}
-                title={config.locale === 'zh' ? `发现新版本 v${updateInfo.latestVersion}，点击前往下载` : `New version v${updateInfo.latestVersion} available, click to download`}
-                aria-label={config.locale === 'zh' ? '发现新版本' : 'New version available'}
-              >
-                <Icon name="download" />
-                <span className="updateBadgeDot" />
-              </button>
-            ) : null}
             <button
               className="iconButton themeQuickButton"
               onClick={() => setConfig((current) => ({ ...current, themeMode: nextThemeMode(current.themeMode) }))}
@@ -1387,7 +1388,7 @@ function App() {
             ) : (
               transcriptGroups.map((group, index) => (
                 group.kind === 'user' ? (
-                  <ItemView item={group.item as ThreadItem} key={`${group.item.id}-${index}`} locale={config.locale} onBranch={branchFromTurn} onCopy={copyMessage} onRollback={rollbackToTurn} userAvatarId={config.userAvatarId} customUserAvatarDataUrl={config.customUserAvatarDataUrl} />
+                  <ItemView item={group.item as ThreadItem} key={`${group.item.id}-${index}`} locale={config.locale} onBranch={branchFromTurn} onCopy={copyMessage} onRollback={rollbackToTurn} onPreviewFile={previewFileFromItem} onOpenFile={openFileFromItem} userAvatarId={config.userAvatarId} customUserAvatarDataUrl={config.customUserAvatarDataUrl} />
                 ) : (
                   <AssistantTurnView
                     group={{ ...group, items: group.items as ThreadItem[], status: group.turnId && runningTurnIds.has(group.turnId) ? 'running' : group.status }}
@@ -1396,6 +1397,8 @@ function App() {
                     childActivityByThread={childActivityByThread}
                     onBranch={branchFromTurn}
                     onCopy={copyMessage}
+                    onPreviewFile={previewFileFromItem}
+                    onOpenFile={openFileFromItem}
                   />
                 )
               ))
@@ -1410,7 +1413,7 @@ function App() {
                 title={config.locale === 'zh' ? '拖拽调整右侧栏宽度' : 'Drag to resize right panel'}
                 onPointerDown={startRightPaneResize}
               />
-              {workspaceView === 'workflow' ? <section className="workflowSidePane"><WorkflowPanel locale={config.locale} workflow={activeWorkflow} blueprint={workflowBlueprint} components={workflowComponents} planDraft={workflowPlanDraft} saving={workflowSaving} runtimeBusy={workflowRuntimeBusy} onSave={(workflow) => void saveWorkflow(workflow)} onCancelPlan={() => setWorkflowPlanDraft(null)} onCommitPlan={() => void commitWorkflowPlan()} onSelectionChange={setWorkflowSelectedNodeIds} onRunWorkflow={() => void controlWorkflowRuntime('run')} onTestWorkflow={() => void controlWorkflowRuntime('test_run')} onPublishWorkflow={() => void controlWorkflowRuntime('publish')} onResumeWorkflow={() => void controlWorkflowRuntime('resume')} onCancelWorkflow={() => void controlWorkflowRuntime('cancel')} onRetryWorkflowNode={(nodeId) => void controlWorkflowRuntime('retry_node', nodeId)} runEvents={runMonitor.events} /></section> : <RightPane activeTab={rightPaneTab} activeThread={activeThread} agentStageRows={agentStageRows} locale={config.locale} workspaceRoot={activeWorkspaceRoot} onTabChange={setRightPaneTab} onToggleMemoryExcluded={(excluded) => void toggleThreadMemoryExcluded(excluded)} />}
+              {workspaceView === 'workflow' ? <section className="workflowSidePane"><WorkflowPanel locale={config.locale} workflow={activeWorkflow} blueprint={workflowBlueprint} components={workflowComponents} planDraft={workflowPlanDraft} saving={workflowSaving} runtimeBusy={workflowRuntimeBusy} onSave={(workflow) => void saveWorkflow(workflow)} onCancelPlan={() => setWorkflowPlanDraft(null)} onCommitPlan={() => void commitWorkflowPlan()} onSelectionChange={setWorkflowSelectedNodeIds} onRunWorkflow={() => void controlWorkflowRuntime('run')} onTestWorkflow={() => void controlWorkflowRuntime('test_run')} onPublishWorkflow={() => void controlWorkflowRuntime('publish')} onResumeWorkflow={() => void controlWorkflowRuntime('resume')} onCancelWorkflow={() => void controlWorkflowRuntime('cancel')} onRetryWorkflowNode={(nodeId) => void controlWorkflowRuntime('retry_node', nodeId)} runEvents={runMonitor.events} /></section> : <RightPane activeTab={rightPaneTab} activeThread={activeThread} agentStageRows={agentStageRows} externalPreviewRequest={previewRequest} locale={config.locale} workspaceRoot={activeWorkspaceRoot} onTabChange={setRightPaneTab} onToggleMemoryExcluded={(excluded) => void toggleThreadMemoryExcluded(excluded)} />}
             </>
           ) : null}
         </div>
@@ -1450,7 +1453,7 @@ function App() {
         />
       ) : null}
       {settingsHelpOpen ? <SettingsHelpDialog locale={config.locale} onClose={() => setSettingsHelpOpen(false)} /> : null}
-      <RunMonitorDrawer locale={config.locale} open={runMonitor.open} adminMode={runMonitor.adminMode} adminToken={runMonitor.adminToken} runs={runMonitor.runs} events={runMonitor.events} selectedRunId={runMonitor.selectedRunId} threads={runMonitor.threads} expandedThreadId={runMonitor.expandedThreadId} expandedEventId={runMonitor.expandedEventId} loading={runMonitor.loading} autoRefresh={runMonitor.autoRefresh} autoRefreshInterval={runMonitor.autoRefreshInterval} onClose={() => runMonitor.setOpen(false)} onRefresh={() => void runMonitor.refresh(runMonitor.selectedRunId)} onSelectRun={(runId) => void runMonitor.refresh(runId, { autoExpandThread: true })} onControlRun={(action, run) => void runMonitor.controlRun(action, run)} onAdminTokenChange={runMonitor.setAdminToken} onToggleThread={runMonitor.toggleThread} onToggleEvent={runMonitor.toggleEvent} onAutoRefreshChange={runMonitor.setAutoRefresh} onAutoRefreshIntervalChange={runMonitor.setAutoRefreshInterval} />
+      <RunMonitorDrawer locale={config.locale} open={runMonitor.open} adminMode={runMonitor.adminMode} adminToken={runMonitor.adminToken} runs={runMonitor.runs} events={runMonitor.events} selectedRunId={runMonitor.selectedRunId} threads={runMonitor.threads} expandedThreadId={runMonitor.expandedThreadId} expandedEventId={runMonitor.expandedEventId} autoRefresh={runMonitor.autoRefresh} autoRefreshInterval={runMonitor.autoRefreshInterval} loading={runMonitor.loading} onClose={() => runMonitor.setOpen(false)} onRefresh={() => void runMonitor.refresh(runMonitor.selectedRunId)} onSelectRun={(runId) => void runMonitor.refresh(runId)} onControlRun={(action, run) => void runMonitor.controlRun(action, run)} onToggleThread={runMonitor.toggleThread} onToggleEvent={runMonitor.toggleEvent} onAutoRefreshChange={runMonitor.setAutoRefresh} onAutoRefreshIntervalChange={runMonitor.setAutoRefreshInterval} onAdminTokenChange={runMonitor.setAdminToken} />
       {dialog ? <AppDialog dialog={dialog} onClose={() => setDialog(null)} /> : null}
       {toast ? <div className="toastNotice" key={toast.id}>{toast.text}</div> : null}
       {weixinConnectState ? <WeixinConnectDialog locale={config.locale} state={weixinConnectState} onClose={() => setWeixinConnectState(null)} /> : null}

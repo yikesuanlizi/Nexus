@@ -773,11 +773,9 @@ export const jsonRpcNotificationSchema = z.object({
   params: z.unknown().optional(),
 });
 
-// JSON-RPC 消息总 schema：按 method 判别
-export const jsonRpcMessageSchema = z.discriminatedUnion('method', [
-  jsonRpcRequestSchema,
-  jsonRpcNotificationSchema,
-]);
+// JSON-RPC 消息总 schema：method 为任意字符串，无法用 discriminatedUnion，改用 union
+// — Chinese: JSON-RPC message schema: method is arbitrary string, cannot use discriminatedUnion, use union instead
+export const jsonRpcMessageSchema = z.union([jsonRpcRequestSchema, jsonRpcNotificationSchema]);
 
 // ─── Approval ────────────────────────────────────────────────────────────────
 // 审批请求 schema

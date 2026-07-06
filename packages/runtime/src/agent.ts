@@ -26,6 +26,7 @@ import { Sandbox, resolveSandboxEffective, type SandboxConfig, type SandboxLevel
 import type { ApprovalHandler } from '@nexus/sandbox';
 import type { PermissionPreset } from '@nexus/sandbox';
 import type { RunEvent, RunEventLevel, RunRecord, ThreadStore } from '@nexus/storage';
+import type { RemoteAgentClient } from './a2aClient/remoteAgentClient.js';
 import {
   DEFAULT_MEMORY_SETTINGS,
   compactThread,
@@ -89,6 +90,8 @@ import {
 } from './toolSearch.js';
 import { createToolGovernanceMiddleware, type ToolGovernanceConfig } from './toolGovernance.js';
 import { createGuardianMiddleware, type GuardianConfig } from './guardian.js';
+import { SystemMonitor, DEFAULT_SYSTEM_MONITOR_CONFIG, type SystemMonitorConfig } from './systemMonitor.js';
+import type { SystemMonitorLevel, SystemMonitorStatus } from '@nexus/protocol';
 
 const RUNNING_CHECKPOINT_TTL_MS = 30 * 60 * 1000;
 const MAX_WEB_SEARCH_CALLS_PER_TURN = 6;
@@ -239,9 +242,25 @@ export interface AgentConfig {
   // 中文注释：此运行时的热/温/冷记忆策略。
   /** Hot/warm/cold memory policy for this runtime. */
   memory?: Partial<MemorySettings>;
+  // 中文注释：A2A 客户端配置 — 是否允许调用外部 A2A Agent。
+  /** A2A client config — whether calling external A2A agents is allowed. */
+  a2aClientEnabled?: boolean;
+  // 中文注释：已注册的远程 A2A Agent 地址列表（用于工具描述提示）。
+  /** Registered remote A2A agent URLs (used for tool description hints). */
+  a2aRemotes?: string[];
+  // 中文注释：系统监控配置（可开关）。启用后 agent 会收到主机 CPU/内存/磁盘压力的主动通知，
+  //           并在工具执行/子 agent 委派时自动限流。
+  /** System monitor config (toggleable). When enabled, the agent receives proactive
+   *  host CPU/memory/disk pressure notifications and auto-throttles tool execution / subagent delegation. */
+  systemMonitor?: Partial<SystemMonitorConfig>;
 }
 
-type ResolvedAgentConfig = Required<Omit<AgentConfig, 'memory'>> & { memory: MemorySettings };
+type ResolvedAgentConfig = Required<Omit<AgentConfig, 'memory' | 'a2aClientEnabled' | 'a2aRemotes' | 'systemMonitor'>> & {
+  memory: MemorySettings;
+  a2aClientEnabled?: boolean;
+  a2aRemotes?: string[];
+  systemMonitor: SystemMonitorConfig;
+};
 
 type ToolCallExecutionResult = {
   toolCall: ToolCall;
@@ -284,6 +303,15 @@ export class AgentLoop {
   private _sandbox: Sandbox | null = null;
   /** Effective sandbox level from config (resolved from preset if set). */
   private _effectiveSandbox: { level: SandboxLevel; networkAllowed: boolean };
+  // 中文注释：系统监控实例。仅在 config.systemMonitor.enabled=true 时启动后台采样。
+  /** System monitor instance. Only starts background sampling when config.systemMonitor.enabled=true. */
+  private _systemMonitor: SystemMonitor | null = null;
+  // 中文注释：待注入给 agent 的系统压力通知（级别变化时写入，下一次模型调用前消费并清空）。
+  /** Pending system-pressure notice to inject into the next model call (set on level change, consumed and cleared before next model call). */
+  private _pendingSystemNotice: string | null = null;
+  // 中文注释：取消 SystemMonitor 级别变化订阅的函数。
+  /** Unsubscribe function for the SystemMonitor level-change listener. */
+  private _systemMonitorUnsub: (() => void) | null = null;
 
   constructor(config: AgentConfig, stateManager?: ThreadStateManager) {
     const locale = config.locale ?? 'zh';
@@ -321,9 +349,20 @@ export class AgentLoop {
       activeAgentRoleProfile: config.activeAgentRoleProfile ?? null,
       guardian: config.guardian ?? {},
       memory: normalizeMemorySettings(config.memory ?? DEFAULT_MEMORY_SETTINGS),
+      systemMonitor: {
+        ...DEFAULT_SYSTEM_MONITOR_CONFIG,
+        ...config.systemMonitor,
+        thresholds: {
+          ...DEFAULT_SYSTEM_MONITOR_CONFIG.thresholds,
+          ...config.systemMonitor?.thresholds,
+        },
+      },
     };
     this.tools = this.config.tools;
-    registerCollabTools(this.tools);
+    registerCollabTools(this.tools, {
+      a2aClientEnabled: config.a2aClientEnabled,
+      a2aRemotes: config.a2aRemotes,
+    });
     registerOptionalTools(this.tools, this.config.mcpTools);
     if (this.config.toolBindingMode === 'delayed' && !this.tools.get(TOOL_SEARCH_TOOL_NAME)) {
       this.tools.register(createToolSearchTool(this.tools, {
@@ -348,6 +387,81 @@ export class AgentLoop {
       createDynamicContextMiddleware(),
       ...this.config.runtimeMiddleware,
     ]);
+    // 中文注释：初始化系统监控。仅当 enabled=true 时启动后台采样，并订阅级别变化用于主动通知。
+    // — Chinese: init system monitor; only starts background sampling when enabled, subscribes for proactive notification
+    this.initSystemMonitor();
+  }
+
+  /** 初始化系统监控并订阅级别变化事件。 */
+  // — Chinese: init system monitor and subscribe to level-change events
+  private initSystemMonitor(): void {
+    const cfg = this.config.systemMonitor;
+    if (!cfg.enabled) return;
+    this._systemMonitor = new SystemMonitor(cfg);
+    this._systemMonitorUnsub = this._systemMonitor.onLevelChange((status) => {
+      this.handleSystemMonitorLevelChange(status);
+    });
+    this._systemMonitor.start();
+  }
+
+  /** 级别变化时：写入待注入通知 + 发射 warning 事件。 */
+  // — Chinese: on level change: queue notice for next model call + emit warning event
+  private handleSystemMonitorLevelChange(status: SystemMonitorStatus): void {
+    if (status.level === 'none') {
+      // 压力解除 — 注入恢复通知
+      // — Chinese: pressure cleared — inject recovery notice
+      this._pendingSystemNotice = `[System Monitor] Host pressure has returned to normal. You may resume normal tool execution and subagent delegation.`;
+    } else {
+      this._pendingSystemNotice = `[System Monitor] Host under ${status.level} pressure. ${status.recommendation} (CPU: ${status.snapshot.cpuUsage.toFixed(1)}%, Memory: ${status.snapshot.memUsage.toFixed(1)}%)`;
+    }
+    // 发射 warning 事件给 UI / 监听器
+    // — Chinese: emit warning event to UI / listeners
+    this.emit({
+      type: 'warning',
+      message: this._pendingSystemNotice,
+    });
+  }
+
+  /** 获取当前系统监控级别（未启用时返回 'none'）。 */
+  // — Chinese: get current system monitor level (returns 'none' if disabled)
+  private get systemMonitorLevel(): SystemMonitorLevel {
+    if (!this._systemMonitor || !this._systemMonitor.isEnabled()) return 'none';
+    return this._systemMonitor.getStatus().level;
+  }
+
+  /** 消费待注入的系统通知，返回通知文本（无则返回 null）。 */
+  // — Chinese: consume pending system notice, returns notice text or null
+  private consumePendingSystemNotice(): string | null {
+    const notice = this._pendingSystemNotice;
+    this._pendingSystemNotice = null;
+    return notice;
+  }
+
+  /** 释放系统监控资源（停止后台采样、取消订阅）。 */
+  /** Dispose system monitor: stop background sampling and unsubscribe. */
+  dispose(): void {
+    if (this._systemMonitorUnsub) {
+      this._systemMonitorUnsub();
+      this._systemMonitorUnsub = null;
+    }
+    if (this._systemMonitor) {
+      this._systemMonitor.stop();
+      this._systemMonitor = null;
+    }
+  }
+
+  /**
+   * 共享父 agent 的 SystemMonitor 实例（不启动新采样）。
+   * 子 agent 用此方法获得同一主机的监控状态，但不重复后台采样。
+   */
+  /**
+   * Attach a shared SystemMonitor instance (without starting a new sampler).
+   * Child agents use this to read the same host status without duplicate sampling.
+   */
+  attachSystemMonitor(monitor: SystemMonitor | null): void {
+    // 不订阅级别变化 — 子 agent 的限流通过 systemMonitorLevel getter 实时读取
+    // — Chinese: don't subscribe to level changes — child reads level via systemMonitorLevel getter
+    this._systemMonitor = monitor;
   }
 
   /** Lazy Sandbox instance for exec policy evaluation. */
@@ -678,9 +792,20 @@ export class AgentLoop {
     }
   }
 
-  /** Register a listener for streaming events. */
-  onEvent(listener: (event: ThreadEvent) => void): void {
+  /**
+   * Register a listener for streaming events.
+   * 返回 unsubscribe 函数，调用后移除该监听器。
+   * — Chinese: register listener; returns unsubscribe function.
+   */
+  onEvent(listener: (event: ThreadEvent) => void): () => void {
     this.eventListeners.push(listener);
+    let unsubscribed = false;
+    return () => {
+      if (unsubscribed) return;
+      unsubscribed = true;
+      const idx = this.eventListeners.indexOf(listener);
+      if (idx >= 0) this.eventListeners.splice(idx, 1);
+    };
   }
 
   /** Emit an event to all listeners. */
@@ -1209,6 +1334,23 @@ export class AgentLoop {
     while (iteration < this.config.maxIterations) {
       if (signal.aborted) throw new Error('Turn cancelled');
 
+      // 中文注释：主动通知 — 若 SystemMonitor 级别变化，在下一次模型调用前注入系统通知
+      // — Chinese: proactive notification — inject system notice before next model call if level changed
+      const pendingNotice = this.consumePendingSystemNotice();
+      if (pendingNotice) {
+        messages.push({
+          role: 'user',
+          content: pendingNotice,
+        });
+        await this.appendRunMonitorEvent(turnId, {
+          category: 'middleware',
+          type: 'middleware.system_monitor_notice',
+          level: 'warning',
+          message: pendingNotice,
+          metadata: { iteration },
+        });
+      }
+
       iteration++;
       const streamed = await this.runModelStream(
         threadId,
@@ -1599,6 +1741,28 @@ export class AgentLoop {
         index += 1;
       }
       const group = toolCalls.slice(start, index);
+      // 中文注释：系统监控限流 — light 级别将并发批次减半
+      // — Chinese: system monitor throttle — light level halves the parallel batch size
+      const maxBatch = this.maxParallelBatchSize;
+      if (maxBatch !== Number.POSITIVE_INFINITY && group.length > maxBatch) {
+        // 分成更小的子批次依次执行
+        // — Chinese: split into smaller sub-batches and execute sequentially
+        for (let subStart = 0; subStart < group.length; subStart += maxBatch) {
+          const subgroup = group.slice(subStart, subStart + maxBatch);
+          const subResults = await this.runParallelGroup(
+            threadId,
+            turnId,
+            subgroup,
+            collectedItems,
+            runtimeContext,
+            visibleToolNames,
+          );
+          subResults.forEach((result, offset) => {
+            results[start + subStart + offset] = result;
+          });
+        }
+        continue;
+      }
       if (group.length === 1) {
         const toolCall = group[0];
         const result = await this.executeToolCall(
@@ -1613,46 +1777,67 @@ export class AgentLoop {
         continue;
       }
 
-      const toolNames = group.map((toolCall) => resolveToolName(this.tools, toolCall.function.name));
-      await this.appendRunMonitorEvent(turnId, {
-        category: 'tool',
-        type: 'tool.batch.started',
-        message: `Parallel tool batch started (${toolNames.join(', ')})`,
-        metadata: { parallel: true, toolCount: group.length, toolNames },
+      const groupResults = await this.runParallelGroup(
+        threadId,
+        turnId,
+        group,
+        collectedItems,
+        runtimeContext,
+        visibleToolNames,
+      );
+      groupResults.forEach((result, offset) => {
+        results[start + offset] = result;
       });
-      try {
-        const groupResults = await Promise.all(group.map(async (toolCall) => {
-          const result = await this.executeToolCall(
-            threadId,
-            turnId,
-            toolCall,
-            collectedItems,
-            runtimeContext,
-            visibleToolNames,
-          );
-          return { toolCall, ...result };
-        }));
-        groupResults.forEach((result, offset) => {
-          results[start + offset] = result;
-        });
-        await this.appendRunMonitorEvent(turnId, {
-          category: 'tool',
-          type: 'tool.batch.completed',
-          message: `Parallel tool batch completed (${toolNames.join(', ')})`,
-          metadata: { parallel: true, toolCount: group.length, toolNames },
-        });
-      } catch (error) {
-        await this.appendRunMonitorEvent(turnId, {
-          category: 'tool',
-          type: 'tool.batch.failed',
-          level: 'error',
-          message: error instanceof Error ? error.message : String(error),
-          metadata: { parallel: true, toolCount: group.length, toolNames },
-        });
-        throw error;
-      }
     }
     return results;
+  }
+
+  /** 执行一组可并发的工具调用（含事件追踪）。 */
+  /** Execute a group of parallel-safe tool calls (with event tracking). */
+  private async runParallelGroup(
+    threadId: ThreadId,
+    turnId: TurnId,
+    group: ToolCall[],
+    collectedItems: ThreadItem[],
+    runtimeContext: RuntimeTurnContext,
+    visibleToolNames?: ReadonlySet<string>,
+  ): Promise<ToolCallExecutionResult[]> {
+    const toolNames = group.map((toolCall) => resolveToolName(this.tools, toolCall.function.name));
+    await this.appendRunMonitorEvent(turnId, {
+      category: 'tool',
+      type: 'tool.batch.started',
+      message: `Parallel tool batch started (${toolNames.join(', ')})`,
+      metadata: { parallel: true, toolCount: group.length, toolNames },
+    });
+    try {
+      const groupResults = await Promise.all(group.map(async (toolCall) => {
+        const result = await this.executeToolCall(
+          threadId,
+          turnId,
+          toolCall,
+          collectedItems,
+          runtimeContext,
+          visibleToolNames,
+        );
+        return { toolCall, ...result };
+      }));
+      await this.appendRunMonitorEvent(turnId, {
+        category: 'tool',
+        type: 'tool.batch.completed',
+        message: `Parallel tool batch completed (${toolNames.join(', ')})`,
+        metadata: { parallel: true, toolCount: group.length, toolNames },
+      });
+      return groupResults;
+    } catch (error) {
+      await this.appendRunMonitorEvent(turnId, {
+        category: 'tool',
+        type: 'tool.batch.failed',
+        level: 'error',
+        message: error instanceof Error ? error.message : String(error),
+        metadata: { parallel: true, toolCount: group.length, toolNames },
+      });
+      throw error;
+    }
   }
 
   private supportsParallelToolCall(
@@ -1664,9 +1849,32 @@ export class AgentLoop {
     if (isCollabTool(toolName)) return false;
     if (!this.isToolAllowedByRole(toolName)) return false;
     const toolDef = this.tools.get(toolName);
-    return toolDef?.supportsParallelToolCalls === true
-      && toolDef.requiredPolicy === 'readonly'
-      && toolDef.requiresApproval !== true;
+    if (toolDef?.supportsParallelToolCalls !== true
+      || toolDef.requiredPolicy !== 'readonly'
+      || toolDef.requiresApproval === true) {
+      return false;
+    }
+    // 中文注释：系统监控限流 — moderate 及以上强制串行
+    // — Chinese: system monitor throttle — moderate+ forces sequential execution
+    const level = this.systemMonitorLevel;
+    if (level === 'moderate' || level === 'severe') return false;
+    return true;
+  }
+
+  /** 根据系统监控级别返回并发工具批次的最大大小。 */
+  /** Max parallel batch size based on system monitor level. */
+  private get maxParallelBatchSize(): number {
+    const level = this.systemMonitorLevel;
+    switch (level) {
+      case 'severe':
+      case 'moderate':
+        return 1; // 全串行
+      case 'light':
+        return 2; // 并发数减半（限制为 2）
+      case 'none':
+      default:
+        return Number.POSITIVE_INFINITY; // 不限制
+    }
   }
 
   private async executeToolCall(
@@ -1693,6 +1901,9 @@ export class AgentLoop {
       approved: false,
       signal: this.stateManager.get(threadId).cancelController?.signal,
       webProvider: this.config.webProvider,
+      // 中文注释：注入系统监控引用，工具内部可调用 get_system_status 查询主机状态
+      // — Chinese: inject system monitor reference so tools can query host status
+      systemMonitor: this._systemMonitor ?? undefined,
     };
 
     // Check sandbox policy
@@ -1710,6 +1921,34 @@ export class AgentLoop {
       collectedItems.push(errorItem);
       this.emitItem(threadId, turnId, errorItem);
       return { output: msg };
+    }
+    // 中文注释：系统监控限流 — severe 级别只允许 readonly 工具，阻止写操作
+    // — Chinese: system monitor throttle — severe level only allows readonly tools, blocks writes
+    if (this.systemMonitorLevel === 'severe' && toolDef.requiredPolicy !== 'readonly') {
+      const blockedMsg = `[System Monitor] Host under severe pressure. Write/dangerous tools are temporarily blocked. Only readonly tools are allowed. Please wait for load to decrease.`;
+      const response: RuntimeToolResponse = {
+        status: 'failed',
+        output: blockedMsg,
+        error: { message: 'Tool blocked by system monitor (severe level).', code: 'SYSTEM_MONITOR_SEVERE_BLOCK' },
+      };
+      const runtimeToolRequest: RuntimeToolRequest = {
+        toolCall,
+        requestedToolName,
+        toolName,
+        args,
+        toolDef,
+        toolContext: ctx,
+      };
+      await this.runtimeMiddleware.afterTool(runtimeContext, runtimeToolRequest, response);
+      const output = await this.recordMiddlewareToolResponse(
+        threadId,
+        turnId,
+        toolName,
+        args,
+        collectedItems,
+        response,
+      );
+      return { output };
     }
     if (!this.isToolAllowedByRole(toolName)) {
       const response: RuntimeToolResponse = {
@@ -2097,9 +2336,235 @@ export class AgentLoop {
         return this.listSubagents(parentThreadId, args, item);
       case 'close_agent':
         return this.closeSubagent(parentThreadId, args, item);
+      case 'spawn_remote_agent':
+        return this.spawnRemoteAgent(parentThreadId, args, item);
       default:
         throw new Error(`Unknown collaboration tool: ${toolName}`);
     }
+  }
+
+  /**
+   * 委派任务到外部 A2A Agent（跨框架协作）。
+   * 通过 @a2a-js/sdk 的 ClientFactory 与远程 Agent 通信。
+   *
+   * 优先使用流式接口（sendMessageStream），将远程 Agent 的中间状态
+   * 实时以 item.updated 事件回传给父线程；若远程 Agent 不支持流式
+   * 或建立流失败，则回退到阻塞式 sendMessage。
+   */
+  // — Chinese: delegate task to remote A2A agent. Prefers streaming with real-time
+  // status feedback; falls back to blocking mode if streaming unavailable.
+  private async spawnRemoteAgent(
+    parentThreadId: ThreadId,
+    args: Record<string, unknown>,
+    item: CollabToolCallItem,
+  ): Promise<unknown> {
+    const agentUrl = stringArg(args, 'agentUrl');
+    if (!agentUrl) throw new Error('spawn_remote_agent requires agentUrl');
+    const task = stringArg(args, 'task');
+    if (!task) throw new Error('spawn_remote_agent requires task');
+    const context = stringArg(args, 'context');
+
+    // 把任务描述记录到 collab tool call item 上，便于前端展示与回放
+    // — Chinese: record task description on collab tool call item for UI display
+    item.prompt = task;
+    item.agentStatus = 'running';
+    item.receiverThreadId = agentUrl;
+
+    const { RemoteAgentClient } = await import('./a2aClient/remoteAgentClient.js');
+    const remoteClient = new RemoteAgentClient();
+
+    let result;
+    try {
+      // 流式模式：实时消费远程事件并转发 item.updated 到父线程
+      // — Chinese: streaming mode: consume remote events, forward as item.updated
+      result = await this.consumeRemoteAgentStream(remoteClient, agentUrl, task, context, parentThreadId, item);
+    } catch (streamError) {
+      // 流式建立失败（远程 Agent 不支持 streaming 或连接异常）→ 回退到阻塞模式
+      // — Chinese: streaming setup failed (unsupported or connection error) → fall back to blocking
+      result = await remoteClient.sendTask(agentUrl, task, context);
+    }
+
+    // 把远程 Agent 的 URL 与最终状态记到 item 上
+    // — Chinese: record remote agent URL and final status on item
+    item.agentStatus = result.status === 'completed' ? 'completed' : result.status === 'failed' ? 'failed' : 'running';
+
+    let output = `Remote agent response (${agentUrl}):\n${result.text || '(no text reply)'}`;
+    if (result.artifacts.length > 0) {
+      output += '\n\nArtifacts:';
+      for (const a of result.artifacts) {
+        output += `\n${a.name || 'unnamed'}: ${a.text || '(empty)'}`;
+      }
+    }
+    if (result.error) {
+      output += `\n\nError: ${result.error}`;
+    }
+
+    return {
+      agentUrl,
+      taskId: result.taskId,
+      status: result.status,
+      text: result.text,
+      artifacts: result.artifacts,
+      error: result.error,
+      output,
+    };
+  }
+
+  /**
+   * 消费远程 Agent 的流式事件，实时把状态变化以 item.updated 事件转发到父线程。
+   * 同时累积状态轨迹（remoteStatusTrail）和中间文本流（remoteTextStream）到 item 上，
+   * 供前端展示 working → input-required → completed 的过程与流式文本。
+   * 返回与 sendTask 相同结构的聚合结果。
+   */
+  // — Chinese: consume remote agent stream events, forward status as item.updated.
+  // Accumulates status trail and text stream on item for UI display.
+  private async consumeRemoteAgentStream(
+    remoteClient: RemoteAgentClient,
+    agentUrl: string,
+    task: string,
+    context: string | undefined,
+    parentThreadId: ThreadId,
+    item: CollabToolCallItem,
+  ): Promise<{
+    taskId?: string;
+    status: 'completed' | 'failed' | 'working';
+    text: string;
+    artifacts: Array<{ name?: string; text: string }>;
+    error?: string;
+  }> {
+    const turnId = item.turnId;
+    const artifacts: Array<{ name?: string; text: string }> = [];
+    let text = '';
+    let taskId: string | undefined;
+    let finalStatus: 'completed' | 'failed' | 'working' = 'working';
+
+    // 初始化轨迹和文本流容器（仅在首次调用时创建）
+    // — Chinese: init trail and text stream containers (only on first call)
+    if (!item.remoteStatusTrail) item.remoteStatusTrail = [];
+    if (!item.remoteTextStream) item.remoteTextStream = [];
+
+    for await (const event of remoteClient.sendTaskStream(agentUrl, task, context)) {
+      switch (event.type) {
+        case 'status': {
+          const statusEvent = event.data as { taskId?: string; status?: { state?: string; timestamp?: string; message?: { parts?: Array<{ kind: string; text?: string }> } } } | undefined;
+          if (statusEvent?.taskId) taskId = statusEvent.taskId;
+          const state = statusEvent?.status?.state ?? 'unknown';
+          const eventTimestamp = statusEvent?.status?.timestamp ?? new Date().toISOString();
+
+          // 更新 item 状态
+          // — Chinese: update item agentStatus based on state
+          if (state === 'working') {
+            item.agentStatus = 'running';
+          } else if (state === 'completed') {
+            item.agentStatus = 'completed';
+            finalStatus = 'completed';
+          } else if (state === 'failed' || state === 'canceled' || state === 'rejected') {
+            item.agentStatus = 'failed';
+            finalStatus = 'failed';
+          } else if (state === 'input-required') {
+            item.agentStatus = 'running';
+          }
+
+          // 从 status.message 中提取中间文本（如果有）
+          // — Chinese: extract intermediate text from status.message if present
+          let intermediateText: string | undefined;
+          const messageParts = statusEvent?.status?.message?.parts;
+          if (messageParts) {
+            intermediateText = messageParts
+              .filter((p) => p.kind === 'text')
+              .map((p) => p.text ?? '')
+              .join('');
+          }
+
+          // 追加到状态轨迹
+          // — Chinese: append to status trail
+          item.remoteStatusTrail.push({
+            timestamp: eventTimestamp,
+            state,
+            text: intermediateText,
+          });
+
+          // 若有中间文本，同时追加到文本流
+          // — Chinese: if intermediate text present, also append to text stream
+          if (intermediateText) {
+            item.remoteTextStream.push({
+              timestamp: eventTimestamp,
+              text: intermediateText,
+            });
+          }
+
+          this.emit({ type: 'item.updated', threadId: parentThreadId, turnId, item });
+          break;
+        }
+        case 'message': {
+          // 远程 Agent 的最终消息 → 提取文本
+          // — Chinese: remote agent's final message → extract text
+          const message = event.data as { parts?: Array<{ kind: string; text?: string }> } | undefined;
+          if (message?.parts) {
+            const messageText = message.parts
+              .filter((p) => p.kind === 'text')
+              .map((p) => p.text ?? '')
+              .join('\n');
+            if (messageText) text = text ? `${text}\n${messageText}` : messageText;
+          }
+          break;
+        }
+        case 'artifact': {
+          // 远程 Agent 的产物 → 收集
+          // — Chinese: remote agent artifact → collect
+          const artifactEvent = event.data as { artifact?: { name?: string; parts?: Array<{ kind: string; text?: string }> } } | undefined;
+          const artifact = artifactEvent?.artifact;
+          if (artifact) {
+            const artifactText = (artifact.parts ?? [])
+              .filter((p) => p.kind === 'text')
+              .map((p) => p.text ?? '')
+              .join('\n');
+            artifacts.push({ name: artifact.name, text: artifactText });
+          }
+          break;
+        }
+        case 'task': {
+          // 完整 Task 对象 → 提取 taskId
+          // — Chinese: full Task object → extract taskId
+          const taskObj = event.data as { id?: string } | undefined;
+          if (taskObj?.id) taskId = taskObj.id;
+          break;
+        }
+        case 'error': {
+          finalStatus = 'failed';
+          item.agentStatus = 'failed';
+          // 错误也记入状态轨迹，便于前端展示失败时点
+          // — Chinese: record error in status trail for UI to show failure point
+          const errTimestamp = new Date().toISOString();
+          item.remoteStatusTrail.push({
+            timestamp: errTimestamp,
+            state: 'failed',
+            text: event.error,
+          });
+          this.emit({ type: 'item.updated', threadId: parentThreadId, turnId, item });
+          return {
+            taskId,
+            status: 'failed',
+            text,
+            artifacts,
+            error: event.error ?? 'Remote agent stream error',
+          };
+        }
+        case 'done': {
+          // 流结束 — 如果尚未收到最终状态，默认 completed
+          // — Chinese: stream done — default to completed if no final status received
+          if (finalStatus === 'working') finalStatus = 'completed';
+          return { taskId, status: finalStatus, text, artifacts };
+        }
+        default:
+          break;
+      }
+    }
+
+    // 流自然结束但未收到 done 事件 — 用已收集的数据返回
+    // — Chinese: stream ended naturally without done event — return collected data
+    if (finalStatus === 'working') finalStatus = 'completed';
+    return { taskId, status: finalStatus, text, artifacts };
   }
 
   private async spawnSubagent(
@@ -2109,6 +2574,18 @@ export class AgentLoop {
   ): Promise<unknown> {
     const prompt = stringArg(args, 'prompt')?.trim();
     if (!prompt) throw new Error('spawn_agent requires prompt');
+    // 中文注释：系统监控限流 — 主机压力大时阻止新增子 agent
+    // — Chinese: system monitor throttle — block new subagent spawns under host pressure
+    const level = this.systemMonitorLevel;
+    if (level !== 'none') {
+      const status = this._systemMonitor?.getStatus();
+      const reason = status?.recommendation ?? 'Host under pressure';
+      const error = new Error(
+        `Subagent delegation blocked by system monitor (level: ${level}). ${reason}`,
+      );
+      (error as Error & { code?: string }).code = 'SYSTEM_MONITOR_THROTTLED';
+      throw error;
+    }
     const openEdges = await this.config.store.listThreadSpawnDescendants(parentThreadId, 'open');
     const parentMaxSubagents = this.config.activeAgentRoleProfile?.maxSubagents ?? this.config.maxSubagents;
     if (openEdges.length >= parentMaxSubagents) {
@@ -2600,7 +3077,7 @@ export class AgentLoop {
       ? `\n\n## Agent Transfer Envelope\n${JSON.stringify(envelope, null, 2)}`
       : '';
     const roleProfileLine = roleProfilePrompt ? `\n\n${roleProfilePrompt}` : '';
-    return new AgentLoop(
+    const child = new AgentLoop(
       {
         workspaceRoot: this.config.workspaceRoot,
         sandbox: this.config.sandbox,
@@ -2631,9 +3108,16 @@ export class AgentLoop {
         toolGovernance: this.config.toolGovernance,
         guardian: this.config.guardian,
         memory: this.config.memory,
+        // 中文注释：子 agent 不自建采样器，通过 attachSystemMonitor 共享父 agent 的实例
+        // — Chinese: child doesn't start its own sampler; shares parent's via attachSystemMonitor
+        systemMonitor: { enabled: false },
       },
       this.stateManager,
     );
+    // 中文注释：共享父 agent 的 SystemMonitor 实例，让子 agent 的工具调用也受同样的限流
+    // — Chinese: share parent's SystemMonitor so child's tool calls follow the same throttle
+    child.attachSystemMonitor(this._systemMonitor);
+    return child;
   }
 
   private tryResolveAgentRoleProfile(roleName: string | null | undefined): ResolvedAgentRoleProfile | null {
@@ -3865,8 +4349,11 @@ function buildRoleProfilePrompt(profile: ResolvedAgentRoleProfile | null | undef
   return lines.join('\n');
 }
 
-function registerCollabTools(registry: ToolRegistry): void {
-  for (const tool of createCollabToolDefinitions()) {
+function registerCollabTools(
+  registry: ToolRegistry,
+  options?: { a2aClientEnabled?: boolean; a2aRemotes?: string[] },
+): void {
+  for (const tool of createCollabToolDefinitions(options)) {
     if (!registry.get(tool.name)) {
       registry.register(tool);
     }
@@ -3907,9 +4394,9 @@ const FALLBACK_TOOL_ALIASES = new Map<string, string>([
   ['web_open', 'web_search'],
 ]);
 
-function createCollabToolDefinitions(): ToolDefinition[] {
+function createCollabToolDefinitions(options?: { a2aClientEnabled?: boolean; a2aRemotes?: string[] }): ToolDefinition[] {
   const readonly = 'readonly' as const;
-  return [
+  const tools: ToolDefinition[] = [
     {
       name: 'spawn_agent',
       description: 'Spawn a child agent thread for an independent subtask. Use this when parallel investigation or delegation helps.',
@@ -4054,6 +4541,40 @@ function createCollabToolDefinitions(): ToolDefinition[] {
       execute: async () => ({ output: 'handled by AgentLoop', status: 'completed' as const }),
     },
   ];
+  // 中文注释：仅当 a2aClientEnabled=true 时注册 spawn_remote_agent 工具
+  // — Chinese: only register spawn_remote_agent when a2aClientEnabled=true
+  if (options?.a2aClientEnabled) {
+    const remotesHint = options.a2aRemotes?.length
+      ? ` Registered remote agents: ${options.a2aRemotes.join(', ')}.`
+      : '';
+    tools.push({
+      name: 'spawn_remote_agent',
+      description: `Delegate a subtask to a remote A2A (Agent-to-Agent) agent. The remote agent executes the task and returns its result. Use this for cross-framework collaboration or when a remote agent has specialized capabilities.${remotesHint}`,
+      requiredPolicy: readonly,
+      requiresApproval: false,
+      parameters: {
+        type: 'object',
+        properties: {
+          agentUrl: {
+            type: 'string',
+            description: 'URL of the remote A2A agent (e.g. https://host/api/a2a or https://host/.well-known/agent-card.json).',
+          },
+          task: {
+            type: 'string',
+            description: 'Task description to send to the remote agent.',
+          },
+          context: {
+            type: 'string',
+            description: 'Optional additional context to pass to the remote agent.',
+          },
+        },
+        required: ['agentUrl', 'task'],
+        additionalProperties: false,
+      },
+      execute: async () => ({ output: 'handled by AgentLoop', status: 'completed' as const }),
+    });
+  }
+  return tools;
 }
 
 function buildDefaultSystemPrompt(): string {
@@ -4241,6 +4762,7 @@ function isCollabTool(name: string): name is CollabToolName {
     'wait_agent',
     'list_agents',
     'close_agent',
+    'spawn_remote_agent',
   ].includes(name);
 }
 

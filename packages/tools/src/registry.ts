@@ -1,6 +1,6 @@
 // ─── Tool definition ────────────────────────────────────────────────────────
 // 工具定义模块：声明所有内置工具的元信息、参数 schema、执行入口
-import type { CommandStatus } from '@nexus/protocol';
+import type { CommandStatus, SystemMonitorInterface } from '@nexus/protocol';
 import type { SandboxLevel } from '@nexus/sandbox';
 import type { WebProviderRouterOptions } from './web/provider.js';
 
@@ -69,6 +69,9 @@ export interface ToolContext {
   /** Optional web provider settings supplied by the runtime from persisted app settings. */
   // 运行时从持久化应用设置中下发的 web provider 配置（可选）
   webProvider?: WebProviderRouterOptions;
+  /** 系统监控模块引用（可选），启用后 agent 可查询主机 CPU/内存/磁盘状态 */
+  // — Chinese: system monitor reference (optional), enables agent to query host CPU/memory/disk
+  systemMonitor?: SystemMonitorInterface;
 }
 
 /** Result of a tool execution. */

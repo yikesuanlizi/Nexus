@@ -8429,3 +8429,103 @@
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.7; transform: scale(1.2); }
 }
+
+/* 中文注释：工具条目"预览/打开"按钮 + 子 agent 推理折叠样式 */
+/* — Chinese: tool item "preview/open" buttons + sub-agent reasoning collapsed styles */
+.toolItemActions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0 4px;
+  padding: 0;
+}
+
+.toolItemFilePath {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--nx-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--nx-panel) 92%, transparent);
+}
+
+.toolItemFilePathLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--nx-text);
+}
+
+.toolItemActionButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid var(--nx-border);
+  border-radius: 8px;
+  background: var(--nx-panel);
+  color: var(--nx-text);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color .12s ease, border-color .12s ease;
+}
+
+.toolItemActionButton:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--nx-accent, #6366f1) 14%, var(--nx-panel));
+  border-color: color-mix(in srgb, var(--nx-accent, #6366f1) 40%, var(--nx-border));
+}
+
+.toolItemActionButton:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+.toolItemActionButton svg {
+  width: 14px;
+  height: 14px;
+}
+
+.childActivityReasoning {
+  margin: 6px 0;
+  padding: 8px 12px;
+  border: 1px dashed var(--nx-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--nx-panel) 80%, transparent);
+}
+
+.childActivityReasoning > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--nx-muted);
+  list-style: none;
+  user-select: none;
+}
+
+.childActivityReasoning > summary::-webkit-details-marker {
+  display: none;
+}
+
+.childActivityReasoning > summary svg {
+  width: 14px;
+  height: 14px;
+  color: var(--nx-accent, #6366f1);
+}
+
+.childActivityReasoningText {
+  margin: 8px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--nx-border);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--nx-text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}

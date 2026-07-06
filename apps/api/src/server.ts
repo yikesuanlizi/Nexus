@@ -1,11 +1,12 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { URL } from 'node:url';
-import { type ThreadState, type WorkflowNodeExecutors } from '@nexus/runtime';
+import { type ThreadState } from '@nexus/runtime';
 import { listProviders, type ModelGateway } from '@nexus/model-gateway';
 import { createStore, resolveStorageOptions } from '@nexus/storage';
-import { BUILTIN_TOOLS, ToolRegistry, type ToolContext } from '@nexus/tools';
 import { forkThread } from '@nexus/memory';
 import type { ThreadEvent, ThreadId, ThreadItem, TurnMeta, UserInput } from '@nexus/protocol';
+import { buildAgentCard, type AgentRuntimePort } from '@nexus/protocol';
+import { createA2AHandler, handleA2ARoute, type A2AHandler } from './a2a/a2aRoute.js';
 import { WebApprovalBroker } from './services/approval.js';
 import { handleCompactThread } from './routes/compactRoute.js';
 import { readJson, sendError, sendJson } from './shared/http.js';
@@ -26,7 +27,7 @@ import { shouldRetitleThread, titleFromInput } from './services/threadTitle.js';
 import { buildThreadChildInfos } from './services/threadChildren.js';
 import { buildUserInputFromTurnRequest } from './services/turnInput.js';
 import { usageForThreadTree, usageFromThread } from './services/usage.js';
-import { defaultConfig, hiddenChatWorkspaceRoot, publicRunConfig, resolveConfig, type AgentRunConfig, type TurnRequest } from './config/config.js';
+import { defaultConfig, hiddenChatWorkspaceRoot, publicRunConfig, resolveConfig, type AgentRunConfig, type TurnRequest, A2A_CONFIG_KEY, normalizeA2AConfig } from './config/config.js';
 import { createTenantRuntime } from './runtime/tenantRuntime.js';
 import { applyCorsHeaders, resolveCorsOptions } from './shared/cors.js';
 import { handleRequestGate } from './routes/requestGate.js';
@@ -66,6 +67,74 @@ const tenantRuntime = createTenantRuntime({
   approvalBroker,
   publishEvent,
 });
+
+// A2A handler 单例缓存（按租户隔离）— Chinese: A2A handler singleton cache per tenant
+const a2aHandlers = new Map<string, A2AHandler>();
+
+/**
+ * 将 Nexus AgentLoop 适配到 A2A AgentRuntimePort 端口接口。
+ * AgentLoop 的 onEvent 返回 unsubscribe；runTurn 返回 { items, usage }，端口只取 { items }。
+ */
+// — Chinese: adapt AgentLoop to A2A AgentRuntimePort. onEvent returns unsubscribe.
+function adaptAgentLoopToPort(agent: {
+  runTurn(threadId: ThreadId, input: { type: 'text'; text: string }, signal?: AbortSignal): Promise<{ items: ThreadItem[] }>;
+  interrupt(threadId: ThreadId): boolean;
+  onEvent(listener: (event: ThreadEvent) => void): () => void;
+}): AgentRuntimePort {
+  return {
+    runTurn: (threadId, input, signal) => agent.runTurn(threadId, input, signal),
+    interrupt: (threadId) => agent.interrupt(threadId),
+    onEvent: (listener) => agent.onEvent(listener),
+  };
+}
+
+/** 推导 A2A 端点基础 URL（支持 NEXUS_A2A_BASE_URL 环境变量覆盖）。 */
+// — Chinese: resolve A2A endpoint base URL (overridable via NEXUS_A2A_BASE_URL)
+function resolveA2ABaseUrl(req: IncomingMessage): string {
+  const envBase = process.env.NEXUS_A2A_BASE_URL;
+  if (envBase) return envBase.replace(/\/$/, '');
+  const proto = (req.headers['x-forwarded-proto'] as string | undefined) ?? 'http';
+  const host = req.headers.host ?? `localhost:${process.env.NEXUS_API_PORT ?? '4127'}`;
+  return `${proto}://${host}`;
+}
+
+/**
+ * 获取或创建指定租户的 A2A handler（单例）。
+ * 装配 AgentCard、TaskStore、AgentExecutor，并注入 agentFactory。
+ * authMode 用于在 AgentCard 中声明认证要求（token → Bearer JWT，off → 无需认证）。
+ */
+// — Chinese: get or create A2A handler singleton per tenant. authMode declares the security scheme.
+function getA2AHandler(
+  tenantContext: TenantContext,
+  req: IncomingMessage,
+  authMode: 'token' | 'off',
+): A2AHandler {
+  const cached = a2aHandlers.get(tenantContext.tenantId);
+  if (cached) return cached;
+
+  const baseUrl = resolveA2ABaseUrl(req);
+  const store = tenantRuntime.storeForTenant(tenantContext);
+  const agentCard = buildAgentCard({
+    name: 'Nexus',
+    description: 'Nexus Agent OS — A2A endpoint powered by AgentLoop runtime',
+    url: `${baseUrl}/api/a2a`,
+    version: '0.3.0',
+    // 根据 Nexus 部署的认证模式声明 AgentCard 的 security scheme
+    // — Chinese: declare AgentCard security scheme based on deployment auth mode
+    securityScheme: authMode === 'token' ? 'bearer' : 'none',
+  });
+
+  const handler = createA2AHandler({
+    agentCard,
+    threadStore: store,
+    agentFactory: async () => {
+      const agent = await tenantRuntime.getDefaultAgent(tenantContext);
+      return adaptAgentLoopToPort(agent);
+    },
+  });
+  a2aHandlers.set(tenantContext.tenantId, handler);
+  return handler;
+}
 
 function serializeThreadState(state: ThreadState): unknown {
   return {
@@ -276,32 +345,6 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const resetTenantDefaultAgent = () => tenantRuntime.resetDefaultAgent(tenantContext);
   const createTenantAgent = (config?: Partial<AgentRunConfig>) => tenantRuntime.createAgent(config ?? {}, tenantContext);
   const getTenantDefaultAgent = () => tenantRuntime.getDefaultAgent(tenantContext);
-  const createWorkflowExecutors = async (): Promise<WorkflowNodeExecutors> => {
-    const { model, config } = await createTenantAgent();
-    const toolRegistry = new ToolRegistry();
-    for (const tool of BUILTIN_TOOLS) toolRegistry.register(tool);
-    return {
-      prompt: async (ctx) => {
-        const response = await model.chat({
-          messages: [{ role: 'user', content: ctx.materializedInput || ctx.node.prompt }],
-        });
-        const content = response.choices?.[0]?.message?.content;
-        return { result: typeof content === 'string' ? content : JSON.stringify(content ?? '') };
-      },
-      tool: async (ctx) => {
-        const toolName = ctx.node.componentType.replace(/^tool:/, '');
-        const args = (() => { try { return JSON.parse(ctx.materializedInput || '{}'); } catch { return {}; } })();
-        const toolCtx: ToolContext = {
-          workspaceRoot: config.workspaceRoot,
-          threadId: ctx.threadId ?? '',
-          turnId: '',
-          approved: false,
-        };
-        const result = await toolRegistry.execute(toolName, args, toolCtx);
-        return { result: typeof result.output === 'string' ? result.output : JSON.stringify(result.output ?? '') };
-      },
-    };
-  };
   const publishTenantEvent = (event: ThreadEvent) => publishEvent(event, tenantContext.tenantId);
   const tenantMcpManager = tenantRuntime.mcpManagerForTenant(tenantContext);
   if (await handleBotRoute({
@@ -318,6 +361,28 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     publishEvent: publishTenantEvent,
   })) return;
   if (await handleWorkspaceFilesRoute({ req, res, url })) return;
+
+  // A2A 标准发现路径 — /.well-known/agent-card.json
+  // A2A 规范要求 Agent Card 在此路径暴露，SDK 的 ClientFactory.createFromUrl 默认查找此路径
+  // — Chinese: A2A standard discovery path required by the spec
+  if (req.method === 'GET' && url.pathname === '/.well-known/agent-card.json') {
+    const a2aHandler = getA2AHandler(tenantContext, req, deployment.authConfig.mode);
+    sendJson(res, 200, a2aHandler.agentCard);
+    return;
+  }
+
+  // A2A (Agent2Agent) JSON-RPC 路由 — Chinese: A2A JSON-RPC route
+  // Agent Card 始终可访问（用于发现），JSON-RPC 调用需要启用配置
+  if (segments[0] === 'api' && segments[1] === 'a2a') {
+    const a2aHandler = getA2AHandler(tenantContext, req, deployment.authConfig.mode);
+    const isCardRequest = req.method === 'GET' && segments[2] === 'card';
+    const a2aConfig = normalizeA2AConfig(await store.getSetting(A2A_CONFIG_KEY));
+    if (!isCardRequest && !a2aConfig.enabled) {
+      sendError(res, 403, 'A2A Server is disabled. Enable it in Settings → A2A Protocol.');
+      return;
+    }
+    if (await handleA2ARoute({ req, res, url, segments, handler: a2aHandler })) return;
+  }
 
   if (await handleSettingsRoute({ req, res, pathname: url.pathname, store, getDefaultRunConfig, saveDefaultRunConfig: saveTenantDefaultRunConfig, resetDefaultAgent: resetTenantDefaultAgent })) return;
   if (await handleMemoryRoute({ req, res, url, pathname: url.pathname, store, getDefaultRunConfig, saveDefaultRunConfig: saveTenantDefaultRunConfig })) return;
@@ -461,7 +526,6 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     segments,
     store,
     createPlannerModel: async () => (await createTenantAgent()).model,
-    createWorkflowExecutors,
   })) return;
 
   if (await handleRunMonitorRoute({
@@ -519,7 +583,6 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       segments,
       store,
       createPlannerModel: async () => (await createTenantAgent()).model,
-      createWorkflowExecutors,
     })) return;
 
     if (req.method === 'GET' && segments.length === 3) {

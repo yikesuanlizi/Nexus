@@ -106,12 +106,24 @@ function renderPreviewContent(preview: WorkspaceFilePreview, locale: Locale): Re
   return <pre>{preview.text}{preview.truncated ? '\n\n... truncated' : ''}</pre>;
 }
 
+export interface ExternalPreviewRequest {
+  path: string;
+  pin?: boolean;
+  /** 用于触发同一文件的重复请求 — 每次自增的序号 */
+  // — Chinese: used to trigger repeated requests for the same file — an incrementing sequence
+  nonce?: number;
+}
+
 export function WorkspaceFilesPanel({
   locale,
   workspaceRoot,
+  externalPreviewRequest,
 }: {
   locale: Locale;
   workspaceRoot: string;
+  /** 外部预览请求 — 从对话条目点击"预览"时传入，自动加载该文件 */
+  // — Chinese: external preview request — passed in when clicking "preview" from a chat item
+  externalPreviewRequest?: ExternalPreviewRequest | null;
 }) {
   const [entriesByPath, setEntriesByPath] = useState<Record<string, WorkspaceFileEntry[]>>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set(['']));
@@ -131,6 +143,22 @@ export function WorkspaceFilesPanel({
     setPinned([]);
     setFilter('');
   }, [workspaceRoot]);
+
+  // 中文注释：响应外部预览请求 — 从对话条目点击"预览"时自动加载该文件
+  // — Chinese: respond to external preview request — auto-load file when "preview" clicked from chat item
+  useEffect(() => {
+    if (!externalPreviewRequest?.path) return;
+    const entry: WorkspaceFileEntry = {
+      kind: 'file',
+      name: externalPreviewRequest.path.split(/[/\\]/).pop() ?? externalPreviewRequest.path,
+      path: externalPreviewRequest.path,
+      size: 0,
+      extension: '',
+      updatedAt: '',
+    };
+    void previewFile(entry, externalPreviewRequest.pin ?? false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalPreviewRequest?.nonce, externalPreviewRequest?.path, externalPreviewRequest?.pin, workspaceRoot]);
 
   async function fetchDirectory(path = ''): Promise<WorkspaceFileEntry[]> {
     const data = await fetchJson<{ entries: WorkspaceFileEntry[] }>(`/api/workspaces/files?root=${encodeURIComponent(workspaceRoot)}&path=${encodeURIComponent(path)}`);

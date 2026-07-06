@@ -95,6 +95,7 @@ const runConfig: AgentRunConfig = {
   episodeColdAfterDays: DEFAULT_EPISODE_MEMORY_SETTINGS.episodeColdAfterDays,
   episodeFtsCandidateLimit: DEFAULT_EPISODE_MEMORY_SETTINGS.episodeFtsCandidateLimit,
   episodeRerankEnabled: DEFAULT_EPISODE_MEMORY_SETTINGS.episodeRerankEnabled,
+  systemMonitorEnabled: false,
   locale: 'zh',
 };
 

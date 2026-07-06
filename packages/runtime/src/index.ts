@@ -11,6 +11,12 @@ export type {
   ToolBindingMode,
 } from './agent.js';
 
+// ─── A2A 远程 Agent 客户端 ─────────────────────────────────────────────
+// 封装 @a2a-js/sdk，让 Nexus Agent 能调用外部 A2A Agent
+export { RemoteAgentClient } from './a2aClient/remoteAgentClient.js';
+export type { RemoteAgentResult, RemoteAgentStreamEvent } from './a2aClient/remoteAgentClient.js';
+export { REMOTE_AGENT_TOOL } from './a2aClient/remoteAgentTool.js';
+
 // ─── 工具治理 ──────────────────────────────────────────────────────────
 export type { ToolGovernanceConfig } from './toolGovernance.js';
 
@@ -44,7 +50,7 @@ export { leaksToolProtocol, validateModelOutputItems, validateThreadItemsForPers
 // ─── 错误类型与诊断 ────────────────────────────────────────────────────
 export { NexusRuntimeError, affectsTurnStatus, isRecoverableStreamError, toNexusErrorInfo } from './runtimeError.js';
 
-// ─── Guardian 安全审查 ────────────────────────────────────────────────
+// ─── Guardian 安全审查 ────────────────────────────────────────────────────
 export { createGuardianMiddleware } from './guardian.js';
 export type { ModelOutputItem, ValidatedModelOutput } from './modelOutput.js';
 export type {
@@ -57,6 +63,11 @@ export type {
   GuardianRiskLevel,
   GuardianTranscriptEntry,
 } from './guardian.js';
+
+// ─── 系统监控（CPU/内存/磁盘） ──────────────────────────────────────────
+// — Chinese: system monitor (CPU/memory/disk) for agent performance throttling
+export { SystemMonitor, DEFAULT_SYSTEM_MONITOR_CONFIG } from './systemMonitor.js';
+export type { SystemMonitorConfig, SystemMonitorListener } from './systemMonitor.js';
 
 // ─── 工作流（Workflow）蓝图定义与执行 ───────────────────────────────────
 export {

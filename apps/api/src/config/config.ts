@@ -84,6 +84,9 @@ export interface AgentRunConfig {
   episodeColdAfterDays: number;
   episodeFtsCandidateLimit: number;
   episodeRerankEnabled: boolean;
+  /** Whether system monitor (CPU/memory/disk) throttling is enabled. */
+  /** 中文：是否启用系统监控（CPU/内存/磁盘）限流 */
+  systemMonitorEnabled: boolean;
   themeMode: ThemeMode;
   locale?: Locale;
 }
@@ -116,9 +119,67 @@ export interface ModelPreset {
 export const DEFAULT_RUN_CONFIG_KEY = 'runConfig.default';
 export const MODEL_PRESETS_KEY = 'modelPresets';
 export const WEB_PROVIDER_SECRETS_KEY = 'webProvider.secrets.v1';
+// A2A 协议配置存储 key — Chinese: A2A protocol config storage key
+export const A2A_CONFIG_KEY = 'nexus.a2aConfig';
 
 export interface WebProviderSecrets {
   firecrawlApiKey?: string;
+}
+
+// A2A 协议配置 — Chinese: A2A protocol configuration
+export interface A2ARemoteAgent {
+  url: string;
+  name?: string;
+  addedAt: string;
+}
+
+export interface A2AConfig {
+  // 启用 A2A Server（对外暴露 Agent） — Chinese: enable A2A server (expose agent externally)
+  enabled: boolean;
+  // 启用 A2A Client（调用外部 Agent） — Chinese: enable A2A client (call external agents)
+  clientEnabled: boolean;
+  // 已注册的远程 Agent 列表 — Chinese: registered remote agent list
+  remotes: A2ARemoteAgent[];
+}
+
+export const DEFAULT_A2A_CONFIG: A2AConfig = {
+  enabled: false,
+  clientEnabled: false,
+  remotes: [],
+};
+
+// 规范化 A2A 配置：补全缺省字段、过滤无效条目 — Chinese: normalize A2A config
+export function normalizeA2AConfig(input: unknown): A2AConfig {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return { ...DEFAULT_A2A_CONFIG };
+  }
+  const raw = input as Partial<A2AConfig>;
+  const remotes: A2ARemoteAgent[] = [];
+  if (Array.isArray(raw.remotes)) {
+    for (const item of raw.remotes) {
+      if (!item || typeof item !== 'object') continue;
+      const candidate = item as Partial<A2ARemoteAgent>;
+      const url = typeof candidate.url === 'string' ? candidate.url.trim() : '';
+      if (!url) continue;
+      const name = typeof candidate.name === 'string' && candidate.name.trim()
+        ? candidate.name.trim()
+        : undefined;
+      const addedAt = typeof candidate.addedAt === 'string' && candidate.addedAt
+        ? candidate.addedAt
+        : new Date().toISOString();
+      remotes.push({ url, name, addedAt });
+    }
+  }
+  return {
+    enabled: Boolean(raw.enabled),
+    clientEnabled: Boolean(raw.clientEnabled),
+    remotes,
+  };
+}
+
+// 返回给前端的公开 A2A 配置（当前无敏感字段，直接返回） — Chinese: public A2A config
+export function publicA2AConfig(config: A2AConfig): A2AConfig {
+  return normalizeA2AConfig(config);
 }
 
 export interface PublicWebProviderConfig {
@@ -164,6 +225,7 @@ export const defaultConfig: AgentRunConfig = {
   episodeColdAfterDays: DEFAULT_EPISODE_MEMORY_SETTINGS.episodeColdAfterDays,
   episodeFtsCandidateLimit: DEFAULT_EPISODE_MEMORY_SETTINGS.episodeFtsCandidateLimit,
   episodeRerankEnabled: DEFAULT_EPISODE_MEMORY_SETTINGS.episodeRerankEnabled,
+  systemMonitorEnabled: false,
 };
 
 export function hiddenChatWorkspaceRoot(dataDir: string): string {
@@ -229,6 +291,8 @@ export function resolveConfig(patch: Partial<AgentRunConfig> = {}): AgentRunConf
   merged.episodeColdAfterDays = episode.episodeColdAfterDays;
   merged.episodeFtsCandidateLimit = episode.episodeFtsCandidateLimit;
   merged.episodeRerankEnabled = episode.episodeRerankEnabled;
+  // 系统监控开关强制为布尔值 — Chinese: coerce system monitor flag to boolean
+  merged.systemMonitorEnabled = merged.systemMonitorEnabled === true;
   return merged;
 }
 

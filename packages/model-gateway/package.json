@@ -1,6 +1,6 @@
 {
   "name": "@nexus/model-gateway",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -12,8 +12,7 @@
     }
   },
   "dependencies": {
-    "@nexus/protocol": "0.1.0",
+    "@nexus/protocol": "0.3.0",
     "zod": "^3.24.0"
   }
 }
-

@@ -9,6 +9,7 @@ import { AssistantTurnView, ItemView } from './components/ItemView.js';
 import { SettingsDrawer } from './components/SettingsDrawer.js';
 import { WeixinConnectDialog } from './components/WeixinConnectDialog.js';
 import { RightPane, type RightPaneTab } from './components/RightPane.js';
+import type { ExternalPreviewRequest } from './components/WorkspaceFilesPanel.js';
 import { RunMonitorDrawer } from './components/RunMonitorDrawer.js';
 import { WorkflowSidePane } from './components/WorkflowSidePane.js';
 import { WorkspaceThreadList } from './components/WorkspaceThreadList.js';
@@ -33,11 +34,9 @@ import { forgetWorkspaceRoot, pickWorkspaceRoot, readRememberedWorkspaceRoots, r
 import { controlThreadWorkflow, createWorkflowDraftErrorItem, createWorkflowDraftReplyItem, createWorkflowDraftUserItem, isUntitledWorkflowProjectTitle, loadThreadWorkflow, parseThreadWorkflow, parseWorkflowCheckpointItems, planWorkflowDraft, saveThreadWorkflow, workflowThreadTitleFromGoal, type WorkflowBlueprintCompileResult, type WorkflowComponentDefinition, type WorkflowPlanDraft, type WorkflowRuntimeAction, type WorkflowSnapshot } from './features/workflow/workflow.js';
 import { authEventSourceUrl, patchGlobalFetch } from './api/authClient.js';
 import { applyAgentMessageDelta, describeEvent, groupTranscriptItems, removeThreadItem, withSyntheticUserMessages, type EventDraft } from './features/chat/threadView.js';
-import { checkForUpdate, type UpdateCheckResult } from './services/updateChecker.js';
 import type { ApiKeyState, ApprovalRequest, EventLine, McpConfig, McpServerStatus, ModelPreset, ProviderEntry, SkillDraft, SkillEntry, ThreadItem, ThreadChildInfo, ThreadMeta, ThreadUsage, TurnMeta } from './shared/types.js';
 import './styles.css';
 type DeploymentStatus = { deploymentMode?: 'single' | 'multi'; authMode?: 'off' | 'token' };
-const APP_VERSION = '0.3.0';
 function resolveThemeShortcutMode(current: RunConfig['themeMode']): 'light' | 'dark' {
   if (current === 'dark') return 'dark';
   if (current === 'light') return 'light';
@@ -95,6 +94,9 @@ patchGlobalFetch(); function App() {
   const [settingsOpen, setSettingsOpen] = useState(false), [settingsHelpOpen, setSettingsHelpOpen] = useState(false);
   const [deploymentStatus, setDeploymentStatus] = useState<DeploymentStatus | null>(null);
   const [rightPaneVisible, setRightPaneVisible] = useState(true), [rightPaneTab, setRightPaneTab] = useState<RightPaneTab>('status');
+  // 中文注释：外部预览请求 — 从对话条目点击"预览"时驱动右侧文件面板加载该文件
+  // — Chinese: external preview request — drives right file panel to load a file when "preview" is clicked from chat
+  const [previewRequest, setPreviewRequest] = useState<ExternalPreviewRequest | null>(null);
   const [pendingApprovals, setPendingApprovals] = useState<ApprovalRequest[]>([]);
   const [providers, setProviders] = useState<ProviderEntry[]>([]);
   const [keyStates, setKeyStates] = useState<ApiKeyState[]>([]);
@@ -107,7 +109,6 @@ patchGlobalFetch(); function App() {
   const [skillDraft, setSkillDraft] = useState<SkillDraft | null>(null);
   const [dialog, setDialog] = useState<AppDialogState | null>(null);
   const [weixinConnectState, setWeixinConnectState] = useState<WeixinLoginState | null>(null);
-  const [updateInfo, setUpdateInfo] = useState<UpdateCheckResult | null>(null);
   const eventCounter = useRef(0);
   const eventSourceRef = useRef<EventSource | null>(null);
   const transcriptRef = useRef<HTMLElement | null>(null);
@@ -696,12 +697,6 @@ patchGlobalFetch(); function App() {
     transcript.scrollTo({ top: transcript.scrollHeight, behavior: 'smooth' });
   }, [lastItemSignature]);
   useEffect(() => { resizeTextareaToContent(composerInputRef.current); }, [activeSlashOption, images.length, input]);
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void checkForUpdate(APP_VERSION).then(setUpdateInfo).catch(() => undefined);
-    }, 3000);
-    return () => window.clearTimeout(timer);
-  }, []);
   async function createConversation(workspaceRoot = config.workspaceRoot, conversationKind: 'chat' | 'project' = 'project', workflowProject = false) {
     setWorkflowPlanDraft(null);
     setBusy(true);
@@ -1269,6 +1264,13 @@ patchGlobalFetch(); function App() {
       });
     }
   }
+  // 中文注释：点击工具条目"预览"按钮 → 切换右侧栏到文件标签并驱动预览
+  // — Chinese: clicking "preview" on a tool item switches the right panel to Files tab and drives preview
+  function previewFileFromItem(path: string) {
+    if (!path) return;
+    setRightPaneTab('files');
+    setPreviewRequest({ path, pin: true, nonce: Date.now() });
+  }
   async function deleteConversation(id: string) {
     if (!id) return;
     const accepted = await requestDecisionDialog({
@@ -1460,17 +1462,6 @@ patchGlobalFetch(); function App() {
           {cacheSummary ? <span className="tokenPill cache">{cacheSummary}</span> : null}
           {pressureSummary ? <span className="tokenPill warn">{pressureSummary}</span> : null}
           <div className="actions">
-            {updateInfo?.hasUpdate ? (
-              <button
-                className="iconButton updateBadge"
-                onClick={() => window.open(updateInfo.releaseUrl, '_blank')}
-                title={config.locale === 'zh' ? `发现新版本 v${updateInfo.latestVersion}，点击前往下载` : `New version v${updateInfo.latestVersion} available, click to download`}
-                aria-label={config.locale === 'zh' ? '发现新版本' : 'New version available'}
-              >
-                <Icon name="download" />
-                <span className="updateBadgeDot" />
-              </button>
-            ) : null}
             <button
               className="iconButton themeQuickButton"
               onClick={() => setConfig((current) => ({ ...current, themeMode: nextThemeMode(current.themeMode) }))}
@@ -1502,6 +1493,7 @@ patchGlobalFetch(); function App() {
                     onBranch={branchFromTurn}
                     onCopy={copyMessage}
                     onRollback={rollbackToTurn}
+                    onPreviewFile={previewFileFromItem}
                     userAvatarId={config.userAvatarId}
                     customUserAvatarDataUrl={config.customUserAvatarDataUrl}
                   />
@@ -1517,6 +1509,7 @@ patchGlobalFetch(); function App() {
                     childActivityByThread={childActivityByThread}
                     onBranch={branchFromTurn}
                     onCopy={copyMessage}
+                    onPreviewFile={previewFileFromItem}
                   />
                 )
               ))
@@ -1532,7 +1525,7 @@ patchGlobalFetch(); function App() {
                 onPointerDown={startRightPaneResize}
               />
               {isWorkflowProject ? <WorkflowSidePane locale={config.locale} workflow={activeWorkflow} planDraft={workflowPlanDraft} components={workflowPlanDraft?.components ?? workflowComponents} blueprint={workflowPlanDraft?.blueprint ?? workflowBlueprint} runEvents={runMonitor.events} saving={workflowSaving} runtimeBusy={workflowRuntimeBusy} onCancelPlan={() => setWorkflowPlanDraft(null)} onCommitPlan={() => void commitWorkflowPlan()} onSave={(workflow) => void saveWorkflow(workflow)} onControl={(action, nodeId) => void controlWorkflowRuntime(action, nodeId)} onSelectionChange={setWorkflowSelectedNodeIds} /> : (
-                <RightPane activeTab={rightPaneTab} activeThread={activeThread} agentStageRows={agentStageRows} locale={config.locale} workspaceRoot={activeWorkspaceRoot} onTabChange={setRightPaneTab} onToggleMemoryExcluded={(excluded) => void toggleThreadMemoryExcluded(excluded)} />
+                <RightPane activeTab={rightPaneTab} activeThread={activeThread} agentStageRows={agentStageRows} externalPreviewRequest={previewRequest} locale={config.locale} workspaceRoot={activeWorkspaceRoot} onTabChange={setRightPaneTab} onToggleMemoryExcluded={(excluded) => void toggleThreadMemoryExcluded(excluded)} />
               )}
             </>
           ) : null}
@@ -1574,7 +1567,7 @@ patchGlobalFetch(); function App() {
         />
       ) : null}
       {settingsHelpOpen ? <SettingsHelpDialog locale={config.locale} onClose={() => setSettingsHelpOpen(false)} /> : null}
-      <RunMonitorDrawer locale={config.locale} open={runMonitor.open} adminMode={runMonitor.adminMode} adminToken={runMonitor.adminToken} runs={runMonitor.runs} events={runMonitor.events} selectedRunId={runMonitor.selectedRunId} threads={runMonitor.threads} expandedThreadId={runMonitor.expandedThreadId} expandedEventId={runMonitor.expandedEventId} loading={runMonitor.loading} autoRefresh={runMonitor.autoRefresh} autoRefreshInterval={runMonitor.autoRefreshInterval} onClose={() => runMonitor.setOpen(false)} onRefresh={() => void runMonitor.refresh(runMonitor.selectedRunId)} onSelectRun={(runId) => void runMonitor.refresh(runId, { autoExpandThread: true })} onControlRun={(action, run) => void runMonitor.controlRun(action, run)} onAdminTokenChange={runMonitor.setAdminToken} onToggleThread={runMonitor.toggleThread} onToggleEvent={runMonitor.toggleEvent} onAutoRefreshChange={runMonitor.setAutoRefresh} onAutoRefreshIntervalChange={runMonitor.setAutoRefreshInterval} />
+      <RunMonitorDrawer locale={config.locale} open={runMonitor.open} adminMode={runMonitor.adminMode} adminToken={runMonitor.adminToken} runs={runMonitor.runs} events={runMonitor.events} selectedRunId={runMonitor.selectedRunId} threads={runMonitor.threads} expandedThreadId={runMonitor.expandedThreadId} expandedEventId={runMonitor.expandedEventId} autoRefresh={runMonitor.autoRefresh} autoRefreshInterval={runMonitor.autoRefreshInterval} loading={runMonitor.loading} onClose={() => runMonitor.setOpen(false)} onRefresh={() => void runMonitor.refresh(runMonitor.selectedRunId)} onSelectRun={(runId) => void runMonitor.refresh(runId)} onControlRun={(action, run) => void runMonitor.controlRun(action, run)} onToggleThread={runMonitor.toggleThread} onToggleEvent={runMonitor.toggleEvent} onAutoRefreshChange={runMonitor.setAutoRefresh} onAutoRefreshIntervalChange={runMonitor.setAutoRefreshInterval} onAdminTokenChange={runMonitor.setAdminToken} />
       {dialog ? <AppDialog dialog={dialog} onClose={() => setDialog(null)} /> : null}
       {toast ? <div className="toastNotice" key={toast.id}>{toast.text}</div> : null}
       {weixinConnectState ? <WeixinConnectDialog locale={config.locale} state={weixinConnectState} onClose={() => setWeixinConnectState(null)} /> : null}
