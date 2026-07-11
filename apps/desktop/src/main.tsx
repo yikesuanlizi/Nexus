@@ -14,6 +14,7 @@ import { openInSystemEditor } from './api/desktopBridge.js';
 import { WorkflowPanel } from './components/WorkflowPanel.js';
 import { RunMonitorDrawer } from './components/RunMonitorDrawer.js';
 import { WorkspaceThreadList } from './components/WorkspaceThreadList.js';
+import { TitleBar } from './components/TitleBar.js';
 import { useBotControls, type WeixinLoginState } from './api/botClient.js';
 import { resizeTextareaToContent } from './shared/composer.js';
 import { useRightPaneSizing, useToastNotice } from './shared/uiState.js';
@@ -1427,7 +1428,11 @@ function App() {
       gridTemplateColumns: sidebarCollapsed
         ? '58px minmax(0, 1fr)'
         : '294px minmax(0, 1fr)',
+      gridTemplateRows: '40px minmax(0, 1fr)',
     }}>
+      <div style={{ gridColumn: '1 / -1' }}>
+        <TitleBar title="Nexus" locale={config.locale} />
+      </div>
       <aside className={sidebarCollapsed ? 'conversationPane collapsed' : 'conversationPane'}>
         <WorkspaceThreadList
           activeThreadId={threadId} busy={busy} currentWorkspaceRoot={config.workspaceRoot} locale={config.locale}

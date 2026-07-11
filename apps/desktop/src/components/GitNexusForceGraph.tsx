@@ -130,35 +130,44 @@ function computeDagLayout(
   }
 
   const layerCount = layers.length;
-  const layerGap = layerCount > 1 ? height / (layerCount + 1) : height / 2;
-  const nodeRadius = 6;
+  const layerGap = layerCount > 1 ? width / (layerCount + 1) : width / 2;
 
   for (let l = 0; l < layers.length; l++) {
     const layerNodes = layers[l];
     const count = layerNodes.length;
-    const y = layerGap * (l + 1);
+    const x = layerGap * (l + 1);
     if (count === 0) continue;
-    if (count === 1) {
-      const node = nodeMap.get(layerNodes[0]);
-      if (node) {
-        node.x = width / 2;
-        node.y = y;
-        node.layer = l;
-      }
-      continue;
+
+    const groups = new Map<string, string[]>();
+    for (const id of layerNodes) {
+      const node = nodeMap.get(id);
+      if (!node) continue;
+      if (!groups.has(node.group)) groups.set(node.group, []);
+      groups.get(node.group)!.push(id);
     }
-    const gap = width / (count + 1);
-    layerNodes.sort((a, b) => {
-      const na = nodeMap.get(a);
-      const nb = nodeMap.get(b);
-      if (!na || !nb) return 0;
-      return na.group.localeCompare(nb.group) || na.label.localeCompare(nb.label);
-    });
-    for (let i = 0; i < layerNodes.length; i++) {
-      const node = nodeMap.get(layerNodes[i]);
-      if (node) {
-        node.x = gap * (i + 1);
-        node.y = y;
+
+    const groupList = Array.from(groups.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+    const totalGroups = groupList.length;
+    const groupGap = height / (totalGroups + 1);
+
+    for (let g = 0; g < groupList.length; g++) {
+      const [, nodeIds] = groupList[g];
+      const groupY = groupGap * (g + 1);
+      const nodeCount = nodeIds.length;
+      const spread = Math.min(80, nodeCount * 14);
+
+      nodeIds.sort((a, b) => {
+        const na = nodeMap.get(a);
+        const nb = nodeMap.get(b);
+        if (!na || !nb) return 0;
+        return na.label.localeCompare(nb.label);
+      });
+
+      for (let i = 0; i < nodeIds.length; i++) {
+        const node = nodeMap.get(nodeIds[i]);
+        if (!node) continue;
+        node.x = x;
+        node.y = groupY + (i - (nodeCount - 1) / 2) * (spread / Math.max(nodeCount, 1));
         node.layer = l;
       }
     }
@@ -179,10 +188,12 @@ export function GitNexusForceGraph({
   data,
   onNodeClick,
   height = 500,
+  disableZoom = false,
 }: {
   data: ForceGraphData;
   onNodeClick?: (node: ForceGraphNode) => void;
   height?: number;
+  disableZoom?: boolean;
 }): React.ReactElement {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -228,21 +239,21 @@ export function GitNexusForceGraph({
       const dx = tgt.x - src.x;
       const dy = tgt.y - src.y;
       const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-      const nodeR = 5;
+      const nodeR = 6;
       const startX = src.x + (dx / dist) * nodeR;
       const startY = src.y + (dy / dist) * nodeR;
       const endX = tgt.x - (dx / dist) * (nodeR + 4);
       const endY = tgt.y - (dy / dist) * (nodeR + 4);
 
-      const midY = (startY + endY) / 2;
+      const midX = (startX + endX) / 2;
       ctx.strokeStyle = 'rgba(148, 163, 184, 0.2)';
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(startX, startY);
-      ctx.bezierCurveTo(startX, midY, endX, midY, endX, endY);
+      ctx.bezierCurveTo(midX, startY, midX, endY, endX, endY);
       ctx.stroke();
 
-      const angle = Math.atan2(endY - midY, endX - (endX - startX) * 0.1);
+      const angle = Math.atan2(endY - startY, endX - startX);
       ctx.fillStyle = 'rgba(148, 163, 184, 0.3)';
       ctx.beginPath();
       ctx.moveTo(endX, endY);
@@ -256,7 +267,7 @@ export function GitNexusForceGraph({
       const color = getGroupColor(node.group);
       ctx.fillStyle = color;
       ctx.beginPath();
-      ctx.arc(node.x, node.y, 5, 0, Math.PI * 2);
+      ctx.arc(node.x, node.y, 6, 0, Math.PI * 2);
       ctx.fill();
     }
 
@@ -269,22 +280,58 @@ export function GitNexusForceGraph({
       ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
       ctx.strokeStyle = 'rgba(148, 163, 184, 0.3)';
       ctx.lineWidth = 1;
-      const label = hoverNode.label;
-      const padding = 8;
-      const textWidth = ctx.measureText(label).width;
-      const boxW = textWidth + padding * 2;
-      const boxH = 24;
+
+      const lines: string[] = [];
+      lines.push(hoverNode.label);
+      if (hoverNode.file && hoverNode.file !== hoverNode.label) {
+        lines.push(hoverNode.file);
+      }
+      if (hoverNode.group) {
+        lines.push(`分组: ${hoverNode.group}`);
+      }
+      if (hoverNode.kind) {
+        lines.push(`类型: ${hoverNode.kind}`);
+      }
+
+      const padding = 10;
+      const lineHeight = 18;
+      const tooltipMaxWidth = (width / transform.scale) * 0.7;
+      let maxTextW = 0;
+      ctx.font = '12px system-ui, -apple-system, sans-serif';
+      for (const line of lines) {
+        maxTextW = Math.min(tooltipMaxWidth - padding * 2, Math.max(maxTextW, ctx.measureText(line).width));
+      }
+      const boxW = maxTextW + padding * 2;
+      const boxH = lines.length * lineHeight + padding;
       let boxX = hoverNode.x + 15;
       let boxY = hoverNode.y - boxH / 2;
       if (boxX + boxW > width / transform.scale) boxX = hoverNode.x - boxW - 15;
+      if (boxY < 0) boxY = 0;
+      if (boxY + boxH > height / transform.scale) boxY = height / transform.scale - boxH;
+
       ctx.beginPath();
-      ctx.roundRect(boxX, boxY, boxW, boxH, 4);
+      ctx.roundRect(boxX, boxY, boxW, boxH, 6);
       ctx.fill();
       ctx.stroke();
+
       ctx.fillStyle = '#f1f5f9';
-      ctx.font = '12px system-ui, sans-serif';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(label, boxX + padding, boxY + boxH / 2);
+      ctx.textBaseline = 'top';
+      for (let i = 0; i < lines.length; i++) {
+        if (i === 0) {
+          ctx.font = '600 12px system-ui, -apple-system, sans-serif';
+        } else {
+          ctx.font = '11px system-ui, -apple-system, sans-serif';
+          ctx.fillStyle = 'rgba(226, 232, 240, 0.8)';
+        }
+        let displayLine = lines[i];
+        const textW = ctx.measureText(displayLine).width;
+        if (textW > maxTextW) {
+          const avgCharW = textW / displayLine.length;
+          const maxChars = Math.floor(maxTextW / avgCharW) - 1;
+          displayLine = displayLine.slice(0, Math.max(0, maxChars)) + '…';
+        }
+        ctx.fillText(displayLine, boxX + padding, boxY + padding / 2 + i * lineHeight);
+      }
     }
 
     ctx.restore();
@@ -319,7 +366,7 @@ export function GitNexusForceGraph({
       const n = layout.nodes[i];
       const dx = n.x - wx;
       const dy = n.y - wy;
-      if (dx * dx + dy * dy <= 64) return n;
+      if (dx * dx + dy * dy <= 196) return n;
     }
     return null;
   }, []);
@@ -423,7 +470,7 @@ export function GitNexusForceGraph({
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
-          onWheel={handleWheel}
+          {...(disableZoom ? {} : { onWheel: handleWheel })}
           onClick={handleClick}
         />
       </div>

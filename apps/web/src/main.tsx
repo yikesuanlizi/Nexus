@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { RUN_CONFIG_STORAGE_KEY, mergeRunConfigDefaults, type RunConfig, type WebSearchMode } from './config/config.js';
 import { Icon } from './components/Icon.js';
@@ -66,15 +67,7 @@ function contextUsagePercent(pressure: { estimatedTokens?: number; maxTokens?: n
   return Math.min(100, Math.round((est / max) * 100));
 }
 
-function cacheContextPercent(
-  usage: { totalCached?: number } | null | undefined,
-  pressure: { maxTokens?: number } | null | undefined,
-): number {
-  const cached = Number(usage?.totalCached ?? 0);
-  const max = Number(pressure?.maxTokens ?? 0);
-  if (max <= 0) return 0;
-  return Math.min(100, Math.round((cached / max) * 100));
-}
+
 
 function buildTokenTooltip(
   usage: { totalInput?: number; totalCached?: number; totalOutput?: number; hitRate?: number } | null | undefined,
@@ -605,7 +598,9 @@ patchGlobalFetch(); function App() {
           if (!response.ok) return;
           const data = await response.json() as { pressure?: { estimatedTokens?: number; maxTokens?: number; softThreshold?: number; hardThreshold?: number; ratio?: number; status?: string } };
           if (data.pressure) {
-            setCompactionPressure(data.pressure as never);
+            flushSync(() => {
+              setCompactionPressure(data.pressure as never);
+            });
           }
         } catch {
           // 主动查询失败时不阻断，后续 SSE 事件仍可更新
@@ -640,7 +635,9 @@ patchGlobalFetch(); function App() {
             setPendingApprovals((current) => current.filter((item) => item.requestId !== event.requestId));
           }
           if (event.type === 'thread.token_usage.updated' && event.usage) {
-            setThreadUsage(event.usage as ThreadUsage);
+            flushSync(() => {
+              setThreadUsage(event.usage as ThreadUsage);
+            });
           }
           if (event.type === 'thread.metadata.updated' && typeof event.threadId === 'string') {
             setThreads((current) =>
@@ -657,7 +654,9 @@ patchGlobalFetch(); function App() {
             setCacheDiagnostics(event as never);
           }
           if (event.type === 'context.compaction_pressure' && event.pressure) {
-            setCompactionPressure(event.pressure as never);
+            flushSync(() => {
+              setCompactionPressure(event.pressure as never);
+            });
           }
           if (event.type === 'child_agent.event') {
             void refreshThreadChildren(id);
@@ -1561,50 +1560,35 @@ patchGlobalFetch(); function App() {
           {tokenUsage || hasContextPressure(compactionPressure) ? (
             <div className="tokenUsageBar" title={buildTokenTooltip(tokenUsage, compactionPressure, config.locale)}>
               <div className="tokenUsageBarRow">
-                <span className="tokenUsageBarLabel cacheLabel">
-                  {config.locale === 'zh' ? '缓存' : 'cache'} {tokenUsage?.hitRate ?? 0}%
-                </span>
+                {tokenUsage ? (
+                  <span className="tokenUsageBarLabel cacheLabel">
+                    {config.locale === 'zh' ? '缓存' : 'cache'} {tokenUsage.hitRate ?? 0}%
+                  </span>
+                ) : null}
                 {hasContextPressure(compactionPressure) ? (
                   <span className="tokenUsageBarLabel contextLabel">
                     {config.locale === 'zh' ? '上下文' : 'ctx'} {contextUsagePercent(compactionPressure)}%
                   </span>
                 ) : null}
               </div>
-              <div className="tokenUsageBarTrack">
-                {hasContextPressure(compactionPressure) ? (
-                  <>
+              {hasContextPressure(compactionPressure) ? (
+                <div className="tokenUsageBarTrack">
+                  <div
+                    className="tokenUsageBarContextSeg"
+                    style={{ width: `${contextUsagePercent(compactionPressure)}%`, borderRadius: '999px 0 0 999px' }}
+                  />
+                  <div
+                    className="tokenUsageBarRemainSeg"
+                    style={{ width: `${Math.max(0, 100 - contextUsagePercent(compactionPressure))}%`, borderRadius: '0 999px 999px 0' }}
+                  />
+                  {compactionPressure?.softThreshold && compactionPressure?.maxTokens ? (
                     <div
-                      className="tokenUsageBarCacheSeg"
-                      style={{ width: `${cacheContextPercent(tokenUsage, compactionPressure)}%` }}
+                      className="tokenUsageBarSoftLine"
+                      style={{ left: `${Math.min(100, (compactionPressure.softThreshold / compactionPressure.maxTokens) * 100)}%` }}
                     />
-                    <div
-                      className="tokenUsageBarContextSeg"
-                      style={{ width: `${Math.max(0, contextUsagePercent(compactionPressure) - cacheContextPercent(tokenUsage, compactionPressure))}%` }}
-                    />
-                    <div
-                      className="tokenUsageBarRemainSeg"
-                      style={{ width: `${Math.max(0, 100 - contextUsagePercent(compactionPressure))}%` }}
-                    />
-                    {compactionPressure?.softThreshold && compactionPressure?.maxTokens ? (
-                      <div
-                        className="tokenUsageBarSoftLine"
-                        style={{ left: `${(compactionPressure.softThreshold / compactionPressure.maxTokens) * 100}%` }}
-                      />
-                    ) : null}
-                  </>
-                ) : (
-                  <>
-                    <div
-                      className="tokenUsageBarCacheSeg"
-                      style={{ width: `${tokenUsage?.hitRate ?? 0}%`, borderRadius: '999px 0 0 999px' }}
-                    />
-                    <div
-                      className="tokenUsageBarRemainSeg"
-                      style={{ width: `${Math.max(0, 100 - (tokenUsage?.hitRate ?? 0))}%`, borderRadius: '0 999px 999px 0' }}
-                    />
-                  </>
-                )}
-              </div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           ) : null}
           {cacheSummary ? <span className="tokenPill cache">{cacheSummary}</span> : null}

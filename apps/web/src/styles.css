@@ -9170,7 +9170,7 @@
   font-weight: 500;
   border: none;
   border-radius: 4px;
-  background: var(--nx-accent, #0284c7);
+  background: var(--nx-blue, #2563eb);
   color: #fff;
   cursor: pointer;
   white-space: nowrap;
@@ -9216,6 +9216,91 @@
   font-weight: 500;
 }
 
+.gitNexusTabItem {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.gitNexusHelpIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  font-size: 10px;
+  margin-left: 4px;
+  cursor: pointer;
+  line-height: 1;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+
+.gitNexusHelpIcon:hover {
+  opacity: 1;
+}
+
+.gitNexusHelpPopover {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 8px;
+  width: 280px;
+  padding: 12px;
+  background: var(--nx-panel, #ffffff);
+  border: 1px solid var(--nx-border, #e2e8f0);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  z-index: 100;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--nx-text, #0f172a);
+}
+
+.gitNexusHelpPopover::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  transform: translateX(-50%) rotate(45deg);
+  width: 10px;
+  height: 10px;
+  background: var(--nx-panel, #ffffff);
+  border-left: 1px solid var(--nx-border, #e2e8f0);
+  border-top: 1px solid var(--nx-border, #e2e8f0);
+}
+
+.gitNexusHelpPopoverTitle {
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 8px;
+  color: var(--nx-text, #0f172a);
+}
+
+.gitNexusHelpPopoverRow {
+  margin-bottom: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.gitNexusHelpPopoverRow:last-child {
+  margin-bottom: 0;
+}
+
+.gitNexusHelpPopoverRow strong {
+  color: var(--nx-muted, #64748b);
+  font-weight: 600;
+  font-size: 11px;
+}
+
+.gitNexusHelpPopoverRow span {
+  color: var(--nx-text, #0f172a);
+}
+
 .gitNexusToolBody {
   flex: 1;
   overflow: auto;
@@ -9250,7 +9335,7 @@
 
 .gitNexusInputRow input:focus {
   outline: none;
-  border-color: var(--nx-accent, #0284c7);
+  border-color: var(--nx-blue, #2563eb);
 }
 
 .gitNexusInputRow button {
@@ -9259,7 +9344,7 @@
   font-weight: 500;
   border: none;
   border-radius: 4px;
-  background: var(--nx-accent, #0284c7);
+  background: var(--nx-blue, #2563eb);
   color: #fff;
   cursor: pointer;
   white-space: nowrap;
@@ -9313,9 +9398,9 @@
 }
 
 .gitNexusOverviewGraphTabs button.active {
-  background: var(--nx-accent, #3b82f6);
+  background: var(--nx-blue, #2563eb);
   color: #fff;
-  border-color: var(--nx-accent, #3b82f6);
+  border-color: var(--nx-blue, #2563eb);
 }
 
 .gitNexusGraphRefreshBtn {
@@ -9409,7 +9494,7 @@
 .gitNexusStatValue {
   font-size: 20px;
   font-weight: 700;
-  color: var(--nx-accent, #0284c7);
+  color: var(--nx-blue, #2563eb);
   line-height: 1.2;
 }
 
@@ -9575,4 +9660,212 @@
 
 .gitNexusPanel .gitNexusResult {
   margin: 0;
+}
+
+.gitNexusGraphExpandBtn {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  font-size: 12px;
+  border: 1px solid var(--nx-border, rgba(255, 255, 255, 0.08));
+  background: var(--nx-card-bg, rgba(255, 255, 255, 0.03));
+  color: var(--nx-muted, #94a3b8);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.gitNexusGraphExpandBtn:hover:not(:disabled) {
+  background: var(--nx-blue, #2563eb);
+  color: #fff;
+  border-color: var(--nx-blue, #2563eb);
+}
+
+.gitNexusGraphModalBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.gitNexusGraphModal {
+  position: relative;
+  width: 85vw;
+  height: 85vh;
+  background: rgba(15, 23, 42, 0.95);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+}
+
+.gitNexusGraphModalClose {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.gitNexusGraphModalClose:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.gitNexusGraphModalTitle {
+  position: absolute;
+  top: 12px;
+  left: 20px;
+  color: #f1f5f9;
+  font-size: 14px;
+  font-weight: 600;
+  z-index: 10;
+}
+
+.gitNexusGraphCanvasBg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.gitNexusGraphContent {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  padding: 40px 20px 20px 20px;
+  display: flex;
+  flex-direction: column;
+}
+
+.gitNexusGraphContent .gitNexusForceGraph {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.gitNexusGraphContent .gitNexusForceGraphCanvasWrap {
+  flex: 1;
+  background: transparent;
+  border: none;
+}
+
+.gitNexusHelpModalBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.gitNexusHelpModal {
+  position: relative;
+  width: 600px;
+  max-width: 90vw;
+  max-height: 85vh;
+  background: var(--nx-panel, #ffffff);
+  border-radius: 12px;
+  border: 1px solid var(--nx-border, #e2e8f0);
+  overflow: hidden;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+}
+
+.gitNexusHelpModalClose {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: transparent;
+  border: none;
+  color: var(--nx-muted, #64748b);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.gitNexusHelpModalClose:hover {
+  background: var(--nx-hover, #f1f5f9);
+  color: var(--nx-text, #0f172a);
+}
+
+.gitNexusHelpModalClose svg {
+  width: 18px;
+  height: 18px;
+}
+
+.gitNexusHelpModalContent {
+  padding: 24px 28px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.gitNexusHelpModalTitle {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--nx-text, #0f172a);
+  margin: 0 0 12px 0;
+  padding-right: 40px;
+}
+
+.gitNexusHelpModalWelcome {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--nx-muted, #64748b);
+  margin: 0 0 20px 0;
+  padding: 12px 16px;
+  background: var(--nx-blue-soft, #dbeafe);
+  border-radius: 8px;
+  border-left: 3px solid var(--nx-blue, #2563eb);
+}
+
+.gitNexusHelpSection {
+  margin-bottom: 20px;
+}
+
+.gitNexusHelpSectionTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--nx-text, #0f172a);
+  margin: 0 0 8px 0;
+}
+
+.gitNexusHelpList {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--nx-muted, #64748b);
+}
+
+.gitNexusHelpList li {
+  margin-bottom: 4px;
+}
+
+.gitNexusHelpTips {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--nx-border, #e2e8f0);
+}
+
+.gitNexusHelpTips .gitNexusHelpSectionTitle {
+  color: var(--nx-blue, #2563eb);
 }

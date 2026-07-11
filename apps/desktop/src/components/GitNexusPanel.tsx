@@ -5,8 +5,100 @@ import { GitNexusResultView } from './GitNexusResultView.js';
 import type { GitNexusGraphData } from './gitNexusResult.js';
 import { GitNexusForceGraph } from './GitNexusForceGraph.js';
 import type { ForceGraphData } from './GitNexusForceGraph.js';
+import { GitNexusGraphModal } from './GitNexusGraphModal.js';
 
 type GitNexusTab = 'overview' | 'query' | 'context' | 'impact' | 'trace';
+
+interface TabHelpInfo {
+  title: string;
+  description: string;
+  useCase: string;
+  input: string;
+  output: string;
+}
+
+const tabHelpData: Record<GitNexusTab, { zh: TabHelpInfo; en: TabHelpInfo }> = {
+  overview: {
+    zh: {
+      title: '概览',
+      description: '展示项目整体架构概览，包括代码统计、依赖关系图、模块分布',
+      useCase: '快速了解项目结构、发现核心模块、定位技术栈',
+      input: '选择项目路径，点击"开始分析"构建索引',
+      output: '统计卡片 + 依赖关系图 + 模块分类列表',
+    },
+    en: {
+      title: 'Overview',
+      description: 'Shows overall project architecture, including code statistics, dependency graphs, and module distribution',
+      useCase: 'Quickly understand project structure, discover core modules, identify tech stack',
+      input: 'Select project path, click "Analyze" to build index',
+      output: 'Statistics cards + dependency graph + module category list',
+    },
+  },
+  query: {
+    zh: {
+      title: '智能搜索',
+      description: '用自然语言搜索相关代码，基于语义理解找到匹配的代码片段',
+      useCase: '想找某个功能的实现但不知道具体文件名、按功能描述搜索代码',
+      input: '自然语言描述，如"用户认证"、"数据库查询"、"支付逻辑"',
+      output: '相关代码文件/符号列表，按相关性排序',
+    },
+    en: {
+      title: 'Query',
+      description: 'Search code using natural language, find matching code snippets based on semantic understanding',
+      useCase: 'Find feature implementation without knowing file names, search code by feature description',
+      input: 'Natural language description, e.g. "user authentication", "database query", "payment logic"',
+      output: 'Related code files/symbols list, sorted by relevance',
+    },
+  },
+  context: {
+    zh: {
+      title: '符号上下文',
+      description: '查看某个符号（类/方法/函数）的完整上下文，包括定义、引用、依赖关系',
+      useCase: '想深入理解某个方法的作用、查看类的继承关系、分析函数的调用链',
+      input: '符号名称，如类名、方法名',
+      output: '符号定义位置、所有引用点、相关依赖、调用关系',
+    },
+    en: {
+      title: 'Context',
+      description: 'View complete context of a symbol (class/method/function), including definition, references, dependencies',
+      useCase: 'Deeply understand a method\'s purpose, view class inheritance, analyze function call chains',
+      input: 'Symbol name, e.g. class name, method name',
+      output: 'Symbol definition location, all reference points, related dependencies, call relationships',
+    },
+  },
+  impact: {
+    zh: {
+      title: '影响分析',
+      description: '分析修改某个符号可能影响的范围，找出所有依赖该符号的代码',
+      useCase: '修改前评估影响面、重构前做风险分析、理解代码耦合度',
+      input: '要分析的符号名称',
+      output: '受影响的文件、类、方法列表，按依赖层级展示',
+    },
+    en: {
+      title: 'Impact',
+      description: 'Analyze the scope of impact when modifying a symbol, find all code that depends on it',
+      useCase: 'Assess impact before changes, risk analysis before refactoring, understand code coupling',
+      input: 'Symbol name to analyze',
+      output: 'Affected files, classes, methods list, displayed by dependency hierarchy',
+    },
+  },
+  trace: {
+    zh: {
+      title: '调用路径',
+      description: '追踪从一个符号到另一个符号的完整调用路径',
+      useCase: '理解业务流程、排查调用链问题、分析数据流向',
+      input: '起点符号和终点符号',
+      output: '多条可能的调用路径，每条路径显示经过的中间节点',
+    },
+    en: {
+      title: 'Trace',
+      description: 'Trace the complete call path from one symbol to another',
+      useCase: 'Understand business flow, troubleshoot call chain issues, analyze data flow',
+      input: 'Start symbol and end symbol',
+      output: 'Multiple possible call paths, each showing intermediate nodes',
+    },
+  },
+};
 
 interface GitNexusRepo {
   path: string;
@@ -82,9 +174,12 @@ export function GitNexusPanel({
   const [graphData, setGraphData] = useState<ForceGraphData | null>(null);
   const [graphLoading, setGraphLoading] = useState(false);
   const [graphLevel, setGraphLevel] = useState<'file' | 'symbol'>('file');
+  const [graphModalOpen, setGraphModalOpen] = useState(false);
   const [statusChecked, setStatusChecked] = useState(false);
   const [indexStatus, setIndexStatus] = useState<{ indexed: boolean; needsUpdate?: boolean; fileCount?: number; lastIndexed?: string } | null>(null);
   const [checkingStatus, setCheckingStatus] = useState(false);
+  const [helpTab, setHelpTab] = useState<GitNexusTab | null>(null);
+  const [helpModalOpen, setHelpModalOpen] = useState(false);
 
   const currentPath = selectedPath || workspaceRoot;
 
@@ -120,7 +215,6 @@ export function GitNexusPanel({
   }, []);
 
   const isRepoAnalyzed = useMemo(() => {
-    // status 检查已经明确知道是否索引；如果 repos 里匹配也视为已索引
     if (statusChecked && indexStatus?.indexed) return true;
     const normCurrent = normalizePath(currentPath);
     return repos.some((r) => {
@@ -158,7 +252,7 @@ export function GitNexusPanel({
     setGraphLoading(true);
     try {
       const data = await apiJson<{ data: ForceGraphData }>(
-        `/api/gitnexus/graph?repo=${encodeURIComponent(path)}&level=${level}&limit=500`,
+        `/api/gitnexus/graph?repo=${encodeURIComponent(path)}&level=${level}&limit=800`,
       );
       setGraphData(data.data);
     } catch {
@@ -168,7 +262,6 @@ export function GitNexusPanel({
     }
   }, []);
 
-  // 路径变化时重置概览数据和索引状态
   useEffect(() => {
     setOverviewData(null);
     setGraphData(null);
@@ -176,7 +269,6 @@ export function GitNexusPanel({
     setIndexStatus(null);
   }, [currentPath]);
 
-  // 建完索引后自动加载概览和图
   useEffect(() => {
     if (isRepoAnalyzed && activeTab === 'overview') {
       if (!overviewData && !overviewLoading) {
@@ -187,6 +279,13 @@ export function GitNexusPanel({
       }
     }
   }, [isRepoAnalyzed, activeTab, overviewData, overviewLoading, graphData, graphLoading, currentPath, loadOverview, loadGraph, graphLevel]);
+
+  useEffect(() => {
+    if (!helpTab) return;
+    const handleClickOutside = () => setHelpTab(null);
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, [helpTab]);
 
   const checkStatus = useCallback(async (): Promise<{ indexed: boolean; needsUpdate?: boolean; fileCount?: number; lastIndexed?: string } | null> => {
     if (!currentPath) return null;
@@ -209,7 +308,6 @@ export function GitNexusPanel({
     }
   }, [currentPath]);
 
-  // 挂载时自动加载 repo 列表并检查索引状态
   useEffect(() => {
     void loadRepos();
     void checkStatus();
@@ -345,14 +443,24 @@ export function GitNexusPanel({
           <h2>{locale === 'zh' ? 'GitNexus 代码分析' : 'GitNexus Analysis'}</h2>
           <p title={currentPath}>{currentPath || (locale === 'zh' ? '未选择项目' : 'No project selected')}</p>
         </div>
-        <button
-          type="button"
-          className="miniIconButton"
-          title={locale === 'zh' ? '刷新仓库列表' : 'Refresh repos'}
-          onClick={() => void loadRepos()}
-        >
-          <Icon name="refresh" />
-        </button>
+        <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+          <button
+            type="button"
+            className="miniIconButton"
+            title={locale === 'zh' ? '帮助' : 'Help'}
+            onClick={() => setHelpModalOpen(true)}
+          >
+            <Icon name="question" />
+          </button>
+          <button
+            type="button"
+            className="miniIconButton"
+            title={locale === 'zh' ? '刷新仓库列表' : 'Refresh repos'}
+            onClick={() => void loadRepos()}
+          >
+            <Icon name="refresh" />
+          </button>
+        </div>
       </header>
 
       <div className="gitNexusProjectSection">
@@ -397,46 +505,71 @@ export function GitNexusPanel({
       </div>
 
       <div className="gitNexusTabs" role="tablist">
-        <button
-          className={activeTab === 'overview' ? 'active' : ''}
-          type="button"
-          role="tab"
-          onClick={() => setActiveTab('overview')}
-        >
-          {locale === 'zh' ? '概览' : 'Overview'}
-        </button>
-        <button
-          className={activeTab === 'query' ? 'active' : ''}
-          type="button"
-          role="tab"
-          onClick={() => setActiveTab('query')}
-        >
-          {locale === 'zh' ? '智能搜索' : 'Query'}
-        </button>
-        <button
-          className={activeTab === 'context' ? 'active' : ''}
-          type="button"
-          role="tab"
-          onClick={() => setActiveTab('context')}
-        >
-          {locale === 'zh' ? '符号上下文' : 'Context'}
-        </button>
-        <button
-          className={activeTab === 'impact' ? 'active' : ''}
-          type="button"
-          role="tab"
-          onClick={() => setActiveTab('impact')}
-        >
-          {locale === 'zh' ? '影响分析' : 'Impact'}
-        </button>
-        <button
-          className={activeTab === 'trace' ? 'active' : ''}
-          type="button"
-          role="tab"
-          onClick={() => setActiveTab('trace')}
-        >
-          {locale === 'zh' ? '调用路径' : 'Trace'}
-        </button>
+        {(['overview', 'query', 'context', 'impact', 'trace'] as GitNexusTab[]).map((tab) => {
+          const tabLabel = locale === 'zh'
+            ? (tab === 'overview' ? '概览' : tab === 'query' ? '智能搜索' : tab === 'context' ? '符号上下文' : tab === 'impact' ? '影响分析' : '调用路径')
+            : (tab === 'overview' ? 'Overview' : tab === 'query' ? 'Query' : tab === 'context' ? 'Context' : tab === 'impact' ? 'Impact' : 'Trace');
+          const helpInfo = tabHelpData[tab][locale === 'zh' ? 'zh' : 'en'];
+          return (
+            <div key={tab} className="gitNexusTabItem">
+              <button
+                className={activeTab === tab ? 'active' : ''}
+                type="button"
+                role="tab"
+                onClick={() => {
+                  setActiveTab(tab);
+                  setResultData(null);
+                  setResultError('');
+                  setLoading(false);
+                }}
+              >
+                {tabLabel}
+                <span
+                  className="gitNexusHelpIcon"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setHelpTab(helpTab === tab ? null : tab);
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setHelpTab(helpTab === tab ? null : tab);
+                    }
+                  }}
+                >
+                  ?
+                </span>
+              </button>
+              {helpTab === tab && (
+                <div
+                  className="gitNexusHelpPopover"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="gitNexusHelpPopoverTitle">{helpInfo.title}</div>
+                  <div className="gitNexusHelpPopoverRow">
+                    <strong>{locale === 'zh' ? '简介：' : 'Description:'}</strong>
+                    <span>{helpInfo.description}</span>
+                  </div>
+                  <div className="gitNexusHelpPopoverRow">
+                    <strong>{locale === 'zh' ? '使用场景：' : 'Use Case:'}</strong>
+                    <span>{helpInfo.useCase}</span>
+                  </div>
+                  <div className="gitNexusHelpPopoverRow">
+                    <strong>{locale === 'zh' ? '输入：' : 'Input:'}</strong>
+                    <span>{helpInfo.input}</span>
+                  </div>
+                  <div className="gitNexusHelpPopoverRow">
+                    <strong>{locale === 'zh' ? '输出：' : 'Output:'}</strong>
+                    <span>{helpInfo.output}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       <div className="gitNexusToolBody">
@@ -486,14 +619,38 @@ export function GitNexusPanel({
                       {locale === 'zh' ? '符号级调用' : 'Symbol-level'}
                     </button>
                   </div>
-                  <button
-                    type="button"
-                    className="gitNexusGraphRefreshBtn"
-                    onClick={() => void loadGraph(currentPath, graphLevel)}
-                    disabled={graphLoading}
-                  >
-                    {locale === 'zh' ? '刷新' : 'Refresh'}
-                  </button>
+                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                    <button
+                      type="button"
+                      className="gitNexusGraphRefreshBtn"
+                      onClick={() => void loadGraph(currentPath, graphLevel)}
+                      disabled={graphLoading}
+                    >
+                      {locale === 'zh' ? '刷新' : 'Refresh'}
+                    </button>
+                    {graphData && graphData.nodes.length > 0 && (
+                      <button
+                        type="button"
+                        className="gitNexusGraphExpandBtn"
+                        onClick={() => setGraphModalOpen(true)}
+                        title={locale === 'zh' ? '放大查看' : 'Expand view'}
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
                 </div>
                 {graphLoading ? (
                   <div className="gitNexusLoading">{locale === 'zh' ? '正在加载依赖图...' : 'Loading dependency graph...'}</div>
@@ -503,8 +660,12 @@ export function GitNexusPanel({
                     height={520}
                     onNodeClick={(node) => {
                       if (node.label) {
-                        setSymbolInput(node.label);
+                        const inputValue = graphLevel === 'file' ? (node.file ?? node.label) : node.label;
+                        setSymbolInput(inputValue);
                         setActiveTab('context');
+                        setResultData(null);
+                        setResultError('');
+                        setLoading(false);
                       }
                     }}
                   />
@@ -627,6 +788,131 @@ export function GitNexusPanel({
           </div>
         )}
       </div>
+
+      {graphData && (
+        <GitNexusGraphModal
+          isOpen={graphModalOpen}
+          onClose={() => setGraphModalOpen(false)}
+          data={graphData}
+          title={graphLevel === 'file'
+            ? (locale === 'zh' ? '文件级依赖图' : 'File-level Dependency Graph')
+            : (locale === 'zh' ? '符号级调用图' : 'Symbol-level Call Graph')}
+          onNodeClick={(node) => {
+            if (node.label) {
+              const inputValue = graphLevel === 'file' ? (node.file ?? node.label) : node.label;
+              setSymbolInput(inputValue);
+              setActiveTab('context');
+              setResultData(null);
+              setResultError('');
+              setLoading(false);
+              setGraphModalOpen(false);
+            }
+          }}
+        />
+      )}
+
+      {helpModalOpen && (
+        <div
+          className="gitNexusHelpModalBackdrop"
+          onClick={() => setHelpModalOpen(false)}
+        >
+          <div
+            className="gitNexusHelpModal"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="gitNexusHelpModalClose"
+              onClick={() => setHelpModalOpen(false)}
+              aria-label={locale === 'zh' ? '关闭' : 'Close'}
+            >
+              <Icon name="x" />
+            </button>
+
+            <div className="gitNexusHelpModalContent">
+              <h2 className="gitNexusHelpModalTitle">
+                {locale === 'zh' ? 'GitNexus 代码分析使用指南' : 'GitNexus Code Analysis Guide'}
+              </h2>
+
+              <p className="gitNexusHelpModalWelcome">
+                {locale === 'zh'
+                  ? '欢迎使用 GitNexus 代码分析工具！本工具基于代码知识图谱，帮助你深入理解项目架构、快速定位代码、分析影响范围。'
+                  : 'Welcome to GitNexus Code Analysis! This tool is based on code knowledge graphs, helping you deeply understand project architecture, quickly locate code, and analyze impact scope.'}
+              </p>
+
+              <div className="gitNexusHelpSection">
+                <h3 className="gitNexusHelpSectionTitle">
+                  1. {locale === 'zh' ? '概览 (Overview)' : 'Overview'}
+                </h3>
+                <ul className="gitNexusHelpList">
+                  <li>{locale === 'zh' ? '功能：展示项目整体架构概览' : 'Feature: Display overall project architecture overview'}</li>
+                  <li>{locale === 'zh' ? '包含：文件/符号统计、依赖关系图、模块分布' : 'Includes: file/symbol statistics, dependency graph, module distribution'}</li>
+                  <li>{locale === 'zh' ? '使用方式：选择项目路径，点击"开始分析"构建索引，即可查看' : 'Usage: Select project path, click "Analyze" to build index, then view'}</li>
+                </ul>
+              </div>
+
+              <div className="gitNexusHelpSection">
+                <h3 className="gitNexusHelpSectionTitle">
+                  2. {locale === 'zh' ? '智能搜索 (Query)' : 'Query'}
+                </h3>
+                <ul className="gitNexusHelpList">
+                  <li>{locale === 'zh' ? '功能：用自然语言搜索相关代码' : 'Feature: Search related code using natural language'}</li>
+                  <li>{locale === 'zh' ? '基于语义理解，不是简单的关键词匹配' : 'Based on semantic understanding, not simple keyword matching'}</li>
+                  <li>{locale === 'zh' ? '输入示例："用户认证"、"数据库查询"、"支付逻辑"' : 'Input examples: "user authentication", "database query", "payment logic"'}</li>
+                  <li>{locale === 'zh' ? '输出：相关代码文件/符号列表，按相关性排序' : 'Output: related code files/symbols list, sorted by relevance'}</li>
+                </ul>
+              </div>
+
+              <div className="gitNexusHelpSection">
+                <h3 className="gitNexusHelpSectionTitle">
+                  3. {locale === 'zh' ? '符号上下文 (Context)' : 'Context'}
+                </h3>
+                <ul className="gitNexusHelpList">
+                  <li>{locale === 'zh' ? '功能：查看某个符号的完整上下文' : 'Feature: View complete context of a symbol'}</li>
+                  <li>{locale === 'zh' ? '支持：类、方法、函数、接口等' : 'Supports: classes, methods, functions, interfaces, etc.'}</li>
+                  <li>{locale === 'zh' ? '包含：定义位置、所有引用点、相关依赖、调用关系' : 'Includes: definition location, all references, related dependencies, call relationships'}</li>
+                  <li>{locale === 'zh' ? '使用方式：输入符号名称，如"UserController"、"login"' : 'Usage: Enter symbol name, e.g. "UserController", "login"'}</li>
+                </ul>
+              </div>
+
+              <div className="gitNexusHelpSection">
+                <h3 className="gitNexusHelpSectionTitle">
+                  4. {locale === 'zh' ? '影响分析 (Impact)' : 'Impact'}
+                </h3>
+                <ul className="gitNexusHelpList">
+                  <li>{locale === 'zh' ? '功能：分析修改某个符号可能影响的范围' : 'Feature: Analyze the scope of impact when modifying a symbol'}</li>
+                  <li>{locale === 'zh' ? '找出所有依赖该符号的代码' : 'Find all code that depends on the symbol'}</li>
+                  <li>{locale === 'zh' ? '使用场景：修改前评估影响面、重构前风险分析' : 'Use cases: assess impact before changes, risk analysis before refactoring'}</li>
+                  <li>{locale === 'zh' ? '输出：受影响的文件、类、方法列表' : 'Output: list of affected files, classes, methods'}</li>
+                </ul>
+              </div>
+
+              <div className="gitNexusHelpSection">
+                <h3 className="gitNexusHelpSectionTitle">
+                  5. {locale === 'zh' ? '调用路径 (Trace)' : 'Trace'}
+                </h3>
+                <ul className="gitNexusHelpList">
+                  <li>{locale === 'zh' ? '功能：追踪两个符号之间的完整调用路径' : 'Feature: Trace the complete call path between two symbols'}</li>
+                  <li>{locale === 'zh' ? '使用场景：理解业务流程、排查调用链问题' : 'Use cases: understand business flow, troubleshoot call chain issues'}</li>
+                  <li>{locale === 'zh' ? '输入：起点符号和终点符号' : 'Input: start symbol and end symbol'}</li>
+                  <li>{locale === 'zh' ? '输出：多条可能的调用路径，显示中间节点' : 'Output: multiple possible call paths, showing intermediate nodes'}</li>
+                </ul>
+              </div>
+
+              <div className="gitNexusHelpTips">
+                <h3 className="gitNexusHelpSectionTitle">
+                  {locale === 'zh' ? '提示' : 'Tips'}
+                </h3>
+                <ul className="gitNexusHelpList">
+                  <li>{locale === 'zh' ? '首次使用需先构建索引，后续可增量更新' : 'First use requires building index, subsequent updates can be incremental'}</li>
+                  <li>{locale === 'zh' ? '点击依赖图上的节点可快速跳转到对应符号的上下文' : 'Click nodes on the dependency graph to quickly jump to the corresponding symbol context'}</li>
+                  <li>{locale === 'zh' ? '点击图右上角的放大按钮可全屏查看依赖图' : 'Click the expand button in the top-right corner of the graph to view the dependency graph in full screen'}</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

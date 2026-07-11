@@ -179,10 +179,12 @@ export function GitNexusForceGraph({
   data,
   onNodeClick,
   height = 500,
+  disableZoom = false,
 }: {
   data: ForceGraphData;
   onNodeClick?: (node: ForceGraphNode) => void;
   height?: number;
+  disableZoom?: boolean;
 }): React.ReactElement {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -269,10 +271,10 @@ export function GitNexusForceGraph({
       ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
       ctx.strokeStyle = 'rgba(148, 163, 184, 0.3)';
       ctx.lineWidth = 1;
-      const label = hoverNode.label;
+      const tooltipText = hoverNode.file || hoverNode.label;
       const padding = 8;
-      const textWidth = ctx.measureText(label).width;
-      const boxW = textWidth + padding * 2;
+      const textWidth = ctx.measureText(tooltipText).width;
+      const boxW = Math.min(textWidth + padding * 2, (width / transform.scale) * 0.8);
       const boxH = 24;
       let boxX = hoverNode.x + 15;
       let boxY = hoverNode.y - boxH / 2;
@@ -284,7 +286,10 @@ export function GitNexusForceGraph({
       ctx.fillStyle = '#f1f5f9';
       ctx.font = '12px system-ui, sans-serif';
       ctx.textBaseline = 'middle';
-      ctx.fillText(label, boxX + padding, boxY + boxH / 2);
+      const displayText = textWidth + padding * 2 > boxW
+        ? tooltipText.slice(0, Math.floor((boxW - padding * 2) / (textWidth / tooltipText.length)) - 3) + '...'
+        : tooltipText;
+      ctx.fillText(displayText, boxX + padding, boxY + boxH / 2);
     }
 
     ctx.restore();
@@ -423,7 +428,7 @@ export function GitNexusForceGraph({
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
-          onWheel={handleWheel}
+          {...(disableZoom ? {} : { onWheel: handleWheel })}
           onClick={handleClick}
         />
       </div>

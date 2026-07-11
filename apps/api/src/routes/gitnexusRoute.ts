@@ -226,9 +226,15 @@ export async function handleGitNexusRoute(options: GitNexusRouteOptions): Promis
         sendError(res, 400, 'Symbol is required');
         return true;
       }
-      const result = await mcpManager.callTool(serverId, 'context', { symbol, repo });
-      const data = parseMcpResult(result);
-      sendJson(res, 200, { ok: true, data });
+      const isFileLike = /[\\/]/.test(symbol) || /\.(java|ts|tsx|js|jsx|py|go|rs|cpp|c|h|cs|php|rb|kt|scala)$/i.test(symbol);
+      if (isFileLike) {
+        const fileContext = await buildFileContextGraph(mcpManager, serverId, repo ?? '', symbol);
+        sendJson(res, 200, { ok: true, data: fileContext });
+      } else {
+        const result = await mcpManager.callTool(serverId, 'context', { symbol, repo });
+        const data = parseMcpResult(result);
+        sendJson(res, 200, { ok: true, data });
+      }
       return true;
     }
 
@@ -275,7 +281,7 @@ export async function handleGitNexusRoute(options: GitNexusRouteOptions): Promis
     if (req.method === 'GET' && url.pathname === '/api/gitnexus/graph') {
       const repo = url.searchParams.get('repo')?.trim() ?? '';
       const level = url.searchParams.get('level')?.trim() || 'file';
-      const limit = Number(url.searchParams.get('limit') ?? '300');
+      const limit = Number(url.searchParams.get('limit') ?? '500');
       if (!repo) {
         sendError(res, 400, 'Repo is required');
         return true;
@@ -411,6 +417,82 @@ function parseMarkdownTable(markdown: string): Array<Record<string, unknown>> {
     rows.push(row);
   }
   return rows;
+}
+
+async function buildFileContextGraph(
+  mcpManager: McpRuntimeManager,
+  serverId: string,
+  repo: string,
+  filePath: string,
+): Promise<{
+  kind: 'graph';
+  title: string;
+  root: { name: string; file: string; kind: string };
+  callers: Array<{ name: string; file: string; kind: string }>;
+  callees: Array<{ name: string; file: string; kind: string }>;
+}> {
+  const normalizedPath = filePath.replace(/\\/g, '/').replace(/^\/+/, '');
+  const fileName = normalizedPath.split('/').pop() ?? normalizedPath;
+
+  const cypher = `MATCH (src:File)-[:CodeRelation]->(sym)-[r:CodeRelation]->(otherSym)<-[:CodeRelation]-(dst:File)
+WHERE src.filePath = '${normalizedPath}' AND r.type IN ['IMPORTS','CALLS','REFERENCES']
+WITH dst, r, src
+ORDER BY dst.filePath
+RETURN DISTINCT dst.filePath AS path, dst.name AS name, r.type AS relType
+UNION ALL
+MATCH (src:File)-[:CodeRelation]->(sym)-[r:CodeRelation]->(otherSym)<-[:CodeRelation]-(dst:File)
+WHERE dst.filePath = '${normalizedPath}' AND r.type IN ['IMPORTS','CALLS','REFERENCES']
+WITH src, r
+ORDER BY src.filePath
+RETURN DISTINCT src.filePath AS path, src.name AS name, '<-' + r.type AS relType`;
+
+  let rows: Array<Record<string, unknown>> = [];
+  try {
+    const result = await mcpManager.callTool(serverId, 'cypher', { query: cypher, repo });
+    const data = parseMcpResult(result);
+    if (data && typeof data === 'object') {
+      const obj = data as Record<string, unknown>;
+      if (Array.isArray(obj.rows)) {
+        rows = obj.rows as Array<Record<string, unknown>>;
+      } else if (typeof obj.result === 'string') {
+        rows = parseMarkdownTable(obj.result);
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  const callers: Array<{ name: string; file: string; kind: string }> = [];
+  const callees: Array<{ name: string; file: string; kind: string }> = [];
+  const seenCallers = new Set<string>();
+  const seenCallees = new Set<string>();
+
+  for (const row of rows) {
+    const path = String(row.path ?? '');
+    const name = String(row.name ?? path.split('/').pop() ?? '');
+    const relType = String(row.relType ?? '');
+    if (!path || path === normalizedPath) continue;
+
+    if (relType.startsWith('<-')) {
+      if (!seenCallers.has(path)) {
+        seenCallers.add(path);
+        callers.push({ name, file: path, kind: 'File' });
+      }
+    } else {
+      if (!seenCallees.has(path)) {
+        seenCallees.add(path);
+        callees.push({ name, file: path, kind: 'File' });
+      }
+    }
+  }
+
+  return {
+    kind: 'graph',
+    title: `file context: ${fileName}`,
+    root: { name: fileName, file: normalizedPath, kind: 'File' },
+    callers,
+    callees,
+  };
 }
 
 function getRecordValue(record: Record<string, unknown>, key: string): unknown {
