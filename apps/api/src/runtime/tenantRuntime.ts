@@ -104,6 +104,14 @@ export function createTenantRuntime(options: {
     if (configPatch.skillsRoot !== undefined) {
       skillCacheForTenant(tenantContext).clear();
     }
+    // 系统监控开关/阈值变更：热更新到当前运行中的 agent
+    // — Chinese: system monitor toggle/threshold change: hot-update the currently running agent
+    if (configPatch.systemMonitorEnabled !== undefined) {
+      const currentAgent = defaultAgents.get(tenantContext.tenantId);
+      if (currentAgent) {
+        currentAgent.updateSystemMonitorConfig({ enabled: configPatch.systemMonitorEnabled });
+      }
+    }
     resetDefaultAgent(tenantContext);
     return next;
   }
@@ -152,7 +160,11 @@ export function createTenantRuntime(options: {
     const webProvider = resolveWebProviderRuntimeConfig(config, webProviderSecrets);
     const mcpManager = mcpManagerForTenant(tenantContext);
     await mcpManager.configure(await tenantRepo.listMcpServers(), { startEnabled: false });
-    const mcpTools = mcpManager.toolDefinitions({ includeConfigured: true });
+    // 已启用的 MCP 服务器预启动，把具体工具直接暴露给 Agent
+    // 未启用的 server 不会启动，也不会暴露任何工具
+    // — Chinese: pre-start enabled MCP servers so concrete tools are exposed to the agent;
+    //            disabled servers are not started and expose no tools
+    const mcpTools = await mcpManager.toolDefinitions({ ensureStarted: true });
     // 读取 A2A 客户端配置 — Chinese: read A2A client config
     const a2aConfig = normalizeA2AConfig(await tenantStore.getSetting(A2A_CONFIG_KEY));
     const agent = new AgentLoop({

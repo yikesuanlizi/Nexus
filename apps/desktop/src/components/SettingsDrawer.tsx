@@ -606,16 +606,16 @@ export function SettingsDrawer({
             <section className="settingsSection settingsHero modelSettingsPanel" id="settings-agent">
               <h3>{locale === 'zh' ? '模型' : 'Model'}</h3>
               <div className="formGrid modelSettingsList">
-                <label className="modelConfigRow">
-                  <span>{t(locale, 'provider')}</span>
+                <label className="wideField">
+                  {t(locale, 'provider')}
                   <DropdownSelect className="modelProviderSelect" value={config.provider} onChange={selectProvider} options={providerDropdownOptions(providers, locale)} />
                 </label>
-                <label className="modelConfigRow">
-                  <span>{t(locale, 'model')}</span>
+                <label className="wideField">
+                  {t(locale, 'model')}
                   <input value={config.model} onChange={(event) => setConfig({ ...config, model: event.target.value })} />
                 </label>
-                <label className="modelConfigRow">
-                  <span>{t(locale, 'baseUrl')}</span>
+                <label className="wideField">
+                  {t(locale, 'baseUrl')}
                   <input placeholder="provider default" value={config.baseUrl} onChange={(event) => setConfig({ ...config, baseUrl: event.target.value })} />
                 </label>
               </div>
@@ -1068,9 +1068,9 @@ export function SettingsDrawer({
               <div className="settingsInfoBlock">
                 <p className="muted"><strong>{locale === 'zh' ? '三级限流策略' : 'Three-tier throttling'}</strong></p>
                 <ul className="muted">
-                  <li><strong>{locale === 'zh' ? '轻度 (CPU > 80% 或 内存 > 75%)' : 'Light (CPU > 80% or mem > 75%)'}</strong>：{locale === 'zh' ? '并发批次限制为 ≤ 2，禁止新建子 agent' : 'parallel batches ≤ 2, no new sub-agents'}</li>
-                  <li><strong>{locale === 'zh' ? '中度 (CPU > 90% 或 内存 > 85%)' : 'Moderate (CPU > 90% or mem > 85%)'}</strong>：{locale === 'zh' ? '完全串行执行，禁止新建子 agent' : 'fully serial execution, no new sub-agents'}</li>
-                  <li><strong>{locale === 'zh' ? '重度 (CPU > 95% 或 内存 > 95% 或 磁盘 < 500MB)' : 'Severe (CPU > 95% or mem > 95% or disk < 500MB)'}</strong>：{locale === 'zh' ? '仅允许只读工具，完全串行，禁止新建子 agent' : 'readonly tools only, fully serial, no new sub-agents'}</li>
+                  <li><strong>{locale === 'zh' ? '轻度 (CPU > 85% 或 内存 > 82%)' : 'Light (CPU > 85% or mem > 82%)'}</strong>：{locale === 'zh' ? '并发批次限制为 ≤ 2，禁止新建子 agent' : 'parallel batches ≤ 2, no new sub-agents'}</li>
+                  <li><strong>{locale === 'zh' ? '中度 (CPU > 92% 或 内存 > 90%)' : 'Moderate (CPU > 92% or mem > 90%)'}</strong>：{locale === 'zh' ? '完全串行执行，禁止新建子 agent' : 'fully serial execution, no new sub-agents'}</li>
+                  <li><strong>{locale === 'zh' ? '重度 (CPU > 97% 或 内存 > 95% 或 磁盘 < 500MB)' : 'Severe (CPU > 97% or mem > 95% or disk < 500MB)'}</strong>：{locale === 'zh' ? '仅允许只读工具，完全串行，禁止新建子 agent' : 'readonly tools only, fully serial, no new sub-agents'}</li>
                 </ul>
                 <p className="muted">{locale === 'zh' ? '⚠ 开启后下次 agent 调用时生效。阈值与采样间隔可在配置文件中自定义。' : '⚠ Takes effect on the next agent call. Thresholds and sample interval can be customized in config.'}</p>
               </div>

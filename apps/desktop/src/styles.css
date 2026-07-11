@@ -112,8 +112,8 @@
 
 @layer components {
   .settingsDrawer .modelSettingsPanel {
-    width: min(560px, calc(100% - 24px));
-    max-width: none;
+    width: 100%;
+    max-width: 100%;
     gap: 14px;
     margin: 14px auto 0;
     border-color: rgba(255, 255, 255, .1);
@@ -245,7 +245,6 @@
 
   @media (max-width: 760px) {
     .settingsDrawer .modelSettingsPanel {
-      width: 100%;
       margin-top: 0;
       padding-inline: 16px;
     }
@@ -610,7 +609,7 @@
   }
 
   .settingsDrawer .modelSettingsPanel {
-    max-width: 760px;
+    max-width: 100%;
     margin-inline: auto;
     padding-inline: clamp(18px, 3vw, 32px);
   }
@@ -1077,12 +1076,7 @@
   }
 
   .workspaceGroupActions {
-    @apply pr-1 opacity-0 transition;
-  }
-
-  .workspaceGroupHeader:hover .workspaceGroupActions,
-  .workspaceGroupHeader:focus-within .workspaceGroupActions {
-    @apply opacity-100;
+    @apply pr-1 opacity-100 transition;
   }
 
   .workspaceThreadRows {
@@ -1188,7 +1182,7 @@
   }
 
   .workspace.rightPaneFiles {
-    grid-template-columns: minmax(0, 1fr) minmax(360px, 42vw);
+    grid-template-columns: minmax(0, 1fr) minmax(360px, 70vw);
   }
 
   .rightPaneDivider:hover,
@@ -1223,6 +1217,65 @@
 
   .tokenPill.warn {
     @apply border-amber-200 bg-amber-50 text-amber-700;
+  }
+
+  .tokenUsageBar {
+    @apply hidden shrink-0 flex-col gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 sm:flex;
+    width: 200px;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, .08), 0 1px 2px rgba(15, 23, 42, .04);
+  }
+
+  .tokenUsageBarRow {
+    @apply flex items-center justify-between;
+  }
+
+  .tokenUsageBarLabel {
+    @apply text-[11px] font-semibold;
+    white-space: nowrap;
+  }
+
+  .tokenUsageBarLabel.cacheLabel {
+    color: #d97706;
+  }
+
+  .tokenUsageBarLabel.contextLabel {
+    color: #0284c7;
+  }
+
+  .tokenUsageBarTrack {
+    @apply relative flex h-2 w-full overflow-hidden rounded-full;
+    background: #cbd5e1;
+    box-shadow: inset 0 1px 2px rgba(15, 23, 42, .12);
+  }
+
+  .tokenUsageBarCacheSeg {
+    background: linear-gradient(90deg, #f59e0b, #fbbf24);
+    height: 100%;
+    border-radius: 999px 0 0 999px;
+    transition: width 0.3s ease;
+  }
+
+  .tokenUsageBarContextSeg {
+    background: linear-gradient(90deg, #0ea5e9, #38bdf8);
+    height: 100%;
+    transition: width 0.3s ease;
+  }
+
+  .tokenUsageBarRemainSeg {
+    background: #e2e8f0;
+    height: 100%;
+    border-radius: 0 999px 999px 0;
+    transition: width 0.3s ease;
+  }
+
+  .tokenUsageBarSoftLine {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: rgba(15, 23, 42, .55);
+    transform: translateX(-50%);
+    pointer-events: none;
   }
 
   .actions {
@@ -1743,6 +1796,8 @@
 
   .message {
     @apply max-w-4xl shrink-0 overflow-hidden break-words whitespace-pre-wrap rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-sm leading-6 text-slate-800 shadow-none;
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
 
   .messageBlock {
@@ -1754,7 +1809,7 @@
   }
 
   .messageBlock.agent {
-    @apply w-[min(840px,92%)] justify-items-start;
+    @apply w-full max-w-4xl justify-items-start;
   }
 
   .messageBlock.agent > .message.agent {
@@ -1870,19 +1925,20 @@
   }
 
   .codeBlock {
-    @apply my-1 overflow-hidden rounded-xl border border-slate-300 bg-slate-950 text-slate-100;
+    @apply my-0.5 overflow-hidden rounded-lg border border-white/10 bg-[#141413] text-slate-100;
+    box-shadow: 0 1px 2px rgba(0,0,0,.3);
   }
 
   .codeBlock figcaption {
-    @apply flex h-9 items-center justify-between border-b border-white/10 bg-slate-900 px-3;
+    @apply flex h-7 items-center justify-between border-b border-white/5 bg-white/[0.03] px-3;
   }
 
   .codeBlock figcaption span {
-    @apply font-mono text-[11px] font-semibold uppercase tracking-wide text-slate-400;
+    @apply font-mono text-[10px] font-medium uppercase tracking-wider text-[#b0aea5];
   }
 
   .codeCopyButton {
-    @apply grid h-7 w-7 place-items-center rounded-md border-transparent bg-transparent p-0 text-slate-400 shadow-none;
+    @apply grid h-6 w-6 place-items-center rounded-md border-transparent bg-transparent p-0 text-[#b0aea5] shadow-none;
   }
 
   .codeCopyButton:hover:not(:disabled) {
@@ -1894,7 +1950,7 @@
   }
 
   .codeBlock pre {
-    @apply max-h-[420px] overflow-auto rounded-none border-0 bg-slate-950 p-3.5 font-mono text-xs leading-5 text-slate-200;
+    @apply max-h-[420px] overflow-auto rounded-none border-0 bg-[#141413] p-2.5 font-mono text-[12.5px] leading-5 text-slate-200;
     white-space: pre;
   }
 
@@ -1928,6 +1984,190 @@
 
   .childActivityError {
     @apply m-0 rounded-md border border-rose-200 bg-rose-50 px-2.5 py-2 text-xs leading-5 text-rose-800;
+  }
+
+  .message.rollbackConflict {
+    @apply rounded-lg border border-amber-300 bg-amber-50/80 px-3 py-2 text-amber-900;
+  }
+
+  .rollbackConflictMessage {
+    @apply m-0 mb-2 text-xs leading-5;
+  }
+
+  .rollbackConflictList {
+    @apply m-0 grid list-none gap-1.5 p-0;
+  }
+
+  .rollbackConflictItem {
+    @apply grid gap-1 rounded-md border-l-2 border-amber-500 bg-white/70 px-2.5 py-1.5;
+  }
+
+  .rollbackConflictPath {
+    @apply break-all font-mono text-xs font-semibold text-slate-800;
+  }
+
+  .rollbackConflictReason {
+    @apply text-xs leading-5 text-amber-800;
+  }
+
+  .rollbackConflictHashes {
+    @apply flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-[11px] text-slate-500;
+  }
+
+  /* ── DiffView: 红绿行级 diff 视图 ───────────────────────────── */
+  .diffView {
+    margin-top: 8px;
+    border-radius: 4px;
+    overflow: hidden;
+    border: 1px solid #e1e4e8;
+    background: #ffffff;
+  }
+
+  .diffViewFile + .diffViewFile {
+    margin-top: 8px;
+  }
+
+  .diffViewHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    background: #f6f8fa;
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+
+  .diffViewPath {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px;
+    color: #24292e;
+    word-break: break-all;
+  }
+
+  .diffViewStats {
+    color: #586069;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  .diffViewStatsAdded {
+    color: #22863a;
+    font-weight: 600;
+  }
+
+  .diffViewStatsRemoved {
+    color: #cb2431;
+    font-weight: 600;
+  }
+
+  .diffViewHunk {
+    border-top: 1px solid #e1e4e8;
+  }
+
+  .diffViewHunkHeader {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11px;
+    color: #6a737d;
+    padding: 4px 12px;
+    background: #f6f8fa;
+  }
+
+  .diffViewLines {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .diffViewLine {
+    display: flex;
+    align-items: flex-start;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    padding: 0 12px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .diffViewLineAdded {
+    background: #e6ffed;
+    border-left: 2px solid #34d058;
+  }
+
+  .diffViewLineRemoved {
+    background: #ffeef0;
+    border-left: 2px solid #d73a49;
+  }
+
+  .diffViewLineMarker {
+    display: inline-block;
+    width: 16px;
+    flex-shrink: 0;
+    color: #999;
+    user-select: none;
+  }
+
+  .diffViewLineContent {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .diffViewFallback {
+    padding: 6px 12px;
+    font-size: 12px;
+    color: #586069;
+  }
+
+  /* ── DiffView 深色主题适配 ───────────────────────────── */
+  .appShell.theme-dark .diffView {
+    border-color: #30363d;
+    background: #0d1117;
+  }
+
+  .appShell.theme-dark .diffViewHeader {
+    background: #161b22;
+  }
+
+  .appShell.theme-dark .diffViewPath {
+    color: #c9d1d9;
+  }
+
+  .appShell.theme-dark .diffViewStats {
+    color: #8b949e;
+  }
+
+  .appShell.theme-dark .diffViewStatsAdded {
+    color: #3fb950;
+  }
+
+  .appShell.theme-dark .diffViewStatsRemoved {
+    color: #f85149;
+  }
+
+  .appShell.theme-dark .diffViewHunk {
+    border-top-color: #30363d;
+  }
+
+  .appShell.theme-dark .diffViewHunkHeader {
+    color: #8b949e;
+    background: #161b22;
+  }
+
+  .appShell.theme-dark .diffViewLineAdded {
+    background: rgba(46, 160, 67, 0.15);
+    border-left-color: #2ea44f;
+  }
+
+  .appShell.theme-dark .diffViewLineRemoved {
+    background: rgba(248, 81, 73, 0.15);
+    border-left-color: #f85149;
+  }
+
+  .appShell.theme-dark .diffViewLineMarker {
+    color: #8b949e;
+  }
+
+  .appShell.theme-dark .diffViewFallback {
+    color: #8b949e;
   }
 
   .event {
@@ -1990,6 +2230,15 @@
 
   .approvalItem span {
     @apply mt-1 block overflow-hidden text-ellipsis whitespace-nowrap text-sm text-slate-500;
+  }
+
+  .approvalItemDiff {
+    grid-column: 1 / -1;
+    max-height: 280px;
+    overflow: auto;
+    border-top: 1px solid rgb(226 232 240);
+    margin-top: 4px;
+    padding-top: 8px;
   }
 
   .composer {
@@ -3284,6 +3533,31 @@
     color: #f4c56d;
   }
 
+  .tokenUsageBar {
+    border-color: rgba(255,255,255,.1);
+    background: rgba(255,255,255,.03);
+  }
+
+  .tokenUsageBarTrack {
+    background: rgba(255,255,255,.08);
+  }
+
+  .tokenUsageBarCacheSeg {
+    background: linear-gradient(90deg, #fbbf24, #fcd34d);
+  }
+
+  .tokenUsageBarContextSeg {
+    background: linear-gradient(90deg, #38bdf8, #7dd3fc);
+  }
+
+  .tokenUsageBarRemainSeg {
+    background: rgba(255,255,255,.12);
+  }
+
+  .tokenUsageBarSoftLine {
+    background: rgba(255,255,255,.45);
+  }
+
   .transcript {
     gap: 16px;
     padding: 30px clamp(24px, 4vw, 96px) 36px;
@@ -3317,7 +3591,7 @@
   }
 
   .workspace.rightPaneFiles {
-    grid-template-columns: minmax(0, 1fr) minmax(360px, 42vw);
+    grid-template-columns: minmax(0, 1fr) minmax(360px, 70vw);
   }
 
   .panelButton.active {
@@ -5052,25 +5326,41 @@
   }
 
   .appShell.theme-light .codeBlock {
-    border-color: #d8dee8;
-    background: #f8fafc;
+    border-color: #e8e6dc;
+    background: #faf9f5;
+    box-shadow: 0 1px 2px rgba(0,0,0,.04);
   }
 
   .appShell.theme-light .codeBlock figcaption {
-    background: #eef2f7;
-    color: #0f172a;
+    background: #f5f3ec;
+    border-bottom-color: #e8e6dc;
+    color: #141413;
+  }
+
+  .appShell.theme-light .codeBlock figcaption span {
+    color: #8a887f;
   }
 
   .appShell.theme-light .codeBlock pre {
-    background: #f8fafc;
-    color: #0f172a;
+    background: #faf9f5;
+    color: #141413;
+  }
+
+  .appShell.theme-light .codeCopyButton {
+    color: #8a887f;
+  }
+
+  .appShell.theme-light .codeCopyButton:hover:not(:disabled) {
+    background: rgba(0,0,0,.06);
+    color: #141413;
+    border-color: #e8e6dc;
   }
 }
 
 @layer components {
   .runMonitorDrawer {
     @apply fixed bottom-4 right-4 top-14 z-40 grid w-[min(860px,calc(100vw-32px))] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl;
-    grid-template-rows: auto auto auto minmax(0, 1fr);
+    grid-template-rows: auto auto auto auto minmax(0, 1fr);
   }
 
   .runMonitorHeader {
@@ -5436,6 +5726,207 @@
   .appShell.theme-dark .runMonitorEvent.error .eventDetailMetadata {
     background: rgba(244, 63, 94, 0.1);
     color: #fda4af;
+  }
+
+  /* 运行监控抽屉 tab 导航 */
+  .runMonitorTabs {
+    @apply flex gap-1 border-b border-slate-200 p-2;
+  }
+
+  .runMonitorTab {
+    @apply rounded-md px-3 py-1 text-xs font-bold text-slate-500 transition-colors;
+  }
+
+  .runMonitorTab:hover {
+    @apply bg-slate-100 text-slate-700;
+  }
+
+  .runMonitorTab.active {
+    @apply bg-blue-500 text-white;
+  }
+
+  /* 历史快照面板 */
+  .checkpointPanel {
+    @apply grid min-h-0 content-start gap-3 overflow-auto p-3;
+  }
+
+  .checkpointTitle {
+    @apply m-0 text-sm font-bold text-slate-950;
+  }
+
+  .checkpointEmpty {
+    @apply m-0 text-xs font-medium text-slate-400;
+  }
+
+  .checkpointList {
+    @apply grid content-start gap-3 p-0;
+    list-style: none;
+  }
+
+  .checkpointEntry {
+    @apply grid gap-2 rounded-lg border border-slate-200 bg-white p-3;
+  }
+
+  .checkpointEntryHeader {
+    @apply flex items-center gap-2;
+  }
+
+  .checkpointTurn {
+    @apply text-sm font-bold text-slate-950;
+  }
+
+  .checkpointTime {
+    @apply text-[10px] font-semibold text-slate-400;
+  }
+
+  .checkpointLatestTag {
+    @apply ml-auto rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500;
+  }
+
+  .checkpointRollbackButton {
+    @apply ml-auto rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-bold text-amber-700 transition-colors;
+  }
+
+  .checkpointRollbackButton:hover {
+    @apply bg-amber-100;
+  }
+
+  .checkpointStats {
+    @apply flex flex-wrap gap-3 text-[11px] font-bold;
+  }
+
+  .checkpointStat.add {
+    @apply text-emerald-600;
+  }
+
+  .checkpointStat.delete {
+    @apply text-rose-600;
+  }
+
+  .checkpointStat.files {
+    @apply text-slate-500;
+  }
+
+  .checkpointFileList {
+    @apply grid content-start gap-1 p-0;
+    list-style: none;
+  }
+
+  .checkpointFileRow {
+    @apply grid gap-1 rounded-md border border-slate-100 bg-slate-50 p-1;
+  }
+
+  .checkpointFileRow.add {
+    @apply border-l-2 border-l-emerald-400;
+  }
+
+  .checkpointFileRow.delete {
+    @apply border-l-2 border-l-rose-400;
+  }
+
+  .checkpointFileRow.update {
+    @apply border-l-2 border-l-amber-400;
+  }
+
+  .checkpointFileHeader {
+    @apply flex w-full items-center gap-2 border-0 bg-transparent p-1 text-left shadow-none;
+  }
+
+  .checkpointFileHeader:disabled {
+    cursor: default;
+  }
+
+  .checkpointFileHeader:not(:disabled):hover {
+    @apply bg-slate-100;
+  }
+
+  .checkpointFileIcon {
+    @apply inline-flex h-4 w-4 items-center justify-center rounded text-[11px] font-bold;
+  }
+
+  .checkpointFileIcon.add {
+    @apply bg-emerald-100 text-emerald-700;
+  }
+
+  .checkpointFileIcon.delete {
+    @apply bg-rose-100 text-rose-700;
+  }
+
+  .checkpointFileIcon.update {
+    @apply bg-amber-100 text-amber-700;
+  }
+
+  .checkpointFilePath {
+    @apply flex-1 truncate font-mono text-[11px] font-medium text-slate-700;
+  }
+
+  .checkpointFileKind {
+    @apply text-[10px] font-bold uppercase tracking-wide text-slate-400;
+  }
+
+  .checkpointFileDiff {
+    @apply grid grid-cols-2 gap-2 border-t border-slate-200 pt-2;
+  }
+
+  .checkpointDiffSide {
+    @apply grid min-w-0 gap-1;
+  }
+
+  .checkpointDiffLabel {
+    @apply text-[10px] font-bold uppercase tracking-wide text-slate-500;
+  }
+
+  .checkpointDiffPre {
+    @apply m-0 max-h-[300px] overflow-auto rounded-md bg-slate-900 p-2 font-mono text-[10px] leading-4 text-slate-100;
+  }
+
+  /* dark 主题：历史快照 */
+  .appShell.theme-dark .checkpointEntry {
+    border-color: rgba(255,255,255,.08);
+    background: #111318;
+  }
+
+  .appShell.theme-dark .checkpointTitle,
+  .appShell.theme-dark .checkpointTurn {
+    color: #f5f7fb;
+  }
+
+  .appShell.theme-dark .checkpointEmpty,
+  .appShell.theme-dark .checkpointTime,
+  .appShell.theme-dark .checkpointFileKind {
+    color: #9099a8;
+  }
+
+  .appShell.theme-dark .checkpointLatestTag {
+    background: #1c2230;
+    color: #9099a8;
+  }
+
+  .appShell.theme-dark .checkpointFileRow {
+    border-color: rgba(255,255,255,.08);
+    background: #171a1f;
+  }
+
+  .appShell.theme-dark .checkpointFilePath {
+    color: #d8dee8;
+  }
+
+  .appShell.theme-dark .checkpointFileHeader:not(:disabled):hover {
+    background: rgba(255,255,255,.06);
+  }
+
+  .appShell.theme-dark .runMonitorTab {
+    color: #9099a8;
+  }
+
+  .appShell.theme-dark .runMonitorTab:hover {
+    background: rgba(255,255,255,.06);
+    color: #d8dee8;
+  }
+
+  .appShell.theme-dark .checkpointDiffPre {
+    background: #0d0f13;
+    color: #c8cfd9;
   }
 
   .workflowPanel {
@@ -6051,8 +6542,8 @@
 
 @layer components {
   .settingsDrawer .settingsHero.modelSettingsPanel {
-    width: min(560px, calc(100% - 24px));
-    max-width: none;
+    width: 100%;
+    max-width: 100%;
     gap: 14px;
     margin: 14px auto 0;
     padding: 18px 28px 16px;
@@ -7307,14 +7798,15 @@
 
   .appShell.theme-light .codeBlock,
   .appShell.theme-light .codeBlock pre {
-    border-color: #d8dee8;
-    background: #f8fafc;
-    color: #0f172a;
+    border-color: #e8e6dc;
+    background: #faf9f5;
+    color: #141413;
   }
 
   .appShell.theme-light .codeBlock figcaption {
-    background: #eef2f7;
-    color: #0f172a;
+    background: #f5f3ec;
+    border-bottom-color: #e8e6dc;
+    color: #141413;
   }
 
   .appShell.theme-light .slashPalette,
@@ -8528,4 +9020,565 @@
   color: var(--nx-text);
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* GitNexus 结果展示 */
+.gitNexusResult {
+  margin: 8px 0;
+  border: 1px solid var(--nx-border, #e2e8f0);
+  border-radius: 8px;
+  background: var(--nx-panel, #ffffff);
+  color: var(--nx-text, #0f172a);
+  overflow: hidden;
+}
+
+.gitNexusHeader {
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--nx-border, #e2e8f0);
+  background: var(--nx-panel, #ffffff);
+}
+
+.gitNexusGroups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--nx-border, #e2e8f0);
+}
+
+.gitNexusGroupTag {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 11px;
+  border-radius: 10px;
+  background: rgba(2, 132, 199, 0.1);
+  color: var(--nx-accent, #0284c7);
+}
+
+.gitNexusGraph {
+  height: 360px;
+  width: 100%;
+}
+
+@media (max-width: 640px) {
+  .gitNexusGraph {
+    height: 280px;
+  }
+}
+
+.gitNexusList {
+  max-height: 360px;
+  overflow: auto;
+}
+
+.gitNexusList table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.gitNexusList th,
+.gitNexusList td {
+  padding: 6px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--nx-border, #e2e8f0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 240px;
+}
+
+.gitNexusList th {
+  font-weight: 600;
+  background: var(--nx-panel, #ffffff);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.gitNexusNodeMeta {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--nx-accent, #0284c7);
+}
+
+.gitNexusEmpty {
+  padding: 24px 12px;
+  text-align: center;
+  color: var(--nx-muted, #64748b);
+  font-size: 13px;
+}
+
+.gitNexusNodeLabel {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.gitNexusNode gitNexusNode-center {
+  font-weight: 600;
+}
+
+/* GitNexus 独立面板 */
+.workspaceFilesHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.workspaceFilesHeaderActions .miniIconButton.active {
+  background: var(--nx-accent, #3b82f6);
+  color: #fff;
+}
+
+.workspaceGitNexusView {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.gitNexusPanel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.gitNexusPanelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--nx-border, #e2e8f0);
+  gap: 8px;
+}
+
+.gitNexusPanelHeader h2 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0;
+  color: var(--nx-text, #0f172a);
+}
+
+.gitNexusPanelHeader p {
+  font-size: 12px;
+  margin: 2px 0 0;
+  color: var(--nx-muted, #64748b);
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gitNexusProjectSection {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--nx-border, #e2e8f0);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gitNexusProjectRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gitNexusLabel {
+  font-size: 12px;
+  color: var(--nx-muted, #64748b);
+  white-space: nowrap;
+}
+
+.gitNexusPathSelect {
+  flex: 1;
+  padding: 4px 8px;
+  font-size: 12px;
+  border: 1px solid var(--nx-border, #e2e8f0);
+  border-radius: 4px;
+  background: var(--nx-panel, #ffffff);
+  color: var(--nx-text, #0f172a);
+  min-width: 0;
+}
+
+.gitNexusAnalyzeRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.gitNexusAnalyzeBtn {
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  border: none;
+  border-radius: 4px;
+  background: var(--nx-accent, #0284c7);
+  color: #fff;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.gitNexusAnalyzeBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.gitNexusStatus {
+  font-size: 12px;
+  color: var(--nx-success, #16a34a);
+}
+
+.gitNexusError {
+  font-size: 12px;
+  color: var(--nx-error, #dc2626);
+}
+
+.gitNexusTabs {
+  display: flex;
+  border-bottom: 1px solid var(--nx-border, #e2e8f0);
+  padding: 0 8px;
+  background: var(--nx-panel, #ffffff);
+}
+
+.gitNexusTabs button {
+  padding: 8px 12px;
+  font-size: 12px;
+  border: none;
+  background: transparent;
+  color: var(--nx-muted, #64748b);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  white-space: nowrap;
+}
+
+.gitNexusTabs button.active {
+  color: var(--nx-accent, #0284c7);
+  border-bottom-color: var(--nx-accent, #0284c7);
+  font-weight: 500;
+}
+
+.gitNexusToolBody {
+  flex: 1;
+  overflow: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.gitNexusToolForm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gitNexusInputRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.gitNexusInputRow input {
+  flex: 1;
+  padding: 6px 10px;
+  font-size: 12px;
+  border: 1px solid var(--nx-border, #e2e8f0);
+  border-radius: 4px;
+  background: var(--nx-panel, #ffffff);
+  color: var(--nx-text, #0f172a);
+  min-width: 0;
+}
+
+.gitNexusInputRow input:focus {
+  outline: none;
+  border-color: var(--nx-accent, #0284c7);
+}
+
+.gitNexusInputRow button {
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  border: none;
+  border-radius: 4px;
+  background: var(--nx-accent, #0284c7);
+  color: #fff;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.gitNexusInputRow button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.gitNexusArrow {
+  color: var(--nx-muted, #64748b);
+  font-size: 14px;
+}
+
+.gitNexusLoading,
+.gitNexusEmptyHint {
+  text-align: center;
+  padding: 24px 12px;
+  color: var(--nx-muted, #64748b);
+  font-size: 12px;
+}
+
+/* GitNexus 概览 */
+.gitNexusOverview {
+  flex: 1;
+  overflow: auto;
+  padding: 8px;
+}
+
+.gitNexusForceGraph {
+  width: 100%;
+}
+
+.gitNexusForceGraphLegend {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.gitNexusForceGraphStat {
+  font-size: 11px;
+  color: var(--nx-muted, #64748b);
+}
+
+.gitNexusForceGraphGroups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+
+.gitNexusForceGraphGroupTag {
+  font-size: 11px;
+  color: var(--nx-muted, #94a3b8);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.gitNexusForceGraphGroupDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.gitNexusForceGraphCanvasWrap {
+  width: 100%;
+  border: 1px solid var(--nx-border, rgba(255, 255, 255, 0.08));
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--nx-card-bg, rgba(255, 255, 255, 0.02));
+  cursor: grab;
+}
+
+.gitNexusForceGraphCanvasWrap:active {
+  cursor: grabbing;
+}
+
+.gitNexusForceGraphCanvasWrap canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.gitNexusOverviewStats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.gitNexusStatCard {
+  background: var(--nx-card-bg, rgba(255, 255, 255, 0.03));
+  border: 1px solid var(--nx-border, rgba(255, 255, 255, 0.08));
+  border-radius: 8px;
+  padding: 10px 8px;
+  text-align: center;
+}
+
+.gitNexusStatValue {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--nx-accent, #0284c7);
+  line-height: 1.2;
+}
+
+.gitNexusStatLabel {
+  font-size: 11px;
+  color: var(--nx-muted, #94a3b8);
+  margin-top: 4px;
+}
+
+.gitNexusOverviewRelations {
+  margin-top: 12px;
+}
+
+.gitNexusOverviewSectionTitle {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--nx-text, #e2e8f0);
+}
+
+.gitNexusRelationGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 6px;
+}
+
+.gitNexusRelationItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--nx-card-bg, rgba(255, 255, 255, 0.03));
+  border: 1px solid var(--nx-border, rgba(255, 255, 255, 0.08));
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 11px;
+}
+
+.gitNexusRelationName {
+  color: var(--nx-muted, #94a3b8);
+}
+
+.gitNexusRelationCount {
+  font-weight: 600;
+  color: var(--nx-text, #e2e8f0);
+}
+
+.gitNexusOverviewGroups {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.gitNexusOverviewGroup {
+  background: var(--nx-card-bg, rgba(255, 255, 255, 0.03));
+  border: 1px solid var(--nx-border, rgba(255, 255, 255, 0.08));
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.gitNexusOverviewGroupTitle {
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--nx-card-header, rgba(255, 255, 255, 0.04));
+  border-bottom: 1px solid var(--nx-border, rgba(255, 255, 255, 0.08));
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gitNexusOverviewCount {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--nx-muted, #64748b);
+  background: var(--nx-badge-bg, rgba(255, 255, 255, 0.08));
+  padding: 1px 7px;
+  border-radius: 10px;
+}
+
+.gitNexusOverviewEmpty {
+  padding: 8px 12px;
+  color: var(--nx-muted, #64748b);
+  font-size: 12px;
+  margin: 0;
+}
+
+.gitNexusOverviewList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.gitNexusOverviewItem {
+  padding: 6px 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  transition: background 0.12s;
+}
+
+.gitNexusOverviewItem:hover {
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.gitNexusOverviewItemName {
+  font-weight: 500;
+  color: var(--nx-text, #e2e8f0);
+  white-space: nowrap;
+}
+
+.gitNexusOverviewItemKind {
+  font-size: 10px;
+  color: var(--nx-muted, #64748b);
+  background: rgba(255, 255, 255, 0.06);
+  padding: 1px 5px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.gitNexusOverviewItemFile {
+  color: var(--nx-muted, #64748b);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.gitNexusOverviewMore {
+  padding: 6px 12px;
+  color: var(--nx-muted, #64748b);
+  font-size: 11px;
+  font-style: italic;
+}
+
+.gitNexusReloadBtn {
+  margin-left: 8px;
+  font-size: 11px;
+  padding: 2px 10px;
+  border: 1px solid var(--nx-border, rgba(255, 255, 255, 0.12));
+  border-radius: 4px;
+  background: transparent;
+  color: var(--nx-text, #e2e8f0);
+  cursor: pointer;
+}
+
+.gitNexusReloadBtn:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.gitNexusResultError {
+  padding: 12px;
+  background: rgba(220, 38, 38, 0.08);
+  border: 1px solid rgba(220, 38, 38, 0.2);
+  border-radius: 6px;
+  color: var(--nx-error, #dc2626);
+  font-size: 12px;
+}
+
+.gitNexusPanel .gitNexusResult {
+  margin: 0;
 }

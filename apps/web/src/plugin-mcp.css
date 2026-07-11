@@ -1,8 +1,9 @@
 .settingsDrawer .pluginCatalogShell {
-  border: 0 !important;
-  background: transparent !important;
-  box-shadow: none !important;
-  padding: 0 !important;
+  border: 2px solid var(--border) !important;
+  background: var(--card-bg) !important;
+  border-radius: 14px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .05) !important;
+  padding: 20px !important;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
@@ -19,8 +20,8 @@
   --card-bg: #ffffff;
   --text-main: #1f2937;
   --text-sub: #6b7280;
-  --border: #e5e7eb;
-  --border-strong: #d1d5db;
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
   --accent: #3b82f6;
   --accent-2: #2563eb;
   --success: #10b981;
@@ -236,7 +237,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 28px;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 2px solid var(--border-strong);
 }
 
 .settingsDrawer .pluginCatalogShell .title-group {
@@ -386,7 +389,7 @@
   justify-content: space-between;
   margin-bottom: 20px;
   padding-bottom: 16px;
-  border-bottom: 2px solid var(--border);
+  border-bottom: 2px solid var(--border-strong);
 }
 
 .settingsDrawer .pluginCatalogShell .section-header-actions {

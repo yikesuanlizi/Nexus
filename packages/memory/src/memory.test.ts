@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -624,6 +624,105 @@ describe('rollbackTurns checkpoints', () => {
       expect.objectContaining({
         type: 'rollback_conflict',
         conflicts: [expect.objectContaining({ path: 'src.txt', reason: expect.stringContaining('hash') })],
+      }),
+    ]);
+  });
+
+  it('restores the source file and removes the target after rolling back a rename checkpoint', async () => {
+    // 中文注释：rename 检查点含两个文件条目：源 delete（beforeContent 为源原内容）+ 目标 add
+    const root = mkdtempSync(join(tmpdir(), 'nexus-rollback-rename-'));
+    const sourceFile = join(root, 'a.txt');
+    const targetFile = join(root, 'b.txt');
+    // 模拟 apply_patch move a.txt -> b.txt 之后的磁盘状态：源已删、目标含搬移后的内容
+    writeFileSync(targetFile, 'moved content', 'utf-8');
+    const store = new MemoryStore('thread-project-rename');
+    store.thread.workspaceRoot = root;
+    store.thread.turnCount = 1;
+    store.turns = store.turns.slice(0, 1);
+    store.items = [{
+      id: 'project-cp-rename',
+      type: 'project_checkpoint',
+      turnId: 'turn-0',
+      turnCount: 1,
+      workspaceRoot: root,
+      files: [
+        {
+          path: 'a.txt',
+          kind: 'delete',
+          beforeContent: 'original A',
+          afterContent: null,
+          beforeHash: sha256('original A'),
+          afterHash: null,
+        },
+        {
+          path: 'b.txt',
+          kind: 'add',
+          beforeContent: null,
+          afterContent: 'moved content',
+          beforeHash: null,
+          afterHash: sha256('moved content'),
+        },
+      ],
+    }] as ThreadItem[];
+
+    const result = await rollbackTurns('thread-project-rename', store, 1);
+
+    expect(result.removedTurns).toBe(1);
+    // 源文件被恢复为原内容
+    expect(readFileSync(sourceFile, 'utf-8')).toBe('original A');
+    // 目标文件被删除
+    expect(existsSync(targetFile)).toBe(false);
+    expect(store.appended.filter((item) => item.type === 'rollback_conflict')).toEqual([]);
+  });
+
+  it('records a conflict for a renamed target modified after the checkpoint and keeps the edit', async () => {
+    // 中文注释：rename 后用户手动改了目标文件，rollback 时目标哈希不匹配 → 记录冲突并保留目标修改；
+    // 源文件无冲突仍按 beforeContent 恢复
+    const root = mkdtempSync(join(tmpdir(), 'nexus-rollback-rename-conflict-'));
+    const sourceFile = join(root, 'a.txt');
+    const targetFile = join(root, 'b.txt');
+    // 目标被外部修改，与检查点 afterHash 不一致
+    writeFileSync(targetFile, 'externally modified', 'utf-8');
+    const store = new MemoryStore('thread-project-rename-conflict');
+    store.thread.workspaceRoot = root;
+    store.thread.turnCount = 1;
+    store.turns = store.turns.slice(0, 1);
+    store.items = [{
+      id: 'project-cp-rename-conflict',
+      type: 'project_checkpoint',
+      turnId: 'turn-0',
+      turnCount: 1,
+      workspaceRoot: root,
+      files: [
+        {
+          path: 'a.txt',
+          kind: 'delete',
+          beforeContent: 'original A',
+          afterContent: null,
+          beforeHash: sha256('original A'),
+          afterHash: null,
+        },
+        {
+          path: 'b.txt',
+          kind: 'add',
+          beforeContent: null,
+          afterContent: 'moved content',
+          beforeHash: null,
+          afterHash: sha256('moved content'),
+        },
+      ],
+    }] as ThreadItem[];
+
+    await rollbackTurns('thread-project-rename-conflict', store, 1);
+
+    // 目标文件保留外部修改
+    expect(readFileSync(targetFile, 'utf-8')).toBe('externally modified');
+    // 源文件无冲突，按 beforeContent 恢复
+    expect(readFileSync(sourceFile, 'utf-8')).toBe('original A');
+    expect(store.appended).toEqual([
+      expect.objectContaining({
+        type: 'rollback_conflict',
+        conflicts: [expect.objectContaining({ path: 'b.txt', reason: expect.stringContaining('hash') })],
       }),
     ]);
   });

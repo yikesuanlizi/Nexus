@@ -3,8 +3,10 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
+  BUILTIN_TOOLS,
   applyPatchTool,
   currentTimeTool,
+  gitNexusAnalyzeTool,
   listFilesTool,
   readFileTool,
   searchContentTool,
@@ -20,6 +22,36 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
+async function installFakeNpx(binDir: string): Promise<void> {
+  const spyScript = path.join(binDir, 'npx-spy.cjs');
+  await fs.writeFile(
+    spyScript,
+    [
+      "const fs = require('node:fs');",
+      "const logPath = process.env.NEXUS_FAKE_NPX_LOG;",
+      "if (!logPath) throw new Error('missing NEXUS_FAKE_NPX_LOG');",
+      "fs.writeFileSync(logPath, JSON.stringify({ cwd: process.cwd(), argv: process.argv.slice(2) }));",
+      "console.log('indexed ok');",
+    ].join('\n'),
+    'utf-8',
+  );
+  if (process.platform === 'win32') {
+    await fs.writeFile(
+      path.join(binDir, 'npx.cmd'),
+      `@echo off\r\n"${process.execPath}" "%~dp0\\npx-spy.cjs" %*\r\n`,
+      'utf-8',
+    );
+    return;
+  }
+  const shimPath = path.join(binDir, 'npx');
+  await fs.writeFile(
+    shimPath,
+    `#!/bin/sh\nexec "${process.execPath}" "$(dirname "$0")/npx-spy.cjs" "$@"\n`,
+    'utf-8',
+  );
+  await fs.chmod(shimPath, 0o755);
+}
+
 describe('builtin tool parallel safety', () => {
   it('opts readonly inspection tools into parallel execution and keeps mutating tools serial', () => {
     expect(currentTimeTool.supportsParallelToolCalls).toBe(true);
@@ -32,6 +64,49 @@ describe('builtin tool parallel safety', () => {
     expect(writeFileTool.supportsParallelToolCalls).not.toBe(true);
     expect(shellCommandTool.supportsParallelToolCalls).not.toBe(true);
     expect(applyPatchTool.supportsParallelToolCalls).not.toBe(true);
+    expect(gitNexusAnalyzeTool.supportsParallelToolCalls).not.toBe(true);
+  });
+});
+
+describe('gitNexusAnalyzeTool', () => {
+  it('is registered as an approval-gated workspace write tool', () => {
+    expect(gitNexusAnalyzeTool.name).toBe('gitnexus_analyze');
+    expect(gitNexusAnalyzeTool.requiredPolicy).toBe('workspace_write');
+    expect(gitNexusAnalyzeTool.requiresApproval).toBe(true);
+    expect(BUILTIN_TOOLS).toContain(gitNexusAnalyzeTool);
+  });
+
+  it('runs npx -y gitnexus@latest analyze in the workspace root', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'nexus-gitnexus-analyze-'));
+    const binDir = await fs.mkdtemp(path.join(os.tmpdir(), 'nexus-fake-npx-'));
+    const logPath = path.join(root, 'npx-call.json');
+    await installFakeNpx(binDir);
+
+    const originalPath = process.env.PATH;
+    const originalLogPath = process.env.NEXUS_FAKE_NPX_LOG;
+    process.env.PATH = `${binDir}${path.delimiter}${originalPath ?? ''}`;
+    process.env.NEXUS_FAKE_NPX_LOG = logPath;
+    try {
+      const result = await gitNexusAnalyzeTool.execute(
+        {},
+        { workspaceRoot: root, threadId: 'thread', turnId: 'turn', approved: true },
+      );
+
+      expect(result.status).toBe('completed');
+      expect(result.output).toContain('indexed ok');
+      expect(result.data).toMatchObject({
+        command: ['npx', '-y', 'gitnexus@latest', 'analyze'],
+        cwd: root,
+        exitCode: 0,
+      });
+      const call = JSON.parse(await fs.readFile(logPath, 'utf-8'));
+      expect(call.cwd).toBe(root);
+      expect(call.argv).toEqual(['-y', 'gitnexus@latest', 'analyze']);
+    } finally {
+      process.env.PATH = originalPath;
+      if (originalLogPath === undefined) delete process.env.NEXUS_FAKE_NPX_LOG;
+      else process.env.NEXUS_FAKE_NPX_LOG = originalLogPath;
+    }
   });
 });
 
@@ -364,5 +439,69 @@ describe('applyPatchTool', () => {
     expect(result.status).toBe('failed');
     expect(result.error?.message).toContain('apply_patch verification failed');
     await expect(fs.readFile(path.join(root, 'src.txt'), 'utf-8')).resolves.toBe('actual\n');
+  });
+
+  it('splits a pure rename move into a source delete and a target add change', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'nexus-apply-patch-move-'));
+    await fs.writeFile(path.join(root, 'a.txt'), 'alpha\nbeta\n', 'utf-8');
+
+    const result = await applyPatchTool.execute(
+      {
+        patch: [
+          '*** Begin Patch',
+          '*** Update File: a.txt',
+          '*** Move to: b.txt',
+          '*** End Patch',
+        ].join('\n'),
+      },
+      { workspaceRoot: root, threadId: 'thread', turnId: 'turn', approved: true },
+    );
+
+    expect(result.status).toBe('completed');
+    // 中文注释：rename 必须产出两个 change：源 delete + 目标 add，rollback 才能正确恢复源文件
+    expect(result.data).toMatchObject({
+      changes: [
+        expect.objectContaining({ path: 'a.txt', kind: 'delete', addedLines: 0, removedLines: 2 }),
+        expect.objectContaining({ path: 'b.txt', kind: 'add', addedLines: 2, removedLines: 0 }),
+      ],
+    });
+    // 源文件被删除
+    await expect(fs.readFile(path.join(root, 'a.txt'), 'utf-8')).rejects.toThrow();
+    // 目标文件含原内容
+    await expect(fs.readFile(path.join(root, 'b.txt'), 'utf-8')).resolves.toBe('alpha\nbeta\n');
+  });
+
+  it('splits a move with content edits into a source delete and a target add change', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'nexus-apply-patch-move-edit-'));
+    await fs.writeFile(path.join(root, 'a.txt'), ['alpha', 'beta', 'gamma'].join('\n'), 'utf-8');
+
+    const result = await applyPatchTool.execute(
+      {
+        patch: [
+          '*** Begin Patch',
+          '*** Update File: a.txt',
+          '*** Move to: b.txt',
+          '@@',
+          ' alpha',
+          '-beta',
+          '+beta moved',
+          ' gamma',
+          '*** End Patch',
+        ].join('\n'),
+      },
+      { workspaceRoot: root, threadId: 'thread', turnId: 'turn', approved: true },
+    );
+
+    expect(result.status).toBe('completed');
+    expect(result.data).toMatchObject({
+      changes: [
+        expect.objectContaining({ path: 'a.txt', kind: 'delete' }),
+        expect.objectContaining({ path: 'b.txt', kind: 'add' }),
+      ],
+    });
+    await expect(fs.readFile(path.join(root, 'a.txt'), 'utf-8')).rejects.toThrow();
+    await expect(fs.readFile(path.join(root, 'b.txt'), 'utf-8')).resolves.toBe(
+      ['alpha', 'beta moved', 'gamma'].join('\n'),
+    );
   });
 });

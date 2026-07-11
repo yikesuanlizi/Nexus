@@ -19,3 +19,10 @@ outputs/
 *.db-journal
 *.db-wal
 .nexus-*.png
+# 防止 TypeScript 编译产物误入 src 目录（protocol 等包的 main 指向 dist/）
+src/**/*.js
+src/**/*.js.map
+src/**/*.d.ts
+src/**/*.d.ts.map
+!src/**/*.tsx
+!src/**/*.ts

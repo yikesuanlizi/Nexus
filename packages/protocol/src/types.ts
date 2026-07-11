@@ -209,6 +209,10 @@ export interface FileChangeHunk {
   endLine?: number;
   addedLines: number;
   removedLines: number;
+  // 实际新增的行内容（不含 '+' 前缀）；旧数据无此字段时降级为空数组
+  addedLinesContent: string[];
+  // 实际删除的行内容（不含 '-' 前缀）；旧数据无此字段时降级为空数组
+  removedLinesContent: string[];
   summary?: string;
 }
 
@@ -796,6 +800,7 @@ export type ThreadEvent =
   | EpisodeWorkingSetRebuiltEvent
   | ChildAgentEvent
   | CacheDiagnosticsEvent
+  | ThreadMetadataUpdatedEvent
   | ErrorEvent;
 
 // 线程已创建事件
@@ -803,6 +808,14 @@ export interface ThreadStartedEvent {
   type: 'thread.started';
   threadId: ThreadId;
   thread: ThreadMeta;
+}
+
+// 线程元数据更新事件：标题、状态等变更
+export interface ThreadMetadataUpdatedEvent {
+  type: 'thread.metadata.updated';
+  threadId: ThreadId;
+  title?: string;
+  status?: string;
 }
 
 // 回合开始事件

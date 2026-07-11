@@ -69,7 +69,13 @@ export function RightPane({
             ) : null}
           </>
         )
-        : <WorkspaceFilesPanel locale={locale} workspaceRoot={workspaceRoot} externalPreviewRequest={externalPreviewRequest} />}
+        : (
+          <WorkspaceFilesPanel
+            locale={locale}
+            workspaceRoot={workspaceRoot}
+            externalPreviewRequest={externalPreviewRequest}
+          />
+        )}
     </aside>
   );
 }

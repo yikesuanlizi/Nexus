@@ -265,6 +265,73 @@ export const shellCommandTool: ToolDefinition = {
   },
 };
 
+// ─── gitnexus_analyze ──────────────────────────────────────────────────────
+// 中文注释：为当前工作区构建/刷新 GitNexus 索引；该命令会写入 .gitnexus，因此按 workspace_write 审批。
+export const gitNexusAnalyzeTool: ToolDefinition = {
+  name: 'gitnexus_analyze',
+  description:
+    'Build or refresh the GitNexus code graph index for the current workspace by running "npx -y gitnexus@latest analyze". Use this when GitNexus graph queries are needed and the repository may not be indexed. This is an enhancement path; continue using list_files/read_file/search_content if GitNexus is unavailable or fails.',
+  parameters: {
+    type: 'object',
+    properties: {},
+    additionalProperties: false,
+  },
+  requiredPolicy: 'workspace_write',
+  requiresApproval: true,
+  timeoutMs: 600_000,
+  maxOutputLength: 30_000,
+  async execute(_args, ctx): Promise<ToolResult> {
+    const command = ['npx', '-y', 'gitnexus@latest', 'analyze'];
+    const { execFile } = await import('node:child_process');
+
+    return new Promise((resolve) => {
+      const child = execFile(
+        command[0],
+        command.slice(1),
+        {
+          cwd: ctx.workspaceRoot,
+          maxBuffer: 10 * 1024 * 1024,
+          timeout: 600_000,
+          windowsHide: true,
+          shell: process.platform === 'win32',
+        },
+        (error, stdout, stderr) => {
+          const output = [
+            stdout,
+            stderr ? `\n[stderr]\n${stderr}` : '',
+          ].filter(Boolean).join('\n').trim();
+          const exitCode = typeof error?.code === 'number' ? error.code : error ? 1 : 0;
+          const baseData = {
+            command,
+            cwd: ctx.workspaceRoot,
+            exitCode,
+          };
+          if (error) {
+            const message = output || `GitNexus analyze failed: ${error.message}`;
+            resolve({
+              output: message,
+              status: 'failed',
+              exitCode,
+              data: baseData,
+              error: { message: error.message, code: 'GITNEXUS_ANALYZE_FAILED' },
+            });
+            return;
+          }
+          resolve({
+            output: output || 'GitNexus analyze completed.',
+            status: 'completed',
+            exitCode: 0,
+            data: baseData,
+          });
+        },
+      );
+      if (ctx.signal) {
+        ctx.signal.addEventListener('abort', () => child.kill(), { once: true });
+      }
+    });
+  },
+};
+
 // ─── search_content ─────────────────────────────────────────────────────────
 // 中文注释：在工作区文件中搜索文本模式（子串或正则表达式）。
 export const searchContentTool: ToolDefinition = {
@@ -562,6 +629,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   listFilesTool,
   writeFileTool,
   shellCommandTool,
+  gitNexusAnalyzeTool,
   searchContentTool,
   webSearchTool,
   webFetchTool,
@@ -601,10 +669,16 @@ async function walkAndSearch(
     return;
   }
 
+  // 预计算：判断 pattern 是否为纯文本（不含正则特殊字符），纯文本用 indexOf 更快
+  // — English: pre-compute: check if pattern is plain text (no regex special chars), use indexOf for speed
+  const regexSpecialChars = /[.*+?^${}()|[\]\\]/;
+  const isPlainText = !regexSpecialChars.test(pattern);
+  const searchLower = opts.caseSensitive ? pattern : pattern.toLowerCase();
+
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      if (entry.name.startsWith('.') || entry.name === 'node_modules' || entry.name === 'dist') continue;
+      if (entry.name.startsWith('.') || shouldSkipDirectory(entry.name)) continue;
       await walkAndSearch(fullPath, pattern, opts, results);
     } else if (entry.isFile()) {
       if (opts.fileTypes && opts.fileTypes.length > 0) {
@@ -612,50 +686,86 @@ async function walkAndSearch(
         if (!opts.fileTypes.some((ft) => ext === ft || entry.name.endsWith(ft))) continue;
       }
       try {
+        const stat = await fs.stat(fullPath);
+        // 跳过大于 1MB 的文件，避免读取大文件导致超时
+        // — English: skip files larger than 1MB to avoid timeouts from reading huge files
+        if (stat.size > 1024 * 1024) continue;
+
         const content = await fs.readFile(fullPath, 'utf-8');
         const lines = content.split('\n');
-        const flags = opts.caseSensitive ? 'g' : 'gi';
-        const regex = safeRegex(pattern, flags);
-        if (!regex) continue;
 
-        for (let i = 0; i < lines.length; i++) {
-          if (regex.test(lines[i])) {
-            // Reset lastIndex for global regex
-            regex.lastIndex = 0;
-            const relPath = path.relative(process.cwd(), fullPath);
-            const workspaceRelPath = path.relative(dir, fullPath);
-            if (opts.contextLines > 0) {
-              const start = Math.max(0, i - opts.contextLines);
-              const end = Math.min(lines.length, i + opts.contextLines + 1);
-              const rendered: string[] = [];
-              for (let j = start; j < end; j++) {
-                rendered.push(`${relPath}:${j + 1}: ${lines[j]}`);
-              }
-              rendered.push('---');
-              results.push({
-                path: workspaceRelPath || path.basename(fullPath),
-                line: i + 1,
-                text: lines[i],
-                lines: rendered,
-                artifactRef: fileSegmentRef(fullPath, start + 1, end, lines.slice(start, end).join('\n')),
-              });
-            } else {
-              const rendered = [`${relPath}:${i + 1}: ${lines[i]}`];
-              results.push({
-                path: workspaceRelPath || path.basename(fullPath),
-                line: i + 1,
-                text: lines[i],
-                lines: rendered,
-                artifactRef: fileSegmentRef(fullPath, i + 1, i + 1, lines[i]),
-              });
+        // 快速二进制检测：如果包含 NUL 字节，跳过
+        // — English: quick binary detection: skip if contains NUL bytes
+        if (content.includes('\0')) continue;
+
+        if (isPlainText) {
+          // 纯文本快速路径：用 indexOf/includes，比正则快很多
+          // — English: plain text fast path: much faster than regex
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            const found = opts.caseSensitive
+              ? line.includes(searchLower)
+              : line.toLowerCase().includes(searchLower);
+            if (found) {
+              addSearchResult(results, fullPath, dir, i, lines, opts.contextLines);
+              if (results.length > 200) return;
             }
-            if (results.length > 200) return; // safety limit
+          }
+        } else {
+          const flags = opts.caseSensitive ? 'g' : 'gi';
+          const regex = safeRegex(pattern, flags);
+          if (!regex) continue;
+
+          for (let i = 0; i < lines.length; i++) {
+            if (regex.test(lines[i])) {
+              // Reset lastIndex for global regex
+              regex.lastIndex = 0;
+              addSearchResult(results, fullPath, dir, i, lines, opts.contextLines);
+              if (results.length > 200) return;
+            }
           }
         }
       } catch {
         // skip unreadable files
       }
     }
+  }
+}
+
+function addSearchResult(
+  results: SearchMatch[],
+  fullPath: string,
+  baseDir: string,
+  lineIndex: number,
+  lines: string[],
+  contextLines: number,
+) {
+  const relPath = path.relative(process.cwd(), fullPath);
+  const workspaceRelPath = path.relative(baseDir, fullPath);
+  if (contextLines > 0) {
+    const start = Math.max(0, lineIndex - contextLines);
+    const end = Math.min(lines.length, lineIndex + contextLines + 1);
+    const rendered: string[] = [];
+    for (let j = start; j < end; j++) {
+      rendered.push(`${relPath}:${j + 1}: ${lines[j]}`);
+    }
+    rendered.push('---');
+    results.push({
+      path: workspaceRelPath || path.basename(fullPath),
+      line: lineIndex + 1,
+      text: lines[lineIndex],
+      lines: rendered,
+      artifactRef: fileSegmentRef(fullPath, start + 1, end, lines.slice(start, end).join('\n')),
+    });
+  } else {
+    const rendered = [`${relPath}:${lineIndex + 1}: ${lines[lineIndex]}`];
+    results.push({
+      path: workspaceRelPath || path.basename(fullPath),
+      line: lineIndex + 1,
+      text: lines[lineIndex],
+      lines: rendered,
+      artifactRef: fileSegmentRef(fullPath, lineIndex + 1, lineIndex + 1, lines[lineIndex]),
+    });
   }
 }
 
@@ -713,7 +823,23 @@ async function collectFileEntries(
 }
 
 function shouldSkipDirectory(name: string): boolean {
-  return name === 'node_modules' || name === 'dist' || name === 'build' || name === '.git';
+  return (
+    name === 'node_modules'
+    || name === 'dist'
+    || name === 'build'
+    || name === 'target'
+    || name === '.git'
+    || name === '.svn'
+    || name === '.hg'
+    || name === '.gradle'
+    || name === '.idea'
+    || name === '.vscode'
+    || name === '.next'
+    || name === '.nuxt'
+    || name === '.cache'
+    || name === 'coverage'
+    || name === '.turbo'
+  );
 }
 
 interface SearchMatch {
@@ -884,6 +1010,10 @@ type NexusPatchAction =
 
 interface NexusPatchHunk {
   lines: Array<{ prefix: ' ' | '+' | '-'; text: string }>;
+  // 实际新增的行内容（不含 '+' 前缀），在 parseNexusPatch 中按出现顺序收集
+  addedLinesContent: string[];
+  // 实际删除的行内容（不含 '-' 前缀），在 parseNexusPatch 中按出现顺序收集
+  removedLinesContent: string[];
 }
 
 interface AppliedChange {
@@ -895,6 +1025,8 @@ interface AppliedChange {
     path: string;
     addedLines: number;
     removedLines: number;
+    addedLinesContent: string[];
+    removedLinesContent: string[];
     startLine?: number;
     endLine?: number;
     summary?: string;
@@ -944,7 +1076,7 @@ function parseNexusPatch(patch: string): NexusPatchAction[] {
         if (hunkLine === '' && index === lines.length - 1) break;
         if (hunkLine.startsWith('@@')) {
           if (current) hunks.push(current);
-          current = { lines: [] };
+          current = { lines: [], addedLinesContent: [], removedLinesContent: [] };
           index++;
           continue;
         }
@@ -952,12 +1084,16 @@ function parseNexusPatch(patch: string): NexusPatchAction[] {
           index++;
           continue;
         }
-        if (!current) current = { lines: [] };
+        if (!current) current = { lines: [], addedLinesContent: [], removedLinesContent: [] };
         const prefix = hunkLine[0];
         if (prefix !== ' ' && prefix !== '+' && prefix !== '-') {
           throw new Error(`invalid patch line in ${filePath}: ${hunkLine}`);
         }
-        current.lines.push({ prefix, text: hunkLine.slice(1) });
+        const text = hunkLine.slice(1);
+        current.lines.push({ prefix, text });
+        // 中文注释：按行类型收集实际新增/删除内容（不含 +/- 前缀）
+        if (prefix === '+') current.addedLinesContent.push(text);
+        else if (prefix === '-') current.removedLinesContent.push(text);
         index++;
       }
       if (current) hunks.push(current);
@@ -985,7 +1121,14 @@ async function applyNexusPatchActions(workspaceRoot: string, actions: NexusPatch
         kind: 'add',
         addedLines: action.lines.length,
         removedLines: 0,
-        hunks: [{ path: action.path, addedLines: action.lines.length, removedLines: 0 }],
+        hunks: [{
+          path: action.path,
+          addedLines: action.lines.length,
+          removedLines: 0,
+          // 中文注释：新增文件时，整文件内容即为新增行内容
+          addedLinesContent: action.lines.slice(),
+          removedLinesContent: [],
+        }],
         summary: `add ${action.path}`,
       });
       continue;
@@ -995,13 +1138,21 @@ async function applyNexusPatchActions(workspaceRoot: string, actions: NexusPatch
       const content = await readStagedOrDisk(staged, abs);
       if (content === null) throw new Error(`${action.path}: file not found`);
       staged.set(abs, null);
-      const removed = splitPatchLines(content).length;
+      const removedLinesContent = splitPatchLines(content);
+      const removed = removedLinesContent.length;
       changes.push({
         path: action.path,
         kind: 'delete',
         addedLines: 0,
         removedLines: removed,
-        hunks: [{ path: action.path, addedLines: 0, removedLines: removed }],
+        hunks: [{
+          path: action.path,
+          addedLines: 0,
+          removedLines: removed,
+          addedLinesContent: [],
+          // 中文注释：删除文件时，整文件内容即为被删除行内容
+          removedLinesContent,
+        }],
         summary: `delete ${action.path}`,
       });
       continue;
@@ -1013,14 +1164,50 @@ async function applyNexusPatchActions(workspaceRoot: string, actions: NexusPatch
     const targetAbs = action.moveTo ? resolvePath(workspaceRoot, action.moveTo) : abs;
     staged.set(abs, action.moveTo ? null : applied.content);
     if (action.moveTo) staged.set(targetAbs, applied.content);
-    changes.push({
-      path: action.moveTo ?? action.path,
-      kind: 'update',
-      addedLines: applied.added,
-      removedLines: applied.removed,
-      hunks: applied.hunks.map((hunk) => ({ ...hunk, path: action.moveTo ?? action.path })),
-      summary: action.moveTo ? `update ${action.path} -> ${action.moveTo}` : `update ${action.path}`,
-    });
+    if (action.moveTo) {
+      // 中文注释：rename/move 拆分为两个 change：源 delete + 目标 add，
+      // 这样 createProjectCheckpointItem 会分别为源路径与目标路径建立快照，
+      // rollback 时才能正确删除目标文件并把源文件原内容写回源路径。
+      const removedLinesContent = splitPatchLines(original);
+      changes.push({
+        path: action.path,
+        kind: 'delete',
+        addedLines: 0,
+        removedLines: removedLinesContent.length,
+        hunks: [{
+          path: action.path,
+          addedLines: 0,
+          removedLines: removedLinesContent.length,
+          addedLinesContent: [],
+          removedLinesContent,
+        }],
+        summary: `delete ${action.path}`,
+      });
+      const addedLinesContent = splitPatchLines(applied.content);
+      changes.push({
+        path: action.moveTo,
+        kind: 'add',
+        addedLines: addedLinesContent.length,
+        removedLines: 0,
+        hunks: [{
+          path: action.moveTo,
+          addedLines: addedLinesContent.length,
+          removedLines: 0,
+          addedLinesContent,
+          removedLinesContent: [],
+        }],
+        summary: `add ${action.moveTo} (moved from ${action.path})`,
+      });
+    } else {
+      changes.push({
+        path: action.path,
+        kind: 'update',
+        addedLines: applied.added,
+        removedLines: applied.removed,
+        hunks: applied.hunks.map((hunk) => ({ ...hunk, path: action.path })),
+        summary: `update ${action.path}`,
+      });
+    }
   }
 
   for (const [absPath, content] of staged) {
@@ -1075,6 +1262,9 @@ function applyUpdateHunks(content: string, filePath: string, hunks: NexusPatchHu
       endLine: index + Math.max(oldLines.length, 1),
       addedLines: hunkAdded,
       removedLines: hunkRemoved,
+      // 中文注释：透传在 parseNexusPatch 阶段收集到的实际行内容
+      addedLinesContent: hunk.addedLinesContent.slice(),
+      removedLinesContent: hunk.removedLinesContent.slice(),
       summary: `+${hunkAdded}/-${hunkRemoved}`,
     });
   }

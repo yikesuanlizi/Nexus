@@ -179,7 +179,6 @@ export function groupTranscriptItems<T extends ThreadItemLike>(
 function isTranscriptItem(item: ThreadItemLike): boolean {
   return item.type !== 'workflow_checkpoint'
     && item.type !== 'project_checkpoint'
-    && item.type !== 'rollback_conflict'
     && item.type !== 'context_compaction';
 }
 
@@ -399,6 +398,11 @@ export function itemHeading(item: ThreadItemLike, locale: Locale): { title: stri
       return {
         title: zh ? '网页搜索' : 'Web search',
         detail: item.text ?? '',
+      };
+    case 'rollback_conflict':
+      return {
+        title: zh ? '回滚冲突' : 'Rollback conflict',
+        detail: item.message ?? '',
       };
     case 'error':
       return {

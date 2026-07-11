@@ -167,6 +167,7 @@ export function WorkspaceThreadList({
         <div className="threadModuleTitle">
           <button className="threadModuleToggle" type="button" onClick={() => setProjectsCollapsed((value) => !value)}>
             <Icon name={projectsCollapsed ? 'chevronRight' : 'chevronDown'} />
+            <Icon name="folder" />
             <span>{locale === 'zh' ? '项目' : 'Projects'}</span>
           </button>
           <button className="threadModuleAction" type="button" title={locale === 'zh' ? '选择工作区' : 'Select workspace'} onClick={onPickWorkspace}>

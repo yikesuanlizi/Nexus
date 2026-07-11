@@ -96,6 +96,7 @@ export class McpStdioClient {
       this.child = spawn(this.config.command, args, {
         stdio: 'pipe',
         windowsHide: true,
+        shell: process.platform === 'win32',
       });
 
       // 注册 stdout 处理器：按 Content-Length 解析 JSON-RPC 响应
@@ -111,6 +112,17 @@ export class McpStdioClient {
           this.markDead(reason);
         }
       });
+      // 流错误事件：stdin/stdout/stderr 各自的 error（如 EPIPE）
+      // 必须监听，否则未捕获的 'error' 事件会让整个 Node 进程崩溃
+      const handleStreamError = (streamName: string) => (error: NodeJS.ErrnoException) => {
+        const message = `MCP ${streamName} stream error: ${error.message}`;
+        if (this.runtimeStatus === 'running' || this.runtimeStatus === 'starting') {
+          this.markDead(message);
+        }
+      };
+      this.child.stdin.on('error', handleStreamError('stdin'));
+      this.child.stdout.on('error', handleStreamError('stdout'));
+      this.child.stderr.on('error', handleStreamError('stderr'));
 
       // initialize：协商协议版本和能力
       const initialize = await this.request('initialize', {
@@ -292,6 +304,7 @@ export class McpStdioClient {
 // MCP 运行时管理器：管理多个 McpStdioClient 实例，提供统一的工具定义聚合和状态查询入口
 export class McpRuntimeManager {
   private clients = new Map<string, { config: McpServerConfig; client?: McpStdioClient }>();
+  private startPromises = new Map<string, Promise<McpStdioClient>>();
 
   // 应用最新配置列表：删除已移除/变更项；为新增启用项创建 client 并按需启动
   async configure(configs: McpServerConfig[], options: { startEnabled?: boolean } = {}): Promise<void> {
@@ -307,6 +320,7 @@ export class McpRuntimeManager {
       if (!normalized.has(id) || JSON.stringify(entry.config) !== JSON.stringify(normalized.get(id))) {
         await entry.client?.stop();
         this.clients.delete(id);
+        this.startPromises.delete(id);
       }
     }
 
@@ -482,6 +496,7 @@ export class McpRuntimeManager {
   }
 
   // 按 server 懒启动 client；失败只污染当前 server 的状态，不影响其他 server。
+  // 使用 startPromises 做并发保护：多个请求同时触发启动时共享同一个启动 Promise。
   private async ensureClientStarted(serverId: string): Promise<McpStdioClient> {
     const entry = this.clients.get(serverId);
     if (!entry) {
@@ -493,17 +508,29 @@ export class McpRuntimeManager {
     if (entry.client?.status().status === 'running') {
       return entry.client;
     }
-    if (entry.client) {
-      await entry.client.stop();
-    }
-    const client = new McpStdioClient(entry.config);
-    this.clients.set(serverId, { ...entry, client });
-    try {
-      await client.start();
-      return client;
-    } catch (error) {
-      throw new Error(`Failed to start MCP server "${serverId}": ${error instanceof Error ? error.message : String(error)}`);
-    }
+    // 如果已有正在进行的启动，直接复用
+    const existing = this.startPromises.get(serverId);
+    if (existing) return existing;
+
+    const promise = (async () => {
+      try {
+        const currentEntry = this.clients.get(serverId);
+        if (!currentEntry) throw new Error(`Unknown MCP server "${serverId}"`);
+        if (currentEntry.client?.status().status === 'running') return currentEntry.client;
+        if (currentEntry.client) {
+          await currentEntry.client.stop();
+        }
+        const client = new McpStdioClient(currentEntry.config);
+        this.clients.set(serverId, { ...currentEntry, client });
+        await client.start();
+        return client;
+      } finally {
+        this.startPromises.delete(serverId);
+      }
+    })();
+
+    this.startPromises.set(serverId, promise);
+    return promise;
   }
 
   private async callServerTool(
@@ -513,6 +540,11 @@ export class McpRuntimeManager {
   ): Promise<McpCallToolResult> {
     const client = await this.ensureClientStarted(serverId);
     return client.callTool(toolName, args, TOOL_CALL_TIMEOUT_MS);
+  }
+
+  // 调用指定 MCP server 的工具（自动启动 server）
+  async callTool(serverId: string, toolName: string, args: Record<string, unknown> = {}): Promise<McpCallToolResult> {
+    return this.callServerTool(serverId, toolName, args);
   }
 
   // 返回所有 server 的状态视图列表
@@ -546,6 +578,7 @@ export class McpRuntimeManager {
       await entry.client?.stop();
     }
     this.clients.clear();
+    this.startPromises.clear();
   }
 }
 

@@ -1,8 +1,10 @@
-// 运行监控抽屉：显示运行列表、运行统计、事件详情
-// Run monitor drawer: displays run list, run stats, event details
+// 运行监控抽屉：显示运行列表、运行统计、事件详情，以及历史快照回退
+// Run monitor drawer: displays run list, run stats, event details, and history snapshots
 
+import { useState } from 'react';
 import type { Locale } from '../config/config.js';
-import type { RunEvent, RunRecord, ThreadWithRuns } from '../shared/types.js';
+import { CheckpointPanel } from './CheckpointPanel.js';
+import type { RunEvent, RunRecord, ThreadItem, ThreadWithRuns } from '../shared/types.js';
 
 export function RunMonitorDrawer({
   locale,
@@ -18,6 +20,8 @@ export function RunMonitorDrawer({
   loading,
   autoRefresh,
   autoRefreshInterval,
+  checkpoints,
+  currentTurnCount,
   onClose,
   onRefresh,
   onSelectRun,
@@ -27,6 +31,7 @@ export function RunMonitorDrawer({
   onToggleEvent,
   onAutoRefreshChange,
   onAutoRefreshIntervalChange,
+  onRollbackCheckpoint,
 }: {
   locale: Locale;
   open: boolean;
@@ -41,6 +46,10 @@ export function RunMonitorDrawer({
   loading: boolean;
   autoRefresh: boolean;
   autoRefreshInterval: number;
+  /** 工程级检查点条目（project_checkpoint 类型） */
+  checkpoints: ThreadItem[];
+  /** 当前回合数，用于判断最新快照 */
+  currentTurnCount: number;
   onClose(): void;
   onRefresh(): void;
   onSelectRun(runId: string): void;
@@ -50,7 +59,10 @@ export function RunMonitorDrawer({
   onToggleEvent(eventId: string): void;
   onAutoRefreshChange(enabled: boolean): void;
   onAutoRefreshIntervalChange(ms: number): void;
+  /** 回退到指定 turnCount 的快照 */
+  onRollbackCheckpoint(turnCount: number): void;
 }) {
+  const [activeTab, setActiveTab] = useState<'monitor' | 'checkpoints'>('monitor');
   if (!open) return null;
   const selectedRun = runs.find((run) => run.runId === selectedRunId) ?? runs[0] ?? null;
   const visibleEvents = selectedRun ? events.filter((event) => event.runId === selectedRun.runId) : events;
@@ -112,12 +124,37 @@ export function RunMonitorDrawer({
           <button type="button" onClick={onClose} aria-label={zh ? '关闭运行监控' : 'Close run monitor'}>×</button>
         </div>
       </header>
+      <nav className="runMonitorTabs" aria-label={zh ? '面板切换' : 'Panel tabs'}>
+        <button
+          type="button"
+          className={activeTab === 'monitor' ? 'runMonitorTab active' : 'runMonitorTab'}
+          onClick={() => setActiveTab('monitor')}
+        >
+          {zh ? '运行监控' : 'Monitor'}
+        </button>
+        <button
+          type="button"
+          className={activeTab === 'checkpoints' ? 'runMonitorTab active' : 'runMonitorTab'}
+          onClick={() => setActiveTab('checkpoints')}
+        >
+          {zh ? '历史快照' : 'Checkpoints'}
+        </button>
+      </nav>
+      {activeTab === 'checkpoints' ? (
+        <CheckpointPanel
+          items={checkpoints}
+          currentTurnCount={currentTurnCount}
+          locale={locale}
+          onRollback={onRollbackCheckpoint}
+        />
+      ) : (
+        <>
       {/* 运行统计：正在运行 / 阻塞或失败 / Token 总数
          Run stats: running / blocked or failed / total tokens */}
 
       <section className="runMonitorStats" aria-label={zh ? '运行统计' : 'Run stats'}>
-        <Metric label={zh ? '运行中' : 'Running'} value={runningCount} />
-        <Metric label={zh ? '阻塞/失败' : 'Blocked/failed'} value={failedCount} />
+        <Metric label={zh ? '运行中的对话' : 'Running runs'} value={runningCount} />
+        <Metric label={zh ? '失败/阻塞的对话' : 'Failed/blocked runs'} value={failedCount} />
         <Metric label="Tokens" value={totalTokens} />
       </section>
       <label className="runMonitorAdminToken">
@@ -216,6 +253,8 @@ export function RunMonitorDrawer({
           )}
         </div>
       </section>
+        </>
+      )}
     </aside>
   );
 }
@@ -242,6 +281,21 @@ function EventCard({
 }) {
   const metadataStr = event.metadata ? JSON.stringify(event.metadata, null, 2) : '';
 
+  const typeLabels: Record<string, string> = {
+    'tool.started': zh ? '工具开始调用' : 'Tool started',
+    'tool.completed': zh ? '工具调用完成' : 'Tool completed',
+    'tool.failed': zh ? '工具调用失败' : 'Tool failed',
+    'tool.batch.failed': zh ? '批量工具失败' : 'Batch tool failed',
+    'llm.started': zh ? 'LLM 开始生成' : 'LLM started',
+    'llm.completed': zh ? 'LLM 生成完成' : 'LLM completed',
+    'llm.failed': zh ? 'LLM 生成失败' : 'LLM failed',
+    'run.started': zh ? '对话开始' : 'Run started',
+    'run.completed': zh ? '对话完成' : 'Run completed',
+    'run.failed': zh ? '对话失败' : 'Run failed',
+    'run.interrupted': zh ? '对话被中断' : 'Run interrupted',
+  };
+  const displayType = typeLabels[event.type] ?? event.type;
+
   return (
     <article className={`runMonitorEvent ${event.level} ${isExpanded ? 'expanded' : ''}`}>
       <button
@@ -251,7 +305,7 @@ function EventCard({
         aria-expanded={isExpanded}
       >
         <div>
-          <strong>{event.type}</strong>
+          <strong>{displayType}</strong>
           <span>
             {event.category}
             {event.workflowNodeId ? ` · ${event.workflowNodeId}` : ''}

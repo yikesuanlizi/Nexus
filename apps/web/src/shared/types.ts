@@ -110,6 +110,19 @@ export interface ThreadItem {
   remoteStatusTrail?: Array<{ timestamp: string; state: string; text?: string }>;
   /** 远程 Agent 中间文本流（仅 spawn_remote_agent 工具） */
   remoteTextStream?: Array<{ timestamp: string; text: string }>;
+  /** 回合序号（workflow_checkpoint / project_checkpoint / rollback_conflict 条目使用） */
+  turnCount?: number;
+  /** 工作区根路径（project_checkpoint 条目使用） */
+  workspaceRoot?: string;
+  /** 工程级检查点文件快照（project_checkpoint 条目使用） */
+  files?: Array<{
+    path: string;
+    kind: 'add' | 'delete' | 'update';
+    beforeContent: string | null;
+    afterContent: string | null;
+    beforeHash: string | null;
+    afterHash: string | null;
+  }>;
 }
 
 export interface TurnMeta {

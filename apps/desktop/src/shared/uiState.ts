@@ -43,7 +43,19 @@ export function useRightPaneSizing(visible: boolean, tab: RightPaneTab, mode: 's
         return clampRightPaneWidth(stored || current || defaultWorkflowPaneWidth(), WORKFLOW_RIGHT_PANE_MIN);
       }
       const min = rightPaneMinForTab(tab);
-      const preferred = tab === 'files' ? 620 : 348;
+      const standardWidth = 348;
+      // files tab 默认面板更宽，让预览框有约 2.5 倍空间 — English: wider default for files tab for ~2.5x preview space
+      const preferred = tab === 'files' ? defaultFilesPaneWidth() : standardWidth;
+      // 当切到 files tab 且当前宽度小于默认值时，主动扩展到默认宽度
+      // — English: when switching to files tab and current width < preferred, expand to preferred
+      if (tab === 'files' && current < preferred) {
+        return clampRightPaneWidth(preferred, min);
+      }
+      // 当从 files tab 切走且当前宽度大于标准宽度时，恢复到标准宽度
+      // — English: when switching away from files tab and current width > standard, shrink to standard
+      if (tab !== 'files' && current > standardWidth) {
+        return clampRightPaneWidth(standardWidth, min);
+      }
       return clampRightPaneWidth(current < min ? preferred : current, min);
     });
   }, [mode, tab]);
@@ -91,6 +103,12 @@ function rightPaneAvailableMax(): number {
 
 function defaultWorkflowPaneWidth(): number {
   return Math.round(Math.max(620, window.innerWidth * 0.5));
+}
+
+// files tab 默认面板宽度：预览框约为原来的 2.5 倍，文件树保持约 300px
+// — English: files tab default pane width: ~2.5x preview space, tree stays ~300px
+function defaultFilesPaneWidth(): number {
+  return Math.round(Math.min(1080, Math.max(620, window.innerWidth * 0.5)));
 }
 
 function clampRightPaneWidth(width: number, min: number): number {

@@ -1,4 +1,5 @@
 import type React from 'react';
+import { lazy, Suspense } from 'react';
 import type { Locale } from '../config/config.js';
 import { Icon } from './Icon.js';
 import { formatTimestamp } from '../shared/i18n.js';
@@ -7,6 +8,15 @@ import type { ThreadItem } from '../shared/types.js';
 import { childActivityForCollabItem } from '../features/agents/subagentActivity.js';
 import { RobotMoodIcon, type RobotMoodVariant } from './AgentStagePanel.js';
 import { UserAvatar } from './UserAvatar.js';
+// 英文说明: DiffView renders red/green line-level diffs for file_change items
+// 中文说明: DiffView 渲染 file_change 条目的红绿行级 diff
+import { DiffView, type DiffViewHunk } from './DiffView.js';
+import { parseGitNexusResult } from './gitNexusResult.js';
+// 英文说明: GitNexusResultView 依赖 @xyflow/react，用 React.lazy 避免首包加载图组件
+// 中文说明: GitNexusResultView 依赖 @xyflow/react，用 React.lazy 避免首包加载图组件
+const GitNexusResultView = lazy(() =>
+  import('./GitNexusResultView.js').then(m => ({ default: m.GitNexusResultView })),
+);
 
 export interface AssistantTurnGroup {
   turnId?: string;
@@ -95,11 +105,21 @@ export function ItemView({
           {toolSummary.status ? <span className="toolSummaryStatus">{toolSummary.status}</span> : null}
         </summary>
         <ToolItemActions item={item} locale={locale} onPreviewFile={onPreviewFile} onOpenFile={onOpenFile} />
-        <pre>{formatItemPayload(item)}</pre>
+        {(() => {
+          const gitNexusView = item.type === 'mcp_tool_call'
+            ? parseGitNexusResult(item)
+            : null;
+          return gitNexusView
+            ? <Suspense fallback={null}><GitNexusResultView data={gitNexusView} locale={locale} /></Suspense>
+            : <pre>{formatItemPayload(item)}</pre>;
+        })()}
       </details>
     );
   }
   if (item.type === 'file_change') {
+    // 英文说明: shared/types ThreadItem.hunks omits addedLinesContent/removedLinesContent;
+    // 中文说明: shared/types 的 ThreadItem.hunks 未声明行内容字段，运行时携带，用类型断言对齐
+    const hunks = (item.hunks ?? []) as DiffViewHunk[];
     return (
       <details className="message tool">
         <summary>
@@ -107,9 +127,12 @@ export function ItemView({
           <span>{heading.detail}</span>
         </summary>
         <ToolItemActions item={item} locale={locale} onPreviewFile={onPreviewFile} onOpenFile={onOpenFile} />
-        <pre>{formatItemPayload(item)}</pre>
+        <DiffView hunks={hunks} locale={locale} />
       </details>
     );
+  }
+  if (item.type === 'rollback_conflict') {
+    return <RollbackConflictBlock item={item} locale={locale} />;
   }
   if (item.type === 'error') {
     return <article className="message error">{item.message}</article>;
@@ -203,6 +226,9 @@ export function AssistantTurnView({
                 onOpenFile={onOpenFile}
               />
             );
+          }
+          if (item.type === 'rollback_conflict') {
+            return <RollbackConflictBlock item={item} locale={locale} key={item.id} />;
           }
           if (item.type === 'error') {
             return <p className="assistantTurnError" key={item.id}>{item.message}</p>;
@@ -498,6 +524,48 @@ export function summarizeToolItem(item: ThreadItem, locale: Locale): ToolSummary
   };
 }
 
+interface RollbackConflictEntry {
+  path: string;
+  reason: string;
+  expectedHash?: string | null;
+  actualHash?: string | null;
+}
+
+function readRollbackConflicts(item: ThreadItem): RollbackConflictEntry[] {
+  // ThreadItem 接口未声明 conflicts 字段，运行时 rollback_conflict 条目会携带该字段
+  // — Chinese: ThreadItem doesn't declare conflicts; rollback_conflict items carry it at runtime
+  const conflicts = (item as unknown as { conflicts?: RollbackConflictEntry[] }).conflicts;
+  return Array.isArray(conflicts) ? conflicts : [];
+}
+
+function RollbackConflictBlock({ item, locale }: { item: ThreadItem; locale: Locale }) {
+  const heading = itemHeading(item, locale);
+  const conflicts = readRollbackConflicts(item);
+  const zh = locale === 'zh';
+  return (
+    <article className="message rollbackConflict">
+      <strong>{heading.title}</strong>
+      {item.message ? <p className="rollbackConflictMessage">{item.message}</p> : null}
+      {conflicts.length > 0 ? (
+        <ul className="rollbackConflictList">
+          {conflicts.map((entry, index) => (
+            <li className="rollbackConflictItem" key={`${entry.path}-${index}`}>
+              <span className="rollbackConflictPath">{entry.path}</span>
+              <span className="rollbackConflictReason">{entry.reason}</span>
+              {entry.expectedHash || entry.actualHash ? (
+                <span className="rollbackConflictHashes">
+                  {entry.expectedHash ? <span>{zh ? '期望' : 'expected'}: {entry.expectedHash}</span> : null}
+                  {entry.actualHash ? <span>{zh ? '实际' : 'actual'}: {entry.actualHash}</span> : null}
+                </span>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </article>
+  );
+}
+
 function ToolDetails({
   childItems = [],
   compact = false,
@@ -515,6 +583,9 @@ function ToolDetails({
 }) {
   const heading = itemHeading(item, locale);
   if (item.type === 'file_change') {
+    // 英文说明: shared/types ThreadItem.hunks omits addedLinesContent/removedLinesContent;
+    // 中文说明: shared/types 的 ThreadItem.hunks 未声明行内容字段，运行时携带，用类型断言对齐
+    const hunks = (item.hunks ?? []) as DiffViewHunk[];
     return (
       <details className={compact ? 'message tool inlineTool' : 'message tool'}>
         <summary>
@@ -522,7 +593,7 @@ function ToolDetails({
           <span>{heading.detail}</span>
         </summary>
         <ToolItemActions item={item} locale={locale} onPreviewFile={onPreviewFile} onOpenFile={onOpenFile} />
-        <pre>{formatItemPayload(item)}</pre>
+        <DiffView hunks={hunks} locale={locale} />
       </details>
     );
   }
@@ -539,7 +610,14 @@ function ToolDetails({
       </summary>
       <RemoteAgentStream item={item} locale={locale} />
       <ToolItemActions item={item} locale={locale} onPreviewFile={onPreviewFile} onOpenFile={onOpenFile} />
-      <pre>{formatItemPayload(item)}</pre>
+      {(() => {
+        const gitNexusView = item.type === 'mcp_tool_call'
+          ? parseGitNexusResult(item)
+          : null;
+        return gitNexusView
+          ? <Suspense fallback={null}><GitNexusResultView data={gitNexusView} locale={locale} /></Suspense>
+          : <pre>{formatItemPayload(item)}</pre>;
+      })()}
       <ChildActivityList items={childItems} locale={locale} />
     </details>
   );

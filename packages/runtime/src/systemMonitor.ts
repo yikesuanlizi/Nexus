@@ -50,11 +50,11 @@ export const DEFAULT_SYSTEM_MONITOR_CONFIG: SystemMonitorConfig = {
   enabled: false,
   intervalMs: 5000,
   thresholds: {
-    cpuLight: 80,
-    cpuModerate: 90,
-    cpuSevere: 95,
-    memLight: 75,
-    memModerate: 85,
+    cpuLight: 85,
+    cpuModerate: 92,
+    cpuSevere: 97,
+    memLight: 82,
+    memModerate: 90,
     memSevere: 95,
     diskSevereBytes: 500 * 1024 * 1024, // 500 MB
   },
@@ -63,6 +63,18 @@ export const DEFAULT_SYSTEM_MONITOR_CONFIG: SystemMonitorConfig = {
 /** 级别变化监听器：接收新的完整状态。 */
 // — Chinese: level-change listener: receives the full new status
 export type SystemMonitorListener = (status: SystemMonitorStatus) => void;
+
+/** 级别排序，用于比较升级/降级方向。 */
+// — Chinese: level ranking for comparing upgrade/downgrade direction
+function levelRank(level: SystemMonitorLevel): number {
+  switch (level) {
+    case 'none': return 0;
+    case 'light': return 1;
+    case 'moderate': return 2;
+    case 'severe': return 3;
+    default: return 0;
+  }
+}
 
 /**
  * 系统监控：后台采样 + 阈值判断 + 分级限流 + 主动通知。
@@ -75,6 +87,15 @@ export class SystemMonitor implements SystemMonitorInterface {
   private timer: ReturnType<typeof setInterval> | null = null;
   private listeners = new Set<SystemMonitorListener>();
   private sampling = false;
+  // CPU 移动平均窗口 — 避免瞬时峰值误触发
+  // — Chinese: CPU moving average window — avoids false triggers from transient spikes
+  private cpuHistory: number[] = [];
+  private readonly CPU_AVG_WINDOW = 3;
+  // 级别升级需要连续确认的采样次数 — 降级不要求（快速恢复）
+  // — Chinese: consecutive samples required to upgrade level — downgrade is immediate (fast recovery)
+  private consecutiveAtLevel = 0;
+  private lastComputedLevel: SystemMonitorLevel = 'none';
+  private readonly UPGRADE_CONSECUTIVE = 2;
 
   constructor(config?: Partial<SystemMonitorConfig>) {
     this.config = {
@@ -179,9 +200,16 @@ export class SystemMonitor implements SystemMonitorInterface {
         si.cpu(),
       ]);
 
+      // CPU 移动平均：取最近 N 次采样的平均值，避免瞬时尖峰误触发
+      // — Chinese: CPU moving average: average of last N samples to avoid false triggers from spikes
+      const rawCpu = cpuLoad.currentLoad ?? 0;
+      this.cpuHistory.push(rawCpu);
+      if (this.cpuHistory.length > this.CPU_AVG_WINDOW) this.cpuHistory.shift();
+      const avgCpu = this.cpuHistory.reduce((sum, v) => sum + v, 0) / this.cpuHistory.length;
+
       const snapshot: SystemMonitorSnapshot = {
         timestamp: new Date().toISOString(),
-        cpuUsage: cpuLoad.currentLoad ?? 0,
+        cpuUsage: avgCpu,
         cpuCount: cpuCores.cores ?? cpuLoad.cpus?.length ?? 0,
         memTotal: mem.total,
         memUsed: mem.used,
@@ -195,7 +223,26 @@ export class SystemMonitor implements SystemMonitorInterface {
         })),
       };
 
-      const newLevel = this.computeLevel(snapshot);
+      const computedLevel = this.computeLevel(snapshot);
+      // 级别升级需要连续 N 次采样确认，降级立即生效（快速恢复）
+      // — Chinese: upgrade requires N consecutive samples, downgrade is immediate (fast recovery)
+      let newLevel: SystemMonitorLevel;
+      if (levelRank(computedLevel) > levelRank(this.lastComputedLevel)) {
+        // 升级方向：计数确认
+        this.consecutiveAtLevel++;
+        if (this.consecutiveAtLevel >= this.UPGRADE_CONSECUTIVE) {
+          newLevel = computedLevel;
+          this.consecutiveAtLevel = 0;
+        } else {
+          newLevel = this.lastComputedLevel; // 暂不升级，保持当前级别
+        }
+      } else {
+        // 同级或降级：立即生效，重置计数
+        newLevel = computedLevel;
+        this.consecutiveAtLevel = 0;
+      }
+      this.lastComputedLevel = computedLevel;
+
       const oldLevel = this.currentStatus?.level ?? 'none';
       const recommendation = this.buildRecommendation(newLevel, snapshot);
 

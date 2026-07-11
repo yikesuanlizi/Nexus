@@ -116,6 +116,10 @@ export const fileChangeHunkSchema = z.object({
   endLine: z.number().int().min(1).optional(),
   addedLines: z.number().int().min(0),
   removedLines: z.number().int().min(0),
+  // 实际新增/删除的行内容（不含 +/- 前缀）；旧数据无此字段时降级为空数组
+  // — English: actual added/removed line content (without +/- prefix); absent in legacy data
+  addedLinesContent: z.array(z.string()).optional(),
+  removedLinesContent: z.array(z.string()).optional(),
   summary: z.string().optional(),
 });
 

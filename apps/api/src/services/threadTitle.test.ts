@@ -4,7 +4,10 @@ import { titleFromInput, shouldRetitleThread } from './threadTitle.js';
 describe('thread title helpers', () => {
   it('retitles generated empty conversation titles', () => {
     expect(shouldRetitleThread('未命名对话')).toBe(true);
+    expect(shouldRetitleThread('Untitled chat')).toBe(true);
     expect(shouldRetitleThread('Untitled')).toBe(true);
+    expect(shouldRetitleThread('未命名工作流项目')).toBe(true);
+    expect(shouldRetitleThread('Untitled workflow project')).toBe(true);
     expect(shouldRetitleThread('Nexus')).toBe(true);
     expect(shouldRetitleThread('用户自己改过的标题')).toBe(false);
   });

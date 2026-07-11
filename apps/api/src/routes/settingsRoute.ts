@@ -42,6 +42,9 @@ export async function handleSettingsRoute(options: SettingsRouteOptions): Promis
     a2a?: Partial<A2AConfig>;
   }>(req);
   const config = await options.saveDefaultRunConfig(body.config ?? {});
+  if (body.config && Object.keys(body.config).length > 0) {
+    options.resetDefaultAgent();
+  }
   let webProviderSecrets = await store.getSetting<WebProviderSecrets>(WEB_PROVIDER_SECRETS_KEY) ?? {};
   if (body.webProvider?.clearFirecrawlApiKey) {
     const { firecrawlApiKey: _firecrawlApiKey, ...rest } = webProviderSecrets;

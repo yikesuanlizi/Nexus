@@ -20,6 +20,7 @@ import { handleWorkspaceFilesRoute } from './routes/workspaceFiles.js';
 import { handleSettingsRoute } from './routes/settingsRoute.js';
 import { handleWorkflowRoute } from './routes/workflowRoute.js';
 import { handleRunMonitorRoute } from './routes/runMonitorRoute.js';
+import { handleGitNexusRoute } from './routes/gitnexusRoute.js';
 import { handleMemoryRoute } from './routes/memoryRoute.js';
 import { handleRollbackThreadRuntimeAction, handleRunControlAction } from './routes/threadRuntimeActions.js';
 import { buildSkillDraftSystemPrompt, createSkillInstallTurnItems, createTemplateSkillDraft, deleteSkill, installSkillsFromGitHubUrl, prepareSkillDraftRequest, safeGeneratedSkillDraft, writeSkillDraft, type InstallSkillsResult, type SkillDraft } from './services/skills.js';
@@ -410,6 +411,9 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     return;
   }
 
+  // GitNexus 可视化 API — Chinese: GitNexus visualization API
+  if (await handleGitNexusRoute({ req, res, url, mcpManager: tenantMcpManager, listMcpServers })) return;
+
   if (req.method === 'GET' && url.pathname === '/api/skills') {
     const config = await getDefaultRunConfig();
     const skills = await tenantRuntime.skillCacheForTenant(tenantContext).loadFromDirectory(
@@ -661,6 +665,18 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       sendJson(res, 200, { state: await agent.getRuntimeState(threadId), usage: usageFromThread(thread) });
       return;
     }
+
+    if (req.method === 'GET' && segments[3] === 'context-pressure') {
+      const agent = await getTenantDefaultAgent();
+      const thread = await store.getThread(threadId);
+      if (!thread) {
+        sendError(res, 404, 'Thread not found');
+        return;
+      }
+      const pressure = await agent.getContextPressure(threadId);
+      sendJson(res, 200, { pressure });
+      return;
+    }
   }
 
   if (req.method === 'GET' && segments[0] === 'api' && segments[1] === 'events' && segments[2]) {
@@ -702,7 +718,13 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
 
       const inputText = `/skills add ${skillUrl}`;
       if (shouldRetitleThread(thread.title)) {
-        await store.updateThreadMetadata(threadId, { title: titleFromInput(inputText) ?? inputText.slice(0, 60) });
+        const nextTitle = titleFromInput(inputText) ?? inputText.slice(0, 60);
+        await store.updateThreadMetadata(threadId, { title: nextTitle });
+        publishTenantEvent({
+          type: 'thread.metadata.updated',
+          threadId,
+          title: nextTitle,
+        });
       }
 
       const turnId = generateServerId();
@@ -763,6 +785,11 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       const nextTitle = titleFromInput(body.input);
       if (thread && nextTitle && shouldRetitleThread(thread.title)) {
         await store.updateThreadMetadata(threadId, { title: nextTitle });
+        publishEvent({
+          type: 'thread.metadata.updated',
+          threadId,
+          title: nextTitle,
+        }, tenantContext.tenantId);
       }
       const agent = (await createTenantAgent(config)).agent;
       const result = await agent.runTurn(threadId, buildUserInputFromTurnRequest(body));

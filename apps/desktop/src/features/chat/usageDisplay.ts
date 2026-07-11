@@ -1,6 +1,34 @@
 import type { Locale } from '../../config/config.js';
 import type { ThreadUsage, Usage } from '../../shared/types.js';
 
+export interface TokenUsageSummary {
+  totalInput: number;
+  totalCached: number;
+  totalOutput: number;
+  hitRate: number;
+  cacheLabel: string;
+}
+
+export function buildTokenUsageSummary(
+  threadUsage: ThreadUsage | undefined | null,
+  locale: Locale,
+): TokenUsageSummary | null {
+  if (!threadUsage) return null;
+  const total = threadUsage.total;
+  const inputTokens = Number(total.inputTokens ?? 0);
+  const cachedInputTokens = Number(total.cachedInputTokens ?? 0);
+  const outputTokens = Number(total.outputTokens ?? 0);
+  if (!inputTokens && !cachedInputTokens && !outputTokens) return null;
+  const hitRate = inputTokens > 0 ? Math.round((cachedInputTokens / inputTokens) * 100) : 0;
+  return {
+    totalInput: inputTokens,
+    totalCached: cachedInputTokens,
+    totalOutput: outputTokens,
+    hitRate,
+    cacheLabel: locale === 'zh' ? '缓存' : 'cache',
+  };
+}
+
 export function formatTokenSummary(total: Usage | undefined | null, locale: Locale): string {
   if (!total) return '';
   return formatUsageLine(total, locale);

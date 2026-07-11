@@ -5,6 +5,7 @@ import { Icon } from './components/Icon.js';
 import { AppDialog, SettingsHelpDialog, SkillDraftDialog, type AppDialogState } from './components/Dialogs.js';
 import { ComposerBar, type PaletteOption } from './components/ComposerBar.js';
 import { AssistantTurnView, ItemView } from './components/ItemView.js';
+import { ApprovalDiffPreview } from './components/ApprovalDiffPreview.js';
 import { SettingsDrawer } from './components/SettingsDrawer.js';
 import { WeixinConnectDialog } from './components/WeixinConnectDialog.js';
 import { RightPane, type RightPaneTab } from './components/RightPane.js';
@@ -25,7 +26,7 @@ import { readStored } from './shared/storage.js';
 import { buildChildActivityByThread } from './features/agents/subagentActivity.js';
 import { buildAgentStageRows, buildSubagentStatusRows } from './features/agents/subagents.js';
 import { modeInstructionFor } from './config/taskModes.js';
-import { formatCacheDiagnostics, formatCompactionPressure, formatThreadTokenSummary } from './features/chat/usageDisplay.js';
+import { buildTokenUsageSummary, formatCacheDiagnostics, formatCompactionPressure, formatThreadTokenSummary } from './features/chat/usageDisplay.js';
 import { useRunMonitor } from './features/monitor/runMonitor.js';
 import { authEventSourceUrl } from './api/authClient.js';
 import { useWebProviderSettings, type SettingsResponseWithWebProvider } from './api/webProviderClient.js';
@@ -45,6 +46,63 @@ function resolveThemeShortcutMode(current: RunConfig['themeMode']): 'light' | 'd
 
 function nextThemeMode(current: RunConfig['themeMode']): RunConfig['themeMode'] {
   return resolveThemeShortcutMode(current) === 'dark' ? 'light' : 'dark';
+}
+
+function formatCompactNumber(n: number): string {
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+  if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+  return String(n);
+}
+
+function hasContextPressure(pressure: { estimatedTokens?: number; maxTokens?: number } | null | undefined): boolean {
+  return Boolean(pressure?.estimatedTokens && pressure?.maxTokens && pressure.maxTokens > 0);
+}
+
+function contextUsagePercent(pressure: { estimatedTokens?: number; maxTokens?: number } | null | undefined): number {
+  const est = Number(pressure?.estimatedTokens ?? 0);
+  const max = Number(pressure?.maxTokens ?? 0);
+  if (max <= 0) return 0;
+  return Math.min(100, Math.round((est / max) * 100));
+}
+
+function cacheContextPercent(
+  usage: { totalCached?: number } | null | undefined,
+  pressure: { maxTokens?: number } | null | undefined,
+): number {
+  const cached = Number(usage?.totalCached ?? 0);
+  const max = Number(pressure?.maxTokens ?? 0);
+  if (max <= 0) return 0;
+  return Math.min(100, Math.round((cached / max) * 100));
+}
+
+function buildTokenTooltip(
+  usage: { totalInput?: number; totalCached?: number; totalOutput?: number; hitRate?: number } | null | undefined,
+  pressure: { estimatedTokens?: number; maxTokens?: number; softThreshold?: number; hardThreshold?: number } | null | undefined,
+  locale: 'zh' | 'en',
+): string {
+  const parts: string[] = [];
+  if (usage) {
+    parts.push(locale === 'zh' ? `输入: ${usage.totalInput}` : `Input: ${usage.totalInput}`);
+    parts.push(locale === 'zh' ? `缓存: ${usage.totalCached} (${usage.hitRate}%)` : `Cache: ${usage.totalCached} (${usage.hitRate}%)`);
+    parts.push(locale === 'zh' ? `输出: ${usage.totalOutput}` : `Output: ${usage.totalOutput}`);
+  }
+  if (pressure?.maxTokens) {
+    if (parts.length) parts.push('—');
+    parts.push(locale === 'zh'
+      ? `上下文: ${formatCompactNumber(pressure.estimatedTokens ?? 0)} / ${formatCompactNumber(pressure.maxTokens)}`
+      : `Context: ${formatCompactNumber(pressure.estimatedTokens ?? 0)} / ${formatCompactNumber(pressure.maxTokens)}`);
+    if (pressure.softThreshold) {
+      parts.push(locale === 'zh'
+        ? `软阈值: ${formatCompactNumber(pressure.softThreshold)}`
+        : `Soft threshold: ${formatCompactNumber(pressure.softThreshold)}`);
+    }
+    if (pressure.hardThreshold) {
+      parts.push(locale === 'zh'
+        ? `硬阈值: ${formatCompactNumber(pressure.hardThreshold)}`
+        : `Hard threshold: ${formatCompactNumber(pressure.hardThreshold)}`);
+    }
+  }
+  return parts.join(' ');
 }
 
 function App() {
@@ -67,6 +125,9 @@ function App() {
     status?: string;
     estimatedTokens?: number;
     hardThreshold?: number;
+    maxTokens?: number;
+    softThreshold?: number;
+    ratio?: number;
   } | null>(null);
   const [threadChildren, setThreadChildren] = useState<ThreadChildInfo[]>([]);
   const [, setEvents] = useState<EventLine[]>([]);
@@ -120,6 +181,17 @@ function App() {
     return threadConfig;
   }, [apiConfig]);
   const transcriptGroups = useMemo(() => groupTranscriptItems(items, turns), [items, turns]);
+  // 历史快照：从 items 中提取工程级检查点条目（不在 transcript 中显示，但数据保留）
+  const checkpoints = useMemo(
+    () => items.filter((item) => item.type === 'project_checkpoint' && typeof item.turnCount === 'number'),
+    [items],
+  );
+  // 当前回合数：取 turns 长度，或最新 checkpoint 的 turnCount
+  const currentTurnCount = useMemo(() => {
+    if (turns.length > 0) return turns.length;
+    const maxTurnCount = checkpoints.reduce((max, item) => Math.max(max, item.turnCount ?? 0), 0);
+    return maxTurnCount;
+  }, [turns.length, checkpoints]);
   const subagentRows = useMemo(() => buildSubagentStatusRows(threadChildren, config.locale), [config.locale, threadChildren]);
   const agentStageRows = useMemo(() => buildAgentStageRows({
     activeThreadId: threadId,
@@ -130,8 +202,8 @@ function App() {
   }), [activeThread?.title, busy, config.locale, subagentRows, threadId]);
   const activeWorkspaceRoot = activeThread?.tags?.conversationKind === 'chat' ? '' : (activeThread?.workspaceRoot || config.workspaceRoot || '');
   const childActivityByThread = useMemo(() => buildChildActivityByThread(threadChildren), [threadChildren]);
-  const tokenSummary = useMemo(() => {
-    return formatThreadTokenSummary(threadUsage, config.locale);
+  const tokenUsage = useMemo(() => {
+    return buildTokenUsageSummary(threadUsage, config.locale);
   }, [config.locale, threadUsage]);
   const cacheSummary = useMemo(() => formatCacheDiagnostics(cacheDiagnostics, config.locale), [cacheDiagnostics, config.locale]);
   const pressureSummary = useMemo(() => formatCompactionPressure(compactionPressure, config.locale), [compactionPressure, config.locale]);
@@ -427,6 +499,18 @@ function App() {
       setCacheDiagnostics(null);
       setCompactionPressure(null);
       await reloadThreadSnapshot(id);
+      void (async () => {
+        try {
+          const response = await fetch(`/api/threads/${id}/context-pressure`);
+          if (!response.ok) return;
+          const data = await response.json() as { pressure?: { estimatedTokens?: number; maxTokens?: number; softThreshold?: number; hardThreshold?: number; ratio?: number; status?: string } };
+          if (data.pressure) {
+            setCompactionPressure(data.pressure as never);
+          }
+        } catch {
+          // 主动查询失败时不阻断，后续 SSE 事件仍可更新
+        }
+      })();
       eventSourceRef.current?.close();
       const source = new EventSource(authEventSourceUrl(`/api/events/${id}`));
       source.onmessage = (message) => {
@@ -457,6 +541,17 @@ function App() {
           }
           if (event.type === 'thread.token_usage.updated' && event.usage) {
             setThreadUsage(event.usage as ThreadUsage);
+          }
+          if (event.type === 'thread.metadata.updated' && typeof event.threadId === 'string') {
+            setThreads((current) =>
+              current.map((t) => {
+                if (t.threadId !== event.threadId) return t;
+                const updated: ThreadMeta = { ...t };
+                if (typeof event.title === 'string') updated.title = event.title;
+                if (typeof event.status === 'string') updated.status = event.status as ThreadMeta['status'];
+                return updated;
+              }),
+            );
           }
           if (event.type === 'cache.diagnostics') {
             setCacheDiagnostics(event as never);
@@ -1096,6 +1191,11 @@ function App() {
     }
     void threadAction('rollback', count);
   }
+  // 回退到指定 turnCount 的历史快照：count = 当前回合数 - 目标回合数
+  function rollbackToCheckpoint(targetTurnCount: number) {
+    const count = Math.max(1, currentTurnCount - targetTurnCount);
+    void threadAction('rollback', count);
+  }
   async function branchFromTurn(turnId: string) {
     if (!threadId) return;
     const index = turns.findIndex((turn) => turn.turnId === turnId);
@@ -1360,7 +1460,55 @@ function App() {
             <strong>{activeThread?.title || workflowTitle || t(config.locale, 'noConversation')}</strong>
             <span>{status}</span>
           </div>
-          {tokenSummary ? <span className="tokenPill">{tokenSummary}</span> : null}
+          {tokenUsage || hasContextPressure(compactionPressure) ? (
+            <div className="tokenUsageBar" title={buildTokenTooltip(tokenUsage, compactionPressure, config.locale)}>
+              <div className="tokenUsageBarRow">
+                <span className="tokenUsageBarLabel cacheLabel">
+                  {config.locale === 'zh' ? '缓存' : 'cache'} {tokenUsage?.hitRate ?? 0}%
+                </span>
+                {hasContextPressure(compactionPressure) ? (
+                  <span className="tokenUsageBarLabel contextLabel">
+                    {config.locale === 'zh' ? '上下文' : 'ctx'} {contextUsagePercent(compactionPressure)}%
+                  </span>
+                ) : null}
+              </div>
+              <div className="tokenUsageBarTrack">
+                {hasContextPressure(compactionPressure) ? (
+                  <>
+                    <div
+                      className="tokenUsageBarCacheSeg"
+                      style={{ width: `${cacheContextPercent(tokenUsage, compactionPressure)}%` }}
+                    />
+                    <div
+                      className="tokenUsageBarContextSeg"
+                      style={{ width: `${Math.max(0, contextUsagePercent(compactionPressure) - cacheContextPercent(tokenUsage, compactionPressure))}%` }}
+                    />
+                    <div
+                      className="tokenUsageBarRemainSeg"
+                      style={{ width: `${Math.max(0, 100 - contextUsagePercent(compactionPressure))}%` }}
+                    />
+                    {compactionPressure?.softThreshold && compactionPressure?.maxTokens ? (
+                      <div
+                        className="tokenUsageBarSoftLine"
+                        style={{ left: `${(compactionPressure.softThreshold / compactionPressure.maxTokens) * 100}%` }}
+                      />
+                    ) : null}
+                  </>
+                ) : (
+                  <>
+                    <div
+                      className="tokenUsageBarCacheSeg"
+                      style={{ width: `${tokenUsage?.hitRate ?? 0}%`, borderRadius: '999px 0 0 999px' }}
+                    />
+                    <div
+                      className="tokenUsageBarRemainSeg"
+                      style={{ width: `${Math.max(0, 100 - (tokenUsage?.hitRate ?? 0))}%`, borderRadius: '0 999px 999px 0' }}
+                    />
+                  </>
+                )}
+              </div>
+            </div>
+          ) : null}
           {cacheSummary ? <span className="tokenPill cache">{cacheSummary}</span> : null}
           {pressureSummary ? <span className="tokenPill warn">{pressureSummary}</span> : null}
           <div className="actions">
@@ -1431,6 +1579,11 @@ function App() {
                 <button className="solidButton" onClick={() => void decideApproval(approval.requestId, true)}>
                   {t(config.locale, 'approve')}
                 </button>
+                {approval.kind === 'file_write' ? (
+                  <div className="approvalItemDiff">
+                    <ApprovalDiffPreview payload={approval.payload} locale={config.locale} />
+                  </div>
+                ) : null}
               </article>
             ))}
           </section>
@@ -1453,7 +1606,7 @@ function App() {
         />
       ) : null}
       {settingsHelpOpen ? <SettingsHelpDialog locale={config.locale} onClose={() => setSettingsHelpOpen(false)} /> : null}
-      <RunMonitorDrawer locale={config.locale} open={runMonitor.open} adminMode={runMonitor.adminMode} adminToken={runMonitor.adminToken} runs={runMonitor.runs} events={runMonitor.events} selectedRunId={runMonitor.selectedRunId} threads={runMonitor.threads} expandedThreadId={runMonitor.expandedThreadId} expandedEventId={runMonitor.expandedEventId} autoRefresh={runMonitor.autoRefresh} autoRefreshInterval={runMonitor.autoRefreshInterval} loading={runMonitor.loading} onClose={() => runMonitor.setOpen(false)} onRefresh={() => void runMonitor.refresh(runMonitor.selectedRunId)} onSelectRun={(runId) => void runMonitor.refresh(runId)} onControlRun={(action, run) => void runMonitor.controlRun(action, run)} onToggleThread={runMonitor.toggleThread} onToggleEvent={runMonitor.toggleEvent} onAutoRefreshChange={runMonitor.setAutoRefresh} onAutoRefreshIntervalChange={runMonitor.setAutoRefreshInterval} onAdminTokenChange={runMonitor.setAdminToken} />
+      <RunMonitorDrawer locale={config.locale} open={runMonitor.open} adminMode={runMonitor.adminMode} adminToken={runMonitor.adminToken} runs={runMonitor.runs} events={runMonitor.events} selectedRunId={runMonitor.selectedRunId} threads={runMonitor.threads} expandedThreadId={runMonitor.expandedThreadId} expandedEventId={runMonitor.expandedEventId} autoRefresh={runMonitor.autoRefresh} autoRefreshInterval={runMonitor.autoRefreshInterval} loading={runMonitor.loading} checkpoints={checkpoints} currentTurnCount={currentTurnCount} onClose={() => runMonitor.setOpen(false)} onRefresh={() => void runMonitor.refresh(runMonitor.selectedRunId)} onSelectRun={(runId) => void runMonitor.refresh(runId)} onControlRun={(action, run) => void runMonitor.controlRun(action, run)} onToggleThread={runMonitor.toggleThread} onToggleEvent={runMonitor.toggleEvent} onAutoRefreshChange={runMonitor.setAutoRefresh} onAutoRefreshIntervalChange={runMonitor.setAutoRefreshInterval} onAdminTokenChange={runMonitor.setAdminToken} onRollbackCheckpoint={rollbackToCheckpoint} />
       {dialog ? <AppDialog dialog={dialog} onClose={() => setDialog(null)} /> : null}
       {toast ? <div className="toastNotice" key={toast.id}>{toast.text}</div> : null}
       {weixinConnectState ? <WeixinConnectDialog locale={config.locale} state={weixinConnectState} onClose={() => setWeixinConnectState(null)} /> : null}

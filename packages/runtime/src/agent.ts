@@ -437,6 +437,39 @@ export class AgentLoop {
     return notice;
   }
 
+  /**
+   * 运行时更新系统监控配置（热更新开关/阈值）。
+   * 启用时若尚未初始化则创建实例并启动；禁用时停止采样并释放资源。
+   */
+  /** Update system monitor config at runtime (hot-reload toggle / thresholds).
+   *  Creates and starts the monitor if enabling; stops and disposes if disabling. */
+  updateSystemMonitorConfig(partial: Partial<SystemMonitorConfig>): void {
+    if (this._systemMonitor) {
+      this._systemMonitor.updateConfig(partial);
+      if (!this._systemMonitor.isEnabled()) {
+        if (this._systemMonitorUnsub) {
+          this._systemMonitorUnsub();
+          this._systemMonitorUnsub = null;
+        }
+        this._systemMonitor = null;
+      }
+    } else if (partial.enabled) {
+      const cfg: SystemMonitorConfig = {
+        ...DEFAULT_SYSTEM_MONITOR_CONFIG,
+        ...partial,
+        thresholds: {
+          ...DEFAULT_SYSTEM_MONITOR_CONFIG.thresholds,
+          ...partial.thresholds,
+        },
+      };
+      this._systemMonitor = new SystemMonitor(cfg);
+      this._systemMonitorUnsub = this._systemMonitor.onLevelChange((status) => {
+        this.handleSystemMonitorLevelChange(status);
+      });
+      this._systemMonitor.start();
+    }
+  }
+
   /** 释放系统监控资源（停止后台采样、取消订阅）。 */
   /** Dispose system monitor: stop background sampling and unsubscribe. */
   dispose(): void {
@@ -511,6 +544,37 @@ export class AgentLoop {
   /** Get the thread state for a given thread. */
   getThreadState(threadId: ThreadId): ThreadState {
     return this.stateManager.get(threadId);
+  }
+
+  /**
+   * 计算当前线程的上下文压力（不触发压缩、不发送事件）。
+   * 供前端在加载/切换对话时主动查询。
+   */
+  async getContextPressure(threadId: ThreadId): Promise<{
+    estimatedTokens: number;
+    maxTokens: number;
+    softThreshold: number;
+    hardThreshold: number;
+    ratio: number;
+    status: 'ok' | 'soft' | 'hard';
+  }> {
+    const recentItems = await this.config.store.getRecentItems(threadId, 200);
+    const thread = await this.config.store.getThread(threadId);
+    const effectiveRecentItems = filterEffectiveCompactionItems(recentItems, thread?.tags?.compactedRanges);
+    const compactionOptions = compactionOptionsForRunProfile(this.config.runProfile);
+    const rolloutPressure = getCompactionPressure(effectiveRecentItems, compactionOptions);
+    const estimatedTokens = rolloutPressure.estimatedTokens;
+    const ratio = rolloutPressure.maxTokens > 0 ? estimatedTokens / rolloutPressure.maxTokens : 1;
+    return {
+      ...rolloutPressure,
+      estimatedTokens,
+      ratio,
+      status: estimatedTokens >= rolloutPressure.hardThreshold
+        ? 'hard' as const
+        : estimatedTokens >= rolloutPressure.softThreshold
+          ? 'soft' as const
+          : 'ok' as const,
+    };
   }
 
   async rollbackThread(threadId: ThreadId, count: number = 1): Promise<{ removedTurns: number }> {
@@ -1059,6 +1123,8 @@ export class AgentLoop {
       threadId,
       turnIndex: result.turns.length,
     });
+    const latestTurnId = result.turns.length > 0 ? result.turns[result.turns.length - 1].turnId : threadId;
+    await this.emitCompactionPressure(threadId, latestTurnId);
     return result.thread;
   }
 
@@ -2112,7 +2178,9 @@ export class AgentLoop {
 
     const prePatchSnapshots = toolName === 'apply_patch'
       ? await capturePrePatchSnapshots(args, this.config.workspaceRoot)
-      : new Map<string, string | null>();
+      : toolName === 'write_file'
+        ? await captureWriteFilePathSnapshot(args, this.config.workspaceRoot)
+        : new Map<string, string | null>();
 
     // Execute
     // 执行
@@ -2145,8 +2213,10 @@ export class AgentLoop {
     // 持久化
     await this.config.store.appendItems(threadId, [toolItem]);
 
-    if (toolName === 'apply_patch' && result.status === 'completed') {
-      const changes = normalizeFileChanges(result.data);
+    if ((toolName === 'apply_patch' || toolName === 'write_file') && result.status === 'completed') {
+      const changes = toolName === 'apply_patch'
+        ? normalizeFileChanges(result.data)
+        : buildWriteFileChanges(args, prePatchSnapshots);
       if (changes.length > 0) {
         const fileItem: ThreadItem = {
           id: generateItemId(turnId, collectedItems.length),
@@ -3726,12 +3796,22 @@ export class AgentLoop {
     }
   }
 
-  private async maybeAutoCompact(
+  private async emitCompactionPressure(
     threadId: ThreadId,
     turnId: TurnId,
-    phaseContext: 'pre_turn' | 'mid_turn' = 'pre_turn',
     visibleMessages?: ChatMessage[],
-  ): Promise<boolean> {
+  ): Promise<{
+    pressure: {
+      estimatedTokens: number;
+      maxTokens: number;
+      softThreshold: number;
+      hardThreshold: number;
+      ratio: number;
+      status: 'ok' | 'soft' | 'hard';
+    };
+    compactionOptions: ReturnType<typeof compactionOptionsForRunProfile>;
+    autoCompactWindow: ThreadState['autoCompactWindow'];
+  }> {
     const recentItems = await this.config.store.getRecentItems(threadId, 200);
     const thread = await this.config.store.getThread(threadId);
     const effectiveRecentItems = filterEffectiveCompactionItems(recentItems, thread?.tags?.compactedRanges);
@@ -3751,14 +3831,19 @@ export class AgentLoop {
           : 'ok' as const,
     };
     const autoCompactWindow = { ...this.stateManager.get(threadId).autoCompactWindow };
-    const pressureWithWindow = {
-      ...pressure,
-      window: autoCompactWindow,
-    };
-    if (pressure.status === 'soft') {
-      this.emit({ type: 'context.compaction_pressure', threadId, turnId, pressure: pressureWithWindow });
-      return false;
-    }
+    this.emit({ type: 'context.compaction_pressure', threadId, turnId, pressure: { ...pressure, window: autoCompactWindow } });
+    return { pressure, compactionOptions, autoCompactWindow };
+  }
+
+  private async maybeAutoCompact(
+    threadId: ThreadId,
+    turnId: TurnId,
+    phaseContext: 'pre_turn' | 'mid_turn' = 'pre_turn',
+    visibleMessages?: ChatMessage[],
+  ): Promise<boolean> {
+    const { pressure, compactionOptions, autoCompactWindow } = await this.emitCompactionPressure(threadId, turnId, visibleMessages);
+    const pressureWithWindow = { ...pressure, window: autoCompactWindow };
+    if (phaseContext !== 'pre_turn' && pressure.status !== 'soft') return false;
     if (pressure.status !== 'hard') return false;
     const compactionItemId = `compact_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     this.emit({
@@ -4116,6 +4201,8 @@ function normalizeFileChanges(data: unknown): Array<{
     endLine?: number;
     addedLines: number;
     removedLines: number;
+    addedLinesContent: string[];
+    removedLinesContent: string[];
     summary?: string;
   }>;
   addedLines?: number;
@@ -4136,12 +4223,21 @@ function normalizeFileChanges(data: unknown): Array<{
       ? candidate.hunks.flatMap((hunk) => {
           if (!hunk || typeof hunk !== 'object') return [];
           const typed = hunk as Record<string, unknown>;
+          // 中文注释：旧数据无 addedLinesContent/removedLinesContent 时降级为空数组
+          const addedLinesContent = Array.isArray(typed.addedLinesContent)
+            ? typed.addedLinesContent.filter((line): line is string => typeof line === 'string')
+            : [];
+          const removedLinesContent = Array.isArray(typed.removedLinesContent)
+            ? typed.removedLinesContent.filter((line): line is string => typeof line === 'string')
+            : [];
           return [{
             path: typeof typed.path === 'string' ? typed.path : filePath,
             startLine: typeof typed.startLine === 'number' ? typed.startLine : undefined,
             endLine: typeof typed.endLine === 'number' ? typed.endLine : undefined,
             addedLines: typeof typed.addedLines === 'number' ? typed.addedLines : 0,
             removedLines: typeof typed.removedLines === 'number' ? typed.removedLines : 0,
+            addedLinesContent,
+            removedLinesContent,
             summary: typeof typed.summary === 'string' ? typed.summary : undefined,
           }];
         })
@@ -4172,6 +4268,64 @@ async function capturePrePatchSnapshots(args: Record<string, unknown>, workspace
     snapshots.set(filePath, await readWorkspaceTextFile(workspaceRoot, filePath));
   }
   return snapshots;
+}
+
+// 中文注释：write_file 在写入前捕获目标文件的当前内容，用于后续回滚。
+async function captureWriteFilePathSnapshot(args: Record<string, unknown>, workspaceRoot: string): Promise<Map<string, string | null>> {
+  const filePath = typeof args.filePath === 'string' ? args.filePath.trim() : '';
+  const snapshots = new Map<string, string | null>();
+  if (!filePath) return snapshots;
+  snapshots.set(filePath, await readWorkspaceTextFile(workspaceRoot, filePath));
+  return snapshots;
+}
+
+// 中文注释：write_file 整体覆盖文件，没有 patch hunk；根据 beforeContent 是否存在判断 add/update。
+// 为让前端 DiffView 能渲染真实行级 diff，这里用公共前缀/后缀裁剪算出最小变更行集。
+// — English: write_file overwrites the whole file; compute minimal diff via common prefix/suffix trim.
+function buildWriteFileChanges(
+  args: Record<string, unknown>,
+  beforeSnapshots: Map<string, string | null>,
+): NormalizedFileChange[] {
+  const filePath = typeof args.filePath === 'string' ? args.filePath.trim() : '';
+  if (!filePath) return [];
+  const content = typeof args.content === 'string' ? args.content : '';
+  const beforeContent = beforeSnapshots.has(filePath)
+    ? beforeSnapshots.get(filePath)!
+    : null;
+  const kind: 'add' | 'update' = beforeContent === null ? 'add' : 'update';
+  const splitLines = (text: string): string[] => text === '' ? [] : text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+  const afterLines = splitLines(content);
+  const beforeLines = beforeContent === null ? [] : splitLines(beforeContent);
+  // 公共前缀/后缀裁剪：只保留真正变化的行，避免整体显示为删除+新增
+  // — English: trim common prefix/suffix to keep only changed lines
+  let prefix = 0;
+  const maxPrefix = Math.min(beforeLines.length, afterLines.length);
+  while (prefix < maxPrefix && beforeLines[prefix] === afterLines[prefix]) prefix++;
+  let suffix = 0;
+  const maxSuffix = Math.min(beforeLines.length - prefix, afterLines.length - prefix);
+  while (suffix < maxSuffix && beforeLines[beforeLines.length - 1 - suffix] === afterLines[afterLines.length - 1 - suffix]) suffix++;
+  const removedLinesContent = beforeLines.slice(prefix, beforeLines.length - suffix);
+  const addedLinesContent = afterLines.slice(prefix, afterLines.length - suffix);
+  const startLine = prefix + 1;
+  const endLine = Math.max(prefix + removedLinesContent.length, prefix + addedLinesContent.length, startLine);
+  const hunks = (addedLinesContent.length > 0 || removedLinesContent.length > 0) ? [{
+    path: filePath,
+    addedLines: addedLinesContent.length,
+    removedLines: removedLinesContent.length,
+    addedLinesContent,
+    removedLinesContent,
+    startLine,
+    endLine,
+    summary: `write_file: ${filePath}`,
+  }] : [];
+  return [{
+    path: filePath,
+    kind,
+    hunks,
+    addedLines: addedLinesContent.length,
+    removedLines: removedLinesContent.length,
+    summary: `write_file: ${filePath}`,
+  }];
 }
 
 function extractPatchPaths(patchText: string): string[] {

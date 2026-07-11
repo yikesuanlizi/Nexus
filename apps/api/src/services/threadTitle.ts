@@ -1,4 +1,12 @@
-const GENERATED_TITLES = new Set(['', 'Untitled', '未命名对话', 'Nexus']);
+const GENERATED_TITLES = new Set([
+  '',
+  'Untitled',
+  'Untitled chat',
+  '未命名对话',
+  'Untitled workflow project',
+  '未命名工作流项目',
+  'Nexus',
+]);
 
 export function shouldRetitleThread(title: string | undefined): boolean {
   return GENERATED_TITLES.has((title ?? '').trim());

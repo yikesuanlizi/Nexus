@@ -5,6 +5,7 @@ import type { Locale } from '../config/config.js';
 import { formatTimestamp } from '../shared/i18n.js';
 import type { WorkspaceFileEntry, WorkspaceFilePreview } from '../shared/types.js';
 import { Icon } from './Icon.js';
+import { GitNexusPanel } from './GitNexusPanel.js';
 
 interface TreeRow {
   depth: number;
@@ -133,7 +134,14 @@ export function WorkspaceFilesPanel({
   const [loadingPaths, setLoadingPaths] = useState<Set<string>>(new Set());
   const [error, setError] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
-  const [treeWidth, setTreeWidth] = useState(50);
+  const [gitnexusOpen, setGitnexusOpen] = useState(false);
+  const [gitnexusSelectedPath, setGitnexusSelectedPath] = useState('');
+  // 文件树宽度百分比从 localStorage 读取，默认 28% 让预览框更宽（约 2.5 倍）
+  // — English: tree width % from localStorage, default 28% for wider preview (~2.5x)
+  const [treeWidth, setTreeWidth] = useState(() => {
+    const stored = Number(localStorage.getItem('nexus.fileTreeWidth') ?? 0);
+    return stored >= 15 && stored <= 60 ? stored : 28;
+  });
   const bodyRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -144,19 +152,66 @@ export function WorkspaceFilesPanel({
     setFilter('');
   }, [workspaceRoot]);
 
-  // 中文注释：响应外部预览请求 — 从对话条目点击"预览"时自动加载该文件
-  // — Chinese: respond to external preview request — auto-load file when "preview" clicked from chat item
+  // 中文注释：响应外部预览请求 — 从对话条目点击"预览"时自动加载该文件或目录
+  // 若路径是目录则展开目录树，是文件则预览内容
+  // — Chinese: respond to external preview request — auto-load file or expand directory
   useEffect(() => {
-    if (!externalPreviewRequest?.path) return;
-    const entry: WorkspaceFileEntry = {
-      kind: 'file',
-      name: externalPreviewRequest.path.split(/[/\\]/).pop() ?? externalPreviewRequest.path,
-      path: externalPreviewRequest.path,
-      size: 0,
-      extension: '',
-      updatedAt: '',
-    };
-    void previewFile(entry, externalPreviewRequest.pin ?? false);
+    if (!externalPreviewRequest?.path || !workspaceRoot) return;
+    const requestPath = externalPreviewRequest.path;
+
+    // 将绝对路径转换为相对于 workspaceRoot 的相对路径 — English: convert absolute path to relative path
+    function toRelativePath(absPath: string): string {
+      const normalized = absPath.replace(/\\/g, '/');
+      const root = workspaceRoot.replace(/\\/g, '/');
+      if (normalized.toLowerCase().startsWith(root.toLowerCase())) {
+        let rel = normalized.slice(root.length);
+        if (rel.startsWith('/')) rel = rel.slice(1);
+        return rel;
+      }
+      return normalized;
+    }
+
+    // 展开从根到目标目录的所有父级路径 — English: expand all parent paths from root to target
+    function expandAncestors(relPath: string, current: Set<string>): Set<string> {
+      const next = new Set(current);
+      const parts = relPath.split('/').filter(Boolean);
+      for (let i = 1; i <= parts.length; i++) {
+        next.add(parts.slice(0, i).join('/'));
+      }
+      next.add('');
+      return next;
+    }
+
+    void (async () => {
+      try {
+        // 先尝试当作文件预览 — English: try as file preview first
+        const data = await fetchJson<WorkspaceFilePreview>(`/api/workspaces/preview?root=${encodeURIComponent(workspaceRoot)}&path=${encodeURIComponent(requestPath)}`);
+        setPreview(data);
+        if (externalPreviewRequest.pin) setPinned((current) => current.some((item) => item.path === data.path) ? current : [...current, data]);
+        // 同时展开该文件所在的目录树，以便在文件树中定位 — English: also expand the file's directory tree for定位
+        const relPath = toRelativePath(data.path);
+        const parentDir = relPath.includes('/') ? relPath.slice(0, relPath.lastIndexOf('/')) : '';
+        setExpanded((current) => expandAncestors(parentDir, current));
+        setError('');
+      } catch (caught) {
+        const message = caught instanceof Error ? caught.message : String(caught);
+        // 路径是目录：fallback 到加载目录并展开 — English: path is a directory: fallback to loading and expanding it
+        if (message.includes('not a file') || message.includes('is a directory')) {
+          try {
+            const relPath = toRelativePath(requestPath);
+            const entries = await fetchDirectory(relPath);
+            setEntriesByPath((current) => ({ ...current, [relPath]: entries }));
+            setExpanded((current) => expandAncestors(relPath, current));
+            setPreview(null);
+            setError('');
+          } catch (dirError) {
+            setError(dirError instanceof Error ? dirError.message : String(dirError));
+          }
+        } else {
+          setError(message);
+        }
+      }
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [externalPreviewRequest?.nonce, externalPreviewRequest?.path, externalPreviewRequest?.pin, workspaceRoot]);
 
@@ -242,6 +297,12 @@ export function WorkspaceFilesPanel({
   }
 
   function toggleDirectory(entry: WorkspaceFileEntry) {
+    if (gitnexusOpen) {
+      const fullPath = workspaceRoot && entry.path
+        ? `${workspaceRoot.replace(/\\/g, '/')}/${entry.path}`
+        : workspaceRoot || entry.path;
+      setGitnexusSelectedPath(fullPath);
+    }
     setExpanded((current) => {
       const next = new Set(current);
       if (next.has(entry.path)) {
@@ -262,7 +323,9 @@ export function WorkspaceFilesPanel({
     event.currentTarget.setPointerCapture(event.pointerId);
     function move(moveEvent: PointerEvent) {
       const percent = ((moveEvent.clientX - left) / width) * 100;
-      setTreeWidth(Math.min(68, Math.max(32, percent)));
+      const clamped = Math.min(60, Math.max(15, percent));
+      setTreeWidth(clamped);
+      localStorage.setItem('nexus.fileTreeWidth', String(Math.round(clamped)));
     }
     function up() {
       window.removeEventListener('pointermove', move);
@@ -288,9 +351,24 @@ export function WorkspaceFilesPanel({
           <h2>{locale === 'zh' ? '工作区文件' : 'Workspace Files'}</h2>
           <p title={workspaceRoot}>{workspaceRoot}</p>
         </div>
-        <button type="button" className="miniIconButton" title={locale === 'zh' ? '刷新' : 'Refresh'} onClick={() => { setEntriesByPath({}); setExpanded(new Set([''])); setReloadKey((value) => value + 1); }}>
-          <Icon name="refresh" />
-        </button>
+        <div className="workspaceFilesHeaderActions">
+          <button
+            type="button"
+            className={`miniIconButton ${gitnexusOpen ? 'active' : ''}`}
+            title={locale === 'zh' ? 'GitNexus 代码分析' : 'GitNexus code analysis'}
+            onClick={() => {
+              setGitnexusOpen((v) => !v);
+              if (!gitnexusOpen && !gitnexusSelectedPath && workspaceRoot) {
+                setGitnexusSelectedPath(workspaceRoot);
+              }
+            }}
+          >
+            <Icon name="branch" />
+          </button>
+          <button type="button" className="miniIconButton" title={locale === 'zh' ? '刷新' : 'Refresh'} onClick={() => { setEntriesByPath({}); setExpanded(new Set([''])); setReloadKey((value) => value + 1); }}>
+            <Icon name="refresh" />
+          </button>
+        </div>
       </header>
       <div className="workspaceFileBody" ref={bodyRef} style={{ gridTemplateColumns: `minmax(180px, ${treeWidth}%) 7px minmax(0, 1fr)` }}>
         <section className="workspaceFileTreePane">
@@ -325,8 +403,8 @@ export function WorkspaceFilesPanel({
           </div>
         </section>
         <button className="workspaceFileDivider" type="button" aria-label={locale === 'zh' ? '调整文件面板宽度' : 'Resize file panes'} onPointerDown={startResize} />
-        <section className={pinned.length > 0 ? 'workspacePreviewPane' : 'workspacePreviewPane noPreviewTabs'}>
-          {pinned.length > 0 ? (
+        <section className={pinned.length > 0 || gitnexusOpen ? 'workspacePreviewPane' : 'workspacePreviewPane noPreviewTabs'}>
+          {pinned.length > 0 && !gitnexusOpen ? (
             <div className="workspacePreviewTabs">
               {pinned.map((file) => (
                 <button className={preview?.path === file.path ? 'active' : ''} key={file.path} type="button" onClick={() => setPreview(file)} title={file.path}>
@@ -337,7 +415,16 @@ export function WorkspaceFilesPanel({
             </div>
           ) : null}
           <div className="workspacePreview">
-            {preview ? (
+            {gitnexusOpen ? (
+              <div className="workspaceGitNexusView">
+                <GitNexusPanel
+                  locale={locale}
+                  workspaceRoot={workspaceRoot}
+                  selectedPath={gitnexusSelectedPath}
+                  onSelectPath={setGitnexusSelectedPath}
+                />
+              </div>
+            ) : preview ? (
               <>
                 <div className="workspacePreviewHeader">
                   <strong title={preview.path}>{preview.name}</strong>

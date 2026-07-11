@@ -64,6 +64,9 @@ const zh = {
     '- 使用绝对路径或工作区相对路径。\n' +
     '- 执行命令前先说明你打算做什么。\n' +
     '- 如果工具需要审批，等待通过——绝不绕过。\n' +
+    '- 本地代码分析以 list_files/read_file/search_content 等内置工具为主；它们始终是可用的基础路径。\n' +
+    '- GitNexus 是结构化增强：当任务涉及调用关系、影响面、调用链、路由图或依赖图，且 GitNexus MCP 可用时，结合 GitNexus 工具与内置工具交叉验证。\n' +
+    '- 如果 GitNexus 不可用、未索引或失败，继续使用内置工具；需要索引且权限允许时，可调用 gitnexus_analyze 构建索引。\n' +
     '- 禁止使用 window.THREE、@ts-nocheck、或假设浏览器全局变量。\n' +
     '- 始终使用 ESM import。\n' +
     '- 优先选择简洁、清晰的解决方案。\n' +
@@ -76,6 +79,9 @@ const zh = {
     '- Explain what you are about to do before executing commands.\n' +
     '- If a tool requires approval, wait for it — never bypass.\n' +
     '- For simple date/time questions, use the current_time tool instead of shell_command.\n' +
+    '- For local code analysis, keep list_files/read_file/search_content as the primary path; these built-in tools remain the source of truth.\n' +
+    '- Treat GitNexus as a structured enhancement: for call relationships, impact analysis, traces, route maps, or dependency graphs, combine GitNexus tools with built-in tools when the GitNexus MCP is available.\n' +
+    '- If GitNexus is unavailable, unindexed, or fails, continue with built-in tools; when an index is needed and permissions allow it, use gitnexus_analyze to build the index.\n' +
     '- Do NOT use window.THREE, @ts-nocheck, or assume browser globals.\n' +
     '- Always use ESM imports.\n' +
     '- Prefer simple, clear solutions.',
@@ -144,6 +150,9 @@ const en: Record<keyof typeof zh, string> = {
     '- Explain what you are about to do before executing commands.\n' +
     '- If a tool requires approval, wait for it — never bypass.\n' +
     '- For simple date/time questions, use the current_time tool instead of shell_command.\n' +
+    '- For local code analysis, keep list_files/read_file/search_content as the primary path; these built-in tools remain the source of truth.\n' +
+    '- Treat GitNexus as a structured enhancement: for call relationships, impact analysis, traces, route maps, or dependency graphs, combine GitNexus tools with built-in tools when the GitNexus MCP is available.\n' +
+    '- If GitNexus is unavailable, unindexed, or fails, continue with built-in tools; when an index is needed and permissions allow it, use gitnexus_analyze to build the index.\n' +
     '- Do NOT use window.THREE, @ts-nocheck, or assume browser globals.\n' +
     '- Always use ESM imports.\n' +
     '- Prefer simple, clear solutions.',
@@ -155,6 +164,9 @@ const en: Record<keyof typeof zh, string> = {
     '- Explain what you are about to do before executing commands.\n' +
     '- If a tool requires approval, wait for it — never bypass.\n' +
     '- For simple date/time questions, use the current_time tool instead of shell_command.\n' +
+    '- For local code analysis, keep list_files/read_file/search_content as the primary path; these built-in tools remain the source of truth.\n' +
+    '- Treat GitNexus as a structured enhancement: for call relationships, impact analysis, traces, route maps, or dependency graphs, combine GitNexus tools with built-in tools when the GitNexus MCP is available.\n' +
+    '- If GitNexus is unavailable, unindexed, or fails, continue with built-in tools; when an index is needed and permissions allow it, use gitnexus_analyze to build the index.\n' +
     '- Do NOT use window.THREE, @ts-nocheck, or assume browser globals.\n' +
     '- Always use ESM imports.\n' +
     '- Prefer simple, clear solutions.',

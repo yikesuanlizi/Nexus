@@ -73,6 +73,9 @@ describe('RunMonitorDrawer', () => {
       onToggleEvent: vi.fn(),
       onAutoRefreshChange: vi.fn(),
       onAutoRefreshIntervalChange: vi.fn(),
+      checkpoints: [],
+      currentTurnCount: 0,
+      onRollbackCheckpoint: vi.fn(),
     }));
 
     expect(html).toContain('运行监控');
@@ -107,6 +110,9 @@ describe('RunMonitorDrawer', () => {
       onToggleEvent: vi.fn(),
       onAutoRefreshChange: vi.fn(),
       onAutoRefreshIntervalChange: vi.fn(),
+      checkpoints: [],
+      currentTurnCount: 0,
+      onRollbackCheckpoint: vi.fn(),
     }));
 
     expect(html).toContain('管理员全局视图');
