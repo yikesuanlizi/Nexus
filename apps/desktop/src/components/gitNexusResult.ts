@@ -80,6 +80,59 @@ function buildGroups(nodes: GitNexusNode[]): Array<{ label: string; count: numbe
   return Array.from(counts.entries()).map(([label, count]) => ({ label, count }));
 }
 
+function convertProvidedGraph(source: Record<string, unknown>, fallbackTitle: string): GitNexusGraphData | null {
+  if (!Array.isArray(source.nodes)) return null;
+
+  const nodes: GitNexusNode[] = [];
+  for (let i = 0; i < source.nodes.length; i++) {
+    const raw = source.nodes[i];
+    if (!raw || typeof raw !== 'object') continue;
+    const node = raw as Record<string, unknown>;
+    const id = safeString(node.id) || makeId('provided-node', i);
+    const label = safeString(node.label) || safeString(node.name) || safeString(node.symbol) || id;
+    const graphNode: GitNexusNode = {
+      id,
+      label: truncateLabel(label),
+      group: safeString(node.group) || 'default',
+    };
+    const kind = safeString(node.kind);
+    if (kind) graphNode.kind = kind;
+    const file = safeString(node.file) || safeString(node.path);
+    if (file) graphNode.file = file;
+    if (typeof node.line === 'number') graphNode.line = node.line;
+    if (typeof node.depth === 'number') graphNode.depth = node.depth;
+    pushNode(nodes, graphNode);
+  }
+
+  if (nodes.length === 0) return null;
+
+  const nodeIds = new Set(nodes.map((node) => node.id));
+  const edges: GitNexusEdge[] = [];
+  const rawEdges = Array.isArray(source.edges) ? source.edges : [];
+  for (let i = 0; i < rawEdges.length; i++) {
+    const raw = rawEdges[i];
+    if (!raw || typeof raw !== 'object') continue;
+    const edge = raw as Record<string, unknown>;
+    const sourceId = safeString(edge.source);
+    const targetId = safeString(edge.target);
+    if (!sourceId || !targetId || !nodeIds.has(sourceId) || !nodeIds.has(targetId)) continue;
+    pushEdge(edges, {
+      id: safeString(edge.id) || makeId('provided-edge', i),
+      source: sourceId,
+      target: targetId,
+      label: safeString(edge.label) || undefined,
+    });
+  }
+
+  return {
+    kind: 'graph',
+    title: safeString(source.title) || fallbackTitle,
+    nodes,
+    edges,
+    groups: buildGroups(nodes),
+  };
+}
+
 // 从 item.result 提取 source 对象
 function extractSource(item: ThreadItem): unknown | null {
   const result = item.result;
@@ -160,6 +213,8 @@ function convertContext(source: unknown, _tool: string): GitNexusGraphData | nul
   }
   // 兜底用顶层 name
   if (!symbolName) symbolName = safeString(s.name);
+  const providedGraph = convertProvidedGraph(s, symbolName ? `context: ${symbolName}` : 'context');
+  if (providedGraph) return providedGraph;
   if (!symbolName) return null;
 
   const nodes: GitNexusNode[] = [];
@@ -259,6 +314,8 @@ function convertImpact(source: unknown, _tool: string): GitNexusGraphData | null
     rootName = safeString(rootObj.name) || safeString(rootObj.symbol) || safeString(rootObj.label);
   }
   if (!rootName) return null;
+  const providedGraph = convertProvidedGraph(s, `impact: ${rootName}`);
+  if (providedGraph) return providedGraph;
 
   const nodes: GitNexusNode[] = [];
   const edges: GitNexusEdge[] = [];

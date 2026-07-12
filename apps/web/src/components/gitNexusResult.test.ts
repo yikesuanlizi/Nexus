@@ -92,6 +92,31 @@ describe('parseGitNexusResult', () => {
     expect(result!.nodes.find((n) => n.group === 'center')?.label).toBe('AuthService.login');
   });
 
+  it('context 工具优先渲染后端提供的完整子图', () => {
+    const item = makeMcpItem('gitnexus', 'context', {
+      structuredContent: {
+        title: 'file context: AuthService.ts',
+        root: { name: 'AuthService.ts', kind: 'File' },
+        nodes: [
+          { id: 'file:auth', label: 'AuthService.ts', group: 'center', kind: 'File', file: 'src/AuthService.ts' },
+          { id: 'method:login', label: 'login', group: 'process', kind: 'Method', file: 'src/AuthService.ts', line: 12 },
+          { id: 'method:hash', label: 'hashPassword', group: 'callee', kind: 'Function', file: 'src/hash.ts', line: 4 },
+        ],
+        edges: [
+          { id: 'e1', source: 'file:auth', target: 'method:login', label: 'DEFINES' },
+          { id: 'e2', source: 'method:login', target: 'method:hash', label: 'CALLS' },
+        ],
+      },
+    });
+
+    const result = parseGitNexusResult(item);
+
+    expect(result).not.toBeNull();
+    expect(result!.title).toBe('file context: AuthService.ts');
+    expect(result!.nodes.map((node) => node.id)).toEqual(['file:auth', 'method:login', 'method:hash']);
+    expect(result!.edges.map((edge) => edge.label)).toEqual(['DEFINES', 'CALLS']);
+  });
+
   it('impact 工具按 upstream/downstream 生成边', () => {
     const item = makeMcpItem('gitnexus', 'impact', {
       structuredContent: {

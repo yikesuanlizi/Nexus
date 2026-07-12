@@ -662,6 +662,7 @@ export function GitNexusPanel({
                   <GitNexusForceGraph
                     data={graphData}
                     height={520}
+                    level={graphLevel}
                     onNodeClick={(node) => {
                       if (node.label) {
                         const inputValue = graphLevel === 'file' ? (node.file ?? node.label) : node.label;
@@ -798,6 +799,7 @@ export function GitNexusPanel({
           isOpen={graphModalOpen}
           onClose={() => setGraphModalOpen(false)}
           data={graphData}
+          level={graphLevel}
           title={graphLevel === 'file'
             ? (locale === 'zh' ? '文件级依赖图' : 'File-level Dependency Graph')
             : (locale === 'zh' ? '符号级调用图' : 'Symbol-level Call Graph')}
@@ -937,6 +939,47 @@ function convertRawToGraphData(
     };
   }
   const s = raw as Record<string, unknown>;
+
+  if (Array.isArray(s.nodes) && Array.isArray(s.edges)) {
+    const nodes = (s.nodes as unknown[]).flatMap((item, i) => {
+      if (!item || typeof item !== 'object') return [];
+      const node = item as Record<string, unknown>;
+      const label = String(node.label ?? node.name ?? node.symbol ?? `node${i}`);
+      return [{
+        id: String(node.id ?? `node-${i}`),
+        label,
+        group: String(node.group ?? 'default'),
+        kind: node.kind ? String(node.kind) : undefined,
+        file: node.file ? String(node.file) : undefined,
+        line: typeof node.line === 'number' ? node.line : undefined,
+      }];
+    });
+    const nodeIds = new Set(nodes.map((node) => node.id));
+    const edges = (s.edges as unknown[]).flatMap((item, i) => {
+      if (!item || typeof item !== 'object') return [];
+      const edge = item as Record<string, unknown>;
+      const source = String(edge.source ?? '');
+      const target = String(edge.target ?? '');
+      if (!source || !target || !nodeIds.has(source) || !nodeIds.has(target)) return [];
+      return [{
+        id: String(edge.id ?? `edge-${i}`),
+        source,
+        target,
+        label: edge.label ? String(edge.label) : undefined,
+      }];
+    });
+
+    return {
+      kind: 'graph',
+      title: String(s.title ?? `${tool}: ${input}`),
+      nodes,
+      edges,
+      groups: Array.from(new Set(nodes.map((n) => n.group))).map((g) => ({
+        label: g,
+        count: nodes.filter((n) => n.group === g).length,
+      })),
+    };
+  }
 
   if (tool === 'query') {
     const list = Array.isArray(s.results)

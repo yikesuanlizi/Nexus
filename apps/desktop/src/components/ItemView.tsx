@@ -1,5 +1,5 @@
 import type React from 'react';
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useMemo } from 'react';
 import type { Locale } from '../config/config.js';
 import { Icon } from './Icon.js';
 import { formatTimestamp } from '../shared/i18n.js';
@@ -51,6 +51,7 @@ export function ItemView({
   customUserAvatarDataUrl?: string;
 }) {
   const heading = itemHeading(item, locale);
+  const gitNexusView = useGitNexusView(item);
   if (item.type === 'user_message') {
     return (
       <MessageFrame
@@ -105,14 +106,9 @@ export function ItemView({
           {toolSummary.status ? <span className="toolSummaryStatus">{toolSummary.status}</span> : null}
         </summary>
         <ToolItemActions item={item} locale={locale} onPreviewFile={onPreviewFile} onOpenFile={onOpenFile} />
-        {(() => {
-          const gitNexusView = item.type === 'mcp_tool_call'
-            ? parseGitNexusResult(item)
-            : null;
-          return gitNexusView
-            ? <Suspense fallback={null}><GitNexusResultView data={gitNexusView} locale={locale} /></Suspense>
-            : <pre>{formatItemPayload(item)}</pre>;
-        })()}
+        {gitNexusView
+          ? <Suspense fallback={null}><GitNexusResultView data={gitNexusView} locale={locale} /></Suspense>
+          : <pre>{formatItemPayload(item)}</pre>}
       </details>
     );
   }
@@ -582,6 +578,7 @@ function ToolDetails({
   onOpenFile?: (path: string) => void;
 }) {
   const heading = itemHeading(item, locale);
+  const gitNexusView = useGitNexusView(item);
   if (item.type === 'file_change') {
     // 英文说明: shared/types ThreadItem.hunks omits addedLinesContent/removedLinesContent;
     // 中文说明: shared/types 的 ThreadItem.hunks 未声明行内容字段，运行时携带，用类型断言对齐
@@ -610,16 +607,24 @@ function ToolDetails({
       </summary>
       <RemoteAgentStream item={item} locale={locale} />
       <ToolItemActions item={item} locale={locale} onPreviewFile={onPreviewFile} onOpenFile={onOpenFile} />
-      {(() => {
-        const gitNexusView = item.type === 'mcp_tool_call'
-          ? parseGitNexusResult(item)
-          : null;
-        return gitNexusView
-          ? <Suspense fallback={null}><GitNexusResultView data={gitNexusView} locale={locale} /></Suspense>
-          : <pre>{formatItemPayload(item)}</pre>;
-      })()}
+      {gitNexusView
+        ? <Suspense fallback={null}><GitNexusResultView data={gitNexusView} locale={locale} /></Suspense>
+        : <pre>{formatItemPayload(item)}</pre>}
       <ChildActivityList items={childItems} locale={locale} />
     </details>
+  );
+}
+
+function useGitNexusView(item: ThreadItem) {
+  return useMemo(
+    () => item.type === 'mcp_tool_call' ? parseGitNexusResult(item) : null,
+    [
+      item.type,
+      item.type === 'mcp_tool_call' ? item.server : undefined,
+      item.type === 'mcp_tool_call' ? item.tool : undefined,
+      item.type === 'mcp_tool_call' ? item.arguments : undefined,
+      item.type === 'mcp_tool_call' ? item.result : undefined,
+    ],
   );
 }
 

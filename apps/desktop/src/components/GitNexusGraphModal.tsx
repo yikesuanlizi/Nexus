@@ -1,12 +1,13 @@
 import React, { useEffect, useRef } from 'react';
 import { GitNexusForceGraph } from './GitNexusForceGraph.js';
-import type { ForceGraphData, ForceGraphNode } from './GitNexusForceGraph.js';
+import type { ForceGraphData, ForceGraphLevel, ForceGraphNode } from './GitNexusForceGraph.js';
 
 interface GitNexusGraphModalProps {
   isOpen: boolean;
   onClose: () => void;
   data: ForceGraphData;
   title?: string;
+  level?: ForceGraphLevel;
   onNodeClick?: (node: ForceGraphNode) => void;
 }
 
@@ -24,6 +25,7 @@ export function GitNexusGraphModal({
   onClose,
   data,
   title = 'Dependency Graph',
+  level = 'file',
   onNodeClick,
 }: GitNexusGraphModalProps): React.ReactElement | null {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -187,6 +189,7 @@ export function GitNexusGraphModal({
         <div className="gitNexusGraphContent">
           <GitNexusForceGraph
             data={data}
+            level={level}
             onNodeClick={onNodeClick}
           />
         </div>

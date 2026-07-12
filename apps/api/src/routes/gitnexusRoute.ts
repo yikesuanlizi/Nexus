@@ -3,6 +3,7 @@ import { statSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { sendError, sendJson, readJson } from '../shared/http.js';
 import { McpRuntimeManager, McpServerConfig, normalizeMcpServerId, type McpCallToolResult } from '@nexus/runtime';
+import { getGitNexusService } from '../services/gitNexusService.js';
 
 const GITNEXUS_DEFAULT_ID = 'gitnexus';
 const GITNEXUS_DEFAULT_NAME = 'gitnexus';
@@ -34,6 +35,25 @@ export interface GitNexusRouteOptions {
   listMcpServers(): Promise<McpServerConfig[]>;
 }
 
+// ─── serve-first 查询辅助 ──────────────────────────────────────────────
+// 三层 fallback：serve HTTP → MCP → 错误
+// 优先尝试 serve HTTP，null 则 fallback 到 MCP
+
+const gitNexusService = getGitNexusService();
+
+/** 尝试 serve-first，失败时打日志并返回 null */
+async function serveFirst<T>(
+  path: string,
+  params: Record<string, string>,
+  label: string,
+): Promise<T | null> {
+  const data = await gitNexusService.query<T>(path, params);
+  if (data === null) {
+    console.log(`[GitNexus] serve-first miss for ${label}, falling back to MCP`);
+  }
+  return data;
+}
+
 export async function handleGitNexusRoute(options: GitNexusRouteOptions): Promise<boolean> {
   const { req, res, url, mcpManager, listMcpServers } = options;
   if (!url.pathname.startsWith('/api/gitnexus')) return false;
@@ -49,7 +69,22 @@ export async function handleGitNexusRoute(options: GitNexusRouteOptions): Promis
     const serverId = findGitNexusServerId(servers) ?? GITNEXUS_DEFAULT_ID;
 
     if (req.method === 'GET' && url.pathname === '/api/gitnexus/health') {
-      sendJson(res, 200, { ok: true, data: { serverId, servers: servers.length } });
+      const serveStatus = await gitNexusService.getStatus();
+      sendJson(res, 200, {
+        ok: true,
+        data: {
+          serverId,
+          servers: servers.length,
+          serve: serveStatus,
+        },
+      });
+      return true;
+    }
+
+    // serve 健康检查端点
+    if (req.method === 'GET' && url.pathname === '/api/gitnexus/serve-status') {
+      const status = await gitNexusService.getStatus();
+      sendJson(res, 200, { ok: true, data: status });
       return true;
     }
 
@@ -106,7 +141,13 @@ export async function handleGitNexusRoute(options: GitNexusRouteOptions): Promis
 
     if (req.method === 'GET' && url.pathname === '/api/gitnexus/overview') {
       const repo = url.searchParams.get('repo')?.trim() || '';
-      // 用 Cypher 统计各类节点数量和关系数量
+      // serve-first
+      const serveData = await serveFirst<{ labels?: unknown[]; relations?: unknown[]; fileCount?: number }>('/api/overview', { repo }, 'overview');
+      if (serveData && (serveData.labels || serveData.relations || serveData.fileCount !== undefined)) {
+        sendJson(res, 200, { ok: true, data: serveData });
+        return true;
+      }
+      // fallback: MCP Cypher 多次查询
       const labelTypes = ['Class', 'Interface', 'Method', 'Function', 'Route', 'Enum', 'Annotation', 'Constructor'];
       const labelQueries = labelTypes.map((label) =>
         mcpManager.callTool(serverId, 'cypher', {
@@ -187,6 +228,13 @@ export async function handleGitNexusRoute(options: GitNexusRouteOptions): Promis
     }
 
     if (req.method === 'GET' && url.pathname === '/api/gitnexus/repos') {
+      // serve-first：优先从 serve HTTP 获取
+      const serveData = await serveFirst<{ repos?: unknown[] }>('/api/repos', {}, 'repos');
+      if (serveData) {
+        sendJson(res, 200, { ok: true, data: serveData.repos ?? serveData });
+        return true;
+      }
+      // fallback: MCP
       const result = await mcpManager.callTool(serverId, 'list_repos', {});
       const data = parseMcpResult(result);
       sendJson(res, 200, { ok: true, data });
@@ -213,6 +261,13 @@ export async function handleGitNexusRoute(options: GitNexusRouteOptions): Promis
         sendError(res, 400, 'Query is required');
         return true;
       }
+      // serve-first
+      const serveData = await serveFirst('/api/query', { q, ...(repo ? { repo } : {}) }, 'query');
+      if (serveData) {
+        sendJson(res, 200, { ok: true, data: serveData });
+        return true;
+      }
+      // fallback: MCP
       const result = await mcpManager.callTool(serverId, 'query', { q, repo });
       const data = parseMcpResult(result);
       sendJson(res, 200, { ok: true, data });
@@ -227,6 +282,13 @@ export async function handleGitNexusRoute(options: GitNexusRouteOptions): Promis
         return true;
       }
       const isFileLike = /[\\/]/.test(symbol) || /\.(java|ts|tsx|js|jsx|py|go|rs|cpp|c|h|cs|php|rb|kt|scala)$/i.test(symbol);
+      // serve-first（符号和文件上下文都先试 serve）
+      const serveData = await serveFirst('/api/context', { symbol, ...(repo ? { repo } : {}) }, 'context');
+      if (serveData) {
+        sendJson(res, 200, { ok: true, data: serveData });
+        return true;
+      }
+      // fallback: MCP
       if (isFileLike) {
         const fileContext = await buildFileContextGraph(mcpManager, serverId, repo ?? '', symbol);
         sendJson(res, 200, { ok: true, data: fileContext });
@@ -245,6 +307,13 @@ export async function handleGitNexusRoute(options: GitNexusRouteOptions): Promis
         sendError(res, 400, 'Symbol is required');
         return true;
       }
+      // serve-first
+      const serveData = await serveFirst('/api/impact', { symbol, ...(repo ? { repo } : {}) }, 'impact');
+      if (serveData) {
+        sendJson(res, 200, { ok: true, data: serveData });
+        return true;
+      }
+      // fallback: MCP
       const result = await mcpManager.callTool(serverId, 'impact', { symbol, repo });
       const data = parseMcpResult(result);
       sendJson(res, 200, { ok: true, data });
@@ -259,6 +328,13 @@ export async function handleGitNexusRoute(options: GitNexusRouteOptions): Promis
         sendError(res, 400, 'Both from and to are required');
         return true;
       }
+      // serve-first
+      const serveData = await serveFirst('/api/trace', { from, to, ...(repo ? { repo } : {}) }, 'trace');
+      if (serveData) {
+        sendJson(res, 200, { ok: true, data: serveData });
+        return true;
+      }
+      // fallback: MCP
       const result = await mcpManager.callTool(serverId, 'trace', { from, to, repo });
       const data = parseMcpResult(result);
       sendJson(res, 200, { ok: true, data });
@@ -272,6 +348,13 @@ export async function handleGitNexusRoute(options: GitNexusRouteOptions): Promis
         sendError(res, 400, 'Query is required');
         return true;
       }
+      // serve-first
+      const serveData = await serveFirst('/api/cypher', { q: query, ...(repo ? { repo } : {}) }, 'cypher');
+      if (serveData) {
+        sendJson(res, 200, { ok: true, data: serveData });
+        return true;
+      }
+      // fallback: MCP
       const result = await mcpManager.callTool(serverId, 'cypher', { query, repo });
       const data = parseMcpResult(result);
       sendJson(res, 200, { ok: true, data });
@@ -286,6 +369,13 @@ export async function handleGitNexusRoute(options: GitNexusRouteOptions): Promis
         sendError(res, 400, 'Repo is required');
         return true;
       }
+      // serve-first
+      const serveData = await serveFirst<{ nodes?: unknown[]; edges?: unknown[] }>('/api/graph', { repo, level, limit: String(limit) }, 'graph');
+      if (serveData && (serveData.nodes || serveData.edges)) {
+        sendJson(res, 200, { ok: true, data: serveData });
+        return true;
+      }
+      // fallback: MCP Cypher
       const graphData = await buildDependencyGraph(mcpManager, serverId, repo, level, limit);
       sendJson(res, 200, { ok: true, data: graphData });
       return true;
@@ -334,8 +424,16 @@ function parseMcpResult(result: { content: unknown }): unknown {
 }
 
 function normalizeFsPath(p: string): string {
-  const normalized = p.replace(/\\/g, '/').replace(/\/+$/, '');
+  const normalized = slashPath(p);
   return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+}
+
+function slashPath(p: string): string {
+  return p.replace(/\\/g, '/').replace(/\/+$/, '');
+}
+
+function cypherString(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
 const SRC_EXTENSIONS = new Set([
@@ -419,6 +517,39 @@ function parseMarkdownTable(markdown: string): Array<Record<string, unknown>> {
   return rows;
 }
 
+type FileContextEntry = { name: string; file: string; kind: string; line?: number };
+type FileContextGraphNode = { id: string; label: string; group: string; kind?: string; file?: string; line?: number };
+type FileContextGraphEdge = { id: string; source: string; target: string; label?: string };
+
+function sameGraphPath(repo: string, candidate: string, target: string): boolean {
+  if (!candidate || !target) return false;
+  const candidateRelative = slashPath(relativePath(repo, candidate)).replace(/^\/+/, '');
+  const normalizedCandidate = normalizeFsPath(candidateRelative);
+  const normalizedTarget = normalizeFsPath(target);
+  return normalizedCandidate === normalizedTarget || normalizedCandidate.endsWith(`/${normalizedTarget}`);
+}
+
+function numericLine(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+function nodeLabelKind(value: unknown): string {
+  const labels = Array.isArray(value)
+    ? value.map((entry) => String(entry).trim())
+    : String(value ?? 'Symbol').split(',').map((entry) => entry.trim());
+  const priority = ['File', 'Class', 'Interface', 'Method', 'Function', 'Route', 'Enum', 'Constructor'];
+  return priority.find((label) => labels.includes(label)) ?? labels.find((label) => label.trim())?.trim() ?? 'Symbol';
+}
+
+function isFileKind(kind: string): boolean {
+  return kind === 'File';
+}
+
 async function buildFileContextGraph(
   mcpManager: McpRuntimeManager,
   serverId: string,
@@ -428,62 +559,151 @@ async function buildFileContextGraph(
   kind: 'graph';
   title: string;
   root: { name: string; file: string; kind: string };
-  callers: Array<{ name: string; file: string; kind: string }>;
-  callees: Array<{ name: string; file: string; kind: string }>;
+  callers: FileContextEntry[];
+  callees: FileContextEntry[];
+  processes: FileContextEntry[];
+  nodes: FileContextGraphNode[];
+  edges: FileContextGraphEdge[];
 }> {
-  const normalizedPath = filePath.replace(/\\/g, '/').replace(/^\/+/, '');
+  const normalizedPath = slashPath(relativePath(repo, filePath)).replace(/^\/+/, '');
   const fileName = normalizedPath.split('/').pop() ?? normalizedPath;
+  const escapedPath = cypherString(normalizedPath);
+  const pathPredicate = (alias: string) => [
+    `${alias}.filePath IS NOT NULL AND toLower(${alias}.filePath) = toLower('${escapedPath}')`,
+    `${alias}.filePath IS NOT NULL AND toLower(${alias}.filePath) ENDS WITH toLower('/${escapedPath}')`,
+  ].join(' OR ');
 
-  const cypher = `MATCH (src:File)-[:CodeRelation]->(sym)-[r:CodeRelation]->(otherSym)<-[:CodeRelation]-(dst:File)
-WHERE src.filePath = '${normalizedPath}' AND r.type IN ['IMPORTS','CALLS','REFERENCES']
-WITH dst, r, src
-ORDER BY dst.filePath
-RETURN DISTINCT dst.filePath AS path, dst.name AS name, r.type AS relType
-UNION ALL
-MATCH (src:File)-[:CodeRelation]->(sym)-[r:CodeRelation]->(otherSym)<-[:CodeRelation]-(dst:File)
-WHERE dst.filePath = '${normalizedPath}' AND r.type IN ['IMPORTS','CALLS','REFERENCES']
-WITH src, r
-ORDER BY src.filePath
-RETURN DISTINCT src.filePath AS path, src.name AS name, '<-' + r.type AS relType`;
+  const cypher = `MATCH (source)-[r:CodeRelation]->(target)
+WHERE ((${pathPredicate('source')}) OR (${pathPredicate('target')}))
+  AND r.type IN ['DEFINES','HAS_METHOD','HAS_PROPERTY','IMPORTS','CALLS','REFERENCES','ACCESSES','EXTENDS','IMPLEMENTS','INSTANTIATES','HANDLES_ROUTE']
+RETURN labels(source) AS sourceLabel,
+       source.name AS source,
+       source.filePath AS sourceFile,
+       source.id AS sourceId,
+       source.startLine AS sourceLine,
+       r.type AS relType,
+       labels(target) AS targetLabel,
+       target.name AS target,
+       target.filePath AS targetFile,
+       target.id AS targetId,
+       target.startLine AS targetLine
+ORDER BY sourceFile, sourceLine, relType, targetFile, targetLine
+LIMIT 160`;
 
   let rows: Array<Record<string, unknown>> = [];
   try {
     const result = await mcpManager.callTool(serverId, 'cypher', { query: cypher, repo });
     const data = parseMcpResult(result);
-    if (data && typeof data === 'object') {
-      const obj = data as Record<string, unknown>;
-      if (Array.isArray(obj.rows)) {
-        rows = obj.rows as Array<Record<string, unknown>>;
-      } else if (typeof obj.result === 'string') {
-        rows = parseMarkdownTable(obj.result);
-      }
-    }
+    rows = extractCypherRows(data);
   } catch {
     // ignore
   }
 
-  const callers: Array<{ name: string; file: string; kind: string }> = [];
-  const callees: Array<{ name: string; file: string; kind: string }> = [];
+  const rootId = `file:${normalizedPath}`;
+  const nodesMap = new Map<string, FileContextGraphNode>();
+  const edgesMap = new Map<string, FileContextGraphEdge>();
+  const callers: FileContextEntry[] = [];
+  const callees: FileContextEntry[] = [];
+  const processes: FileContextEntry[] = [];
   const seenCallers = new Set<string>();
   const seenCallees = new Set<string>();
+  const seenProcesses = new Set<string>();
+
+  const addNode = (node: FileContextGraphNode) => {
+    if (!nodesMap.has(node.id)) {
+      nodesMap.set(node.id, node);
+      return;
+    }
+    const existing = nodesMap.get(node.id)!;
+    if (existing.group === 'process' && (node.group === 'caller' || node.group === 'callee')) {
+      existing.group = node.group;
+    }
+    existing.file ||= node.file;
+    existing.kind ||= node.kind;
+    existing.line ??= node.line;
+  };
+
+  const addEntry = (list: FileContextEntry[], seen: Set<string>, node: FileContextGraphNode) => {
+    const file = node.file ?? '';
+    const key = `${node.id}:${file}`;
+    if (!node.label || !file || seen.has(key)) return;
+    seen.add(key);
+    const entry: FileContextEntry = { name: node.label, file, kind: node.kind ?? 'Symbol' };
+    if (typeof node.line === 'number') entry.line = node.line;
+    list.push(entry);
+  };
+
+  const makeNode = (
+    idValue: unknown,
+    labelValue: unknown,
+    labelKindValue: unknown,
+    fileValue: unknown,
+    lineValue: unknown,
+    group: string,
+    isRoot: boolean,
+  ): FileContextGraphNode | null => {
+    const file = relativePath(repo, String(fileValue ?? ''));
+    const kind = nodeLabelKind(labelKindValue);
+    const label = String(labelValue ?? '').trim() || basename(file);
+    if (!label && !file) return null;
+    if (isRoot) {
+      return { id: rootId, label: fileName, group: 'center', kind: 'File', file: normalizedPath };
+    }
+    const id = String(idValue ?? '').trim() || `${kind}:${file}:${label}`;
+    const line = numericLine(lineValue);
+    const node: FileContextGraphNode = { id, label, group, kind, file };
+    if (line !== undefined) node.line = line;
+    return node;
+  };
+
+  addNode({ id: rootId, label: fileName, group: 'center', kind: 'File', file: normalizedPath });
 
   for (const row of rows) {
-    const path = String(row.path ?? '');
-    const name = String(row.name ?? path.split('/').pop() ?? '');
-    const relType = String(row.relType ?? '');
-    if (!path || path === normalizedPath) continue;
+    const sourceFile = String(getRecordValue(row, 'sourceFile') ?? '');
+    const targetFile = String(getRecordValue(row, 'targetFile') ?? '');
+    const sourceInFile = sameGraphPath(repo, sourceFile, normalizedPath);
+    const targetInFile = sameGraphPath(repo, targetFile, normalizedPath);
+    if (!sourceInFile && !targetInFile) continue;
 
-    if (relType.startsWith('<-')) {
-      if (!seenCallers.has(path)) {
-        seenCallers.add(path);
-        callers.push({ name, file: path, kind: 'File' });
-      }
-    } else {
-      if (!seenCallees.has(path)) {
-        seenCallees.add(path);
-        callees.push({ name, file: path, kind: 'File' });
-      }
+    const sourceKind = nodeLabelKind(getRecordValue(row, 'sourceLabel'));
+    const targetKind = nodeLabelKind(getRecordValue(row, 'targetLabel'));
+    const sourceIsRoot = sourceInFile && isFileKind(sourceKind);
+    const targetIsRoot = targetInFile && isFileKind(targetKind);
+    const sourceGroup = sourceIsRoot ? 'center' : sourceInFile ? 'process' : 'caller';
+    const targetGroup = targetIsRoot ? 'center' : targetInFile ? 'process' : 'callee';
+    const sourceNode = makeNode(
+      getRecordValue(row, 'sourceId'),
+      getRecordValue(row, 'source'),
+      sourceKind,
+      sourceFile,
+      getRecordValue(row, 'sourceLine'),
+      sourceGroup,
+      sourceIsRoot,
+    );
+    const targetNode = makeNode(
+      getRecordValue(row, 'targetId'),
+      getRecordValue(row, 'target'),
+      targetKind,
+      targetFile,
+      getRecordValue(row, 'targetLine'),
+      targetGroup,
+      targetIsRoot,
+    );
+    if (!sourceNode || !targetNode) continue;
+
+    addNode(sourceNode);
+    addNode(targetNode);
+
+    const relType = String(getRecordValue(row, 'relType') ?? '');
+    const edgeKey = `${sourceNode.id}->${targetNode.id}:${relType}`;
+    if (!edgesMap.has(edgeKey) && sourceNode.id !== targetNode.id) {
+      edgesMap.set(edgeKey, { id: edgeKey, source: sourceNode.id, target: targetNode.id, label: relType });
     }
+
+    if (sourceInFile && !isFileKind(sourceKind)) addEntry(processes, seenProcesses, sourceNode);
+    if (targetInFile && !isFileKind(targetKind)) addEntry(processes, seenProcesses, targetNode);
+    if (!sourceInFile && targetInFile) addEntry(callers, seenCallers, sourceNode);
+    if (sourceInFile && !targetInFile) addEntry(callees, seenCallees, targetNode);
   }
 
   return {
@@ -492,6 +712,9 @@ RETURN DISTINCT src.filePath AS path, src.name AS name, '<-' + r.type AS relType
     root: { name: fileName, file: normalizedPath, kind: 'File' },
     callers,
     callees,
+    processes,
+    nodes: [...nodesMap.values()],
+    edges: [...edgesMap.values()],
   };
 }
 
@@ -631,10 +854,12 @@ async function buildDependencyGraph(
 function relativePath(root: string, full: string): string {
   const normRoot = normalizeFsPath(root);
   const normFull = normalizeFsPath(full);
+  const displayRoot = slashPath(root);
+  const displayFull = slashPath(full);
   if (normFull.startsWith(normRoot + '/')) {
-    return normFull.slice(normRoot.length + 1);
+    return displayFull.slice(displayRoot.length + 1);
   }
-  return normFull;
+  return displayFull;
 }
 
 function basename(path: string): string {
@@ -668,3 +893,8 @@ function getPackageGroup(filePath: string): string {
   if (dirParts.length === 2) return `${dirParts[0]}/${dirParts[1]}`;
   return `${dirParts[0]}/${dirParts[1]}/${dirParts[2]}`;
 }
+
+export const __gitNexusRouteTest = {
+  buildFileContextGraph,
+  relativePath,
+};

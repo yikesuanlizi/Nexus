@@ -1,6 +1,7 @@
 import type { Server } from 'node:http';
 import type { ThreadStore } from '@nexus/storage';
 import { shutdownAllDingtalkClients } from '../routes/botRoute.js';
+import { resetGitNexusService } from '../services/gitNexusService.js';
 
 export async function markRunningTurnsInterrupted(store: ThreadStore, now = new Date().toISOString()): Promise<number> {
   const threads = await store.listThreads();
@@ -45,6 +46,7 @@ export function installGracefulShutdown(options: {
         log(`[shutdown] Marked ${interrupted} running turn(s) as interrupted`);
       }
       shutdownAllDingtalkClients();
+      resetGitNexusService();
       await new Promise<void>((resolve) => {
         options.server.close(() => resolve());
       });

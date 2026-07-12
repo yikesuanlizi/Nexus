@@ -266,22 +266,36 @@ export const shellCommandTool: ToolDefinition = {
 };
 
 // ─── gitnexus_analyze ──────────────────────────────────────────────────────
-// 中文注释：为当前工作区构建/刷新 GitNexus 索引；该命令会写入 .gitnexus，因此按 workspace_write 审批。
+// 中文注释：为指定工作区构建/刷新 GitNexus 索引。
+// 这是 CLI/npx 索引运维层的入口，Agent 通过此工具触发索引，不直接裸跑 npx。
 export const gitNexusAnalyzeTool: ToolDefinition = {
   name: 'gitnexus_analyze',
   description:
-    'Build or refresh the GitNexus code graph index for the current workspace by running "npx -y gitnexus@latest analyze". Use this when GitNexus graph queries are needed and the repository may not be indexed. This is an enhancement path; continue using list_files/read_file/search_content if GitNexus is unavailable or fails.',
+    'Build or refresh the GitNexus code graph index for a workspace. This runs "npx -y gitnexus@latest analyze" under the hood. Use this when GitNexus graph queries (context, impact, trace, graph) are needed and the repository may not be indexed yet. After indexing completes, GitNexus serve and MCP tools can provide structured code analysis. This is an enhancement path; continue using list_files/read_file/search_content if GitNexus is unavailable.',
   parameters: {
     type: 'object',
-    properties: {},
+    properties: {
+      repoPath: {
+        type: 'string',
+        description: 'Path to the repository to index. Defaults to the current workspace root.',
+      },
+      force: {
+        type: 'boolean',
+        description: 'Force re-index even if an index already exists.',
+      },
+    },
     additionalProperties: false,
   },
   requiredPolicy: 'workspace_write',
   requiresApproval: true,
   timeoutMs: 600_000,
   maxOutputLength: 30_000,
-  async execute(_args, ctx): Promise<ToolResult> {
-    const command = ['npx', '-y', 'gitnexus@latest', 'analyze'];
+  async execute(args, ctx): Promise<ToolResult> {
+    const repoPath = typeof args.repoPath === 'string' && args.repoPath.trim()
+      ? resolvePath(ctx.workspaceRoot, args.repoPath)
+      : ctx.workspaceRoot;
+    const forceFlag = args.force === true ? ['--force'] : [];
+    const command = ['npx', '-y', 'gitnexus@latest', 'analyze', ...forceFlag];
     const { execFile } = await import('node:child_process');
 
     return new Promise((resolve) => {
@@ -289,7 +303,7 @@ export const gitNexusAnalyzeTool: ToolDefinition = {
         command[0],
         command.slice(1),
         {
-          cwd: ctx.workspaceRoot,
+          cwd: repoPath,
           maxBuffer: 10 * 1024 * 1024,
           timeout: 600_000,
           windowsHide: true,
@@ -303,7 +317,7 @@ export const gitNexusAnalyzeTool: ToolDefinition = {
           const exitCode = typeof error?.code === 'number' ? error.code : error ? 1 : 0;
           const baseData = {
             command,
-            cwd: ctx.workspaceRoot,
+            repoPath,
             exitCode,
           };
           if (error) {
@@ -321,7 +335,7 @@ export const gitNexusAnalyzeTool: ToolDefinition = {
             output: output || 'GitNexus analyze completed.',
             status: 'completed',
             exitCode: 0,
-            data: baseData,
+            data: { ...baseData, started: true },
           });
         },
       );
