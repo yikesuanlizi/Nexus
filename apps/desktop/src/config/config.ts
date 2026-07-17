@@ -19,9 +19,9 @@ export type ReasoningEffort = 'low' | 'medium' | 'high';
 // 界面主题：深色 / 浅色 / 跟随系统
 // Chinese translation: UI theme: dark / light / follow system.
 export type ThemeMode = 'dark' | 'light' | 'system';
-// 运行模式：缓存优先 / 长链路运行
-// Chinese translation: Run profile: cache first / long-running OS.
-export type RunProfile = 'cache_first' | 'runtime_os';
+// 运行模式：缓存优先 / 长链路运行 / Harness 自主循环
+// Chinese translation: Run profile: cache first / long-running OS / harness autonomous loop.
+export type RunProfile = 'cache_first' | 'runtime_os' | 'harness';
 // 用户头像预设 id，最后一个为自定义上传
 // Chinese translation: User avatar preset IDs, the last one is for custom uploads.
 export type UserAvatarId = 'asteroid' | 'rocket' | 'owl' | 'crystal' | 'paper-plane' | 'fox' | 'lightning' | 'mushroom' | 'custom';

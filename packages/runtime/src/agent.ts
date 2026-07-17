@@ -72,6 +72,10 @@ import { buildPromptCacheShape, comparePromptCacheShape, type PromptCacheShape }
 import { compactionOptionsForRunProfile, normalizeRunProfile, type RunProfile } from './runProfile.js';
 import { leaksToolProtocol, validateThreadItemsForPersistence } from './modelOutput.js';
 import { NexusRuntimeError, affectsTurnStatus, isRecoverableStreamError, toNexusErrorInfo } from './runtimeError.js';
+import type { RunTurnOptions, HarnessItemFields, HarnessResult } from './harness/types.js';
+import { TaskHarnessEngine, type HarnessAgentLoop } from './harness/taskHarness.js';
+import { DEFAULT_HARNESS_CONFIG } from './harness/types.js';
+import type { EvaluatorModelGateway } from './harness/goalEvaluator.js';
 import {
   composeRuntimeMiddleware,
   createDynamicContextMiddleware,
@@ -312,6 +316,9 @@ export class AgentLoop {
   // 中文注释：取消 SystemMonitor 级别变化订阅的函数。
   /** Unsubscribe function for the SystemMonitor level-change listener. */
   private _systemMonitorUnsub: (() => void) | null = null;
+  // 实施点 2：per-thread harness 字段标记，用于给 harness turn 产生的 items 打 harnessRunId
+  // — English: per-thread harness fields marker, used to tag items produced by harness turns
+  private harnessFieldsByThread = new Map<ThreadId, HarnessItemFields>();
 
   constructor(config: AgentConfig, stateManager?: ThreadStateManager) {
     const locale = config.locale ?? 'zh';
@@ -1174,6 +1181,7 @@ export class AgentLoop {
     threadId: ThreadId,
     userInput: UserInput,
     signal?: AbortSignal,
+    options?: RunTurnOptions,
   ): Promise<{ items: ThreadItem[]; usage: Usage | null }> {
     const thread = await this.config.store.getThread(threadId);
     if (!thread) throw new Error(`Thread ${threadId} not found`);
@@ -1183,6 +1191,22 @@ export class AgentLoop {
     if (this.stateManager.isRunning(threadId)) {
       throw new Error(`Thread ${threadId} already has an active turn`);
     }
+
+    // Gap 3 / Gap 9: 解析 RunTurnOptions，设置 harness 字段标记和副作用控制
+    // — English: parse RunTurnOptions for harness fields and side-effect control
+    const harnessFields: HarnessItemFields | null = options?.harnessRunId
+      ? {
+          harnessRunId: options.harnessRunId,
+          ...(options.harnessIteration !== undefined ? { harnessIteration: options.harnessIteration } : {}),
+        }
+      : null;
+    if (harnessFields) {
+      this.harnessFieldsByThread.set(threadId, harnessFields);
+    }
+    // 副作用控制：harness 续跑默认跳过 cold memory 提取，保留 episode 更新
+    const skipColdMemory = options?.skipColdMemory ?? false;
+    const extractMemory = options?.extractMemory ?? !skipColdMemory;
+    const updateEpisode = options?.updateEpisode ?? true;
 
     const turnId = generateId();
     const turnIndex = thread.turnCount;
@@ -1241,7 +1265,7 @@ export class AgentLoop {
     };
     const collectedItems: ThreadItem[] = [userItem];
     this.emitItem(threadId, turnId, userItem);
-    await this.config.store.appendItems(threadId, [userItem]);
+    await this.persistItems(threadId, [userItem]);
     this.refreshRunningCheckpoint(checkpoint, threadId, turnId, collectedItems.length);
     await this.writeCheckpoint(threadId, checkpoint);
     const runtimeContext = await this.createRuntimeTurnContext(
@@ -1282,8 +1306,13 @@ export class AgentLoop {
       this.emit({ type: 'turn.completed', threadId, turnId, usage: result.usage });
       terminalTurnResult = { status: 'completed', usage: result.usage };
       await this.finishRunMonitor(turnId, 'completed', result.usage);
-      await this.updateEpisodeFromCompletedTurn(refreshedThread, turnId, turnIndex, userInput, collectedItems);
-      await this.maybeExtractColdMemories(refreshedThread, turnId, userInput, collectedItems);
+      // Gap 9: 副作用控制 — harness 续跑按 options 决定是否更新 episode / 提取 cold memory
+      if (updateEpisode) {
+        await this.updateEpisodeFromCompletedTurn(refreshedThread, turnId, turnIndex, userInput, collectedItems);
+      }
+      if (extractMemory) {
+        await this.maybeExtractColdMemories(refreshedThread, turnId, userInput, collectedItems);
+      }
       await this.finishTurnLifecycle(runtimeContext, terminalTurnResult);
       return result;
     } catch (err) {
@@ -1316,7 +1345,7 @@ export class AgentLoop {
         };
         collectedItems.push(errorItem);
         this.emitItem(threadId, turnId, errorItem);
-        await this.config.store.appendItems(threadId, [errorItem]);
+        await this.persistItems(threadId, [errorItem]);
         await this.writeCheckpoint(threadId, this.withCheckpointState(threadId, turnId, collectedItems.length, 'interrupted'));
         this.stateManager.completeInterruptedTurn(threadId, turnId);
         this.emit({
@@ -1352,7 +1381,7 @@ export class AgentLoop {
       };
       collectedItems.push(errorItem);
       this.emitItem(threadId, turnId, errorItem);
-      await this.config.store.appendItems(threadId, [errorItem]);
+      await this.persistItems(threadId, [errorItem]);
       await this.writeCheckpoint(threadId, this.withCheckpointState(threadId, turnId, collectedItems.length, 'failed'));
       turn.status = 'failed';
       turn.completedAt = new Date().toISOString();
@@ -1376,7 +1405,60 @@ export class AgentLoop {
         // 在 afterTurn 有机会执行后保留原始回合失败信息。
       }
       throw err;
+    } finally {
+      // 实施点 2：清理 per-thread harness 字段标记，避免泄漏到后续 turn
+      // — English: clear per-thread harness fields marker to avoid leaking to subsequent turns
+      if (harnessFields) {
+        this.harnessFieldsByThread.delete(threadId);
+      }
     }
+  }
+
+  /**
+   * Gap 1 / Gap 3: Task Harness Engine 入口。
+   * 启动跨 turn 自主循环：Goal → Plan → Execute → Critique → Replan → Verify。
+   * 调用方（API route）拿到 harnessRunId 后可立即返回，循环在后台进行。
+   */
+  async runHarness(
+    threadId: ThreadId,
+    userInput: UserInput,
+    options?: {
+      goal?: string;
+      acceptanceCriteria?: string[];
+      maxContinuations?: number;
+      signal?: AbortSignal;
+      /** Gap 1: 调用方预生成的 harnessRunId，用于 API 立即返回 */
+      harnessRunId?: string;
+    },
+  ): Promise<HarnessResult> {
+    // EvaluatorModelGateway adapter：把 ModelGateway.chat 包装成 completeOnce
+    // — English: adapt ModelGateway.chat into EvaluatorModelGateway.completeOnce
+    const evaluatorModel: EvaluatorModelGateway = {
+      completeOnce: async (prompt, opts) => {
+        const response = await this.config.model.chat(
+          {
+            messages: [{ role: 'user', content: prompt }],
+          },
+          { signal: opts?.signal },
+        );
+        const choice = response.choices[0];
+        const content = choice?.message?.content;
+        if (typeof content === 'string') return content;
+        // 多模态 content 降级为空串（evaluator prompt 期望纯文本响应）
+        return '';
+      },
+    };
+
+    // 构造 TaskHarnessEngine：this 作为 HarnessAgentLoop（runTurn 已扩展为 4 参数）
+    // — English: build TaskHarnessEngine with this agent as the loop delegate
+    const engine = new TaskHarnessEngine(
+      this as unknown as HarnessAgentLoop,
+      evaluatorModel,
+      this.config.store,
+      DEFAULT_HARNESS_CONFIG,
+    );
+
+    return engine.runHarness(threadId, userInput, options);
   }
 
   // ─── Agent Loop Core ──────────────────────────────────────────────────────
@@ -1682,7 +1764,7 @@ export class AgentLoop {
           const partialValidation = validateThreadItemsForPersistence([agentItem]);
           if (partialValidation.ok) {
             this.emit({ type: 'item.completed', threadId, turnId, item: agentItem });
-            await this.config.store.appendItems(threadId, [agentItem]);
+            await this.persistItems(threadId, [agentItem]);
           } else {
             this.discardTransientItem(threadId, turnId, collectedItems, agentItem.id);
             this.emit({
@@ -1729,7 +1811,7 @@ export class AgentLoop {
           throw validation.error;
         }
         this.emit({ type: 'item.completed', threadId, turnId, item: agentItem });
-        await this.config.store.appendItems(threadId, [agentItem]);
+        await this.persistItems(threadId, [agentItem]);
       }
 
       if (!agentItem && toolCalls.size === 0) {
@@ -2211,7 +2293,7 @@ export class AgentLoop {
 
     // Persist
     // 持久化
-    await this.config.store.appendItems(threadId, [toolItem]);
+    await this.persistItems(threadId, [toolItem]);
 
     if ((toolName === 'apply_patch' || toolName === 'write_file') && result.status === 'completed') {
       const changes = toolName === 'apply_patch'
@@ -2231,7 +2313,7 @@ export class AgentLoop {
         collectedItems.push(fileItem);
         this.emit({ type: 'item.started', threadId, turnId, item: fileItem });
         this.emit({ type: 'item.completed', threadId, turnId, item: fileItem });
-        await this.config.store.appendItems(threadId, [fileItem]);
+        await this.persistItems(threadId, [fileItem]);
         const projectCheckpoint = await createProjectCheckpointItem({
           threadId,
           turnId,
@@ -2245,7 +2327,7 @@ export class AgentLoop {
           collectedItems.push(projectCheckpoint);
           this.emit({ type: 'item.started', threadId, turnId, item: projectCheckpoint });
           this.emit({ type: 'item.completed', threadId, turnId, item: projectCheckpoint });
-          await this.config.store.appendItems(threadId, [projectCheckpoint]);
+          await this.persistItems(threadId, [projectCheckpoint]);
         }
         this.emit({
           type: 'turn.diff.updated',
@@ -2311,7 +2393,7 @@ export class AgentLoop {
       collectedItems.push(item);
       this.emit({ type: 'item.started', threadId, turnId, item });
       this.emit({ type: 'item.completed', threadId, turnId, item });
-      await this.config.store.appendItems(threadId, [item]);
+      await this.persistItems(threadId, [item]);
       return response.output;
     }
 
@@ -2338,7 +2420,7 @@ export class AgentLoop {
     collectedItems.push(toolItem);
     this.emit({ type: 'item.started', threadId, turnId, item: toolItem });
     this.emit({ type: 'item.completed', threadId, turnId, item: toolItem });
-    await this.config.store.appendItems(threadId, [toolItem]);
+    await this.persistItems(threadId, [toolItem]);
     return response.output;
   }
 
@@ -2378,7 +2460,7 @@ export class AgentLoop {
     }
 
     this.emit({ type: 'item.completed', threadId, turnId, item });
-    await this.config.store.appendItems(threadId, [item]);
+    await this.persistItems(threadId, [item]);
     return { output: formatCollabToolOutput(item, this.config.locale) };
   }
 
@@ -3843,7 +3925,6 @@ export class AgentLoop {
   ): Promise<boolean> {
     const { pressure, compactionOptions, autoCompactWindow } = await this.emitCompactionPressure(threadId, turnId, visibleMessages);
     const pressureWithWindow = { ...pressure, window: autoCompactWindow };
-    if (phaseContext !== 'pre_turn' && pressure.status !== 'soft') return false;
     if (pressure.status !== 'hard') return false;
     const compactionItemId = `compact_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     this.emit({
@@ -4096,8 +4177,30 @@ export class AgentLoop {
   }
 
   private emitItem(threadId: ThreadId, turnId: TurnId, item: ThreadItem): void {
+    // 实施点 2：emit 前注入 harnessRunId 标记（保证事件与持久化一致）
+    this.applyHarnessFields(threadId, item);
     this.emit({ type: 'item.started', threadId, turnId, item });
     this.emit({ type: 'item.completed', threadId, turnId, item });
+  }
+
+  // 实施点 2：从 per-thread Map 取 harnessFields，注入到 item（仅 harness turn 产生时生效）
+  // — English: read harness fields from per-thread map and inject onto item if present
+  private applyHarnessFields(threadId: ThreadId, item: ThreadItem): void {
+    const fields = this.harnessFieldsByThread.get(threadId);
+    if (!fields) return;
+    (item as ThreadItem & HarnessItemFields).harnessRunId = fields.harnessRunId;
+    if (fields.harnessIteration !== undefined) {
+      (item as ThreadItem & HarnessItemFields).harnessIteration = fields.harnessIteration;
+    }
+  }
+
+  // 实施点 2：appendItems 包装，store 前注入 harnessRunId 标记，保证持久化 item 可被 EvidenceLedger.rebuildFromThreadItems 按 harnessRunId 过滤
+  // — English: appendItems wrapper that tags items with harness fields before persistence
+  private async persistItems(threadId: ThreadId, items: ThreadItem[]): Promise<void> {
+    for (const item of items) {
+      this.applyHarnessFields(threadId, item);
+    }
+    await this.config.store.appendItems(threadId, items);
   }
 }
 

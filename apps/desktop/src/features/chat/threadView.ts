@@ -179,7 +179,8 @@ export function groupTranscriptItems<T extends ThreadItemLike>(
 function isTranscriptItem(item: ThreadItemLike): boolean {
   return item.type !== 'workflow_checkpoint'
     && item.type !== 'project_checkpoint'
-    && item.type !== 'context_compaction';
+    && item.type !== 'context_compaction'
+    && item.type !== 'harness_continuation';
 }
 
 export function describeEvent(event: Record<string, unknown>, locale: Locale): EventDraft | null {

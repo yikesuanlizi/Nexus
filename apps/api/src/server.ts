@@ -13,21 +13,19 @@ import { readJson, sendError, sendJson } from './shared/http.js';
 import { DEFAULT_TENANT_ID, tenantEventKey, type TenantContext } from './shared/tenant.js';
 import { installGracefulShutdown } from './runtime/shutdown.js';
 import { handlePickWorkspaceDirectory } from './routes/workspacePicker.js';
-import { handlePatchThread } from './routes/threadMetadata.js';
 import { autoStartDingtalkForTenant, handleBotRoute } from './routes/botRoute.js';
-import { clearRemoteBotBindingsForDeletedThread } from './routes/threadDeletion.js';
 import { handleWorkspaceFilesRoute } from './routes/workspaceFiles.js';
 import { handleSettingsRoute } from './routes/settingsRoute.js';
 import { handleWorkflowRoute } from './routes/workflowRoute.js';
 import { handleRunMonitorRoute } from './routes/runMonitorRoute.js';
 import { handleGitNexusRoute } from './routes/gitnexusRoute.js';
 import { handleMemoryRoute } from './routes/memoryRoute.js';
+import { handleThreadRoutes } from './routes/threadRoutes.js';
+import { harnessRuntimeRegistry } from './services/harnessRuntime.js';
 import { handleRollbackThreadRuntimeAction, handleRunControlAction } from './routes/threadRuntimeActions.js';
 import { buildSkillDraftSystemPrompt, createSkillInstallTurnItems, createTemplateSkillDraft, deleteSkill, installSkillsFromGitHubUrl, prepareSkillDraftRequest, safeGeneratedSkillDraft, writeSkillDraft, type InstallSkillsResult, type SkillDraft } from './services/skills.js';
 import { shouldRetitleThread, titleFromInput } from './services/threadTitle.js';
-import { buildThreadChildInfos } from './services/threadChildren.js';
 import { buildUserInputFromTurnRequest } from './services/turnInput.js';
-import { usageForThreadTree, usageFromThread } from './services/usage.js';
 import { defaultConfig, hiddenChatWorkspaceRoot, publicRunConfig, resolveConfig, type AgentRunConfig, type TurnRequest, A2A_CONFIG_KEY, normalizeA2AConfig } from './config/config.js';
 import { createTenantRuntime } from './runtime/tenantRuntime.js';
 import { applyCorsHeaders, resolveCorsOptions } from './shared/cors.js';
@@ -427,10 +425,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   if (req.method === 'POST' && url.pathname === '/api/skills/draft') {
     const body = await readJson<{ description?: string; config?: Partial<AgentRunConfig> }>(req);
     const description = body.description?.trim();
-    if (!description) {
-      sendError(res, 400, 'Skill description is required');
-      return;
-    }
+    if (!description) { sendError(res, 400, 'Skill description is required'); return; }
     sendJson(res, 200, await draftSkill(description, body.config, tenantContext));
     return;
   }
@@ -438,10 +433,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   if (req.method === 'POST' && url.pathname === '/api/skills/install') {
     const body = await readJson<{ url?: string; config?: Partial<AgentRunConfig> }>(req);
     const skillUrl = body.url?.trim();
-    if (!skillUrl) {
-      sendError(res, 400, 'Skill URL is required');
-      return;
-    }
+    if (!skillUrl) { sendError(res, 400, 'Skill URL is required'); return; }
     try {
       const config = resolveConfig({ ...await getDefaultRunConfig(), ...(body.config ?? {}) });
       const result = await installSkillsFromGitHubUrl(config.skillsRoot, skillUrl);
@@ -552,10 +544,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   if (req.method === 'POST' && segments[0] === 'api' && segments[1] === 'approvals' && segments[2]) {
     const body = await readJson<{ approved?: boolean; reason?: string }>(req);
     const ok = approvalBroker.decide(segments[2], body.approved === true, body.reason);
-    if (!ok) {
-      sendError(res, 404, 'Approval request not found');
-      return;
-    }
+    if (!ok) { sendError(res, 404, 'Approval request not found'); return; }
     sendJson(res, 200, { ok: true });
     return;
   }
@@ -579,105 +568,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     return;
   }
 
-  if (segments[0] === 'api' && segments[1] === 'threads' && segments[2]) {
-    const threadId = segments[2];
-    if (await handleWorkflowRoute({
-      req,
-      res,
-      segments,
-      store,
-      createPlannerModel: async () => (await createTenantAgent()).model,
-    })) return;
-
-    if (req.method === 'GET' && segments.length === 3) {
-      const thread = await store.getThread(threadId);
-      if (!thread) {
-        sendError(res, 404, 'Thread not found');
-        return;
-      }
-      const turns = await store.getTurns(threadId);
-      const items = await store.getItems(threadId);
-      const config = await getThreadRunConfig(threadId);
-      const includeChildrenUsage = url.searchParams.get('includeChildren') === '1';
-      sendJson(res, 200, {
-        thread,
-        turns,
-        items,
-        config: publicThreadRunConfig(config, thread),
-        usage: includeChildrenUsage ? await usageForThreadTree(store, threadId) : usageFromThread(thread),
-      });
-      return;
-    }
-
-    if (req.method === 'GET' && segments[3] === 'usage') {
-      const thread = await store.getThread(threadId);
-      if (!thread) {
-        sendError(res, 404, 'Thread not found');
-        return;
-      }
-      const includeChildrenUsage = url.searchParams.get('includeChildren') === '1';
-      sendJson(res, 200, { usage: includeChildrenUsage ? await usageForThreadTree(store, threadId) : usageFromThread(thread) });
-      return;
-    }
-
-    if (req.method === 'GET' && segments[3] === 'children') {
-      const thread = await store.getThread(threadId);
-      if (!thread) {
-        sendError(res, 404, 'Thread not found');
-        return;
-      }
-      const recursive = url.searchParams.get('recursive') === '1';
-      const agent = await getTenantDefaultAgent();
-      const children = await buildThreadChildInfos({
-        parentThreadId: threadId,
-        recursive,
-        store,
-        getRuntimeState: (childThreadId) => agent.getRuntimeState(childThreadId),
-      });
-      sendJson(res, 200, { threadId, children });
-      return;
-    }
-
-    if (req.method === 'DELETE' && segments.length === 3) {
-      const thread = await store.getThread(threadId);
-      if (!thread) { sendError(res, 404, 'Thread not found'); return; }
-      const agent = await getTenantDefaultAgent();
-      agent.interrupt(threadId);
-      closeThreadEventClients(threadId, tenantContext.tenantId);
-      await store.deleteThread(threadId);
-      await clearRemoteBotBindingsForDeletedThread(store, threadId);
-      sendJson(res, 200, { ok: true });
-      return;
-    }
-
-    if (req.method === 'PATCH' && segments.length === 3) return handlePatchThread(req, res, store, threadId);
-
-    if (req.method === 'PATCH' && segments[3] === 'config') {
-      const body = await readJson<{ config?: Partial<AgentRunConfig> }>(req);
-      const config = await saveThreadRunConfig(threadId, body.config ?? {});
-      sendJson(res, 200, { ok: true, config: publicRunConfig(config) });
-      return;
-    }
-
-    if (req.method === 'GET' && segments[3] === 'state') {
-      const agent = await getTenantDefaultAgent();
-      const thread = await store.getThread(threadId);
-      sendJson(res, 200, { state: await agent.getRuntimeState(threadId), usage: usageFromThread(thread) });
-      return;
-    }
-
-    if (req.method === 'GET' && segments[3] === 'context-pressure') {
-      const agent = await getTenantDefaultAgent();
-      const thread = await store.getThread(threadId);
-      if (!thread) {
-        sendError(res, 404, 'Thread not found');
-        return;
-      }
-      const pressure = await agent.getContextPressure(threadId);
-      sendJson(res, 200, { pressure });
-      return;
-    }
-  }
+  if (await handleThreadRoutes(req, res, url, segments, { store, tenantContext, createTenantAgent, getTenantDefaultAgent, publishTenantEvent, getThreadRunConfig, saveThreadRunConfig, publicThreadRunConfig, closeThreadEventClients })) return;
 
   if (req.method === 'GET' && segments[0] === 'api' && segments[1] === 'events' && segments[2]) {
     const threadId = segments[2];
@@ -705,16 +596,10 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     if (action === 'skills' && segments[4] === 'install') {
       const body = await readJson<{ url?: string; config?: Partial<AgentRunConfig> }>(req);
       const skillUrl = body.url?.trim();
-      if (!skillUrl) {
-        sendError(res, 400, 'Skill URL is required');
-        return;
-      }
+      if (!skillUrl) { sendError(res, 400, 'Skill URL is required'); return; }
       const config = body.config ? await saveThreadRunConfig(threadId, body.config) : await getThreadRunConfig(threadId);
       const thread = await store.getThread(threadId);
-      if (!thread) {
-        sendError(res, 404, 'Thread not found');
-        return;
-      }
+      if (!thread) { sendError(res, 404, 'Thread not found'); return; }
 
       const inputText = `/skills add ${skillUrl}`;
       if (shouldRetitleThread(thread.title)) {
@@ -885,4 +770,9 @@ server.listen(port, () => {
   });
 });
 
-installGracefulShutdown({ server, store: rootStore });
+installGracefulShutdown({
+  server,
+  store: rootStore,
+  // 进程退出时取消所有运行中的 harness run — English: abort running harness runs on exit
+  onShutdown: () => harnessRuntimeRegistry.abortAll(),
+});

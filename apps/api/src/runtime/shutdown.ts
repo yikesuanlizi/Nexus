@@ -28,6 +28,9 @@ export function installGracefulShutdown(options: {
   signals?: NodeJS.Signals[];
   onExit?: (code: number) => void;
   log?: (message: string) => void;
+  /** 关闭阶段调用的额外清理钩子（在 server.close 之前） */
+  // — English: extra cleanup hook invoked before server.close
+  onShutdown?: () => void;
 }): void {
   const signals = options.signals ?? ['SIGINT', 'SIGTERM'];
   let shuttingDown = false;
@@ -45,6 +48,9 @@ export function installGracefulShutdown(options: {
       if (interrupted > 0) {
         log(`[shutdown] Marked ${interrupted} running turn(s) as interrupted`);
       }
+      // 取消所有运行中的 harness run（Gap 9/进程清理）
+      // — English: abort all running harness runs on shutdown
+      options.onShutdown?.();
       shutdownAllDingtalkClients();
       resetGitNexusService();
       await new Promise<void>((resolve) => {

@@ -559,7 +559,7 @@ function isItemActiveAfterRollback(item: ThreadItem, activeTurnIds: Set<string>,
   ) {
     return checkpoint.turnCount <= turnCount;
   }
-  return activeTurnIds.has(item.turnId);
+  return typeof item.turnId === 'string' && activeTurnIds.has(item.turnId);
 }
 
 async function restoreProjectCheckpoints(

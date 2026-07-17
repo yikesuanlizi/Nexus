@@ -123,6 +123,14 @@ export interface ThreadItem {
     beforeHash: string | null;
     afterHash: string | null;
   }>;
+  // 实施点 2：harness turn 产生的 items 标记字段（可选，仅 harness 自主循环产生）
+  harnessRunId?: string;
+  harnessIteration?: number;
+  // harness 续跑条目字段（type === 'harness_continuation'，UI 不显示）
+  objective?: string;
+  instruction?: string;
+  evaluation?: unknown;
+  visibleToUser?: boolean;
 }
 
 export interface TurnMeta {

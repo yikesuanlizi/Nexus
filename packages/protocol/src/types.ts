@@ -146,7 +146,8 @@ export type ThreadItem =
   | McpToolCallItem
   | WebSearchItem
   | TodoListItem
-  | ErrorItem;
+  | ErrorItem
+  | HarnessContinuationItem;
 
 // 用户消息条目：来自用户的输入
 export interface UserMessageItem {
@@ -157,6 +158,9 @@ export interface UserMessageItem {
   /** ISO-8601 timestamp used by transcript action rows. */
   // 时间戳（ISO-8601），用于会话转录
   timestamp?: string;
+  /** 实施点 2：harness 续跑作为 user-side 输入时也打标记 */
+  harnessRunId?: string;
+  harnessIteration?: number;
 }
 
 // 智能体消息条目：来自模型的回复
@@ -171,6 +175,9 @@ export interface AgentMessageItem {
   /** ISO-8601 timestamp used by transcript action rows. */
   // 时间戳（ISO-8601）
   timestamp?: string;
+  /** 实施点 2：harness turn 产生的普通 items 打 harnessRunId 标记 */
+  harnessRunId?: string;
+  harnessIteration?: number;
 }
 
 // 推理过程条目：模型的思考过程（chain-of-thought）
@@ -180,6 +187,8 @@ export interface ReasoningItem {
   turnId: TurnId;
   text: string;
   timestamp?: string;
+  harnessRunId?: string;
+  harnessIteration?: number;
 }
 
 // 命令执行状态：in_progress（进行中）/ completed（已完成）/ failed（失败）
@@ -195,6 +204,8 @@ export interface CommandExecutionItem {
   exitCode: number | null;
   status: CommandStatus;
   timestamp?: string;
+  harnessRunId?: string;
+  harnessIteration?: number;
 }
 
 // 补丁变更类型：add（新增）/ delete（删除）/ update（更新）
@@ -236,6 +247,8 @@ export interface FileChangeItem {
   summary?: string;
   status: PatchApplyStatus;
   timestamp?: string;
+  harnessRunId?: string;
+  harnessIteration?: number;
 }
 
 // 工作流检查点条目：用于工作流的回放/恢复
@@ -246,6 +259,8 @@ export interface WorkflowCheckpointItem {
   turnCount: number;
   workflow: unknown;
   timestamp?: string;
+  harnessRunId?: string;
+  harnessIteration?: number;
 }
 
 // 工程级检查点里的单个文件快照
@@ -267,6 +282,8 @@ export interface ProjectCheckpointItem {
   workspaceRoot: string;
   files: ProjectFileCheckpoint[];
   timestamp?: string;
+  harnessRunId?: string;
+  harnessIteration?: number;
 }
 
 // 回滚冲突条目：回滚时遇到文件被修改、哈希不一致等冲突
@@ -283,6 +300,8 @@ export interface RollbackConflictItem {
     actualHash?: string | null;
   }>;
   timestamp?: string;
+  harnessRunId?: string;
+  harnessIteration?: number;
 }
 
 // 通用工件引用：跨线程/跨工具的轻量指针，避免传递大段内容
@@ -356,6 +375,8 @@ export interface ContextCompactionItem {
   tokensAfter: number;
   error?: { message: string; code?: string };
   timestamp?: string;
+  harnessRunId?: string;
+  harnessIteration?: number;
 }
 
 // 记忆记录类型：偏好/项目事实/工作流模式/失败教训/环境备注
@@ -480,6 +501,8 @@ export interface ToolCallItem {
   error?: { message: string };
   status: CommandStatus;
   timestamp?: string;
+  harnessRunId?: string;
+  harnessIteration?: number;
 }
 
 // 协作类工具名：spawn_agent / send_input / wait 等子代理协作原语
@@ -524,6 +547,8 @@ export interface CollabToolCallItem {
    */
   // — Chinese: remote agent intermediate text stream. One entry per status-update.message.
   remoteTextStream?: RemoteAgentTextChunk[];
+  harnessRunId?: string;
+  harnessIteration?: number;
 }
 
 /** 远程 Agent 状态轨迹条目。 */
@@ -589,6 +614,8 @@ export interface McpToolCallItem {
   error?: { message: string };
   status: CommandStatus;
   timestamp?: string;
+  harnessRunId?: string;
+  harnessIteration?: number;
 }
 
 // Web 搜索条目：记录一次网络搜索动作
@@ -598,6 +625,8 @@ export interface WebSearchItem {
   turnId: TurnId;
   query: string;
   timestamp?: string;
+  harnessRunId?: string;
+  harnessIteration?: number;
 }
 
 // 待办条目项
@@ -613,6 +642,8 @@ export interface TodoListItem {
   turnId: TurnId;
   items: TodoItemEntry[];
   timestamp?: string;
+  harnessRunId?: string;
+  harnessIteration?: number;
 }
 
 // 错误条目：在回合内出现的可恢复/不可恢复错误
@@ -624,6 +655,8 @@ export interface ErrorItem {
   info?: NexusErrorInfo;
   recoverable?: boolean;
   timestamp?: string;
+  harnessRunId?: string;
+  harnessIteration?: number;
 }
 
 // ─── Events ──────────────────────────────────────────────────────────────────
@@ -1207,4 +1240,48 @@ export interface ThreadRuntimeState {
   checkpoint: Checkpoint | null;
   resumable: boolean;
   stale: boolean;
+}
+
+// ─── Harness ─────────────────────────────────────────────────────────────────
+// Harness（任务引擎）：AgentLoop 外层的跨 turn 自主循环
+// 包含 Goal → Plan → Execute → Critique → Replan → Verify 闭环
+
+// Harness 续跑条目可见性：永远不可见（不伪装成 user_message）
+export type HarnessItemVisibility = false;
+
+// 目标评估状态：satisfied（达标）/ continue（继续）/ needs_user_input（需要用户输入）/ blocked（阻塞）
+export type GoalEvaluationStatus = 'satisfied' | 'continue' | 'needs_user_input' | 'blocked';
+
+// 目标评估结果：由独立模型（GoalEvaluator）输出，fail-closed
+export interface GoalEvaluation {
+  satisfied: boolean;                       // 是否达标
+  status: GoalEvaluationStatus;
+  passedCriteria: string[];                // 已达标的验收标准
+  failedCriteria: string[];                // 未达标的验收标准
+  blocker?: string;                        // 阻塞原因
+  nextHint?: string;                       // 下一步提示
+  evidenceSummary: string;                 // 证据摘要
+  progressSignature: string;                // 进度签名（用于无进展检测）
+  reasoning: string;                       // 推理过程
+  /** Gap 8: criteria → evidenceId[] 映射，由 evaluator 声明。 */
+  // Gap 8: 验收标准到证据 ID 的映射，由 evaluator 声明
+  criteriaEvidenceMap?: Record<string, string[]>;
+}
+
+// Harness 续跑条目：不伪装成 user_message，UI 不显示，run monitor 可审计
+export interface HarnessContinuationItem {
+  id: ItemId;
+  type: 'harness_continuation';
+  turnId?: TurnId;
+  /** 标识本次 harness run，用于关联同一次自主循环产生的所有 items。 */
+  // 本次 harness run 的 ID，用于关联同一次自主循环产生的所有 items
+  harnessRunId: string;
+  /** 第几次续跑（0 = 首次，1+ = 后续隐藏续跑）。 */
+  // 续跑迭代次数（0 表示首次，1+ 表示后续隐藏续跑）
+  iteration: number;
+  objective: string;                       // 本次 harness 的目标
+  instruction: string;                     // 给模型的续跑指令
+  evaluation: GoalEvaluation;              // 上次评估结果
+  visibleToUser: HarnessItemVisibility;    // 永远 false
+  timestamp: string;
 }

@@ -1055,5 +1055,5 @@ function isActiveThreadItem(item: ThreadItem, activeTurnIds: Set<string>, active
   ) {
     return checkpoint.turnCount <= activeTurnCount;
   }
-  return activeTurnIds.has(item.turnId);
+  return typeof item.turnId === 'string' && activeTurnIds.has(item.turnId);
 }

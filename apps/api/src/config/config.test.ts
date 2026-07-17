@@ -69,6 +69,10 @@ describe('AgentRunConfig runProfile', () => {
     expect(resolveConfig({ runProfile: 'cache_first' }).runProfile).toBe('cache_first');
     expect(resolveConfig({ runProfile: 'bad-value' as never }).runProfile).toBe('runtime_os');
   });
+
+  it('accepts harness profile for autonomous loop', () => {
+    expect(resolveConfig({ runProfile: 'harness' }).runProfile).toBe('harness');
+  });
 });
 
 describe('AgentRunConfig themeMode', () => {

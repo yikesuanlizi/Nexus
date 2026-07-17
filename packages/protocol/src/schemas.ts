@@ -147,6 +147,9 @@ export const agentMessageItemSchema = z.object({
   text: z.string(),
   structuredOutput: z.unknown().optional(),
   timestamp: z.string().optional(),
+  // 实施点 2：harness turn 产生的普通 items 打 harnessRunId 标记
+  harnessRunId: z.string().optional(),
+  harnessIteration: z.number().int().min(0).optional(),
 });
 
 // 用户消息条目 schema
@@ -156,6 +159,9 @@ export const userMessageItemSchema = z.object({
   turnId: turnIdSchema,
   text: z.string(),
   timestamp: z.string().optional(),
+  // 实施点 2：harness 续跑作为 user-side 输入时也打标记（保留兼容）
+  harnessRunId: z.string().optional(),
+  harnessIteration: z.number().int().min(0).optional(),
 });
 
 // 推理条目 schema
@@ -165,6 +171,8 @@ export const reasoningItemSchema = z.object({
   turnId: turnIdSchema,
   text: z.string(),
   timestamp: z.string().optional(),
+  harnessRunId: z.string().optional(),
+  harnessIteration: z.number().int().min(0).optional(),
 });
 
 // 命令执行条目 schema
@@ -177,6 +185,8 @@ export const commandExecutionItemSchema = z.object({
   exitCode: z.number().nullable(),
   status: commandStatusSchema,
   timestamp: z.string().optional(),
+  harnessRunId: z.string().optional(),
+  harnessIteration: z.number().int().min(0).optional(),
 });
 
 // 文件变更条目 schema
@@ -189,6 +199,8 @@ export const fileChangeItemSchema = z.object({
   summary: z.string().optional(),
   status: patchApplyStatusSchema,
   timestamp: z.string().optional(),
+  harnessRunId: z.string().optional(),
+  harnessIteration: z.number().int().min(0).optional(),
 });
 
 // 工作流检查点条目 schema
@@ -199,6 +211,8 @@ export const workflowCheckpointItemSchema = z.object({
   turnCount: z.number().int().min(0),
   workflow: z.unknown(),
   timestamp: z.string().optional(),
+  harnessRunId: z.string().optional(),
+  harnessIteration: z.number().int().min(0).optional(),
 });
 
 // 工程级检查点里的单文件快照 schema
@@ -220,6 +234,8 @@ export const projectCheckpointItemSchema = z.object({
   workspaceRoot: z.string(),
   files: z.array(projectFileCheckpointSchema),
   timestamp: z.string().optional(),
+  harnessRunId: z.string().optional(),
+  harnessIteration: z.number().int().min(0).optional(),
 });
 
 // 回滚冲突条目 schema
@@ -236,6 +252,8 @@ export const rollbackConflictItemSchema = z.object({
     actualHash: z.string().nullable().optional(),
   })),
   timestamp: z.string().optional(),
+  harnessRunId: z.string().optional(),
+  harnessIteration: z.number().int().min(0).optional(),
 });
 
 // 上下文压缩摘要 schema
@@ -281,6 +299,8 @@ export const contextCompactionItemSchema = z.object({
   tokensAfter: z.number().int().min(0),
   error: z.object({ message: z.string() }).optional(),
   timestamp: z.string().optional(),
+  harnessRunId: z.string().optional(),
+  harnessIteration: z.number().int().min(0).optional(),
 });
 
 // 通用工具调用条目 schema
@@ -294,6 +314,8 @@ export const toolCallItemSchema = z.object({
   error: z.object({ message: z.string() }).optional(),
   status: commandStatusSchema,
   timestamp: z.string().optional(),
+  harnessRunId: z.string().optional(),
+  harnessIteration: z.number().int().min(0).optional(),
 });
 
 // 协作工具调用条目 schema
@@ -311,6 +333,8 @@ export const collabToolCallItemSchema = z.object({
   result: z.unknown().optional(),
   error: z.object({ message: z.string() }).optional(),
   timestamp: z.string().optional(),
+  harnessRunId: z.string().optional(),
+  harnessIteration: z.number().int().min(0).optional(),
 });
 
 // MCP 工具调用条目 schema
@@ -330,6 +354,8 @@ export const mcpToolCallItemSchema = z.object({
   error: z.object({ message: z.string() }).optional(),
   status: commandStatusSchema,
   timestamp: z.string().optional(),
+  harnessRunId: z.string().optional(),
+  harnessIteration: z.number().int().min(0).optional(),
 });
 
 // Web 搜索条目 schema
@@ -339,6 +365,8 @@ export const webSearchItemSchema = z.object({
   turnId: turnIdSchema,
   query: z.string(),
   timestamp: z.string().optional(),
+  harnessRunId: z.string().optional(),
+  harnessIteration: z.number().int().min(0).optional(),
 });
 
 // 待办清单条目 schema
@@ -348,6 +376,8 @@ export const todoListItemSchema = z.object({
   turnId: turnIdSchema,
   items: z.array(todoItemEntrySchema),
   timestamp: z.string().optional(),
+  harnessRunId: z.string().optional(),
+  harnessIteration: z.number().int().min(0).optional(),
 });
 
 // 错误条目 schema
@@ -359,6 +389,54 @@ export const errorItemSchema = z.object({
   info: z.lazy(() => nexusErrorInfoSchema).optional(),
   recoverable: z.boolean().optional(),
   timestamp: z.string().optional(),
+  harnessRunId: z.string().optional(),
+  harnessIteration: z.number().int().min(0).optional(),
+});
+
+// ─── Harness ─────────────────────────────────────────────────────────────────
+// Harness 续跑条目可见性：永远 false（不伪装成 user_message）
+// — English: Harness continuation item visibility: always false
+export const harnessItemVisibilitySchema = z.literal(false);
+
+// 目标评估状态枚举
+export const goalEvaluationStatusSchema = z.enum([
+  'satisfied',
+  'continue',
+  'needs_user_input',
+  'blocked',
+]);
+
+// 目标评估结果 schema（对应 types.ts 的 GoalEvaluation）
+// — English: goal evaluation result schema, fail-closed by evaluator
+export const goalEvaluationSchema = z.object({
+  satisfied: z.boolean(),
+  status: goalEvaluationStatusSchema,
+  passedCriteria: z.array(z.string()),
+  failedCriteria: z.array(z.string()),
+  blocker: z.string().optional(),
+  nextHint: z.string().optional(),
+  evidenceSummary: z.string(),
+  progressSignature: z.string(),
+  reasoning: z.string(),
+  // Gap 8: 验收标准到证据 ID 的映射
+  criteriaEvidenceMap: z.record(z.string(), z.array(z.string())).optional(),
+});
+
+// Harness 续跑条目 schema：UI 不显示，run monitor 可审计
+// — English: harness continuation item schema: hidden from UI, auditable via run monitor
+export const harnessContinuationItemSchema = z.object({
+  id: itemIdSchema,
+  type: z.literal('harness_continuation'),
+  turnId: turnIdSchema.optional(),
+  // 实施点 2：标识本次 harness run，用于关联同一次自主循环产生的所有 items
+  harnessRunId: z.string(),
+  // 续跑迭代次数（0 = 首次，1+ = 后续隐藏续跑）
+  iteration: z.number().int().min(0),
+  objective: z.string(),
+  instruction: z.string(),
+  evaluation: goalEvaluationSchema,
+  visibleToUser: harnessItemVisibilitySchema,
+  timestamp: z.string(),
 });
 
 // 条目总 schema：按 type 判别
@@ -378,6 +456,7 @@ export const threadItemSchema = z.discriminatedUnion('type', [
   webSearchItemSchema,
   todoListItemSchema,
   errorItemSchema,
+  harnessContinuationItemSchema,
 ]);
 
 // ─── Events ──────────────────────────────────────────────────────────────────

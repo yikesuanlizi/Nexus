@@ -69,6 +69,55 @@ export type {
 export { SystemMonitor, DEFAULT_SYSTEM_MONITOR_CONFIG } from './systemMonitor.js';
 export type { SystemMonitorConfig, SystemMonitorListener } from './systemMonitor.js';
 
+// ─── Task Harness Engine（跨 turn 自主循环） ─────────────────────────────
+// — Chinese: Task Harness Engine — verifiable/pausable/resumable autonomous loop
+export {
+  DEFAULT_HARNESS_CONFIG,
+  EvidenceLedger,
+  GoalTracker,
+  GoalEvaluator,
+  GoalEvaluationParseError,
+  HarnessContextManager,
+  ReadinessCritic,
+  StormBreaker,
+  TaskHarnessEngine,
+  estimateTokens,
+  isVerificationCommand,
+  renderHarnessContextSlice,
+} from './harness/index.js';
+export type {
+  ContinuationInput,
+  CriteriaDeriver,
+  EvaluatorModelGateway,
+  EvidenceReceipt,
+  EvidenceReceiptKind,
+  EvidenceReceiptRefs,
+  EvidenceReceiptStatus,
+  GoalEvaluation,
+  GoalEvaluationStatus,
+  GoalExtractor,
+  HarnessAgentLoop,
+  HarnessConfig,
+  HarnessContextSlice,
+  HarnessContextStore,
+  HarnessContinuationItem,
+  HarnessGoal,
+  HarnessItemFields,
+  HarnessItemVisibility,
+  HarnessPlanNode,
+  HarnessPlanNodeStatus,
+  HarnessResult,
+  HarnessResultStatus,
+  HarnessState,
+  HarnessStatus,
+  ReadinessGate,
+  ReadinessGateName,
+  ReadinessResult,
+  RunTurnOptions,
+  RunTurnSource,
+  StormBreakerResult,
+} from './harness/index.js';
+
 // ─── 工作流（Workflow）蓝图定义与执行 ───────────────────────────────────
 export {
   assertValidWorkflowDefinition,

@@ -23,8 +23,8 @@ export type SecretSource = 'config' | 'env';
 export type ReasoningEffort = 'low' | 'medium' | 'high';
 // 界面主题：深色 | 浅色 | 跟随系统 — Chinese: UI theme mode
 export type ThemeMode = 'dark' | 'light' | 'system';
-// 运行模式：缓存优先 | 运行时操作系统 — Chinese: run profile
-export type RunProfile = 'cache_first' | 'runtime_os';
+// 运行模式：缓存优先 | 运行时操作系统 | Harness 自主循环 — Chinese: run profile
+export type RunProfile = 'cache_first' | 'runtime_os' | 'harness';
 
 // Codex 风格的子 Agent 角色档案（以 agent_type 为键） — Chinese: agent role profiles
 export type AgentRoleProfiles = Record<string, {
@@ -252,7 +252,7 @@ export function resolveConfig(patch: Partial<AgentRunConfig> = {}): AgentRunConf
   if (!['low', 'medium', 'high'].includes(merged.reasoningEffort)) {
     merged.reasoningEffort = defaultConfig.reasoningEffort;
   }
-  if (!['cache_first', 'runtime_os'].includes(merged.runProfile)) {
+  if (!['cache_first', 'runtime_os', 'harness'].includes(merged.runProfile)) {
     merged.runProfile = defaultConfig.runProfile;
   }
   if (!['dark', 'light', 'system'].includes(merged.themeMode)) {

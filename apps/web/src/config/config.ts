@@ -5,7 +5,7 @@ export type WebProviderMode = 'native_fetch' | 'firecrawl';
 export type SecretSource = 'config' | 'env';
 export type ReasoningEffort = 'low' | 'medium' | 'high';
 export type ThemeMode = 'dark' | 'light' | 'system';
-export type RunProfile = 'cache_first' | 'runtime_os';
+export type RunProfile = 'cache_first' | 'runtime_os' | 'harness';
 export type UserAvatarId = 'asteroid' | 'rocket' | 'owl' | 'crystal' | 'paper-plane' | 'fox' | 'lightning' | 'mushroom' | 'custom';
 
 export interface RunConfig {
