@@ -1,24 +1,26 @@
 # Nexus
 
-**本地 Agent OS**，一个用 TypeScript 和 React 构建的多智能体全能工作台。
+**本地 Agent OS** — 一个用 TypeScript 和 React 构建的多智能体全能工作台。
 
-项目目标是做一个完全本地运行的全能智能体系统：不依赖 ChatGPT 登录、不强制使用 OpenAI API、不绑定云端任务服务。模型侧默认面向 Ollama / LM Studio / vLLM / OpenAI-compatible endpoint。
+目标：完全本地运行的全能智能体系统。不依赖 ChatGPT 登录、不强制使用 OpenAI API、不绑定云端任务服务。模型侧默认面向 Ollama / LM Studio / vLLM / OpenAI-compatible endpoint（DeepSeek / 通义千问 / 智谱 GLM 等）。
+
+> 当前版本：**v1.2.0** — Task Harness Engine 底层架构升级（详见 [Release Notes](docs/releases/v1.2.0.md)）
 
 ## 架构
 
 ```text
 packages/
-├── protocol/         事件协议、Thread/Turn/Item 类型、审批与 checkpoint 类型
+├── protocol/         事件协议、Thread/Turn/Item 类型、审批、checkpoint、harness 类型
 ├── model-gateway/    Ollama / LM Studio / vLLM / OpenAI-compatible 适配层
-├── tools/            Shell、文件系统、patch、搜索、git 等本地工具
+├── tools/            Shell、文件系统、patch、搜索、git、GitNexus 等本地工具
 ├── sandbox/          权限预设、执行策略、审批 handler
 ├── storage/          单机 SQLite + JSONL；可选 Postgres 多租户存储
-├── runtime/          Agent 主循环、工具调用、审批、状态机、checkpoint/resume
+├── runtime/          Agent 主循环、工具调用、状态机、checkpoint/resume、workflow 蓝图引擎、Task Harness Engine
 ├── memory/           上下文压缩、恢复、分支、回滚
 ├── bot/              钉钉 / 微信等 IM 平台桥接
 ├── extensions/       AGENTS.md、SKILL.md、hooks 系统
 apps/
-├── api/              本地 Node API，负责运行时、工具执行、审批与线程控制
+├── api/              本地 Node API，负责运行时、工具执行、审批、线程与 harness 控制
 ├── desktop/          Tauri 桌面端（Windows / macOS / Linux）
 └── web/              React + TypeScript 本地控制台
 ```
@@ -45,6 +47,9 @@ npm start
 - **Checkpoint / Resume**：每轮对话和每次工具调用后写入检查点，支持随时停止、断点续跑和冷恢复
 - **子 Agent**：支持 spawn 子智能体分工协作，子 Agent 继承并只能收紧父 Agent 的权限
 - **上下文压缩**：三级压缩框架（轻记忆 + episode + 结构化 summary），token 达到阈值自动触发压缩
+- **A2A 协议**（v1.0+）：Agent-to-Agent 标准协议，可调用远程 Agent 执行子任务
+- **Harness 自主循环**（v1.2+）：跨 turn 的 Goal → Plan → Execute → Critique → Replan → Verify，配合 Evidence Ledger 与四层上下文裁切
+- **Workflow 蓝图引擎**（v1.2+）：基于 DAG 的可视化工作流，支持计划 / 审批 / 发布 / 执行 / 重规划
 
 ### 工具与安全
 - **本地工具集**：Shell、文件读写、patch、搜索、git 等常用工具内置
@@ -52,11 +57,12 @@ npm start
 - **人机审批**：workspace 模式下，写文件和命令类工具自动进入 Web 审批队列
 - **执行策略**：shell 命令可按规则配置 allow / prompt / forbidden
 - **MCP 治理**：支持 MCP 工具接入，Web 配置界面 + 运行时懒加载 + 连接状态监控
+- **GitNexus 代码分析**（v1.1+）：三层架构（serve HTTP / MCP fallback / CLI npx 包装）自动分析代码仓库
 
 ### 技能与扩展
-- **Skills 系统**：支持本地 Skill 目录，按任务选择、自动匹配
+- **Skills 系统**：支持本地 Skill 目录，按任务选择、自动匹配，支持 GitHub URL 一键安装
 - **Hooks 扩展**：AGENTS.md、SKILL.md 约定式扩展入口
-- **A2A 协议**：Agent-to-Agent 标准协议，支持调用远程 Agent
+- **A2A 协议**：跨进程、跨语言 Agent 调用
 
 ### 系统监控与限流
 - **实时监控**：CPU / 内存 / 磁盘占用后台采样
@@ -69,6 +75,70 @@ npm start
 ### IM 平台接入
 - **微信远程助手**：桌面端个人微信桥接，消息进入绑定的 Nexus 对话
 - **钉钉机器人**：Stream 模式长连接 + AI Card 流式回复 + 企业数据操作（详见下方）
+
+## Work 与 Code 两种工作模式
+
+Nexus 把"做什么"（**会话类型**）和"怎么跑"（**runProfile**）分成两个独立的维度。它们的组合决定了 Agent 在当前对话中的能力水平。
+
+### 维度一：会话类型（What）
+
+新建对话时选择，决定工作区与上下文环境：
+
+| 类型 | workspace | 适用 | 说明 |
+|------|-----------|------|------|
+| **Work（聊天）** | 空（无工作区） | 文档问答、内容生产、知识查询、闲聊 | 不绑定项目目录，配置极简，适合轻量任务 |
+| **Code（项目）** | workspaceRoot | 编程开发、文件操作、工具调用、代码分析 | 绑定本地代码目录，可读写文件、运行命令、调用 GitNexus 等工具 |
+
+会话类型决定的是"Agent 能看到/操作什么"。
+
+### 维度二：runProfile（How）
+
+每个对话可在设置中切换，决定运行策略与压缩行为：
+
+| Profile | 压缩策略 | 缓存策略 | 适合 | 定位 |
+|---------|----------|----------|------|------|
+| **`cache_first`（缓存优先）** | 保守，延迟压缩 | 优先保持稳定 prefix，提高 cache 命中 | 重复查询、长文档、追问 | DeepSeek / OpenAI 兼容模型缓存敏感场景 |
+| **`runtime_os`（长运行）** | 中等保守 | 平衡可观测性与性能 | 复杂多步任务、可追溯流程 | 多智能体协作、长任务、压缩/中断恢复优先 |
+| **`harness`（Harness 自主循环）** | 较早压缩，可选 LLM 语义压缩 | 不追求稳定 prefix，配合上下文裁切 | 自适应任务、自主目标达成 | Task Harness Engine 启动档位 |
+
+### 组合建议：work × code 各推荐什么？
+
+#### Work 模式（聊天会话）
+
+会话类型为 `chat`（无 workspace），主要用于问答、内容生产、知识查询。
+
+| Profile | 能力 | 适用 |
+|---------|------|------|
+| **`cache_first`** ⭐ 推荐 | 提示词和工具结构稳定，延迟压缩，缓存命中率高 | 重复性提问、文档问答、长文档追问 |
+| **`runtime_os`** | 中等压缩，可观测性强 | 多步追问、需要回溯的复杂问答 |
+| `harness` | 不推荐：无 workspace 时工具能力受限 | — |
+
+**Work 模式能力水平**：文档检索、压缩对话、引用追溯、A2A 远端 Agent 调用、AI Card 流式回复（钉钉/微信场景）。不涉及本地文件操作。
+
+#### Code 模式（项目会话）
+
+会话类型为 `project`（绑定 workspaceRoot），主要用于编程、文件操作、工具调用、代码分析。
+
+| Profile | 能力 | 适用 |
+|---------|------|------|
+| **`harness`** ⭐ 推荐 | 自主循环：Goal→Plan→Execute→Critique→Replan，Evidence Ledger 记录每次 tool/file/command 收据，StormBreaker 防死循环 | 多步编码任务、文件批量修改、跨文件重构、自动化运维 |
+| **`runtime_os`** | 平衡可观测性，任务全程可追踪 | 需要详细回溯的开发任务、调试 |
+| `cache_first` | 延迟压缩，长 prefix 缓存 | 长会话的代码探索、反复修改同一组文件 |
+
+**Code 模式能力水平**（按 profile 递增）：
+
+- `cache_first`：单 turn 工具调用、稳定 prefix 缓存
+- `runtime_os`：单 turn 工具调用 + 全程可观测（checkpoint / event / 工具调用栈）
+- `harness`：在 `runtime_os` 之上加 **跨 turn 自主循环**，可自动重启 turn 直到目标达成（验收标准全过），可暂停 / 恢复 / 取消
+
+#### 一句话总结
+
+| | Work（聊天） | Code（项目） |
+|---|---|---|
+| **首选 profile** | `cache_first` | `harness` |
+| **次选 profile** | `runtime_os` | `runtime_os` |
+| **核心能力** | 文档问答、内容生产、压缩对话 | 文件操作、工具调用、GitNexus、自主循环 |
+| **不涉及** | 本地文件 | 跨项目跨用户 |
 
 ## 多租户部署
 
@@ -103,8 +173,6 @@ docker compose -f docker-compose.multi-tenant.yml up
 Nexus 深度集成钉钉平台，支持消息收发、AI Card 流式回复、企业数据操作等完整能力。
 
 ### 接入方式
-
-支持两种连接模式：
 
 | 模式 | 说明 | 适用场景 |
 |------|------|----------|
@@ -153,9 +221,38 @@ Nexus 深度集成钉钉平台，支持消息收发、AI Card 流式回复、企
 
 支持 `dwsDryRun` 预览破坏性操作，`dwsJq` 过滤 JSON 输出减少 token 消耗。
 
+## GitNexus 三层架构（v1.1+）
+
+GitNexus 是 Nexus 内置的代码仓库分析能力，通过三层降级保证可用性：
+
+| 层 | 名称 | 作用 | 触发条件 |
+|----|------|------|----------|
+| **Layer 1** | serve HTTP | `gitnexus serve` 子进程 + HTTP 查询（4747 端口） | 默认优先 |
+| **Layer 2** | MCP | serve 不可用时 fallback 到 MCP 协议 | serve 健康检查失败 |
+| **Layer 3** | CLI / npx | `gitnexus_analyze` 工具封装 `npx -y gitnexus@latest` 调用 | serve 与 MCP 都不可用 |
+
+Agent system prompt 明确三层使用策略，确保任何环境下都能调用 GitNexus 做代码分析。
+
+## API 路由速查
+
+| 路径 | 说明 |
+|------|------|
+| `POST /api/threads` | 新建会话（chat/project/workflowProject） |
+| `GET /api/threads/:id` | 会话详情（thread/turns/items/config/usage） |
+| `POST /api/threads/:id/turn` | 提交用户输入、启动一轮 |
+| `POST /api/threads/:id/interrupt` | 中断当前 turn |
+| `GET /api/threads/:id/state` | Runtime 状态（turn/iteration/usage） |
+| `GET /api/threads/:id/context-pressure` | 上下文压力（用于决定是否压缩） |
+| `POST /api/threads/:id/skills/install` | 一键安装 GitHub Skill |
+| `POST /api/threads/:id/harness/start` | 启动 Harness 自主循环（立即返回 harnessRunId） |
+| `GET /api/threads/:id/harness/status` | 查询 harness 状态（运行时 + 持久化） |
+| `POST /api/threads/:id/harness/cancel` | 取消运行中的 harness run |
+| `GET /api/events/:threadId` | SSE 事件流（turn.started/item.completed/turn.completed/...） |
+
 ## 后续重点
 
-- Plan 模式：规划 → 审批 → 执行 → 回滚 完整工作流
+- Harness 自主循环：完善 Evidence Ledger 可视化、目标达成度评分
+- Workflow 蓝图：节点级审批、断点恢复
 - 输入框命令：`/skills add`、`/mcp add`、`/plan` 等应用内命令
 - 上下文压缩：完善三级压缩、handoff summary、缓存命中统计
 - 恢复能力：增强主动停止、异常退出、进程重启后的恢复体验
