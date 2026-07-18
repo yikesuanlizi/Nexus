@@ -317,6 +317,7 @@ export const gitNexusAnalyzeTool: ToolDefinition = {
           const exitCode = typeof error?.code === 'number' ? error.code : error ? 1 : 0;
           const baseData = {
             command,
+            cwd: repoPath,
             repoPath,
             exitCode,
           };

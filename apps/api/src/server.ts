@@ -414,10 +414,14 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
 
   if (req.method === 'GET' && url.pathname === '/api/skills') {
     const config = await getDefaultRunConfig();
+    const forceReload = url.searchParams.get('forceReload') === '1';
     const skills = await tenantRuntime.skillCacheForTenant(tenantContext).loadFromDirectory(
       config.skillsRoot,
-      { forceReload: url.searchParams.get('forceReload') === '1' },
+      { forceReload },
     );
+    if (forceReload) {
+      resetTenantDefaultAgent();
+    }
     sendJson(res, 200, { skillsRoot: config.skillsRoot, skills: skills.list() });
     return;
   }

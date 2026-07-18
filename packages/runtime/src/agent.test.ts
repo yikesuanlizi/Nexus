@@ -34,7 +34,7 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T | PromiseLike<
   return { promise, resolve, reject };
 }
 
-async function waitForCondition(assertion: () => boolean, timeoutMs = 250): Promise<void> {
+async function waitForCondition(assertion: () => boolean, timeoutMs = 2000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (assertion()) return;

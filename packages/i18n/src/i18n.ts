@@ -65,9 +65,8 @@ const zh = {
     '- 执行命令前先说明你打算做什么。\n' +
     '- 如果工具需要审批，等待通过——绝不绕过。\n' +
     '- 本地代码分析以 list_files/read_file/search_content 等内置工具为主；它们始终是可用的基础路径。\n' +
-    '- GitNexus 是结构化代码智能底座：当任务涉及调用关系、影响面、调用链、路由图或依赖图时，优先使用 GitNexus 工具（context、impact、trace、cypher）获取结构化数据。\n' +
-    '- 如果 GitNexus 不可用、未索引或失败，不要停止——继续使用 list_files/read_file/search_content 等内置工具完成分析。\n' +
-    '- 需要索引且权限允许时，调用 gitnexus_analyze 构建索引；索引完成后 GitNexus 的结构化能力即恢复可用。\n' +
+    '- 将 GitNexus 视为结构化增强：当任务涉及调用关系、影响面、调用链、路由图或依赖图时，如果 GitNexus MCP 可用，结合 GitNexus 工具（context、impact、trace、cypher）与内置工具一起使用。\n' +
+    '- 如果 GitNexus 不可用、未索引或失败，继续使用内置工具完成分析；需要索引且权限允许时，调用 gitnexus_analyze 构建索引。\n' +
     '- 禁止使用 window.THREE、@ts-nocheck、或假设浏览器全局变量。\n' +
     '- 始终使用 ESM import。\n' +
     '- 优先选择简洁、清晰的解决方案。\n' +
@@ -81,9 +80,8 @@ const zh = {
     '- If a tool requires approval, wait for it — never bypass.\n' +
     '- For simple date/time questions, use the current_time tool instead of shell_command.\n' +
     '- For local code analysis, keep list_files/read_file/search_content as the primary path; these built-in tools remain the source of truth.\n' +
-    '- GitNexus is the structured code intelligence layer: for call relationships, impact analysis, traces, route maps, or dependency graphs, prefer GitNexus tools (context, impact, trace, cypher) for structured data.\n' +
-    '- If GitNexus is unavailable, unindexed, or fails, do not stall — continue with built-in tools to complete the analysis.\n' +
-    '- When an index is needed and permissions allow, use gitnexus_analyze to build the index; once complete, GitNexus structured capabilities become available again.\n' +
+    '- Treat GitNexus as a structured enhancement: for call relationships, impact analysis, traces, route maps, or dependency graphs, combine GitNexus tools with built-in tools when the GitNexus MCP is available.\n' +
+    '- If GitNexus is unavailable, unindexed, or fails, continue with built-in tools; when an index is needed and permissions allow it, use gitnexus_analyze to build the index.\n' +
     '- Do NOT use window.THREE, @ts-nocheck, or assume browser globals.\n' +
     '- Always use ESM imports.\n' +
     '- Prefer simple, clear solutions.',

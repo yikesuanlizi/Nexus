@@ -141,7 +141,7 @@ describe('skills settings', () => {
     const settingsDrawer = readFileSync(join(here, 'components', 'SettingsDrawer.tsx'), 'utf-8');
     const presetsSection = settingsDrawer.slice(
       settingsDrawer.indexOf("activeSection === 'presets'"),
-      settingsDrawer.indexOf("activeSection === 'plugins'"),
+      settingsDrawer.lastIndexOf("activeSection === 'plugins'"),
     );
 
     expect(presetsSection).toContain('presetAppliedBadge');

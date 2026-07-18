@@ -17,6 +17,13 @@ import type { Locale } from '@nexus/i18n';
 import type { ThreadStateManager } from './state.js';
 import type { RunProfile } from './runProfile.js';
 import type { WebSearchMode } from './webSearchPolicy.js';
+import type {
+  AgentContext,
+  ContextEngine,
+  Experience,
+  ExperienceEngine,
+  ProviderContext,
+} from '@nexus/context';
 
 // RuntimeTurnContext：单 turn 的运行时上下文，提供执行所需的数据与操作入口
 export interface RuntimeTurnContext {
@@ -265,21 +272,84 @@ export function createStabilityMiddleware(options: {
 }
 
 // 动态上下文中间件：在每次调用模型前，注入一份描述时间、权限、运行状态、文件变更和用户扩展的 system prompt
-export function createDynamicContextMiddleware(): RuntimeMiddleware {
+export interface DynamicContextMiddlewareOptions {
+  contextEngine?: ContextEngine;
+  experienceEngine?: ExperienceEngine;
+  getExecutableSkillsBlock?: () => string;
+  getAgentContext?: (threadId: ThreadId) => AgentContext | undefined;
+  setAgentContext?: (threadId: ThreadId, ctx: AgentContext) => void;
+  contextBudget?: number;
+}
+
+export function createDynamicContextMiddleware(options?: DynamicContextMiddlewareOptions): RuntimeMiddleware {
+  const { contextEngine, experienceEngine, getExecutableSkillsBlock, getAgentContext, setAgentContext, contextBudget } = options ?? {};
+
+  const turnCache = new Map<TurnId, {
+    text: string;
+    inserted: boolean;
+  }>();
+
   return {
+    beforeTurn: async (ctx) => {
+      const cacheKey = ctx.turnId;
+      if (turnCache.has(cacheKey)) return;
+      const built = await buildDynamicContext(ctx, {
+        contextEngine,
+        experienceEngine,
+        getExecutableSkillsBlock,
+        getAgentContext,
+        setAgentContext,
+        contextBudget,
+      });
+      turnCache.set(cacheKey, { text: built.text, inserted: false });
+    },
+
     beforeModel: async (ctx, request) => {
-      const text = await buildDynamicContext(ctx);
-      if (!text) return;
+      const cacheKey = ctx.turnId;
+      let cached = turnCache.get(cacheKey);
+      if (!cached) {
+        const built = await buildDynamicContext(ctx, {
+          contextEngine,
+          experienceEngine,
+          getExecutableSkillsBlock,
+          getAgentContext,
+          setAgentContext,
+          contextBudget,
+        });
+        cached = { text: built.text, inserted: false };
+        turnCache.set(cacheKey, cached);
+      }
+      if (cached.inserted) return;
+      const { text } = cached;
+      if (!text) {
+        cached.inserted = true;
+        return;
+      }
       const message: ChatMessage = { role: 'system', content: text };
       const [first, ...rest] = request.messages;
-      // 将动态上下文插入到第一条消息和后续消息之间，保持原始第一条位置
       request.messages = first ? [first, message, ...rest] : [message];
+      cached.inserted = true;
+    },
+
+    afterTurn: (ctx) => {
+      turnCache.delete(ctx.turnId);
     },
   };
 }
 
-// 构建动态上下文文本：整合日期时间、权限、运行状态、最近文件变更和外部 provider 文本
-async function buildDynamicContext(ctx: RuntimeTurnContext): Promise<string> {
+function extractUserInputText(input: UserInput): string {
+  if (input.type === 'text') return input.text;
+  return input.parts
+    .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
+    .map((p) => p.text)
+    .join('\n');
+}
+
+// 构建动态上下文文本：整合认知上下文（ContextEngine）、日期时间、权限、运行状态、最近文件变更和外部 provider 文本
+async function buildDynamicContext(
+  ctx: RuntimeTurnContext,
+  engineOpts?: DynamicContextMiddlewareOptions,
+): Promise<{ text: string; cognitiveLines: string[] }> {
   const recentItems = await ctx.store.getRecentItems(ctx.threadId, 50);
   const openSubagents = await ctx.store.listThreadSpawnDescendants(ctx.threadId, 'open');
   const providerText = await ctx.dynamicContextProvider?.(ctx);
@@ -289,6 +359,67 @@ async function buildDynamicContext(ctx: RuntimeTurnContext): Promise<string> {
     .slice(-5)
     .flatMap((item) => item.changes.map((change) => `${change.kind} ${change.path}${change.summary ? `：${change.summary}` : ''}`));
   const checkpoint = ctx.runtimeState.checkpoint;
+
+  const cognitiveLines: string[] = [];
+  if (engineOpts?.contextEngine && engineOpts.getAgentContext && engineOpts.setAgentContext) {
+    const existingCtx = engineOpts.getAgentContext(ctx.threadId);
+    if (existingCtx) {
+      const providerCtx: ProviderContext = {
+        threadId: ctx.threadId,
+        turnId: ctx.turnId,
+        userInput: extractUserInputText(ctx.userInput),
+        agentContext: existingCtx,
+        items: recentItems,
+        contextBudget: engineOpts.contextBudget ?? 8000,
+      };
+      try {
+        const assembled = await engineOpts.contextEngine.assembleBeforeTurn(providerCtx);
+        engineOpts.setAgentContext(ctx.threadId, assembled.updatedAgentContext);
+        for (const chunk of assembled.chunks) {
+          cognitiveLines.push(chunk.content);
+        }
+      } catch (err) {
+        console.warn('[middleware] ContextEngine assembly failed:', err);
+      }
+    }
+  }
+
+  const experienceLines: string[] = [];
+  if (engineOpts?.experienceEngine && engineOpts.experienceEngine.getEnabled()) {
+    try {
+      const keywords = extractExperienceKeywords(extractUserInputText(ctx.userInput), recentItems);
+      const recentFailedTools: Array<{ toolName: string; error: { message: string } }> = [];
+      for (const item of recentItems.slice(-20)) {
+        if (item.type !== 'tool_call' && item.type !== 'collab_tool_call' && item.type !== 'mcp_tool_call') continue;
+        if (item.status === 'failed' && item.error?.message) {
+          const toolName = item.type === 'tool_call' ? item.toolName : (item as { tool?: string }).tool ?? item.type;
+          recentFailedTools.push({ toolName, error: item.error });
+          if (recentFailedTools.length >= 3) break;
+        }
+      }
+      let relevantExps: Experience[] = await engineOpts.experienceEngine.findRelevant({
+        workspaceRoot: ctx.workspaceRoot,
+        taskKeywords: keywords,
+        limit: 4,
+        minConfidence: 0.55,
+      });
+      for (const failed of recentFailedTools) {
+        const byError = await engineOpts.experienceEngine.findByError(failed.error.message, ctx.workspaceRoot);
+        relevantExps = [...relevantExps, ...byError];
+      }
+      const deduped = new Map<string, Experience>();
+      for (const e of relevantExps) {
+        if (!deduped.has(e.id)) deduped.set(e.id, e);
+      }
+      const formatted = engineOpts.experienceEngine.formatExperiencesForPrompt([...deduped.values()]);
+      if (formatted) experienceLines.push(formatted);
+    } catch (err) {
+      console.warn('[middleware] ExperienceEngine lookup failed:', err);
+    }
+  }
+
+  const skillsBlock = engineOpts?.getExecutableSkillsBlock?.() ?? '';
+
   const lines = [
     '<dynamic_context>',
     `当前日期时间：${new Date().toISOString()}`,
@@ -299,10 +430,40 @@ async function buildDynamicContext(ctx: RuntimeTurnContext): Promise<string> {
     `最近上传/图片数量=${countImages(ctx.userInput)}`,
     `最近文件变更：${fileChanges.length > 0 ? fileChanges.join(' | ') : '无'}`,
     `子 agent 打开数量=${openSubagents.length}`,
+    ...cognitiveLines,
+    ...experienceLines,
+    ...(skillsBlock ? [skillsBlock] : []),
     ...providerLines,
     '</dynamic_context>',
   ];
-  return lines.join('\n');
+  return {
+    text: lines.join('\n'),
+    cognitiveLines: [...cognitiveLines],
+  };
+}
+
+function extractExperienceKeywords(userInput: string, recentItems: ThreadItem[]): string[] {
+  const keywords = new Set<string>();
+  const stop = new Set(['the', 'a', 'an', 'and', 'or', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'shall', 'can', 'need', 'dare', 'ought', 'used', 'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from', 'as', 'into', 'through', 'during', 'before', 'after', 'above', 'below', 'between', 'out', 'off', 'over', 'under', 'again', 'further', 'then', 'once', 'here', 'there', 'when', 'where', 'why', 'how', 'all', 'both', 'each', 'few', 'more', 'most', 'other', 'some', 'such', 'no', 'nor', 'not', 'only', 'own', 'same', 'so', 'than', 'too', 'very', 'just', 'because', 'but', 'and', 'if', 'or', 'about', 'up', 'it', 'its', 'this', 'that', 'these', 'those', 'i', 'me', 'my', 'we', 'our', 'you', 'your', 'he', 'him', 'his', 'she', 'her', 'they', 'them', 'their', 'what', 'which', 'who', 'whom']);
+  for (const word of userInput.split(/[\s,.!?;:()\[\]{}'"`<>/\\]+/)) {
+    const w = word.toLowerCase();
+    if (w.length >= 4 && !stop.has(w) && !/^\d+$/.test(w)) {
+      keywords.add(w);
+    }
+  }
+  for (const item of recentItems.slice(-10)) {
+    const isToolCall = item.type === 'tool_call' || item.type === 'collab_tool_call' || item.type === 'mcp_tool_call';
+    if (isToolCall) {
+      const name = item.type === 'tool_call' ? item.toolName : (item as { tool?: string }).tool;
+      if (name) keywords.add(name.toLowerCase());
+      const err = (item as { error?: { message?: string } }).error?.message;
+      if (err) {
+        const m = err.match(/\b(E[A-Z]+|ENOENT|EACCES|EADDRINUSE|MODULE_NOT_FOUND)\b/);
+        if (m) keywords.add(m[1].toLowerCase());
+      }
+    }
+  }
+  return [...keywords].slice(0, 12);
 }
 
 // 消耗 web_search search action 预算：按总次数和相同 query 重复次数做双层保护
@@ -359,9 +520,176 @@ function stableJson(value: unknown): string {
   return JSON.stringify(value);
 }
 
-// 判断 web_search 的 action 是否为“搜索”：open_page 与 find_in_page 不占搜索预算
+// 判断 web_search 的 action 是否为"搜索"：open_page 与 find_in_page 不占搜索预算
 function isWebSearchAction(args: Record<string, unknown>): boolean {
   const action = typeof args.action === 'string' ? args.action : '';
   if (action === 'open_page' || action === 'find_in_page') return false;
   return true;
+}
+
+interface PendingFailure {
+  toolName: string;
+  errorMessage: string;
+  args: Record<string, unknown>;
+  attempts: number;
+  firstSeenAt: number;
+  followupTools: Array<{ toolName: string; args: Record<string, unknown>; success: boolean }>;
+}
+
+export interface ExperienceWritebackMiddlewareOptions {
+  experienceEngine: ExperienceEngine;
+  minToolsForSuccessRecord?: number;
+  maxFailuresPerTurn?: number;
+}
+
+export function createExperienceWritebackMiddleware(options: ExperienceWritebackMiddlewareOptions): RuntimeMiddleware {
+  const { experienceEngine } = options;
+  const minToolsForSuccessRecord = options.minToolsForSuccessRecord ?? 3;
+  const maxFailuresPerTurn = options.maxFailuresPerTurn ?? 5;
+  const pendingByTurn = new Map<TurnId, Map<string, PendingFailure>>();
+  const turnToolLog = new Map<TurnId, Array<{ toolName: string; args: Record<string, unknown>; success: boolean; error?: string }>>();
+
+  function pendingFor(turnId: TurnId): Map<string, PendingFailure> {
+    let m = pendingByTurn.get(turnId);
+    if (!m) {
+      m = new Map();
+      pendingByTurn.set(turnId, m);
+    }
+    return m;
+  }
+
+  function toolLogFor(turnId: TurnId): Array<{ toolName: string; args: Record<string, unknown>; success: boolean; error?: string }> {
+    let a = turnToolLog.get(turnId);
+    if (!a) {
+      a = [];
+      turnToolLog.set(turnId, a);
+    }
+    return a;
+  }
+
+  function failureKey(toolName: string, errorMessage: string): string {
+    const sig = errorMessage.slice(0, 120).replace(/\d+/g, 'N');
+    return `${toolName}::${sig}`;
+  }
+
+  function describeArgs(args: Record<string, unknown>): string {
+    const parts: string[] = [];
+    for (const [k, v] of Object.entries(args)) {
+      if (v === undefined || v === null) continue;
+      let s: string;
+      if (typeof v === 'string') s = v.length > 80 ? v.slice(0, 80) + '…' : v;
+      else s = JSON.stringify(v);
+      parts.push(`${k}=${s}`);
+      if (parts.length >= 3) break;
+    }
+    return parts.join(', ');
+  }
+
+  return {
+    beforeTurn: (ctx) => {
+      pendingFor(ctx.turnId);
+      toolLogFor(ctx.turnId);
+    },
+
+    afterTool: async (ctx, request, response) => {
+      if (!experienceEngine.getEnabled()) return;
+      const pending = pendingFor(ctx.turnId);
+      const log = toolLogFor(ctx.turnId);
+
+      const entry = {
+        toolName: request.toolName,
+        args: request.args,
+        success: response.status === 'completed',
+        error: response.status === 'failed' ? response.error?.message : undefined,
+      };
+      log.push(entry);
+
+      if (response.status === 'failed' && response.error?.message) {
+        const key = failureKey(request.toolName, response.error.message);
+        const existing = pending.get(key);
+        if (existing) {
+          existing.attempts += 1;
+          existing.followupTools.push({ toolName: request.toolName, args: request.args, success: false });
+        } else {
+          if (pending.size < maxFailuresPerTurn) {
+            pending.set(key, {
+              toolName: request.toolName,
+              errorMessage: response.error.message,
+              args: request.args,
+              attempts: 1,
+              firstSeenAt: Date.now(),
+              followupTools: [],
+            });
+          }
+        }
+        return;
+      }
+
+      if (response.status === 'completed') {
+        for (const [key, failure] of pending.entries()) {
+          failure.followupTools.push({ toolName: request.toolName, args: request.args, success: true });
+          if (failure.attempts >= 2 || (failure.attempts >= 1 && request.toolName !== failure.toolName)) {
+            const resolutionStep = request.toolName === failure.toolName
+              ? `retry ${failure.toolName} with corrected args (${describeArgs(request.args)})`
+              : `use ${request.toolName} (${describeArgs(request.args)}) after ${failure.toolName} failed`;
+            void experienceEngine.recordFailure({
+              toolName: failure.toolName,
+              errorMessage: failure.errorMessage,
+              symptoms: [`${failure.toolName} failed: ${failure.errorMessage.slice(0, 200)}`],
+              resolutionSteps: [resolutionStep],
+              resolution: resolutionStep,
+              commands: failure.toolName === 'shell_command' && typeof failure.args.command === 'string'
+                ? [String(failure.args.command)]
+                : undefined,
+              workspaceRoot: ctx.workspaceRoot,
+              threadId: ctx.threadId,
+              iterations: failure.attempts,
+            }).catch(() => {});
+            pending.delete(key);
+          }
+        }
+      }
+    },
+
+    afterTurn: async (ctx, result) => {
+      const pending = pendingByTurn.get(ctx.turnId);
+      const log = turnToolLog.get(ctx.turnId);
+      pendingByTurn.delete(ctx.turnId);
+      turnToolLog.delete(ctx.turnId);
+      if (!experienceEngine.getEnabled() || !log) return;
+
+      const successfulTools = log.filter((e) => e.success);
+      if (result.status === 'completed' && successfulTools.length >= minToolsForSuccessRecord) {
+        const toolNames = [...new Set(successfulTools.map((e) => e.toolName))];
+        const steps = successfulTools.slice(-6).map((e) => `${e.toolName}(${describeArgs(e.args)})`);
+        const userSummary = typeof ctx.userInput === 'string'
+          ? ctx.userInput
+          : (ctx.userInput as { text?: string }).text ?? '';
+        void experienceEngine.recordSuccess({
+          toolNames,
+          taskSummary: userSummary.slice(0, 200) || `completed task using ${toolNames.join(',')}`,
+          steps,
+          commands: successfulTools
+            .filter((e) => e.toolName === 'shell_command' && typeof e.args.command === 'string')
+            .map((e) => String(e.args.command))
+            .slice(-5),
+          workspaceRoot: ctx.workspaceRoot,
+          threadId: ctx.threadId,
+          attempts: log.filter((e) => !e.success).length + 1,
+        }).catch(() => {});
+      }
+
+      if (pending && pending.size > 0 && result.status === 'failed') {
+        for (const failure of pending.values()) {
+          void experienceEngine.recordGotcha({
+            symptom: `${failure.toolName} repeatedly failed: ${failure.errorMessage.slice(0, 200)}`,
+            trigger: `${failure.toolName}(${describeArgs(failure.args)})`,
+            workaround: `If ${failure.toolName} fails with this error, check prerequisites and alternative approach before retrying.`,
+            workspaceRoot: ctx.workspaceRoot,
+            threadId: ctx.threadId,
+          }).catch(() => {});
+        }
+      }
+    },
+  };
 }

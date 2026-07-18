@@ -1284,4 +1284,6 @@ export interface HarnessContinuationItem {
   evaluation: GoalEvaluation;              // 上次评估结果
   visibleToUser: HarnessItemVisibility;    // 永远 false
   timestamp: string;
+  /** P2: AgentContext 快照，用于续跑/恢复时还原认知状态 */
+  agentContext?: unknown;
 }

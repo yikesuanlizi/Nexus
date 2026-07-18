@@ -80,7 +80,7 @@ describe('RunMonitorDrawer', () => {
 
     expect(html).toContain('运行监控');
     expect(html).toContain('tenantA');
-    expect(html).toContain('tool.completed');
+    expect(html).toContain('工具调用完成');
     expect(html).toContain('current_time');
     expect(html).toContain('中断');
     expect(html).toContain('恢复');

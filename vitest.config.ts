@@ -5,6 +5,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@nexus/protocol': resolve(__dirname, 'packages/protocol/src/index.ts'),
+      '@nexus/context': resolve(__dirname, 'packages/context/src/index.ts'),
       '@nexus/model-gateway': resolve(__dirname, 'packages/model-gateway/src/index.ts'),
       '@nexus/sandbox': resolve(__dirname, 'packages/sandbox/src/index.ts'),
       '@nexus/storage': resolve(__dirname, 'packages/storage/src/index.ts'),

@@ -8,11 +8,14 @@ const here = dirname(fileURLToPath(import.meta.url));
 describe('light theme skin', () => {
   it('keeps the final light-theme guard after dark settings rules', () => {
     const styles = readFileSync(join(here, 'styles.css'), 'utf-8').replace(/\r\n/g, '\n');
-    const darkSettings = styles.lastIndexOf('.settingsDrawer {\n    border-color: #272d36;');
-    const lightGuard = styles.lastIndexOf('.appShell.theme-light .conversationPane,');
+    const darkSettings = styles.lastIndexOf('.appShell:not(.theme-light) .settingsDrawer');
+    const utilitiesLayer = styles.lastIndexOf('@layer utilities {');
 
     expect(darkSettings).toBeGreaterThan(-1);
-    expect(lightGuard).toBeGreaterThan(darkSettings);
+    expect(utilitiesLayer).toBeGreaterThan(-1);
+    expect(darkSettings).toBeGreaterThan(utilitiesLayer);
+    expect(styles).toContain('.appShell.theme-light .conversationPane');
+    expect(styles).toContain('.appShell.theme-light .settingsDrawer');
   });
 
   it('uses light surfaces and dark text for light-theme content areas', () => {

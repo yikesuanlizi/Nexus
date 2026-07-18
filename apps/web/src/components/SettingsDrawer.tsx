@@ -1198,7 +1198,7 @@ export function SettingsDrawer({
                 </div>
               </div>
               <div className="layout">
-                <aside className="sidebar">
+                <aside className="sidebar pluginTabs">
                   <div className="sidebar-label">{locale === 'zh' ? '分类' : 'Categories'}</div>
                   {pluginNavItems.map((item) => (
                     <button
@@ -2007,8 +2007,8 @@ function McpSection({
                   >
                     <Icon name="trash" />
                   </button>
-                  <div 
-                    className={`toggle ${item.enabled ? 'on' : ''}`}
+                  <div
+                    className={`mcpToggle toggle ${item.enabled ? 'on' : ''}`}
                     onClick={() => onToggleEnabled(item.id)}
                     title={item.enabled ? t(locale, 'enabled') : 'Off'}
                   ></div>

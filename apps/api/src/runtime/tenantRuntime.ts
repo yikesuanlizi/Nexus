@@ -197,8 +197,10 @@ export function createTenantRuntime(options: {
       // 中文注释：从设置面板的开关读取，启用后 agent 会收到主机压力通知并自动限流
       // — Chinese: read from settings panel toggle; when enabled agent receives host pressure notifications and auto-throttles
       systemMonitor: { enabled: config.systemMonitorEnabled === true },
+      skillsDirs: [config.skillsRoot],
     });
     agent.onEvent((event) => options.publishEvent(event, tenantContext.tenantId));
+    await agent.loadSkillsFromConfiguredDirs();
     return { agent, model, config };
   }
 

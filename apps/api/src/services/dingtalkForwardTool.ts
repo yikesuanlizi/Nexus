@@ -16,6 +16,7 @@ export interface DingtalkForwardToolOptions {
   currentUserText?: string;
   mentionUsers?: Array<{ staffId: string; name?: string }>;
   currentAttachments?: DingtalkMessageAttachment[];
+  defaultSource?: 'dingtalk_dm' | 'dingtalk_group_mention' | 'nexus_chat';
 }
 
 export function createDingtalkForwardTools(options: DingtalkForwardToolOptions): ToolDefinition[] {
@@ -107,6 +108,7 @@ export function createDingtalkForwardTools(options: DingtalkForwardToolOptions):
 export function createDingtalkForwardToolsForStore(store: ThreadStore): ToolDefinition[] {
   return createDingtalkForwardTools({
     getConfig: async () => normalizeBotConfig(await store.getSetting(BOT_CONFIG_KEY)),
+    defaultSource: 'nexus_chat',
   });
 }
 
@@ -266,7 +268,7 @@ async function executeSendMessage(
 ): Promise<ToolResult> {
   const message = normalizeText(args.message);
   const fileMode = normalizeText(args.fileMode);
-  const source = normalizeText(args.source);
+  const source = normalizeText(args.source) || options.defaultSource || '';
   const requestedGroupName = normalizeText(args.targetGroupName);
   const rawMentionStaffIds = normalizeStringArray(args.mentionStaffIds);
   const invalidMentionStaffIds = rawMentionStaffIds.filter((id) => !looksLikeDingtalkStaffId(id));
@@ -281,6 +283,9 @@ async function executeSendMessage(
   const targetGroupName = config.dingtalk.targetGroupName?.trim() ?? '';
 
   if (fileMode === 'current_message_files') {
+    if (source !== 'dingtalk_dm') {
+      return failed('文件转发只支持钉钉单聊里的当前或最近附件。', 'DINGTALK_FILE_FORWARD_DM_ONLY');
+    }
     return forwardDingtalkDmAttachments({
       source: 'dingtalk_dm',
       config,

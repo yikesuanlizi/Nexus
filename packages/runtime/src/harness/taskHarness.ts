@@ -14,6 +14,7 @@ import type {
   ThreadItem,
   UserInput,
 } from '@nexus/protocol';
+import type { ExperienceEngine } from '@nexus/context';
 import type {
   ContinuationInput,
   EvidenceReceipt,
@@ -55,6 +56,18 @@ export interface HarnessAgentLoop {
     signal?: AbortSignal,
     options?: RunTurnOptions,
   ): Promise<{ items: ThreadItem[]; usage: import('@nexus/protocol').Usage | null }>;
+
+  /**
+   * P2: 同步 harness 的 goal/constraints/criteria 到 AgentContext.cognition.task
+   */
+  updateTaskCognition?(
+    threadId: ThreadId,
+    update: Partial<{
+      goal: string;
+      constraints: string[];
+      verificationCriteria: string[];
+    }>,
+  ): void;
 }
 
 // ─── 辅助：构造续跑输入 ─────────────────────────────────────────────────────
@@ -146,12 +159,17 @@ async function deriveCriteriaFromInput(userInput: UserInput): Promise<string[]> 
 // ─── TaskHarnessEngine ───────────────────────────────────────────────────────
 
 export class TaskHarnessEngine {
+  private readonly experienceEngine?: ExperienceEngine;
+
   constructor(
     private agentLoop: HarnessAgentLoop,
     private model: EvaluatorModelGateway,
     private store: GoalTrackerStore & HarnessContextStore,
     private config: HarnessConfig = DEFAULT_HARNESS_CONFIG,
-  ) {}
+    experienceEngine?: ExperienceEngine,
+  ) {
+    this.experienceEngine = experienceEngine;
+  }
 
   /**
    * 启动 harness run。
@@ -203,6 +221,12 @@ export class TaskHarnessEngine {
     });
     ledger.setCriteria(criteria);
     await goalTracker.persist(this.store);
+
+    // P2: 同步 goal/criteria 到 AgentContext.cognition.task，供 TaskContextProvider 使用
+    this.agentLoop.updateTaskCognition?.(threadId, {
+      goal: objective,
+      verificationCriteria: criteria,
+    });
 
     // 2. 第一轮：正常 runTurn（用户输入）
     let result = await this.agentLoop.runTurn(threadId, userInput, signal);
@@ -265,19 +289,19 @@ export class TaskHarnessEngine {
       if (eval_.satisfied || eval_.status === 'satisfied') {
         goalTracker.markSatisfied();
         await goalTracker.persist(this.store);
-        return this.buildResult('satisfied', goalTracker, ledger, result);
+        return this.buildResult('satisfied', goalTracker, ledger, result, threadId);
       }
       if (eval_.status === 'needs_user_input' || eval_.status === 'blocked') {
         goalTracker.markBlocked(eval_.blocker ?? eval_.status);
         await goalTracker.persist(this.store);
-        return this.buildResult('blocked', goalTracker, ledger, result);
+        return this.buildResult('blocked', goalTracker, ledger, result, threadId);
       }
 
       // 3g. 无进展检测
       if (goalTracker.checkNoProgress()) {
         goalTracker.markNoProgress();
         await goalTracker.persist(this.store);
-        return this.buildResult('no_progress', goalTracker, ledger, result);
+        return this.buildResult('no_progress', goalTracker, ledger, result, threadId);
       }
 
       // 3h. 到达上限
@@ -285,9 +309,9 @@ export class TaskHarnessEngine {
         const status = goalTracker.getState().status;
         await goalTracker.persist(this.store);
         if (status === 'max_continuations') {
-          return this.buildResult('max_continuations', goalTracker, ledger, result);
+          return this.buildResult('max_continuations', goalTracker, ledger, result, threadId);
         }
-        return this.buildResult('no_progress', goalTracker, ledger, result);
+        return this.buildResult('no_progress', goalTracker, ledger, result, threadId);
       }
 
       // 3i. 隐藏续跑 — 注意必须传 signal 作为第三参数（Gap 3）
@@ -315,12 +339,12 @@ export class TaskHarnessEngine {
     const finalStatus = goalTracker.getState().status;
     await goalTracker.persist(this.store);
     if (finalStatus === 'max_continuations') {
-      return this.buildResult('max_continuations', goalTracker, ledger, result);
+      return this.buildResult('max_continuations', goalTracker, ledger, result, threadId);
     }
     if (finalStatus === 'no_progress') {
-      return this.buildResult('no_progress', goalTracker, ledger, result);
+      return this.buildResult('no_progress', goalTracker, ledger, result, threadId);
     }
-    return this.buildResult('blocked', goalTracker, ledger, result);
+    return this.buildResult('blocked', goalTracker, ledger, result, threadId);
   }
 
   // ─── resume harness run（Gap 5） ─────────────────────────────────────────────
@@ -421,25 +445,25 @@ export class TaskHarnessEngine {
       if (eval_.satisfied || eval_.status === 'satisfied') {
         goalTracker.markSatisfied();
         await goalTracker.persist(this.store);
-        return this.buildResult('satisfied', goalTracker, ledger, result);
+        return this.buildResult('satisfied', goalTracker, ledger, result, threadId);
       }
       if (eval_.status === 'needs_user_input' || eval_.status === 'blocked') {
         goalTracker.markBlocked(eval_.blocker ?? eval_.status);
         await goalTracker.persist(this.store);
-        return this.buildResult('blocked', goalTracker, ledger, result);
+        return this.buildResult('blocked', goalTracker, ledger, result, threadId);
       }
       if (goalTracker.checkNoProgress()) {
         goalTracker.markNoProgress();
         await goalTracker.persist(this.store);
-        return this.buildResult('no_progress', goalTracker, ledger, result);
+        return this.buildResult('no_progress', goalTracker, ledger, result, threadId);
       }
       if (!goalTracker.canContinue()) {
         await goalTracker.persist(this.store);
         const status = goalTracker.getState().status;
         if (status === 'max_continuations') {
-          return this.buildResult('max_continuations', goalTracker, ledger, result);
+          return this.buildResult('max_continuations', goalTracker, ledger, result, threadId);
         }
-        return this.buildResult('no_progress', goalTracker, ledger, result);
+        return this.buildResult('no_progress', goalTracker, ledger, result, threadId);
       }
 
       const slice = await contextMgr.buildIterationContext(threadId, this.config.contextBudget);
@@ -464,27 +488,71 @@ export class TaskHarnessEngine {
     await goalTracker.persist(this.store);
     const finalStatus = goalTracker.getState().status;
     if (finalStatus === 'max_continuations') {
-      return this.buildResult('max_continuations', goalTracker, ledger, result);
+      return this.buildResult('max_continuations', goalTracker, ledger, result, threadId);
     }
-    return this.buildResult('no_progress', goalTracker, ledger, result);
+    return this.buildResult('no_progress', goalTracker, ledger, result, threadId);
   }
 
   // ─── 结果构造 ──────────────────────────────────────────────────────────────
 
-  private buildResult(
+  private async buildResult(
     status: HarnessResult['status'],
     goalTracker: GoalTracker,
     ledger: EvidenceLedger,
     lastResult: { items: ThreadItem[]; usage: import('@nexus/protocol').Usage | null },
-  ): HarnessResult {
-    return {
+    threadId: ThreadId,
+  ): Promise<HarnessResult> {
+    const state = goalTracker.getState();
+    const result: HarnessResult = {
       status,
       harnessRunId: goalTracker.getHarnessRunId(),
-      iterations: goalTracker.getState().iteration,
-      finalEvaluation: goalTracker.getState().lastEvaluation,
+      iterations: state.iteration,
+      finalEvaluation: state.lastEvaluation,
       evidenceCount: ledger.size(),
       items: lastResult.items,
       usage: lastResult.usage,
     };
+
+    this.recordExperience(status, state, ledger, threadId).catch(() => {});
+    return result;
+  }
+
+  private async recordExperience(
+    status: HarnessResult['status'],
+    state: ReturnType<GoalTracker['getState']>,
+    ledger: EvidenceLedger,
+    threadId: ThreadId,
+  ): Promise<void> {
+    if (!this.experienceEngine) return;
+
+    try {
+      if (status === 'satisfied') {
+        const passed = state.lastEvaluation?.passedCriteria ?? [];
+        await this.experienceEngine.recordSuccess({
+          toolNames: ['harness_loop'],
+          taskSummary: state.goal.objective,
+          steps: ['plan', 'execute', 'evaluate', 'verify'],
+          threadId,
+          attempts: state.iteration,
+          reasoning: passed.length > 0 ? `Satisfied with ${passed.length} criteria passed` : undefined,
+        });
+      } else {
+        const recent = ledger.getRecentEvidence(10);
+        const blockerPhrases = recent
+          .filter((r) => r.status === 'failed' || r.kind === 'error')
+          .map((r) => r.summary)
+          .slice(0, 3);
+        await this.experienceEngine.recordFailure({
+          errorMessage: status === 'blocked'
+            ? (blockerPhrases.join('; ') || 'Blocker detected with no actionable evidence')
+            : `Failed after ${state.iteration} iterations with status ${status}`,
+          symptoms: blockerPhrases.length > 0 ? blockerPhrases : [status],
+          resolutionSteps: [],
+          threadId,
+          iterations: state.iteration,
+        });
+      }
+    } catch {
+    }
   }
 }

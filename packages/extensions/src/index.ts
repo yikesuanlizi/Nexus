@@ -13,4 +13,32 @@ export type {
   HookRegistry,
 } from './extensions.js';
 
-export const EXTENSIONS_VERSION = '0.1.0';
+export {
+  parseSkillManifest,
+  discoverSkills,
+  loadSkillModule,
+  loadAllSkillModules,
+  skillsToDefinitions,
+  registerSkillsToRegistry,
+  buildSkillsIndexBlock,
+} from './skillRuntime.js';
+export type {
+  SkillKind,
+  SkillManifest,
+  SkillParameter,
+  SkillExecutionContext,
+  SkillPrepareResult,
+  SkillVerifyResult,
+  SkillRollbackReason,
+  SkillExecutionResult,
+  SkillPrepareFn,
+  SkillVerifyFn,
+  SkillRollbackFn,
+  SkillExecuteFn,
+  SkillModule,
+  LoadedSkill,
+  SkillLoadError,
+  LoadSkillsResult,
+} from './skillRuntime.js';
+
+export const EXTENSIONS_VERSION = '0.2.0';

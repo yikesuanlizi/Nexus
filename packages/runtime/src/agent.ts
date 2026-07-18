@@ -69,7 +69,7 @@ import * as path from 'node:path';
 import { shouldEnableWebSearch, type WebSearchMode } from './webSearchPolicy.js';
 import { parseMcpNamespacedToolName } from './mcpClient.js';
 import { buildPromptCacheShape, comparePromptCacheShape, type PromptCacheShape } from './cacheShape.js';
-import { compactionOptionsForRunProfile, normalizeRunProfile, type RunProfile } from './runProfile.js';
+import { compactionOptionsForRunProfile, contextBudgetForRunProfile, normalizeRunProfile, type RunProfile } from './runProfile.js';
 import { leaksToolProtocol, validateThreadItemsForPersistence } from './modelOutput.js';
 import { NexusRuntimeError, affectsTurnStatus, isRecoverableStreamError, toNexusErrorInfo } from './runtimeError.js';
 import type { RunTurnOptions, HarnessItemFields, HarnessResult } from './harness/types.js';
@@ -79,6 +79,7 @@ import type { EvaluatorModelGateway } from './harness/goalEvaluator.js';
 import {
   composeRuntimeMiddleware,
   createDynamicContextMiddleware,
+  createExperienceWritebackMiddleware,
   createStabilityMiddleware,
   type RuntimeMiddleware,
   type RuntimeModelRequest,
@@ -96,6 +97,29 @@ import { createToolGovernanceMiddleware, type ToolGovernanceConfig } from './too
 import { createGuardianMiddleware, type GuardianConfig } from './guardian.js';
 import { SystemMonitor, DEFAULT_SYSTEM_MONITOR_CONFIG, type SystemMonitorConfig } from './systemMonitor.js';
 import type { SystemMonitorLevel, SystemMonitorStatus } from '@nexus/protocol';
+import {
+  createContextEngine,
+  createInitialAgentContext,
+  EnvironmentContextProvider,
+  ExperienceEngine,
+  JsonExperienceStore,
+  ProjectBrainContextProvider,
+  TaskContextProvider,
+  type AgentContext,
+  type ContextEngine,
+  type ContextProvider,
+  type ExperienceStore,
+  type ProjectBrainEnricher,
+} from '@nexus/context';
+import {
+  discoverSkills,
+  loadAllSkillModules,
+  registerSkillsToRegistry,
+  buildSkillsIndexBlock,
+  type LoadedSkill,
+} from '@nexus/extensions';
+import { SkillExecutor } from './skillExecutor.js';
+import { createUseSkillTool, USE_SKILL_TOOL_NAME } from './skillTool.js';
 
 const RUNNING_CHECKPOINT_TTL_MS = 30 * 60 * 1000;
 const MAX_WEB_SEARCH_CALLS_PER_TURN = 6;
@@ -257,13 +281,29 @@ export interface AgentConfig {
   /** System monitor config (toggleable). When enabled, the agent receives proactive
    *  host CPU/memory/disk pressure notifications and auto-throttles tool execution / subagent delegation. */
   systemMonitor?: Partial<SystemMonitorConfig>;
+  // 中文注释：经验引擎配置。开启后会在回合内自动记录 failure_pattern / successful_workflow / gotcha 等 SAO 经验。
+  /** Experience engine config. When enabled, records SAO-format experiences (failure patterns,
+   *  successful workflows, gotchas) across turns and surfaces them in dynamic context. */
+  experiences?: {
+    enabled?: boolean;
+    /** Persistence directory. If set, uses JsonExperienceStore at that path; otherwise in-memory only. */
+    storageDir?: string;
+    /** Max entries kept after prune. */
+    maxEntries?: number;
+  };
+  // 中文注释：可执行技能目录列表。每个目录下子目录/SKILL.md 或 *.skill.md 会被扫描；带 entry 字段的 SKILL.md 视为 executable skill。
+  /** Executable skill directories. Each directory's subdirectories with SKILL.md (or *.skill.md files) are scanned;
+   *  SKILL.md files with an "entry" field are treated as executable skills. */
+  skillsDirs?: string[];
 }
 
-type ResolvedAgentConfig = Required<Omit<AgentConfig, 'memory' | 'a2aClientEnabled' | 'a2aRemotes' | 'systemMonitor'>> & {
+type ResolvedAgentConfig = Required<Omit<AgentConfig, 'memory' | 'a2aClientEnabled' | 'a2aRemotes' | 'systemMonitor' | 'experiences' | 'skillsDirs'>> & {
   memory: MemorySettings;
   a2aClientEnabled?: boolean;
   a2aRemotes?: string[];
   systemMonitor: SystemMonitorConfig;
+  experiences: { enabled: boolean; storageDir?: string; maxEntries: number };
+  skillsDirs: string[];
 };
 
 type ToolCallExecutionResult = {
@@ -319,6 +359,20 @@ export class AgentLoop {
   // 实施点 2：per-thread harness 字段标记，用于给 harness turn 产生的 items 打 harnessRunId
   // — English: per-thread harness fields marker, used to tag items produced by harness turns
   private harnessFieldsByThread = new Map<ThreadId, HarnessItemFields>();
+  private _contextEngine: ContextEngine;
+  private agentContextByThread = new Map<ThreadId, AgentContext>();
+  private envContextProvider: EnvironmentContextProvider;
+  private taskContextProvider: TaskContextProvider;
+  private projectBrainProvider: ProjectBrainContextProvider | null = null;
+  // 中文注释：SAO 经验引擎，用于记录失败模式、成功工作流、gotcha 等行为经验。
+  /** SAO experience engine: records failure patterns, successful workflows, gotchas, etc. */
+  private _experienceEngine: ExperienceEngine;
+  // 中文注释：已加载的 skill 列表（包含 prompt skill 和 executable skill）。
+  /** Loaded skills (both prompt-only and executable). */
+  private loadedSkills: LoadedSkill[] = [];
+  // 中文注释：skill 执行器，负责参数校验、超时、错误隔离。
+  /** Skill executor: parameter validation, timeout, error isolation. */
+  private _skillExecutor: SkillExecutor;
 
   constructor(config: AgentConfig, stateManager?: ThreadStateManager) {
     const locale = config.locale ?? 'zh';
@@ -364,6 +418,12 @@ export class AgentLoop {
           ...config.systemMonitor?.thresholds,
         },
       },
+      experiences: {
+        enabled: config.experiences?.enabled ?? false,
+        storageDir: config.experiences?.storageDir,
+        maxEntries: config.experiences?.maxEntries ?? 500,
+      },
+      skillsDirs: config.skillsDirs ?? [],
     };
     this.tools = this.config.tools;
     registerCollabTools(this.tools, {
@@ -377,6 +437,47 @@ export class AgentLoop {
       }));
     }
     this._effectiveSandbox = resolveSandboxEffective(config.sandbox);
+
+    this.envContextProvider = new EnvironmentContextProvider({ cwd: this.config.workspaceRoot });
+    this.taskContextProvider = new TaskContextProvider();
+
+    const providers: ContextProvider[] = [
+      this.taskContextProvider,
+      this.envContextProvider,
+    ];
+    if (this.config.workspaceRoot) {
+      this.projectBrainProvider = new ProjectBrainContextProvider({
+        workspaceRoot: this.config.workspaceRoot,
+      });
+      providers.push(this.projectBrainProvider);
+    }
+
+    const contextBudget = contextBudgetForRunProfile(this.config.runProfile);
+    this._contextEngine = createContextEngine({
+      totalBudget: contextBudget,
+      providers,
+    });
+
+    let experienceStore: ExperienceStore | undefined;
+    if (this.config.experiences.enabled) {
+      const dir = this.config.experiences.storageDir ?? path.join(this.config.workspaceRoot, '.nexus');
+      experienceStore = new JsonExperienceStore(dir, 'experiences.json');
+    }
+    this._experienceEngine = new ExperienceEngine({
+      enabled: this.config.experiences.enabled,
+      workspaceRoot: this.config.workspaceRoot,
+      store: experienceStore,
+    });
+
+    this._skillExecutor = new SkillExecutor();
+    if (!this.tools.get(USE_SKILL_TOOL_NAME)) {
+      this.tools.register(createUseSkillTool({
+        getSkills: () => this.loadedSkills,
+        executor: this._skillExecutor,
+        getWorkspaceRoot: () => this.config.workspaceRoot,
+      }));
+    }
+
     this.runtimeMiddleware = composeRuntimeMiddleware([
       createStabilityMiddleware({
         maxRepeatedToolCalls: this.config.maxRepeatedToolCalls,
@@ -391,7 +492,17 @@ export class AgentLoop {
         sandbox: () => this.sandbox,
         governance: this.config.toolGovernance,
       }),
-      createDynamicContextMiddleware(),
+      createDynamicContextMiddleware({
+        contextEngine: this._contextEngine,
+        experienceEngine: this._experienceEngine,
+        getExecutableSkillsBlock: () => buildSkillsIndexBlock(this.loadedSkills),
+        getAgentContext: (threadId) => this.getOrCreateAgentContext(threadId),
+        setAgentContext: (threadId, ctx) => this.agentContextByThread.set(threadId, ctx),
+        contextBudget,
+      }),
+      createExperienceWritebackMiddleware({
+        experienceEngine: this._experienceEngine,
+      }),
       ...this.config.runtimeMiddleware,
     ]);
     // 中文注释：初始化系统监控。仅当 enabled=true 时启动后台采样，并订阅级别变化用于主动通知。
@@ -442,6 +553,50 @@ export class AgentLoop {
     const notice = this._pendingSystemNotice;
     this._pendingSystemNotice = null;
     return notice;
+  }
+
+  private getOrCreateAgentContext(threadId: ThreadId): AgentContext {
+    let ctx = this.agentContextByThread.get(threadId);
+    if (!ctx) {
+      const env = {
+        cwd: this.config.workspaceRoot,
+        os: process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'macos' : process.platform,
+        shell: process.platform === 'win32' ? (process.env.COMSPEC || 'cmd.exe') : (process.env.SHELL || '/bin/sh'),
+      };
+      ctx = createInitialAgentContext(env);
+      this.agentContextByThread.set(threadId, ctx);
+    }
+    return ctx;
+  }
+
+  getAgentContext(threadId: ThreadId): AgentContext | undefined {
+    return this.agentContextByThread.get(threadId);
+  }
+
+  registerProjectBrainEnricher(enricher: ProjectBrainEnricher): void {
+    if (this.projectBrainProvider) {
+      this.projectBrainProvider.addEnricher(enricher);
+    }
+  }
+
+  updateTaskCognition(threadId: ThreadId, update: {
+    goal?: string;
+    constraints?: string[];
+    verificationCriteria?: string[];
+  }): void {
+    const ctx = this.getOrCreateAgentContext(threadId);
+    const updatedTask = {
+      ...ctx.cognition.task,
+      ...(update.goal !== undefined ? { goal: update.goal } : {}),
+      ...(update.constraints !== undefined ? { constraints: update.constraints } : {}),
+      ...(update.verificationCriteria !== undefined ? { verificationCriteria: update.verificationCriteria } : {}),
+      confidence: update.goal ? Math.max(ctx.cognition.task.confidence, 0.7) : ctx.cognition.task.confidence,
+    };
+    this.agentContextByThread.set(threadId, {
+      ...ctx,
+      cognition: { task: updatedTask },
+      updatedAt: Date.now(),
+    });
   }
 
   /**
@@ -546,6 +701,59 @@ export class AgentLoop {
   /** Get the i18n context (for UI to translate messages). */
   get i18nContext(): I18n {
     return this.i18n;
+  }
+
+  /** Access the SAO experience engine (for external recording/querying and harness loops). */
+  get experienceEngine(): ExperienceEngine {
+    return this._experienceEngine;
+  }
+
+  /** Access the skill executor for external/API skill invocation. */
+  get skillExecutor(): SkillExecutor {
+    return this._skillExecutor;
+  }
+
+  /** Return all currently loaded skills (both prompt and executable). */
+  getLoadedSkills(): LoadedSkill[] {
+    return [...this.loadedSkills];
+  }
+
+  /** Register a set of loaded skills (merges by name, overwriting). Also registers their prompt bodies into the configured SkillRegistry for prompt injection. */
+  registerSkills(skills: LoadedSkill[]): void {
+    for (const skill of skills) {
+      const idx = this.loadedSkills.findIndex((s) => s.name === skill.name);
+      if (idx >= 0) this.loadedSkills[idx] = skill;
+      else this.loadedSkills.push(skill);
+    }
+    registerSkillsToRegistry(this.config.skills, skills);
+  }
+
+  /** Scan all configured skillsDirs, discover SKILL.md files, load executable modules, and register them. Returns total loaded count. */
+  async loadSkillsFromConfiguredDirs(): Promise<number> {
+    let total = 0;
+    for (const dir of this.config.skillsDirs) {
+      total += await this.loadSkillsFromDirectory(dir);
+    }
+    return total;
+  }
+
+  /** Discover and load skills from a single directory. Registers both prompt and executable skills. Returns count. */
+  async loadSkillsFromDirectory(skillsDir: string): Promise<number> {
+    try {
+      const { skills, errors } = await discoverSkills(skillsDir);
+      for (const err of errors) {
+        console.warn(`[skill-loader] failed to parse skill ${err.name}: ${err.error}`);
+      }
+      const modErrors = await loadAllSkillModules(skills);
+      for (const err of modErrors) {
+        console.warn(`[skill-loader] failed to load module for ${err.name}: ${err.error}`);
+      }
+      this.registerSkills(skills);
+      return skills.length;
+    } catch (err) {
+      console.warn(`[skill-loader] failed to scan ${skillsDir}:`, err);
+      return 0;
+    }
   }
 
   /** Get the thread state for a given thread. */
@@ -1456,6 +1664,7 @@ export class AgentLoop {
       evaluatorModel,
       this.config.store,
       DEFAULT_HARNESS_CONFIG,
+      this._experienceEngine,
     );
 
     return engine.runHarness(threadId, userInput, options);

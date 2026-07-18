@@ -988,12 +988,17 @@ function createDingtalkAgentTools(
 ): ToolRegistry {
   const registry = new ToolRegistry();
   registry.register(currentTimeTool);
+  let defaultSource: 'dingtalk_dm' | 'dingtalk_group_mention' | 'nexus_chat' = 'nexus_chat';
+  if (message.platform === 'dingtalk') {
+    defaultSource = message.chatType === 'dm' ? 'dingtalk_dm' : 'dingtalk_group_mention';
+  }
   for (const tool of createDingtalkForwardTools({
     getConfig: () => config as BotConfig,
     createClient: () => client,
     currentUserText: message.text,
     mentionUsers,
     currentAttachments,
+    defaultSource,
   })) {
     registry.register(tool);
   }

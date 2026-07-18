@@ -477,6 +477,20 @@
     align-content: start;
   }
 
+  .settingsDrawer .mcpToggle {
+    @apply inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border border-slate-300 bg-slate-200 p-0.5 transition;
+  }
+
+  .settingsDrawer .mcpToggle.on {
+    @apply border-blue-500 bg-blue-500;
+  }
+
+  .settingsDrawer .pluginTabs {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+  }
+
   .settingsDrawer .pluginNotice {
     margin: 0;
     border: 1px solid rgba(91, 141, 255, .18);

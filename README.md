@@ -4,7 +4,7 @@
 
 目标：完全本地运行的全能智能体系统。不依赖 ChatGPT 登录、不强制使用 OpenAI API、不绑定云端任务服务。模型侧默认面向 Ollama / LM Studio / vLLM / OpenAI-compatible endpoint（DeepSeek / 通义千问 / 智谱 GLM 等）。
 
-> 当前版本：**v1.2.0** — Task Harness Engine 底层架构升级（详见 [Release Notes](docs/releases/v1.2.0.md)）
+> 当前版本：**v1.5.0** — Cognitive Context Layer（认知上下文层）+ Skill 生命周期 + Experience 经验闭环
 
 ## 架构
 
@@ -15,10 +15,12 @@ packages/
 ├── tools/            Shell、文件系统、patch、搜索、git、GitNexus 等本地工具
 ├── sandbox/          权限预设、执行策略、审批 handler
 ├── storage/          单机 SQLite + JSONL；可选 Postgres 多租户存储
-├── runtime/          Agent 主循环、工具调用、状态机、checkpoint/resume、workflow 蓝图引擎、Task Harness Engine
+├── context/          Cognitive Context Layer：Provider 体系 + ProjectBrain + Task Cognition + Experience Engine
+├── runtime/          Agent 主循环、工具调用、状态机、checkpoint/resume、workflow 蓝图引擎、Task Harness Engine、Skill Executor
 ├── memory/           上下文压缩、恢复、分支、回滚
-├── bot/              钉钉 / 微信等 IM 平台桥接
-├── extensions/       AGENTS.md、SKILL.md、hooks 系统
+├── extensions/       Skill 注册表、AGENTS.md/SKILL.md 解析、Skill 模块加载器、Hooks 系统
+├── i18n/             多语言文案
+└── bot/              钉钉 / 微信等 IM 平台桥接
 apps/
 ├── api/              本地 Node API，负责运行时、工具执行、审批、线程与 harness 控制
 ├── desktop/          Tauri 桌面端（Windows / macOS / Linux）
@@ -50,6 +52,10 @@ npm start
 - **A2A 协议**（v1.0+）：Agent-to-Agent 标准协议，可调用远程 Agent 执行子任务
 - **Harness 自主循环**（v1.2+）：跨 turn 的 Goal → Plan → Execute → Critique → Replan → Verify，配合 Evidence Ledger 与四层上下文裁切
 - **Workflow 蓝图引擎**（v1.2+）：基于 DAG 的可视化工作流，支持计划 / 审批 / 发布 / 执行 / 重规划
+- **Cognitive Context Layer**（v1.5+）：线程级 Provider 体系（Environment / Task / ProjectBrain），架构 hash 增量注入，turn 级缓存避免重复执行
+- **ProjectBrain**（v1.5+）：自动扫描项目结构、模块依赖、风险区域，跨线程共享架构缓存
+- **Experience Engine**（v1.5+）：SAO（Situation-Action-Outcome）经验沉淀，harness 结束自动记录成功/失败模式，冷启动加速
+- **Skill 生命周期**（v1.5+）：prepare → execute → verify 三阶段执行，失败自动 rollback，支持文件备份回滚
 
 ### 工具与安全
 - **本地工具集**：Shell、文件读写、patch、搜索、git 等常用工具内置
@@ -61,8 +67,10 @@ npm start
 
 ### 技能与扩展
 - **Skills 系统**：支持本地 Skill 目录，按任务选择、自动匹配，支持 GitHub URL 一键安装
+- **Skill 生命周期**（v1.5+）：prepare（前置检查+文件备份）→ execute（执行）→ verify（后置校验），任一阶段失败自动 rollback 恢复文件
 - **Hooks 扩展**：AGENTS.md、SKILL.md 约定式扩展入口
 - **A2A 协议**：跨进程、跨语言 Agent 调用
+- **MCP 工具生态**：运行时懒加载 MCP 服务，Web 配置界面管理连接
 
 ### 系统监控与限流
 - **实时监控**：CPU / 内存 / 磁盘占用后台采样
@@ -251,11 +259,14 @@ Agent system prompt 明确三层使用策略，确保任何环境下都能调用
 
 ## 后续重点
 
-- Harness 自主循环：完善 Evidence Ledger 可视化、目标达成度评分
-- Workflow 蓝图：节点级审批、断点恢复
-- 输入框命令：`/skills add`、`/mcp add`、`/plan` 等应用内命令
-- 上下文压缩：完善三级压缩、handoff summary、缓存命中统计
-- 恢复能力：增强主动停止、异常退出、进程重启后的恢复体验
+- **Experience 检索**：将 SAO 经验接入冷启动和 turn 级上下文，实现真正的"越用越聪明"
+- **Skill prepare/verify 示例**：为官方内置 skill 补充 prepare/verify/rollback 最佳实践模板
+- **Harness 经验可视化**：Run Monitor 中展示从 Experience Engine 命中的历史经验
+- **Harness 自主循环**：完善 Evidence Ledger 可视化、目标达成度评分
+- **Workflow 蓝图**：节点级审批、断点恢复
+- **输入框命令**：`/skills add`、`/mcp add`、`/plan` 等应用内命令
+- **上下文压缩**：完善三级压缩、handoff summary、缓存命中统计
+- **恢复能力**：增强主动停止、异常退出、进程重启后的恢复体验
 
 ## 许可证
 

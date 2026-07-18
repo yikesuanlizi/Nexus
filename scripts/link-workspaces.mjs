@@ -6,6 +6,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const scopeDir = path.join(root, 'node_modules', '@nexus');
 const packages = [
   'protocol',
+  'context',
   'model-gateway',
   'sandbox',
   'storage',

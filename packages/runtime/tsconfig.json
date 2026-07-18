@@ -8,6 +8,7 @@
   "include": ["src"],
   "references": [
     { "path": "../protocol" },
+    { "path": "../context" },
     { "path": "../model-gateway" },
     { "path": "../sandbox" },
     { "path": "../storage" },

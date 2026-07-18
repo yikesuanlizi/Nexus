@@ -1,6 +1,6 @@
 {
   "name": "@nexus/tests",
-  "version": "0.2.0",
+  "version": "1.5.0",
   "private": true,
   "devDependencies": {
     "@nexus/protocol": "0.3.0",
