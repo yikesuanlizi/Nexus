@@ -778,6 +778,8 @@ git commit -m "fix: separate global and thread configuration scopes"
 - Modify: `apps/web/src/features/chat/threadItems.ts`
 - Modify: `apps/web/src/features/chat/threadItems.test.ts`
 - Modify: `apps/web/src/features/chat/threads.test.ts`
+- Modify: `apps/web/src/features/workflow/workflow.ts`
+- Modify: `apps/web/src/features/workflow/workflow.test.ts`
 - Modify: `apps/web/src/main.tsx`
 
 - [ ] **Step 1: 写 generation guard 的失败测试**
@@ -842,7 +844,7 @@ export type TranscriptEntry =
 
 - [ ] **Step 3: 将线程快照加载改为纯 fetch + 条件提交**
 
-`reloadThreadSnapshot(id, signal)` 必须把相同 signal 传给 thread、workflow、children 和 context-pressure 请求；解析完成后先检查 `guard.isCurrent(generation)`，再一次性提交 items/turns/usage/config/workflow。`loadThread` 必须先关闭旧 EventSource，再为目标线程创建 buffering EventSource；收到 connected 后才拉 snapshot。snapshot 期间事件只进入带单调 receive cursor 的 buffer；commit 后按 cursor 排序，并以事件 cursor 或 canonical `(event.type, item.id)` identity 去重 flush，随后切为 live。generation 失效时必须同时 abort fetch、关闭该 stream 并丢弃 buffer；断线重连完整重走“订阅缓冲 → snapshot → flush → live”，禁止先 snapshot 后开 SSE。
+`reloadThreadSnapshot(id, signal)` 必须把相同 signal 传给 thread、workflow、children 和 context-pressure 请求；将 `loadThreadWorkflow(threadId)` 扩展为 `loadThreadWorkflow(threadId, signal)`，并把该 signal 原样传给内部 fetch。解析完成后先检查 `guard.isCurrent(generation)`，再一次性提交 items/turns/usage/config/workflow。`loadThread` 必须先关闭旧 EventSource，再为目标线程创建 buffering EventSource；收到 connected 后才拉 snapshot。snapshot 期间事件只进入带单调 receive cursor 的 buffer；commit 后按 cursor 排序，并以事件 cursor 或 canonical `(event.type, item.id)` identity 去重 flush，随后切为 live。generation 失效时必须同时 abort fetch、关闭该 stream 并丢弃 buffer；断线重连完整重走“订阅缓冲 → snapshot → flush → live”，禁止先 snapshot 后开 SSE。
 
 核心顺序固定为：
 
@@ -863,12 +865,12 @@ stream.goLive(applyCanonicalThreadEvent);
 
 - [ ] **Step 4: 添加交错响应回归测试**
 
-测试创建 A、B 两个 deferred fetch：先请求 A，再请求 B；先 resolve B、后 resolve A。最终 state 必须只包含 B，且只有 B 的 stream 存活。再将 canonical item 事件分别插在 connected 后/snapshot 返回前、snapshot commit 后/flush 前与 live 阶段，断言 snapshot 未包含的事件不会丢失；让 snapshot 与 buffer 含同一 item，并重复投递同 cursor/同 lifecycle identity，断言最终 items/turns 各只有一份且顺序稳定。
+测试创建 A、B 两个 deferred fetch：先请求 A，再请求 B；先 resolve B、后 resolve A。最终 state 必须只包含 B，且只有 B 的 stream 存活。断言 workflow fetch 收到与 thread/children/context-pressure 相同的 signal；线程切换 abort 后，旧 workflow 请求以 AbortError 取消且旧 workflow 结果不提交。再将 canonical item 事件分别插在 connected 后/snapshot 返回前、snapshot commit 后/flush 前与 live 阶段，断言 snapshot 未包含的事件不会丢失；让 snapshot 与 buffer 含同一 item，并重复投递同 cursor/同 lifecycle identity，断言最终 items/turns 各只有一份且顺序稳定。
 
 Run:
 
 ```powershell
-npx vitest run apps/web/src/features/chat/latestRequestGuard.test.ts apps/web/src/features/chat/localTranscriptEntry.test.ts apps/web/src/features/chat/threadItems.test.ts apps/web/src/features/chat/threads.test.ts
+npx vitest run apps/web/src/features/chat/latestRequestGuard.test.ts apps/web/src/features/chat/localTranscriptEntry.test.ts apps/web/src/features/chat/threadItems.test.ts apps/web/src/features/chat/threads.test.ts apps/web/src/features/workflow/workflow.test.ts
 ```
 
 Expected: PASS。
@@ -876,7 +878,7 @@ Expected: PASS。
 - [ ] **Step 5: 提交线程加载修复**
 
 ```powershell
-git add apps/web/src/features/chat/latestRequestGuard.ts apps/web/src/features/chat/latestRequestGuard.test.ts apps/web/src/features/chat/localTranscriptEntry.ts apps/web/src/features/chat/localTranscriptEntry.test.ts apps/web/src/features/chat/threadItems.ts apps/web/src/features/chat/threadItems.test.ts apps/web/src/features/chat/threads.test.ts apps/web/src/main.tsx
+git add apps/web/src/features/chat/latestRequestGuard.ts apps/web/src/features/chat/latestRequestGuard.test.ts apps/web/src/features/chat/localTranscriptEntry.ts apps/web/src/features/chat/localTranscriptEntry.test.ts apps/web/src/features/chat/threadItems.ts apps/web/src/features/chat/threadItems.test.ts apps/web/src/features/chat/threads.test.ts apps/web/src/features/workflow/workflow.ts apps/web/src/features/workflow/workflow.test.ts apps/web/src/main.tsx
 git commit -m "fix: reject stale thread snapshot responses"
 ```
 
