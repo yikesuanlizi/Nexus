@@ -14,16 +14,30 @@ describe('slash command selection UI', () => {
     expect(source).toContain('activeSlashOption');
     expect(source).toContain('selectSlashOption');
     expect(composer).toContain('commandChip');
+    expect(composer).toContain('commandInputMeta');
+    expect(composer).toContain('commandUrlChip');
+    expect(composer).toContain('commandInputClassName');
+    expect(composer).toContain("'withTokens'");
     expect(source).toContain('activeSlashOption.command + input');
+    expect(source).toContain('extractGitHubSkillInstallUrls(command.args)');
+    expect(source).toContain('await installSkillsFromGitHub(installTargets, command.args)');
+    expect(source).toContain("createLocalSkillDraftItems(text, config.locale, undefined, 'install')");
+    expect(source).toContain('body: JSON.stringify({ input: inputText, urls: installTargets, config: apiConfig })');
+    expect(source).not.toContain('find((token) => isGitHubSkillInstallUrl(token.value))');
     expect(source).not.toContain("if (!text) {\n      setSettingsOpen(true);");
     expect(styles).toContain('.commandChip');
+    expect(styles).toContain('.commandUrlChip');
   });
 
   it('keeps the selected slash command inside a plain black input frame', () => {
     const styles = readFileSync(join(here, 'styles.css'), 'utf-8').replace(/\r\n/g, '\n');
     const commandStyles = styles.slice(styles.indexOf('.commandInputRow'), styles.indexOf('.skillDraftDialog'));
 
-    expect(commandStyles).toContain('.commandInputRow.active {\n    @apply flex');
+    expect(commandStyles).toContain('.commandInputRow.active {\n    @apply border-slate-950;');
+    expect(commandStyles).toContain('.commandInputMeta');
+    expect(commandStyles).toContain('.commandTokenRow');
+    expect(commandStyles).toContain('.commandInputRow.withTokens .commandInputMeta');
+    expect(commandStyles).toContain('border-bottom: 1px solid rgba(148, 163, 184, .24);');
     expect(commandStyles).toContain('border-slate-950');
     expect(commandStyles).not.toContain('grid-cols-[auto_minmax(0,1fr)]');
     expect(commandStyles).not.toContain('text-sky');
@@ -41,8 +55,21 @@ describe('slash command selection UI', () => {
     expect(composer).toContain("'hideCommand' in option && option.hideCommand ? null : <span>{option.command}</span>");
     expect(source).toContain("setInput(`$${option.skillName} `)");
     expect(source).toContain("action: 'enable_mcp'");
+    expect(source).toContain('resolveMcpDraftFromInput(command.args)');
+    expect(readFileSync(join(here, 'features', 'settings', 'mcpConfig.ts'), 'utf-8')).toContain("fetchImpl('/api/mcp/draft'");
     expect(source).toContain('setMcps((current) => current.map((mcp) => (');
     expect(source).not.toContain("case 'skills.list':\n        setSettingsOpen(true);");
     expect(source).not.toContain("case 'mcp.list':\n        setSettingsOpen(true);");
+  });
+
+  it('marks MCP URL input as a source draft in the settings panel instead of a runnable command', () => {
+    const settings = readFileSync(join(here, 'components', 'SettingsDrawer.tsx'), 'utf-8');
+    const styles = readFileSync(join(here, 'styles.css'), 'utf-8');
+
+    expect(settings).toContain('mcpDraftSourceUrl');
+    expect(settings).toContain('mcpSourceNotice');
+    expect(settings).toContain('Nexus 不会把 URL 直接当作命令执行');
+    expect(settings).toContain('disabled={!mcpCanSave}');
+    expect(styles).toContain('.mcpSourceNotice');
   });
 });

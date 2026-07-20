@@ -18,6 +18,11 @@ export function mergeIncomingItems(current: ThreadItem[], incoming: ThreadItem[]
   return orderTurnItems(mergeThreadItems(base, normalized) as ThreadItem[]);
 }
 
+export function removeLocalThreadItems(current: ThreadItem[], localItems: ThreadItem[]): ThreadItem[] {
+  const localIds = new Set(localItems.map((item) => item.id));
+  return current.filter((item) => !localIds.has(item.id));
+}
+
 function orderTurnItems(items: ThreadItem[]): ThreadItem[] {
   return [...items].sort((a, b) => {
     if (!a.turnId || a.turnId !== b.turnId) return 0;

@@ -137,16 +137,17 @@ describe('skills settings', () => {
     expect(providerOptions).not.toContain('baseUrl.replace');
   });
 
-  it('marks the applied model preset in the row instead of repeating current config in the header', () => {
+  it('loads model presets inside the model page without applying them immediately', () => {
     const settingsDrawer = readFileSync(join(here, 'components', 'SettingsDrawer.tsx'), 'utf-8');
-    const presetsSection = settingsDrawer.slice(
-      settingsDrawer.indexOf("activeSection === 'presets'"),
-      settingsDrawer.lastIndexOf("activeSection === 'plugins'"),
+    const modelSection = settingsDrawer.slice(
+      settingsDrawer.indexOf("activeSection === 'agent'"),
+      settingsDrawer.lastIndexOf("activeSection === 'appearance'"),
     );
 
-    expect(presetsSection).toContain('presetAppliedBadge');
-    expect(presetsSection).toContain('modelPresetMatchesRunConfig');
-    expect(presetsSection).not.toContain('selectedProvider?.name ?? config.provider');
-    expect(presetsSection).not.toContain('saveModelPreset()');
+    expect(settingsDrawer).not.toContain("{ id: 'presets'");
+    expect(modelSection).toContain('modelPresetInlineSelect');
+    expect(modelSection).toContain('loadModelPresetIntoDraft');
+    expect(modelSection).not.toContain('applyModelPreset(preset)');
+    expect(modelSection).not.toContain('saveModelPreset()');
   });
 });

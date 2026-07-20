@@ -70,8 +70,9 @@ describe('AgentRunConfig runProfile', () => {
     expect(resolveConfig({ runProfile: 'bad-value' as never }).runProfile).toBe('runtime_os');
   });
 
-  it('accepts harness profile for autonomous loop', () => {
-    expect(resolveConfig({ runProfile: 'harness' }).runProfile).toBe('harness');
+  it('legacy harness profile auto-downgrades to runtime_os', () => {
+    // harness 不再是 RunProfile，已降级为 runtime 底座能力
+    expect(resolveConfig({ runProfile: 'harness' as never }).runProfile).toBe('runtime_os');
   });
 });
 

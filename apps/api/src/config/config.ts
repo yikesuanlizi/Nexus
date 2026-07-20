@@ -23,8 +23,10 @@ export type SecretSource = 'config' | 'env';
 export type ReasoningEffort = 'low' | 'medium' | 'high';
 // 界面主题：深色 | 浅色 | 跟随系统 — Chinese: UI theme mode
 export type ThemeMode = 'dark' | 'light' | 'system';
-// 运行模式：缓存优先 | 运行时操作系统 | Harness 自主循环 — Chinese: run profile
-export type RunProfile = 'cache_first' | 'runtime_os' | 'harness';
+// 运行模式：缓存优先 | 长运行 — Chinese: run profile
+// harness 不再是 RunProfile，已降级为 runtime 底座的约束/证据/验收层。
+// 旧配置里出现 'harness' 时会被 normalizeRunProfile 自动降级为 'runtime_os'。
+export type RunProfile = 'cache_first' | 'runtime_os';
 
 // Codex 风格的子 Agent 角色档案（以 agent_type 为键） — Chinese: agent role profiles
 export type AgentRoleProfiles = Record<string, {
@@ -102,6 +104,8 @@ export interface TurnRequest {
 export interface ApiKeyState {
   providerId: string;
   envVar: string;
+  defaultEnvVar?: string;
+  envVarCandidates?: string[];
   configured: boolean;
   source: 'env' | 'config' | null;
   masked: string | null;
@@ -252,7 +256,11 @@ export function resolveConfig(patch: Partial<AgentRunConfig> = {}): AgentRunConf
   if (!['low', 'medium', 'high'].includes(merged.reasoningEffort)) {
     merged.reasoningEffort = defaultConfig.reasoningEffort;
   }
-  if (!['cache_first', 'runtime_os', 'harness'].includes(merged.runProfile)) {
+  // harness 不再是有效 RunProfile，旧值自动降级为 runtime_os
+  if ((merged.runProfile as string) === 'harness') {
+    merged.runProfile = 'runtime_os';
+  }
+  if (!['cache_first', 'runtime_os'].includes(merged.runProfile)) {
     merged.runProfile = defaultConfig.runProfile;
   }
   if (!['dark', 'light', 'system'].includes(merged.themeMode)) {

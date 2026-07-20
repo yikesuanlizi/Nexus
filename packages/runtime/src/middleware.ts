@@ -19,8 +19,8 @@ import type { RunProfile } from './runProfile.js';
 import type { WebSearchMode } from './webSearchPolicy.js';
 import type {
   AgentContext,
+  ContextChunk,
   ContextEngine,
-  Experience,
   ExperienceEngine,
   ProviderContext,
 } from '@nexus/context';
@@ -274,15 +274,20 @@ export function createStabilityMiddleware(options: {
 // 动态上下文中间件：在每次调用模型前，注入一份描述时间、权限、运行状态、文件变更和用户扩展的 system prompt
 export interface DynamicContextMiddlewareOptions {
   contextEngine?: ContextEngine;
-  experienceEngine?: ExperienceEngine;
   getExecutableSkillsBlock?: () => string;
   getAgentContext?: (threadId: ThreadId) => AgentContext | undefined;
   setAgentContext?: (threadId: ThreadId, ctx: AgentContext) => void;
   contextBudget?: number;
+  /**
+   * SSE 事件发射器。当 ContextEngine 注入 chunk 后，会发射 task.context.updated 事件。
+   * 注意：只发 metadata（id/source/tokens/priority/truncated/summary），不发完整 content。
+   * — English: SSE emitter; emits task.context.updated with metadata only after ContextEngine assembly.
+   */
+  emit?: (event: ThreadEvent) => void;
 }
 
 export function createDynamicContextMiddleware(options?: DynamicContextMiddlewareOptions): RuntimeMiddleware {
-  const { contextEngine, experienceEngine, getExecutableSkillsBlock, getAgentContext, setAgentContext, contextBudget } = options ?? {};
+  const { contextEngine, getExecutableSkillsBlock, getAgentContext, setAgentContext, contextBudget, emit } = options ?? {};
 
   const turnCache = new Map<TurnId, {
     text: string;
@@ -295,11 +300,11 @@ export function createDynamicContextMiddleware(options?: DynamicContextMiddlewar
       if (turnCache.has(cacheKey)) return;
       const built = await buildDynamicContext(ctx, {
         contextEngine,
-        experienceEngine,
         getExecutableSkillsBlock,
         getAgentContext,
         setAgentContext,
         contextBudget,
+        emit,
       });
       turnCache.set(cacheKey, { text: built.text, inserted: false });
     },
@@ -310,11 +315,11 @@ export function createDynamicContextMiddleware(options?: DynamicContextMiddlewar
       if (!cached) {
         const built = await buildDynamicContext(ctx, {
           contextEngine,
-          experienceEngine,
           getExecutableSkillsBlock,
           getAgentContext,
           setAgentContext,
           contextBudget,
+          emit,
         });
         cached = { text: built.text, inserted: false };
         turnCache.set(cacheKey, cached);
@@ -378,43 +383,38 @@ async function buildDynamicContext(
         for (const chunk of assembled.chunks) {
           cognitiveLines.push(chunk.content);
         }
+        // 发 task.context.updated — 只发 metadata，不发完整 chunk content
+        // — English: emit task.context.updated with metadata only; never leak full prompt content
+        if (engineOpts.emit) {
+          const meta = (chunk: ContextChunk) => {
+            const m = chunk.metadata;
+            const summary = m && typeof m.summary === 'string' ? m.summary : chunk.content.slice(0, 80);
+            const truncated = Boolean(m && typeof m.truncated === 'boolean' ? m.truncated : false);
+            return { summary, truncated };
+          };
+          engineOpts.emit({
+            type: 'task.context.updated',
+            threadId: ctx.threadId,
+            turnId: ctx.turnId,
+            chunks: assembled.chunks.map((chunk) => {
+              const metaInfo = meta(chunk);
+              return {
+                id: chunk.id,
+                source: chunk.source || 'unknown',
+                tokens: chunk.tokens,
+                priority: chunk.priority ?? 0,
+                truncated: metaInfo.truncated,
+                summary: metaInfo.summary,
+              };
+            }),
+            usedTokens: assembled.usedTokens,
+            remainingTokens: assembled.remainingTokens,
+            timestamp: new Date().toISOString(),
+          });
+        }
       } catch (err) {
         console.warn('[middleware] ContextEngine assembly failed:', err);
       }
-    }
-  }
-
-  const experienceLines: string[] = [];
-  if (engineOpts?.experienceEngine && engineOpts.experienceEngine.getEnabled()) {
-    try {
-      const keywords = extractExperienceKeywords(extractUserInputText(ctx.userInput), recentItems);
-      const recentFailedTools: Array<{ toolName: string; error: { message: string } }> = [];
-      for (const item of recentItems.slice(-20)) {
-        if (item.type !== 'tool_call' && item.type !== 'collab_tool_call' && item.type !== 'mcp_tool_call') continue;
-        if (item.status === 'failed' && item.error?.message) {
-          const toolName = item.type === 'tool_call' ? item.toolName : (item as { tool?: string }).tool ?? item.type;
-          recentFailedTools.push({ toolName, error: item.error });
-          if (recentFailedTools.length >= 3) break;
-        }
-      }
-      let relevantExps: Experience[] = await engineOpts.experienceEngine.findRelevant({
-        workspaceRoot: ctx.workspaceRoot,
-        taskKeywords: keywords,
-        limit: 4,
-        minConfidence: 0.55,
-      });
-      for (const failed of recentFailedTools) {
-        const byError = await engineOpts.experienceEngine.findByError(failed.error.message, ctx.workspaceRoot);
-        relevantExps = [...relevantExps, ...byError];
-      }
-      const deduped = new Map<string, Experience>();
-      for (const e of relevantExps) {
-        if (!deduped.has(e.id)) deduped.set(e.id, e);
-      }
-      const formatted = engineOpts.experienceEngine.formatExperiencesForPrompt([...deduped.values()]);
-      if (formatted) experienceLines.push(formatted);
-    } catch (err) {
-      console.warn('[middleware] ExperienceEngine lookup failed:', err);
     }
   }
 
@@ -431,7 +431,6 @@ async function buildDynamicContext(
     `最近文件变更：${fileChanges.length > 0 ? fileChanges.join(' | ') : '无'}`,
     `子 agent 打开数量=${openSubagents.length}`,
     ...cognitiveLines,
-    ...experienceLines,
     ...(skillsBlock ? [skillsBlock] : []),
     ...providerLines,
     '</dynamic_context>',
@@ -440,30 +439,6 @@ async function buildDynamicContext(
     text: lines.join('\n'),
     cognitiveLines: [...cognitiveLines],
   };
-}
-
-function extractExperienceKeywords(userInput: string, recentItems: ThreadItem[]): string[] {
-  const keywords = new Set<string>();
-  const stop = new Set(['the', 'a', 'an', 'and', 'or', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'shall', 'can', 'need', 'dare', 'ought', 'used', 'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from', 'as', 'into', 'through', 'during', 'before', 'after', 'above', 'below', 'between', 'out', 'off', 'over', 'under', 'again', 'further', 'then', 'once', 'here', 'there', 'when', 'where', 'why', 'how', 'all', 'both', 'each', 'few', 'more', 'most', 'other', 'some', 'such', 'no', 'nor', 'not', 'only', 'own', 'same', 'so', 'than', 'too', 'very', 'just', 'because', 'but', 'and', 'if', 'or', 'about', 'up', 'it', 'its', 'this', 'that', 'these', 'those', 'i', 'me', 'my', 'we', 'our', 'you', 'your', 'he', 'him', 'his', 'she', 'her', 'they', 'them', 'their', 'what', 'which', 'who', 'whom']);
-  for (const word of userInput.split(/[\s,.!?;:()\[\]{}'"`<>/\\]+/)) {
-    const w = word.toLowerCase();
-    if (w.length >= 4 && !stop.has(w) && !/^\d+$/.test(w)) {
-      keywords.add(w);
-    }
-  }
-  for (const item of recentItems.slice(-10)) {
-    const isToolCall = item.type === 'tool_call' || item.type === 'collab_tool_call' || item.type === 'mcp_tool_call';
-    if (isToolCall) {
-      const name = item.type === 'tool_call' ? item.toolName : (item as { tool?: string }).tool;
-      if (name) keywords.add(name.toLowerCase());
-      const err = (item as { error?: { message?: string } }).error?.message;
-      if (err) {
-        const m = err.match(/\b(E[A-Z]+|ENOENT|EACCES|EADDRINUSE|MODULE_NOT_FOUND)\b/);
-        if (m) keywords.add(m[1].toLowerCase());
-      }
-    }
-  }
-  return [...keywords].slice(0, 12);
 }
 
 // 消耗 web_search search action 预算：按总次数和相同 query 重复次数做双层保护

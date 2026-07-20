@@ -13,4 +13,21 @@ describe('topbar actions', () => {
     expect(topbar).not.toContain("title={t(config.locale, 'fork')}");
     expect(topbar).not.toContain("threadAction('fork')");
   });
+
+  it('routes the activity button to the unified task monitor entry', () => {
+    const source = readFileSync(join(here, 'main.tsx'), 'utf-8');
+    const openUnifiedMonitor = source.match(/const openUnifiedMonitor[\s\S]*?\n  const mergeApproval/)?.[0] ?? '';
+    expect(source).toContain('openUnifiedMonitor');
+    expect(source).toContain("title={config.locale === 'zh' ? '任务监控' : 'Task monitor'}");
+    expect(openUnifiedMonitor).toContain('runMonitor.openDrawer()');
+    expect(openUnifiedMonitor).not.toContain("setRightPaneTab('status')");
+    expect(openUnifiedMonitor).not.toContain('runMonitor.setOpen(false)');
+    expect(source).not.toContain('disabled={!threadId} title={config.locale === \'zh\' ? \'任务监控\' : \'Task monitor\'}');
+  });
+
+  it('does not wire the legacy harness monitor into normal app chrome', () => {
+    const source = readFileSync(join(here, 'main.tsx'), 'utf-8');
+    expect(source).not.toContain('HarnessMonitor');
+    expect(source).not.toContain('useHarnessMonitor');
+  });
 });

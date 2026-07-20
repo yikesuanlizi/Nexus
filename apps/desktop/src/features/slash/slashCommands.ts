@@ -116,20 +116,20 @@ export function getSlashCommandOptions(locale: Locale): SlashCommandOption[] {
 }
 
 export function parseSlashCommand(input: string): SlashCommand {
-  if (!input.startsWith('/')) return { kind: 'none' };
-  const firstLine = input.split(/\r?\n/, 1)[0]?.trimEnd() ?? '';
-  const [rawCommand, rawSubcommand, ...rest] = firstLine.split(/\s+/);
+  const normalized = input;
+  if (!normalized.startsWith('/')) return { kind: 'none' };
+  const firstLine = normalized.split(/\r?\n/, 1)[0]?.trimEnd() ?? '';
+  const [rawCommand, rawSubcommand] = firstLine.split(/\s+/);
   const command = rawCommand.toLowerCase();
   const subcommand = rawSubcommand?.toLowerCase() ?? '';
-  const args = rest.join(' ').trim();
 
   if (command === '/skills') {
-    if (subcommand === 'add') return { kind: 'skills.add', args };
+    if (subcommand === 'add') return { kind: 'skills.add', args: stripCommandPrefix(normalized, rawCommand, rawSubcommand) };
     return { kind: 'skills.list' };
   }
 
   if (command === '/mcp') {
-    if (subcommand === 'add') return { kind: 'mcp.add', args };
+    if (subcommand === 'add') return { kind: 'mcp.add', args: stripCommandPrefix(normalized, rawCommand, rawSubcommand) };
     return { kind: 'mcp.list' };
   }
 
@@ -145,11 +145,10 @@ export function parseSlashCommand(input: string): SlashCommand {
   }
 
   if (command === '/plan' || command === '/review' || command === '/debug' || command === '/frontend') {
-    const modeArgs = [rawSubcommand, ...rest].filter(Boolean).join(' ').trim();
     return {
       kind: 'task.mode',
       mode: command.slice(1) as 'plan' | 'review' | 'debug' | 'frontend',
-      args: modeArgs,
+      args: stripCommandPrefix(normalized, rawCommand),
     };
   }
 
@@ -158,4 +157,9 @@ export function parseSlashCommand(input: string): SlashCommand {
 
 export function isSlashInput(input: string): boolean {
   return input.startsWith('/');
+}
+
+function stripCommandPrefix(input: string, rawCommand: string, rawSubcommand?: string): string {
+  const prefix = rawSubcommand ? `${rawCommand} ${rawSubcommand}` : rawCommand;
+  return input.slice(prefix.length).trimStart();
 }

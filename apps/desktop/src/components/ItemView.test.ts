@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { ItemView, sanitizeAgentMessageTextForDisplay, summarizeToolItem } from './ItemView.js';
+import { AssistantTurnView, ItemView, sanitizeAgentMessageTextForDisplay, summarizeToolItem } from './ItemView.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -82,6 +82,56 @@ describe('tool item summaries', () => {
 
     expect(summary.name).toBe('shell_command');
     expect(summary.value).toBe('npm test');
+  });
+});
+
+describe('message markdown rendering', () => {
+  it('renders markdown tables and emphasis in assistant messages', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(ItemView, {
+        item: {
+          id: 'agent-1',
+          type: 'agent_message',
+          text: [
+            '文档缺失:',
+            '| 知识类型 | 时效特征 | 当前文档缺失 |',
+            '|---|---|---|',
+            '| **MEL/CDL** | 经常更新 | 未说明版本 |',
+          ].join('\n'),
+          status: 'completed',
+        },
+        locale: 'zh',
+      }),
+    );
+
+    expect(html).toContain('<table>');
+    expect(html).toContain('<strong>MEL/CDL</strong>');
+    expect(html).not.toContain('|---|---|---|');
+  });
+});
+
+describe('assistant turn file summary', () => {
+  it('renders read and changed files after assistant turn content', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AssistantTurnView, {
+        group: {
+          turnId: 'turn-1',
+          items: [
+            { id: 'a1', type: 'agent_message', turnId: 'turn-1', text: '完成', status: 'completed' },
+            { id: 'r1', type: 'tool_call', turnId: 'turn-1', toolName: 'read_file', arguments: { filePath: 'apps/web/src/main.tsx' }, result: { path: 'E:\\langchain\\Nexus\\apps\\web\\src\\main.tsx' }, status: 'completed' },
+            { id: 'c1', type: 'file_change', turnId: 'turn-1', changes: [{ path: 'apps/web/src/components/ItemView.tsx', kind: 'update', addedLines: 4, removedLines: 1 }], status: 'completed' },
+          ],
+        },
+        locale: 'zh',
+        workspaceRoot: 'E:\\langchain\\Nexus',
+      }),
+    );
+
+    expect(html).toContain('阅读文件');
+    expect(html).toContain('修改文件');
+    expect(html).toContain('E:\\langchain\\Nexus\\apps\\web\\src\\main.tsx');
+    expect(html).toContain('+4');
+    expect(html).toContain('-1');
   });
 });
 

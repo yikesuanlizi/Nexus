@@ -155,6 +155,10 @@ export interface ThreadStore {
   // 持久化一个回合
   saveTurn(turn: TurnMeta): Promise<void>;
 
+  /** Delete turns at or after the supplied active turn count. */
+  // 删除从给定 active turn count 开始及之后的回合，避免回退后复用旧 turn_index。
+  deleteTurnsAfter?(threadId: ThreadId, turnCount: number): Promise<void>;
+
   /** Get recent items for constructing model context. */
   // 获取最近的条目，用于拼装模型上下文
   getRecentItems(threadId: ThreadId, maxItems?: number): Promise<ThreadItem[]>;
@@ -802,6 +806,12 @@ export class LocalThreadStore implements ThreadStore {
         turn.startedAt,
         turn.completedAt,
       );
+  }
+
+  async deleteTurnsAfter(threadId: ThreadId, turnCount: number): Promise<void> {
+    this.db
+      .prepare('DELETE FROM turns WHERE thread_id = ? AND turn_index >= ?')
+      .run(threadId, turnCount);
   }
 
   async getSetting<T = unknown>(key: string): Promise<T | null> {

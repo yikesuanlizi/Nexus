@@ -20,7 +20,8 @@ import { resizeTextareaToContent } from './shared/composer.js';
 import { useRightPaneSizing, useToastNotice } from './shared/uiState.js';
 import { defaultConfig, defaultMcps } from './config/defaults.js';
 import { t } from './shared/i18n.js';
-import { mcpFromCommandText, normalizeStoredMcps } from './features/settings/mcpConfig.js';
+import { extractGitHubSkillInstallUrls } from './features/input/composerInput.js';
+import { normalizeStoredMcps, resolveMcpDraftFromInput } from './features/settings/mcpConfig.js';
 import { getSlashCommandOptions, isSlashInput, parseSlashCommand, type SlashCommand, type SlashCommandOption } from './features/slash/slashCommands.js';
 import { localizedSkillDescription } from './features/settings/skillDescriptions.js';
 import { readStored } from './shared/storage.js';
@@ -28,9 +29,11 @@ import { buildChildActivityByThread } from './features/agents/subagentActivity.j
 import { buildAgentStageRows, buildSubagentStatusRows } from './features/agents/subagents.js';
 import { modeInstructionFor } from './config/taskModes.js';
 import { buildTokenUsageSummary, formatCacheDiagnostics, formatCompactionPressure, formatThreadTokenSummary } from './features/chat/usageDisplay.js';
+import { rollbackCountForTurn } from './features/chat/rollback.js';
 import { useWebProviderSettings, type SettingsResponseWithWebProvider } from './api/webProviderClient.js';
 import { useRunMonitor } from './features/monitor/runMonitor.js';
-import { actionDetail, actionTitle, completeLocalSkillDraftItem, createLocalSkillDraftItems, mergeIncomingItems } from './features/chat/threadItems.js';
+import { useTaskRuntimeMonitor, isTaskRuntimeEvent } from './features/monitor/taskRuntimeMonitor.js';
+import { actionDetail, actionTitle, completeLocalSkillDraftItem, createLocalSkillDraftItems, mergeIncomingItems, removeLocalThreadItems } from './features/chat/threadItems.js';
 import { optimisticDeleteThread } from './features/chat/threads.js';
 import { forgetWorkspaceRoot, pickWorkspaceRoot, readRememberedWorkspaceRoots, rememberWorkspaceRoots, workspacePickerNotice, workspacePickerStatus } from './features/workspaces/workspaces.js';
 import { controlThreadWorkflow, createWorkflowDraftErrorItem, createWorkflowDraftReplyItem, createWorkflowDraftUserItem, isUntitledWorkflowProjectTitle, loadThreadWorkflow, parseThreadWorkflow, parseWorkflowCheckpointItems, planWorkflowDraft, saveThreadWorkflow, workflowThreadTitleFromGoal, type WorkflowBlueprintCompileResult, type WorkflowComponentDefinition, type WorkflowPlanDraft, type WorkflowRuntimeAction, type WorkflowSnapshot } from './features/workflow/workflow.js';
@@ -66,8 +69,6 @@ function contextUsagePercent(pressure: { estimatedTokens?: number; maxTokens?: n
   if (max <= 0) return 0;
   return Math.min(100, Math.round((est / max) * 100));
 }
-
-
 
 function buildTokenTooltip(
   usage: { totalInput?: number; totalCached?: number; totalOutput?: number; hitRate?: number } | null | undefined,
@@ -137,6 +138,7 @@ patchGlobalFetch(); function App() {
   const [images, setImages] = useState<Array<{ name: string; dataUrl: string }>>([]);
   const [draggingImage, setDraggingImage] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [actionBusy, setActionBusy] = useState(false);
   const [workflowPlanning, setWorkflowPlanning] = useState(false);
   const [workflowSaving, setWorkflowSaving] = useState(false);
   const [workflowRuntimeBusy, setWorkflowRuntimeBusy] = useState(false);
@@ -152,6 +154,7 @@ patchGlobalFetch(); function App() {
   // — Chinese: external preview request — drives right file panel to load a file when "preview" is clicked from chat
   const [previewRequest, setPreviewRequest] = useState<ExternalPreviewRequest | null>(null);
   const [pendingApprovals, setPendingApprovals] = useState<ApprovalRequest[]>([]);
+  const taskRuntimeMonitor = useTaskRuntimeMonitor();
   const [providers, setProviders] = useState<ProviderEntry[]>([]);
   const [keyStates, setKeyStates] = useState<ApiKeyState[]>([]);
   const [modelPresets, setModelPresets] = useState<ModelPreset[]>([]);
@@ -338,6 +341,10 @@ patchGlobalFetch(); function App() {
     });
   }, []);
   const runMonitor = useRunMonitor({ threadId, locale: config.locale, addEvent });
+  const monitorButtonActive = runMonitor.open;
+  const openUnifiedMonitor = useCallback(() => {
+    runMonitor.openDrawer();
+  }, [runMonitor]);
   const mergeApproval = useCallback((approval: ApprovalRequest) => {
     setPendingApprovals((current) =>
       current.some((item) => item.requestId === approval.requestId) ? current : [...current, approval],
@@ -591,6 +598,7 @@ patchGlobalFetch(); function App() {
       setEvents([]);
       setCacheDiagnostics(null);
       setCompactionPressure(null);
+      taskRuntimeMonitor.clear();
       await reloadThreadSnapshot(id);
       void (async () => {
         try {
@@ -661,6 +669,11 @@ patchGlobalFetch(); function App() {
           if (event.type === 'child_agent.event') {
             void refreshThreadChildren(id);
           }
+          if (event.type === 'harness.state.updated' && typeof event.harnessRunId === 'string') {
+            if ((event.status as string) !== 'active') void refreshThreadChildren(id);
+          }
+          // 第 2 步骨架：task.* 事件只接收入 state，不做 UI 重构
+          if (isTaskRuntimeEvent(event)) taskRuntimeMonitor.applyEvent(event);
           if (event.type === 'agent_message.delta') {
             setItems((current) => applyAgentMessageDelta(current, event as never) as ThreadItem[]);
           }
@@ -703,7 +716,7 @@ patchGlobalFetch(); function App() {
       };
       eventSourceRef.current = source;
     },
-    [addEvent, config.locale, mergeApproval, refreshThreadChildren, reloadThreadSnapshot, runMonitor],
+    [addEvent, config.locale, mergeApproval, refreshThreadChildren, reloadThreadSnapshot, runMonitor, taskRuntimeMonitor],
   );
   useEffect(() => {
     fetch('/api/settings')
@@ -886,10 +899,13 @@ patchGlobalFetch(); function App() {
         window.requestAnimationFrame(() => composerInputRef.current?.focus());
         return;
       case 'skills.add':
-        if (isGitHubUrl(command.args)) {
-          await installSkillFromGitHub(command.args);
-        } else {
-          await createSkillDraft(command.args);
+        {
+          const installTargets = extractGitHubSkillInstallUrls(command.args);
+          if (installTargets.length > 0) {
+            await installSkillsFromGitHub(installTargets, command.args);
+          } else {
+            await createSkillDraft(command.args);
+          }
         }
         return;
       case 'mcp.list':
@@ -897,9 +913,16 @@ patchGlobalFetch(); function App() {
         window.requestAnimationFrame(() => composerInputRef.current?.focus());
         return;
       case 'mcp.add':
-        setPendingMcpDraft(mcpFromCommandText(command.args));
-        setSettingsOpen(true);
         setInput('');
+        setActionBusy(true);
+        try {
+          const { draft, sourceError } = await resolveMcpDraftFromInput(command.args);
+          setPendingMcpDraft(draft);
+          setSettingsOpen(true);
+          if (sourceError) addEvent({ kind: 'config', title: config.locale === 'zh' ? 'MCP 来源读取失败' : 'MCP source read failed', detail: sourceError, tone: 'warning' });
+        } finally {
+          setActionBusy(false);
+        }
         return;
       case 'web_search.mode':
         setWebSearchMode(command.mode);
@@ -907,7 +930,7 @@ patchGlobalFetch(); function App() {
         return;
       case 'compact':
         setInput('');
-        if (threadId && !busy) await threadAction('compact');
+        if (threadId && !busy && !actionBusy) await threadAction('compact');
         return;
       case 'task.mode':
         if (!command.args.trim()) {
@@ -1044,10 +1067,13 @@ patchGlobalFetch(); function App() {
       setBusy(false);
     }
   }
-  async function installSkillFromGitHub(skillUrl: string) {
-    const text = skillUrl.trim();
+  async function installSkillsFromGitHub(skillUrls: string[], args: string) {
+    const installTargets = skillUrls.map((url) => url.trim()).filter(Boolean);
+    const text = args.trim();
+    const inputText = `/skills add ${text}`.trim();
     if (!text) return;
     let activeThreadId = threadId;
+    const localDraft = createLocalSkillDraftItems(text, config.locale, undefined, 'install');
     setInput('');
     setActiveSlashOption(null);
     setBusy(true);
@@ -1057,7 +1083,7 @@ patchGlobalFetch(); function App() {
         const threadResponse = await fetch('/api/threads', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title: `/skills add ${text}`.slice(0, 60), config: apiConfig }),
+          body: JSON.stringify({ title: inputText.slice(0, 60), config: apiConfig }),
         });
         if (!threadResponse.ok) {
           const error = (await threadResponse.json()) as { error?: string };
@@ -1068,10 +1094,11 @@ patchGlobalFetch(); function App() {
         await refreshThreads();
         await loadThread(activeThreadId);
       }
+      setItems((current) => mergeIncomingItems(current, localDraft.items));
       const response = await fetch(`/api/threads/${activeThreadId}/skills/install`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: text, config: apiConfig }),
+        body: JSON.stringify({ input: inputText, urls: installTargets, config: apiConfig }),
       });
       if (!response.ok) {
         const error = (await response.json()) as { error?: string };
@@ -1086,7 +1113,7 @@ patchGlobalFetch(); function App() {
       const detail = installed.length > 0
         ? installed.map((skill) => skill.name).join(', ')
         : text;
-      setItems((current) => mergeIncomingItems(current, data.items ?? []));
+      setItems((current) => mergeIncomingItems(removeLocalThreadItems(current, localDraft.items), data.items ?? []));
       await refreshSkills();
       await refreshThreads();
       addEvent({
@@ -1260,8 +1287,8 @@ patchGlobalFetch(); function App() {
     }
   }
   async function threadAction(action: 'compact' | 'fork' | 'rollback', count = 1) {
-    if (!threadId) return;
-    setBusy(true);
+    if (!threadId || busy || actionBusy) return;
+    setActionBusy(true);
     try {
       const response = await fetch(`/api/threads/${threadId}/${action}`, {
         method: 'POST',
@@ -1282,12 +1309,11 @@ patchGlobalFetch(); function App() {
         await loadThread(threadId);
       }
     } finally {
-      setBusy(false);
+      setActionBusy(false);
     }
   }
   function rollbackToTurn(turnId: string) {
-    const index = turns.findIndex((turn) => turn.turnId === turnId);
-    const count = index >= 0 ? Math.max(1, turns.length - index) : 1;
+    const count = rollbackCountForTurn(turnId, turns, items);
     const userText = items.find((item) => item.type === 'user_message' && item.turnId === turnId)?.text;
     if (userText) {
       setInput(userText);
@@ -1447,8 +1473,10 @@ patchGlobalFetch(); function App() {
     }
     setThreads((current) => current.map((thread) => thread.threadId === threadId ? data.thread! : thread));
   }
-  async function saveModelPreset() {
-    const defaultName = `${activeProvider?.name ?? config.provider} / ${config.model}`;
+  async function saveModelPreset(configOverride?: Partial<RunConfig>) {
+    const effectiveConfig = configOverride ? { ...config, ...configOverride } : config;
+    const effectiveProvider = providers.find((p) => p.id === effectiveConfig.provider);
+    const defaultName = `${effectiveProvider?.name ?? effectiveConfig.provider} / ${effectiveConfig.model}`;
     const name = await requestTextDialog({
       title: t(config.locale, 'saveModelPreset'),
       value: defaultName,
@@ -1456,12 +1484,19 @@ patchGlobalFetch(); function App() {
       cancelLabel: t(config.locale, 'cancel'),
     });
     if (name === null) return;
+    const patchForPreset: Partial<RunConfig> = {};
+    for (const key of Object.keys(effectiveConfig) as Array<keyof RunConfig>) {
+      const value = effectiveConfig[key];
+      if (value !== '' && value !== undefined) {
+        (patchForPreset as Record<string, unknown>)[key] = value;
+      }
+    }
     const response = await fetch('/api/model-presets', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: name.trim() || defaultName,
-        config: apiConfig,
+        config: patchForPreset,
       }),
     });
     if (!response.ok) return;
@@ -1470,21 +1505,6 @@ patchGlobalFetch(); function App() {
   }
   function applyModelPreset(preset: ModelPreset) {
     setConfig((current) => ({ ...current, ...preset.config }));
-  }
-  async function deleteModelPreset(id: string) {
-    const response = await fetch(`/api/model-presets/${id}`, { method: 'DELETE' });
-    if (!response.ok) return;
-    const data = (await response.json()) as { presets?: ModelPreset[] };
-    setModelPresets(data.presets ?? []);
-  }
-  function selectProvider(providerId: string) {
-    const normalizedProviderId = providerId === 'doubao' ? 'volcengine' : providerId;
-    const provider = providers.find((item) => item.id === normalizedProviderId);
-    setConfig((current) => ({
-      ...current,
-      provider: normalizedProviderId,
-      baseUrl: provider?.baseUrl ?? current.baseUrl,
-    }));
   }
   async function saveProviderKey(providerId: string, apiKey: string) {
     const response = await fetch(`/api/keys/${providerId}`, {
@@ -1499,6 +1519,20 @@ patchGlobalFetch(); function App() {
   }
   async function clearProviderKey(providerId: string) {
     const response = await fetch(`/api/keys/${providerId}`, { method: 'DELETE' });
+    if (response.ok) {
+      const data = (await response.json()) as { keys?: ApiKeyState[] };
+      setKeyStates(data.keys ?? []);
+    }
+  }
+  async function saveProviderEnvVar(providerId: string, envVar: string) {
+    const response = await fetch(`/api/keys/${providerId}/env-var`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ envVar }) });
+    if (response.ok) {
+      const data = (await response.json()) as { keys?: ApiKeyState[] };
+      setKeyStates(data.keys ?? []);
+    }
+  }
+  async function saveEnvironmentVariables(text: string) {
+    const response = await fetch('/api/keys/env', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
     if (response.ok) {
       const data = (await response.json()) as { keys?: ApiKeyState[] };
       setKeyStates(data.keys ?? []);
@@ -1603,9 +1637,9 @@ patchGlobalFetch(); function App() {
               <Icon name={themeShortcutIcon} />
               <span className="themeQuickLabel">{themeShortcutLabel}</span>
             </button>
-            <button className="iconButton" onClick={() => void threadAction('compact')} disabled={!threadId || busy} title={t(config.locale, 'compact')} aria-label={t(config.locale, 'compact')}><Icon name="refresh" /></button>
+            <button className="iconButton" onClick={() => void threadAction('compact')} disabled={!threadId || busy || actionBusy} title={t(config.locale, 'compact')} aria-label={t(config.locale, 'compact')}><Icon name="refresh" /></button>
             <button className="iconButton helpButton" onClick={() => setSettingsHelpOpen(true)} title={config.locale === 'zh' ? '设置说明' : 'Settings guide'} aria-label={config.locale === 'zh' ? '设置说明' : 'Settings guide'}><Icon name="question" /></button>
-            <button className={runMonitor.open ? 'iconButton panelButton active' : 'iconButton panelButton'} onClick={runMonitor.openDrawer} disabled={!threadId} title={config.locale === 'zh' ? '运行监控' : 'Run monitor'} aria-label={config.locale === 'zh' ? '运行监控' : 'Run monitor'}><Icon name="activity" /></button>
+            <button className={monitorButtonActive ? 'iconButton panelButton active' : 'iconButton panelButton'} onClick={openUnifiedMonitor} title={config.locale === 'zh' ? '任务监控' : 'Task monitor'} aria-label={config.locale === 'zh' ? '任务监控' : 'Task monitor'}><Icon name="activity" /></button>
             <button className={rightPaneVisible ? 'iconButton panelButton active' : 'iconButton panelButton'} onClick={() => setRightPaneVisible((value) => !value)} title={config.locale === 'zh' ? '显示/隐藏右侧栏' : 'Show/hide right panel'} aria-label={config.locale === 'zh' ? '显示/隐藏右侧栏' : 'Show/hide right panel'}><Icon name="panel" /></button>
           </div>
         </header>
@@ -1642,6 +1676,7 @@ patchGlobalFetch(); function App() {
                     onBranch={branchFromTurn}
                     onCopy={copyMessage}
                     onPreviewFile={previewFileFromItem}
+                    workspaceRoot={activeWorkspaceRoot}
                   />
                 )
               ))
@@ -1657,7 +1692,7 @@ patchGlobalFetch(); function App() {
                 onPointerDown={startRightPaneResize}
               />
               {isWorkflowProject ? <WorkflowSidePane locale={config.locale} workflow={activeWorkflow} planDraft={workflowPlanDraft} components={workflowPlanDraft?.components ?? workflowComponents} blueprint={workflowPlanDraft?.blueprint ?? workflowBlueprint} runEvents={runMonitor.events} saving={workflowSaving} runtimeBusy={workflowRuntimeBusy} onCancelPlan={() => setWorkflowPlanDraft(null)} onCommitPlan={() => void commitWorkflowPlan()} onSave={(workflow) => void saveWorkflow(workflow)} onControl={(action, nodeId) => void controlWorkflowRuntime(action, nodeId)} onSelectionChange={setWorkflowSelectedNodeIds} /> : (
-                <RightPane activeTab={rightPaneTab} activeThread={activeThread} agentStageRows={agentStageRows} externalPreviewRequest={previewRequest} locale={config.locale} workspaceRoot={activeWorkspaceRoot} onTabChange={setRightPaneTab} onToggleMemoryExcluded={(excluded) => void toggleThreadMemoryExcluded(excluded)} />
+                <RightPane activeTab={rightPaneTab} activeThread={activeThread} agentStageRows={agentStageRows} externalPreviewRequest={previewRequest} locale={config.locale} runtimeItems={items} taskRuntimeState={taskRuntimeMonitor.state} workspaceRoot={activeWorkspaceRoot} onTabChange={setRightPaneTab} onToggleMemoryExcluded={(excluded) => void toggleThreadMemoryExcluded(excluded)} />
               )}
             </>
           ) : null}
@@ -1685,18 +1720,19 @@ patchGlobalFetch(); function App() {
             ))}
           </section>
         ) : null}
-        <ComposerBar activeSlashOption={activeSlashOption} activeThreadId={threadId} applyModelPreset={applyModelPreset} botConfig={botConfig} botStatus={botStatus} busy={busy} composerInputRef={composerInputRef} config={config} draggingImage={draggingImage} filteredSlashOptions={filteredSlashOptions} handleDrop={handleDrop} handleFileSelect={handleFileSelect} handlePaste={handlePaste} images={images} input={input} modelPresets={modelPresets} openRemoteAssistants={openRemoteAssistants} removeImage={removeImage} rightPaneTab={rightPaneTab} rightPaneVisible={rightPaneVisible} selectSlashOption={selectSlashOption} setActiveSlashOption={setActiveSlashOption} setConfig={setConfig} setDraggingImage={setDraggingImage} setInput={setInput} slashVisible={slashVisible} stopTurn={stopTurn} submitComposer={submitComposer} workflowMode={isWorkflowProject} workflowPlanning={workflowPlanning} />
+        <ComposerBar activeSlashOption={activeSlashOption} activeThreadId={threadId} actionBusy={actionBusy} applyModelPreset={applyModelPreset} botConfig={botConfig} botStatus={botStatus} busy={busy} composerInputRef={composerInputRef} config={config} draggingImage={draggingImage} filteredSlashOptions={filteredSlashOptions} handleDrop={handleDrop} handleFileSelect={handleFileSelect} handlePaste={handlePaste} images={images} input={input} modelPresets={modelPresets} openRemoteAssistants={openRemoteAssistants} removeImage={removeImage} rightPaneTab={rightPaneTab} rightPaneVisible={rightPaneVisible} selectSlashOption={selectSlashOption} setActiveSlashOption={setActiveSlashOption} setConfig={setConfig} setDraggingImage={setDraggingImage} setInput={setInput} slashVisible={slashVisible} stopTurn={stopTurn} submitComposer={submitComposer} workflowMode={isWorkflowProject} workflowPlanning={workflowPlanning} />
       </section>
       {settingsOpen ? (
         <SettingsDrawer
           botConfig={botConfig} botStatus={botStatus} config={config} keyStates={keyStates} locale={config.locale}
           mcps={mcps} mcpStatuses={mcpStatuses} modelPresets={modelPresets} providers={providers} skillsList={skillsList}
           refreshSkills={refreshSkills} refreshMcpStatus={refreshMcpStatus} refreshBotStatus={refreshBotStatus}
-          applyModelPreset={applyModelPreset} clearProviderKey={clearProviderKey} deleteModelPreset={deleteModelPreset}
+          refreshProviders={refreshProviders}
+          clearProviderKey={clearProviderKey}
           deleteSkill={deleteSkill}
-          saveModelPreset={saveModelPreset} saveProviderKey={saveProviderKey} saveBotConfig={saveBotConfig} saveSkillDraft={saveSkillDraft}
+          saveModelPreset={saveModelPreset} saveProviderKey={saveProviderKey} saveProviderEnvVar={saveProviderEnvVar} saveEnvironmentVariables={saveEnvironmentVariables} saveBotConfig={saveBotConfig} saveSkillDraft={saveSkillDraft}
           webProviderState={webProviderState} saveWebProviderKey={saveWebProviderKey} clearWebProviderKey={clearWebProviderKey}
-          selectProvider={selectProvider} setConfig={setConfig} setMcps={setMcps} setOpen={setSettingsOpen}
+          setConfig={setConfig} setMcps={setMcps} setOpen={setSettingsOpen}
           pendingMcpDraft={pendingMcpDraft}
           consumePendingMcpDraft={() => setPendingMcpDraft(null)}
           showAdminControls={showAdminControls}
@@ -1704,7 +1740,7 @@ patchGlobalFetch(); function App() {
         />
       ) : null}
       {settingsHelpOpen ? <SettingsHelpDialog locale={config.locale} onClose={() => setSettingsHelpOpen(false)} /> : null}
-      <RunMonitorDrawer locale={config.locale} open={runMonitor.open} adminMode={runMonitor.adminMode} adminToken={runMonitor.adminToken} runs={runMonitor.runs} events={runMonitor.events} selectedRunId={runMonitor.selectedRunId} threads={runMonitor.threads} expandedThreadId={runMonitor.expandedThreadId} expandedEventId={runMonitor.expandedEventId} autoRefresh={runMonitor.autoRefresh} autoRefreshInterval={runMonitor.autoRefreshInterval} loading={runMonitor.loading} checkpoints={checkpoints} currentTurnCount={currentTurnCount} onClose={() => runMonitor.setOpen(false)} onRefresh={() => void runMonitor.refresh(runMonitor.selectedRunId)} onSelectRun={(runId) => void runMonitor.refresh(runId)} onControlRun={(action, run) => void runMonitor.controlRun(action, run)} onToggleThread={runMonitor.toggleThread} onToggleEvent={runMonitor.toggleEvent} onAutoRefreshChange={runMonitor.setAutoRefresh} onAutoRefreshIntervalChange={runMonitor.setAutoRefreshInterval} onAdminTokenChange={runMonitor.setAdminToken} onRollbackCheckpoint={rollbackToCheckpoint} />
+      <RunMonitorDrawer locale={config.locale} open={runMonitor.open} adminMode={runMonitor.adminMode} adminToken={runMonitor.adminToken} runs={runMonitor.runs} events={runMonitor.events} selectedRunId={runMonitor.selectedRunId} threads={runMonitor.threads} expandedThreadId={runMonitor.expandedThreadId} expandedEventId={runMonitor.expandedEventId} autoRefresh={runMonitor.autoRefresh} autoRefreshInterval={runMonitor.autoRefreshInterval} loading={runMonitor.loading} checkpoints={checkpoints} currentTurnCount={currentTurnCount} runtimeItems={items} taskRuntimeState={taskRuntimeMonitor.state} onClose={() => runMonitor.setOpen(false)} onRefresh={() => void runMonitor.refresh(runMonitor.selectedRunId)} onSelectRun={(runId) => void runMonitor.refresh(runId)} onControlRun={(action, run) => void runMonitor.controlRun(action, run)} onToggleThread={runMonitor.toggleThread} onToggleEvent={runMonitor.toggleEvent} onAutoRefreshChange={runMonitor.setAutoRefresh} onAutoRefreshIntervalChange={runMonitor.setAutoRefreshInterval} onAdminTokenChange={runMonitor.setAdminToken} onRollbackCheckpoint={rollbackToCheckpoint} />
       {dialog ? <AppDialog dialog={dialog} onClose={() => setDialog(null)} /> : null}
       {toast ? <div className="toastNotice" key={toast.id}>{toast.text}</div> : null}
       {weixinConnectState ? <WeixinConnectDialog locale={config.locale} state={weixinConnectState} onClose={() => setWeixinConnectState(null)} /> : null}
@@ -1718,12 +1754,5 @@ patchGlobalFetch(); function App() {
       ) : null}
     </main>
   );
-}
-function isGitHubUrl(value: string): boolean {
-  try {
-    return new URL(value.trim()).hostname === 'github.com';
-  } catch {
-    return false;
-  }
 }
 createRoot(document.getElementById('root')!).render(<AuthGate locale={defaultConfig.locale ?? 'zh'} themeMode={defaultConfig.themeMode}><App /></AuthGate>);

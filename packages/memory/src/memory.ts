@@ -504,6 +504,7 @@ export async function rollbackTurns(
     tags,
     updatedAt: new Date().toISOString(),
   });
+  await store.deleteTurnsAfter?.(threadId, newCount);
 
   const conflicts = await restoreProjectCheckpoints(
     itemsBeforeRollback

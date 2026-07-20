@@ -7,6 +7,9 @@ export interface McpConfig {
   command: string;
   args: string;
   enabled: boolean;
+  sourceKind?: 'command' | 'url';
+  sourceUrl?: string;
+  sourceHint?: string;
 }
 
 export interface McpServerStatus {
@@ -92,6 +95,7 @@ export interface ThreadItem {
   trigger?: string;
   compactedTurnIds?: string[];
   retainedTurnIds?: string[];
+  items?: Array<{ text: string; completed: boolean }>;
   tokensBefore?: number;
   tokensAfter?: number;
   arguments?: unknown;
@@ -306,6 +310,8 @@ export interface ProviderEntry {
 export interface ApiKeyState {
   providerId: string;
   envVar: string;
+  defaultEnvVar?: string;
+  envVarCandidates?: string[];
   configured: boolean;
   source: 'env' | 'config' | null;
   masked: string | null;

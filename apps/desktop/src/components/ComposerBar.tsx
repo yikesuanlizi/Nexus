@@ -1,6 +1,7 @@
 import React from 'react';
 import type { RunConfig } from '../config/config.js';
 import { runProfileDescription, runProfileLabel } from '../config/runProfiles.js';
+import { extractUrlTokens, summarizeUrlToken } from '../features/input/composerInput.js';
 import type { SlashCommandOption } from '../features/slash/slashCommands.js';
 import { resizeTextareaToContent } from '../shared/composer.js';
 import { t } from '../shared/i18n.js';
@@ -28,6 +29,7 @@ export function ComposerBar({
   botConfig,
   botStatus,
   busy,
+  actionBusy = false,
   composerInputRef,
   config,
   draggingImage,
@@ -59,6 +61,7 @@ export function ComposerBar({
   botConfig: BotConfig | null;
   botStatus: BotStatus | null;
   busy: boolean;
+  actionBusy?: boolean;
   composerInputRef: React.RefObject<HTMLTextAreaElement | null>;
   config: RunConfig;
   draggingImage: boolean;
@@ -112,6 +115,12 @@ export function ComposerBar({
     ? modelPresetDetails(matchedModelPreset.name, { ...config, ...matchedModelPreset.config }, config.locale)
     : modelPresetDetails(config.locale === 'zh' ? '当前模型配置' : 'Current model config', config, config.locale);
   const workflowBusy = workflowMode && workflowPlanning;
+  const urlTokens = React.useMemo(() => extractUrlTokens(input), [input]);
+  const commandInputClassName = [
+    'commandInputRow',
+    !workflowMode && activeSlashOption ? 'active' : '',
+    urlTokens.length > 0 ? 'withTokens' : '',
+  ].filter(Boolean).join(' ');
 
   React.useEffect(() => {
     historyRef.current = readComposerHistory();
@@ -205,13 +214,32 @@ export function ComposerBar({
               ))}
             </div>
           ) : null}
-          <div className={!workflowMode && activeSlashOption ? 'commandInputRow active' : 'commandInputRow'}>
+          <div className={commandInputClassName}>
             {!workflowMode && activeSlashOption ? (
-              <div className="commandChip" title={activeSlashOption.command.trim()}>
-                <span>{activeSlashOption.command.trim()}</span>
-                <button type="button" title={t(config.locale, 'cancel')} aria-label={t(config.locale, 'cancel')} onClick={() => { setActiveSlashOption(null); setInput(''); composerInputRef.current?.focus(); }}>
-                  <Icon name="x" />
-                </button>
+              <div className="commandInputMeta">
+                <div className="commandChip" title={activeSlashOption.command.trim()}>
+                  <span>{activeSlashOption.command.trim()}</span>
+                  <button type="button" title={t(config.locale, 'cancel')} aria-label={t(config.locale, 'cancel')} onClick={() => { setActiveSlashOption(null); setInput(''); composerInputRef.current?.focus(); }}>
+                    <Icon name="x" />
+                  </button>
+                </div>
+                {urlTokens.length > 0 ? (
+                  <div className="commandTokenRow" aria-label={config.locale === 'zh' ? '已识别链接' : 'Detected links'}>
+                    {urlTokens.map((token) => (
+                      <span className="commandUrlChip" key={token.value} title={token.value}>
+                        <span>{summarizeUrlToken(token.value)}</span>
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : urlTokens.length > 0 ? (
+              <div className="commandTokenRow" aria-label={config.locale === 'zh' ? '已识别链接' : 'Detected links'}>
+                {urlTokens.map((token) => (
+                  <span className="commandUrlChip" key={token.value} title={token.value}>
+                    <span>{summarizeUrlToken(token.value)}</span>
+                  </span>
+                ))}
               </div>
             ) : null}
             <textarea
@@ -232,7 +260,7 @@ export function ComposerBar({
                 }
                 if (event.key === 'Enter' && !event.shiftKey) {
                   event.preventDefault();
-                  if (!busy) void handleSubmitComposer();
+                  if (!busy && !actionBusy) void handleSubmitComposer();
                 }
               }}
               placeholder={workflowMode
@@ -241,7 +269,7 @@ export function ComposerBar({
             />
           </div>
         </div>
-        <button className="sendButton" onClick={() => busy ? void stopTurn() : void handleSubmitComposer()} disabled={workflowBusy || (!busy && (!input.trim() && images.length === 0))} title={workflowBusy ? (config.locale === 'zh' ? '生成计划中' : 'Planning workflow') : busy ? t(config.locale, 'stop') : t(config.locale, 'send')} aria-label={workflowBusy ? (config.locale === 'zh' ? '生成计划中' : 'Planning workflow') : busy ? t(config.locale, 'stop') : t(config.locale, 'send')}>
+        <button className="sendButton" onClick={() => busy ? void stopTurn() : actionBusy ? undefined : void handleSubmitComposer()} disabled={workflowBusy || actionBusy || (!busy && (!input.trim() && images.length === 0))} title={workflowBusy ? (config.locale === 'zh' ? '生成计划中' : 'Planning workflow') : busy ? t(config.locale, 'stop') : t(config.locale, 'send')} aria-label={workflowBusy ? (config.locale === 'zh' ? '生成计划中' : 'Planning workflow') : busy ? t(config.locale, 'stop') : t(config.locale, 'send')}>
           <Icon name={workflowBusy ? 'refresh' : busy ? 'stop' : 'send'} />
         </button>
       </div>
@@ -249,7 +277,7 @@ export function ComposerBar({
         {workflowMode ? (
           <div className="workflowComposerPlan">
             <span>{config.locale === 'zh' ? '首次创建必须先生成计划' : 'First creation must start with a plan'}</span>
-            <button className="solidButton" type="button" onClick={() => void handleSubmitComposer()} disabled={workflowBusy || busy || (!input.trim() && images.length === 0)}>
+            <button className="solidButton" type="button" onClick={() => void handleSubmitComposer()} disabled={workflowBusy || busy || actionBusy || (!input.trim() && images.length === 0)}>
               {workflowBusy ? (config.locale === 'zh' ? '生成计划中' : 'Planning') : (config.locale === 'zh' ? '计划模式' : 'Plan mode')}
             </button>
           </div>
@@ -311,7 +339,7 @@ export function ComposerBar({
           </label>
           <DropdownSelect ariaLabel={t(config.locale, 'mode')} className="modeSelect" title={t(config.locale, 'mode')} value={config.permissions} onChange={(permissions) => setConfig({ ...config, permissions })} options={[{ value: 'read_only', label: config.locale === 'zh' ? '只读' : 'Read' }, { value: 'workspace', label: config.locale === 'zh' ? '默认' : 'Default' }, { value: 'danger_full_access', label: config.locale === 'zh' ? '自主' : 'Auto' }]} />
           <DropdownSelect ariaLabel={config.locale === 'zh' ? '思考程度' : 'Reasoning effort'} className="modeSelect reasoningSelect" title={config.locale === 'zh' ? '思考程度' : 'Reasoning effort'} value={config.reasoningEffort} onChange={(reasoningEffort) => setConfig({ ...config, reasoningEffort })} options={[{ value: 'low', label: config.locale === 'zh' ? '快速' : 'Fast' }, { value: 'medium', label: config.locale === 'zh' ? '均衡' : 'Balanced' }, { value: 'high', label: config.locale === 'zh' ? '深度' : 'Deep' }]} />
-          <DropdownSelect ariaLabel={config.locale === 'zh' ? '运行模式' : 'Run profile'} className="modeSelect runProfileSelect" title={runProfileDescription(config.runProfile, config.locale)} value={config.runProfile} onChange={(runProfile) => setConfig({ ...config, runProfile })} options={[{ value: 'cache_first', label: runProfileLabel('cache_first', config.locale) }, { value: 'runtime_os', label: runProfileLabel('runtime_os', config.locale) }, { value: 'harness', label: runProfileLabel('harness', config.locale) }]} />
+          <DropdownSelect ariaLabel={config.locale === 'zh' ? '运行模式' : 'Run profile'} className="modeSelect runProfileSelect" title={runProfileDescription(config.runProfile, config.locale)} value={(config.runProfile as string) === 'harness' ? 'runtime_os' : config.runProfile} onChange={(runProfile) => setConfig({ ...config, runProfile })} options={[{ value: 'cache_first', label: runProfileLabel('cache_first', config.locale) }, { value: 'runtime_os', label: runProfileLabel('runtime_os', config.locale) }]} />
           </div>
         </>
         )}

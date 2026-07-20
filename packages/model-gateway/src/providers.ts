@@ -213,6 +213,17 @@ const KNOWN_PROVIDERS: ProviderEntry[] = [
     description: 'Anthropic API (Claude)',
   },
 
+  // MiniMax 官方 Anthropic 兼容接口（M3 / M2.x 系列，支持 thinking / 工具调用）
+  {
+    id: 'minimax',
+    name: 'MiniMax',
+    baseUrl: 'https://api.minimaxi.com/anthropic/v1',
+    apiKeyEnvVar: 'MINIMAX_API_KEY',
+    protocol: 'anthropic',
+    isLocal: false,
+    description: 'MiniMax 官方 API (MiniMax-M3 / M2.x 系列，Anthropic 兼容)',
+  },
+
   // ── Generic ────────────────────────────────────────────────────────────
   // 通用 OpenAI 兼容端点
   {
@@ -261,18 +272,28 @@ export function resolveApiKey(
   if (explicitKey) return explicitKey;
 
   const provider = getProvider(providerId);
-  if (!provider || !provider.apiKeyEnvVar) return undefined;
+  if (!provider) return undefined;
+  const envVar = resolveProviderApiKeyEnvVar(providerId);
 
-  // 1. 环境变量
-  const envKey = process.env[provider.apiKeyEnvVar];
-  if (envKey) return envKey;
+  if (envVar) {
+    const envKey = process.env[envVar];
+    if (envKey) return envKey;
+  }
 
-  // 2. 配置文件
   const config = loadConfig();
   const configKey = config.apiKeys?.[providerId];
   if (configKey) return configKey;
 
   return undefined;
+}
+
+/** Resolve the preferred API key env var name for a provider. */
+// 解析指定 provider 当前首选的 API key 环境变量名
+export function resolveProviderApiKeyEnvVar(providerId: string): string {
+  const provider = getProvider(providerId);
+  if (!provider) return '';
+  const config = loadConfig();
+  return config.apiKeyEnvVars?.[providerId] || provider.apiKeyEnvVar;
 }
 
 /**
@@ -284,7 +305,8 @@ export function detectAvailableProviders(): ProviderEntry[] {
   const config = loadConfig();
   return KNOWN_PROVIDERS.filter((p) => {
     if (p.isLocal) return true; // 本地 provider 始终可用
-    if (p.apiKeyEnvVar && process.env[p.apiKeyEnvVar]) return true;
+    const envVar = config.apiKeyEnvVars?.[p.id] || p.apiKeyEnvVar;
+    if (envVar && process.env[envVar]) return true;
     if (config.apiKeys?.[p.id]) return true;
     return false;
   });
@@ -301,6 +323,12 @@ interface NexusConfig {
   /** Provider id → API key mapping. */
   // provider id 到 API key 的映射
   apiKeys?: Record<string, string>;
+  /** Provider id → preferred API key env var name. */
+  // provider id 到首选 API key 环境变量名的映射
+  apiKeyEnvVars?: Record<string, string>;
+  /** Env vars managed by Nexus for the local runtime process. */
+  // Nexus 管理的本地运行时环境变量，重启后恢复到进程环境
+  runtimeEnv?: Record<string, string>;
   /** Custom provider definitions. */
   // 用户自定义的 provider 定义列表
   customProviders?: ProviderEntry[];
@@ -321,6 +349,9 @@ export function loadConfig(): NexusConfig {
   try {
     if (fs.existsSync(CONFIG_FILE)) {
       _cachedConfig = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'));
+      for (const [key, value] of Object.entries(_cachedConfig?.runtimeEnv ?? {})) {
+        if (isValidEnvVarName(key) && value && !process.env[key]) process.env[key] = value;
+      }
     }
   } catch { /* 忽略错误 */ }
   return _cachedConfig ?? {};
@@ -333,6 +364,8 @@ export function saveConfig(patch: Partial<NexusConfig>): void {
     ...current,
     ...patch,
     apiKeys: { ...current.apiKeys, ...patch.apiKeys },
+    apiKeyEnvVars: { ...current.apiKeyEnvVars, ...patch.apiKeyEnvVars },
+    runtimeEnv: { ...current.runtimeEnv, ...patch.runtimeEnv },
     customProviders: patch.customProviders ?? current.customProviders,
   };
   fs.mkdirSync(CONFIG_DIR, { recursive: true });
@@ -353,6 +386,52 @@ export function removeApiKey(providerId: string): void {
   const keys = { ...current.apiKeys };
   delete keys[providerId];
   saveConfig({ apiKeys: keys });
+}
+
+/** Save a preferred env var name for a provider API key. */
+// 保存指定 provider 的首选 API key 环境变量名
+export function saveProviderApiKeyEnvVar(providerId: string, envVar: string): void {
+  const provider = getProvider(providerId);
+  if (!provider) return;
+  const cleaned = envVar.trim();
+  if (!isValidEnvVarName(cleaned)) throw new Error('Invalid environment variable name');
+  saveConfig({ apiKeyEnvVars: { [providerId]: cleaned } });
+}
+
+/** Persist env vars into Nexus config and expose them to the current process. */
+// 批量设置 Nexus 当前进程可见的环境变量，并持久化到本地配置
+export function saveRuntimeEnvironmentVariables(vars: Record<string, string>): void {
+  const cleaned: Record<string, string> = {};
+  for (const [rawKey, rawValue] of Object.entries(vars)) {
+    const key = rawKey.trim();
+    const value = rawValue.trim();
+    if (!key || !value) continue;
+    if (!isValidEnvVarName(key)) throw new Error(`Invalid environment variable name: ${key}`);
+    cleaned[key] = value;
+    process.env[key] = value;
+  }
+  if (Object.keys(cleaned).length > 0) saveConfig({ runtimeEnv: cleaned });
+}
+
+/** List plausible API key env var names for the UI datalist. */
+// 列出 UI 可搜索的 API key 环境变量候选
+export function listApiKeyEnvVarCandidates(providerId?: string): string[] {
+  const config = loadConfig();
+  const names = new Set<string>();
+  const add = (name?: string) => {
+    const value = name?.trim();
+    if (value && isValidEnvVarName(value)) names.add(value);
+  };
+  for (const provider of listAllProviders()) {
+    if (!providerId || provider.id === providerId) {
+      add(provider.apiKeyEnvVar);
+      add(config.apiKeyEnvVars?.[provider.id]);
+    }
+  }
+  for (const name of Object.keys({ ...process.env, ...config.runtimeEnv })) {
+    if (/(API|KEY|TOKEN|SECRET)/i.test(name)) add(name);
+  }
+  return [...names].sort((a, b) => a.localeCompare(b));
 }
 
 /** Add a custom provider definition. */
@@ -379,18 +458,23 @@ export function listAllProviders(): ProviderEntry[] {
 // 生成可读的 API key 状态摘要（带遮罩显示）；英文说明：Return a human-readable summary of which API keys are set
 export function apiKeySummary(): string[] {
   const lines: string[] = [];
+  const config = loadConfig();
   for (const provider of KNOWN_PROVIDERS) {
-    if (provider.isLocal) continue;
     const key = resolveApiKey(provider.id);
     if (key) {
       const masked = key.length > 8
         ? key.slice(0, 4) + '...' + key.slice(-4)
         : '****';
-      const source = process.env[provider.apiKeyEnvVar] ? 'env' : 'config';
+      const envVar = config.apiKeyEnvVars?.[provider.id] || provider.apiKeyEnvVar;
+      const source = process.env[envVar] ? 'env' : 'config';
       lines.push(`${provider.name}: ${masked} (${source})`);
     } else {
       lines.push(`${provider.name}: not set`);
     }
   }
   return lines;
+}
+
+function isValidEnvVarName(name: string): boolean {
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name);
 }

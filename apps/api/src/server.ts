@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { URL } from 'node:url';
 import { type ThreadState } from '@nexus/runtime';
-import { listProviders, type ModelGateway } from '@nexus/model-gateway';
+import { addCustomProvider, listAllProviders, type ModelGateway } from '@nexus/model-gateway';
 import { createStore, resolveStorageOptions } from '@nexus/storage';
 import { forkThread } from '@nexus/memory';
 import type { ThreadEvent, ThreadId, ThreadItem, TurnMeta, UserInput } from '@nexus/protocol';
@@ -23,7 +23,8 @@ import { handleMemoryRoute } from './routes/memoryRoute.js';
 import { handleThreadRoutes } from './routes/threadRoutes.js';
 import { harnessRuntimeRegistry } from './services/harnessRuntime.js';
 import { handleRollbackThreadRuntimeAction, handleRunControlAction } from './routes/threadRuntimeActions.js';
-import { buildSkillDraftSystemPrompt, createSkillInstallTurnItems, createTemplateSkillDraft, deleteSkill, installSkillsFromGitHubUrl, prepareSkillDraftRequest, safeGeneratedSkillDraft, writeSkillDraft, type InstallSkillsResult, type SkillDraft } from './services/skills.js';
+import { buildSkillDraftSystemPrompt, createSkillInstallTurnItems, createTemplateSkillDraft, deleteSkill, installSkillsFromGitHubUrls, prepareSkillDraftRequest, safeGeneratedSkillDraft, writeSkillDraft, type InstallSkillsResult, type SkillDraft } from './services/skills.js';
+import { prepareMcpDraftRequest } from './services/mcpDraft.js';
 import { shouldRetitleThread, titleFromInput } from './services/threadTitle.js';
 import { buildUserInputFromTurnRequest } from './services/turnInput.js';
 import { defaultConfig, hiddenChatWorkspaceRoot, publicRunConfig, resolveConfig, type AgentRunConfig, type TurnRequest, A2A_CONFIG_KEY, normalizeA2AConfig } from './config/config.js';
@@ -212,7 +213,7 @@ async function draftSkill(
 async function createSkillInstallReply(
   model: ModelGateway,
   result: InstallSkillsResult,
-  sourceUrl: string,
+  inputText: string,
   locale: AgentRunConfig['locale'],
 ): Promise<string> {
   const fallback = fallbackSkillInstallReply(result, locale);
@@ -228,7 +229,7 @@ async function createSkillInstallReply(
         {
           role: 'user',
           content: JSON.stringify({
-            command: `/skills add ${sourceUrl}`,
+            command: inputText,
             skillsRoot: result.skillsRoot,
             installed: result.installed.map((skill) => ({
               name: skill.name,
@@ -262,6 +263,7 @@ function createSkillInstallFailureItems(
   input: string,
   message: string,
   timestamp: string,
+  installUrls: string[] = [],
 ): ThreadItem[] {
   const skillUrl = input.replace(/^\/skills\s+add\s+/i, '').trim();
   return [
@@ -277,7 +279,10 @@ function createSkillInstallFailureItems(
       type: 'tool_call',
       turnId,
       toolName: 'skills_add',
-      arguments: { input: skillUrl },
+      arguments: {
+        input: skillUrl,
+        ...(installUrls.length > 0 ? { urls: installUrls } : {}),
+      },
       error: { message },
       status: 'failed',
       timestamp,
@@ -290,6 +295,14 @@ function createSkillInstallFailureItems(
       timestamp,
     },
   ];
+}
+
+function skillInstallUrlsFromBody(body: { url?: string; urls?: string[] }): string[] {
+  const candidates = Array.isArray(body.urls) ? body.urls : [body.url ?? ''];
+  return candidates
+    .map((value) => String(value).trim())
+    .filter(Boolean)
+    .filter((value, index, current) => current.indexOf(value) === index);
 }
 
 function publishCompletedItems(threadId: ThreadId, turnId: string, items: ThreadItem[], tenantId: string = DEFAULT_TENANT_ID): void {
@@ -388,6 +401,12 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
 
   if (req.method === 'POST' && url.pathname === '/api/workspaces/pick') return handlePickWorkspaceDirectory(res);
 
+  if (req.method === 'POST' && url.pathname === '/api/mcp/draft') {
+    const body = await readJson<{ description?: unknown }>(req);
+    const description = typeof body.description === 'string' ? body.description : '';
+    return sendJson(res, 200, await prepareMcpDraftRequest(description));
+  }
+
   if (req.method === 'GET' && url.pathname === '/api/mcp') {
     sendJson(res, 200, { servers: await listMcpServers() });
     return;
@@ -435,12 +454,12 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   }
 
   if (req.method === 'POST' && url.pathname === '/api/skills/install') {
-    const body = await readJson<{ url?: string; config?: Partial<AgentRunConfig> }>(req);
-    const skillUrl = body.url?.trim();
-    if (!skillUrl) { sendError(res, 400, 'Skill URL is required'); return; }
+    const body = await readJson<{ url?: string; urls?: string[]; config?: Partial<AgentRunConfig> }>(req);
+    const skillUrls = skillInstallUrlsFromBody(body);
+    if (skillUrls.length === 0) { sendError(res, 400, 'Skill URL is required'); return; }
     try {
       const config = resolveConfig({ ...await getDefaultRunConfig(), ...(body.config ?? {}) });
-      const result = await installSkillsFromGitHubUrl(config.skillsRoot, skillUrl);
+      const result = await installSkillsFromGitHubUrls(config.skillsRoot, skillUrls);
       tenantRuntime.skillCacheForTenant(tenantContext).clear(config.skillsRoot);
       resetTenantDefaultAgent();
       sendJson(res, 200, { ok: true, ...result });
@@ -482,7 +501,44 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   }
 
   if (req.method === 'GET' && url.pathname === '/api/providers') {
-    sendJson(res, 200, { providers: listProviders() });
+    sendJson(res, 200, { providers: listAllProviders() });
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/providers') {
+    try {
+      const body = await readJson<{ name?: string; baseUrl?: string; protocol?: 'openai' | 'anthropic' }>(req);
+      const name = (body.name ?? '').trim();
+      if (!name) {
+        sendError(res, 400, 'Provider name is required');
+        return;
+      }
+      const baseUrl = (body.baseUrl ?? '').trim() || 'http://localhost:8080/v1';
+      const protocol: 'openai' | 'anthropic' = body.protocol === 'anthropic' ? 'anthropic' : 'openai';
+      const slug = name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 32) || 'custom';
+      let id = `custom_${slug}`;
+      const existing = listAllProviders();
+      let n = 1;
+      while (existing.some((p) => p.id === id)) {
+        id = `custom_${slug}_${++n}`;
+      }
+      addCustomProvider({
+        id,
+        name,
+        baseUrl,
+        apiKeyEnvVar: '',
+        protocol,
+        isLocal: false,
+        description: `Custom provider: ${name}`,
+      });
+      sendJson(res, 200, { ok: true, provider: listAllProviders().find((p) => p.id === id) });
+    } catch (error) {
+      sendError(res, 400, error instanceof Error ? error.message : String(error));
+    }
     return;
   }
 
@@ -598,14 +654,14 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const action = segments[3];
 
     if (action === 'skills' && segments[4] === 'install') {
-      const body = await readJson<{ url?: string; config?: Partial<AgentRunConfig> }>(req);
-      const skillUrl = body.url?.trim();
-      if (!skillUrl) { sendError(res, 400, 'Skill URL is required'); return; }
+      const body = await readJson<{ input?: string; url?: string; urls?: string[]; config?: Partial<AgentRunConfig> }>(req);
+      const skillUrls = skillInstallUrlsFromBody(body);
+      if (skillUrls.length === 0) { sendError(res, 400, 'Skill URL is required'); return; }
       const config = body.config ? await saveThreadRunConfig(threadId, body.config) : await getThreadRunConfig(threadId);
       const thread = await store.getThread(threadId);
       if (!thread) { sendError(res, 404, 'Thread not found'); return; }
 
-      const inputText = `/skills add ${skillUrl}`;
+      const inputText = body.input?.trim() || `/skills add ${skillUrls.join(' ')}`;
       if (shouldRetitleThread(thread.title)) {
         const nextTitle = titleFromInput(inputText) ?? inputText.slice(0, 60);
         await store.updateThreadMetadata(threadId, { title: nextTitle });
@@ -632,13 +688,14 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       publishTenantEvent({ type: 'turn.started', threadId, turnId, turnIndex: thread.turnCount });
 
       try {
-        const result = await installSkillsFromGitHubUrl(config.skillsRoot, skillUrl);
+        const result = await installSkillsFromGitHubUrls(config.skillsRoot, skillUrls);
         resetTenantDefaultAgent();
         const { model } = await createTenantAgent(config);
-        const agentText = await createSkillInstallReply(model, result, skillUrl, config.locale);
+        const agentText = await createSkillInstallReply(model, result, inputText, config.locale);
         const items = createSkillInstallTurnItems({
           turnId,
           input: inputText,
+          installUrls: skillUrls,
           installed: result.installed,
           skillsRoot: result.skillsRoot,
           agentText,
@@ -653,7 +710,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
         sendJson(res, 200, { ok: true, items, ...result });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        const items = createSkillInstallFailureItems(turnId, inputText, message, startedAt);
+        const items = createSkillInstallFailureItems(turnId, inputText, message, startedAt, skillUrls);
         await store.appendItems(threadId, items);
         publishCompletedItems(threadId, turnId, items, tenantContext.tenantId);
         turn.status = 'failed';

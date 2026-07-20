@@ -1,6 +1,8 @@
 import type { Locale } from '../config/config.js';
-import type { AgentStageRow, ThreadMeta } from '../shared/types.js';
+import type { AgentStageRow, ThreadItem, ThreadMeta } from '../shared/types.js';
+import type { TaskRuntimeMonitorState } from '../features/monitor/taskRuntimeMonitor.js';
 import { AgentStagePanel } from './AgentStagePanel.js';
+import { TaskRuntimeMonitorPanel } from './TaskRuntimeMonitorPanel.js';
 import { WorkspaceFilesPanel, type ExternalPreviewRequest } from './WorkspaceFilesPanel.js';
 import { Icon } from './Icon.js';
 
@@ -15,6 +17,8 @@ export function RightPane({
   onTabChange,
   onToggleMemoryExcluded,
   externalPreviewRequest,
+  taskRuntimeState,
+  runtimeItems = [],
 }: {
   activeTab: RightPaneTab;
   agentStageRows: AgentStageRow[];
@@ -23,9 +27,9 @@ export function RightPane({
   workspaceRoot: string;
   onTabChange(tab: RightPaneTab): void;
   onToggleMemoryExcluded?(excluded: boolean): void;
-  /** 外部预览请求 — 从对话条目点击"预览"时传入，自动切换到 files Tab 并加载该文件 */
-  // — Chinese: external preview request — auto-switches to files tab and loads the file
   externalPreviewRequest?: ExternalPreviewRequest | null;
+  taskRuntimeState?: TaskRuntimeMonitorState;
+  runtimeItems?: ThreadItem[];
 }) {
   const memoryExcluded = activeThread?.tags?.memoryExcluded === 'true';
   return (
@@ -40,8 +44,7 @@ export function RightPane({
       </div>
       {activeTab === 'status'
         ? (
-          <>
-            <AgentStagePanel locale={locale} rows={agentStageRows} />
+          <div className="rightPaneStatusStack">
             {activeThread && onToggleMemoryExcluded ? (
               <div className="rightPaneMemoryControl">
                 <label className="toggle">
@@ -67,7 +70,11 @@ export function RightPane({
                 </label>
               </div>
             ) : null}
-          </>
+            <div className="rightPaneStatusSplit">
+              <AgentStagePanel locale={locale} rows={agentStageRows} />
+              <TaskRuntimeMonitorPanel locale={locale} state={taskRuntimeState} items={runtimeItems} />
+            </div>
+          </div>
         )
         : (
           <WorkspaceFilesPanel

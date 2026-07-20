@@ -834,6 +834,11 @@ export type ThreadEvent =
   | ChildAgentEvent
   | CacheDiagnosticsEvent
   | ThreadMetadataUpdatedEvent
+  | HarnessStateUpdatedEvent
+  | TaskRuntimeUpdatedEvent
+  | TaskCognitionUpdatedEvent
+  | TaskContextUpdatedEvent
+  | TaskLoopUpdatedEvent
   | ErrorEvent;
 
 // 线程已创建事件
@@ -1076,6 +1081,105 @@ export interface EpisodeWorkingSetRebuiltEvent {
 export interface ErrorEvent {
   type: 'error';
   message: string;
+}
+
+export interface HarnessStateUpdatedEvent {
+  type: 'harness.state.updated';
+  threadId: ThreadId;
+  harnessRunId: string;
+  status: 'active' | 'satisfied' | 'blocked' | 'max_continuations' | 'no_progress' | 'cancelled';
+  iteration: number;
+  maxContinuations: number;
+  noProgressCount: number;
+  maxNoProgress: number;
+  goal: string;
+  acceptanceCriteria: string[];
+  satisfied: boolean;
+  blocker?: string;
+  failedCriteria: string[];
+  evidenceCount: number;
+  planNodes: Array<{
+    id: string;
+    description: string;
+    status: 'pending' | 'in_progress' | 'completed' | 'failed';
+  }>;
+  activeNodeId: string | null;
+  nextHint?: string;
+  startedAt: string;
+  updatedAt: string;
+}
+
+// ─── Task Runtime 事件（第 2 步：事件骨架，前端只接收不入 UI） ────────────
+// 这组事件让 runtime 底座能把"当前任务正在发生什么"发出来。
+// 前端暂时只接收入 state，不做复杂展示；后续第 4-7 步才接 UI。
+//
+// 重要约束：
+// - 不发完整 system prompt
+// - 不发完整 context chunk content，只发 metadata
+// - 普通聊天也会发 task.runtime.updated，但不代表进入 harness
+// - task.loop.updated 兼容 harness loop，但不叫 harness
+// ----------------------------------------------------------------
+
+// 当前 turn / runtime phase 变化
+export interface TaskRuntimeUpdatedEvent {
+  type: 'task.runtime.updated';
+  threadId: ThreadId;
+  turnId?: TurnId;
+  phase: 'before_turn' | 'model' | 'tool' | 'compact' | 'after_turn' | 'idle';
+  status: 'running' | 'completed' | 'failed' | 'interrupted';
+  runProfile: 'cache_first' | 'runtime_os';
+  checkpoint?: boolean;
+  resumable?: boolean;
+  timestamp: string;
+}
+
+// AgentContext.cognition.task 变化（update_cognition / harness goal / TaskContextProvider）
+export interface TaskCognitionUpdatedEvent {
+  type: 'task.cognition.updated';
+  threadId: ThreadId;
+  turnId?: TurnId;
+  cognition: {
+    goal: string;
+    constraints: string[];
+    knownFacts: string[];
+    unknowns: string[];
+    risks: string[];
+    confidence: number;
+    verificationCriteria: string[];
+  };
+  timestamp: string;
+}
+
+// ContextEngine 本轮注入了哪些 chunk（只发 metadata，不发 content）
+export interface TaskContextUpdatedEvent {
+  type: 'task.context.updated';
+  threadId: ThreadId;
+  turnId: TurnId;
+  chunks: Array<{
+    id: string;
+    source: string;
+    tokens: number;
+    priority: number;
+    truncated: boolean;
+    summary: string;
+  }>;
+  usedTokens: number;
+  remainingTokens: number;
+  timestamp: string;
+}
+
+// 长运行 / continuation 状态变化（兼容 harness loop，但不叫 harness）
+export interface TaskLoopUpdatedEvent {
+  type: 'task.loop.updated';
+  threadId: ThreadId;
+  turnId?: TurnId;
+  loopId?: string;
+  iteration: number;
+  maxIterations: number;
+  noProgressCount: number;
+  continuationReason?: string;
+  status: 'active' | 'satisfied' | 'blocked' | 'no_progress' | 'max_continuations';
+  timestamp: string;
 }
 
 // ─── JSON-RPC Transport ──────────────────────────────────────────────────────

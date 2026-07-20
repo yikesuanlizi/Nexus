@@ -282,6 +282,14 @@ export class PostgresThreadStore implements ThreadStore {
     );
   }
 
+  async deleteTurnsAfter(threadId: ThreadId, turnCount: number): Promise<void> {
+    await this.ready;
+    await this.client.query(
+      'DELETE FROM turns WHERE tenant_id = $1 AND thread_id = $2 AND turn_index >= $3',
+      [this.tenantId, threadId, turnCount],
+    );
+  }
+
   async getSetting<T = unknown>(key: string): Promise<T | null> {
     await this.ready;
     const result = await this.client.query<{ value: unknown }>('SELECT value FROM settings WHERE key = $1', [

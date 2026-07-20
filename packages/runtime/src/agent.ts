@@ -73,7 +73,7 @@ import { compactionOptionsForRunProfile, contextBudgetForRunProfile, normalizeRu
 import { leaksToolProtocol, validateThreadItemsForPersistence } from './modelOutput.js';
 import { NexusRuntimeError, affectsTurnStatus, isRecoverableStreamError, toNexusErrorInfo } from './runtimeError.js';
 import type { RunTurnOptions, HarnessItemFields, HarnessResult } from './harness/types.js';
-import { TaskHarnessEngine, type HarnessAgentLoop } from './harness/taskHarness.js';
+import { TaskHarnessEngine, type HarnessAgentLoop, type HarnessStateChangeCallback } from './harness/taskHarness.js';
 import { DEFAULT_HARNESS_CONFIG } from './harness/types.js';
 import type { EvaluatorModelGateway } from './harness/goalEvaluator.js';
 import {
@@ -101,6 +101,7 @@ import {
   createContextEngine,
   createInitialAgentContext,
   EnvironmentContextProvider,
+  ExperienceContextProvider,
   ExperienceEngine,
   JsonExperienceStore,
   ProjectBrainContextProvider,
@@ -441,9 +442,21 @@ export class AgentLoop {
     this.envContextProvider = new EnvironmentContextProvider({ cwd: this.config.workspaceRoot });
     this.taskContextProvider = new TaskContextProvider();
 
+    let experienceStore: ExperienceStore | undefined;
+    if (this.config.experiences.enabled) {
+      const dir = this.config.experiences.storageDir ?? path.join(this.config.workspaceRoot, '.nexus');
+      experienceStore = new JsonExperienceStore(dir, 'experiences.json');
+    }
+    this._experienceEngine = new ExperienceEngine({
+      enabled: this.config.experiences.enabled,
+      workspaceRoot: this.config.workspaceRoot,
+      store: experienceStore,
+    });
+
     const providers: ContextProvider[] = [
       this.taskContextProvider,
       this.envContextProvider,
+      new ExperienceContextProvider({ experienceEngine: this._experienceEngine }),
     ];
     if (this.config.workspaceRoot) {
       this.projectBrainProvider = new ProjectBrainContextProvider({
@@ -458,17 +471,6 @@ export class AgentLoop {
       providers,
     });
 
-    let experienceStore: ExperienceStore | undefined;
-    if (this.config.experiences.enabled) {
-      const dir = this.config.experiences.storageDir ?? path.join(this.config.workspaceRoot, '.nexus');
-      experienceStore = new JsonExperienceStore(dir, 'experiences.json');
-    }
-    this._experienceEngine = new ExperienceEngine({
-      enabled: this.config.experiences.enabled,
-      workspaceRoot: this.config.workspaceRoot,
-      store: experienceStore,
-    });
-
     this._skillExecutor = new SkillExecutor();
     if (!this.tools.get(USE_SKILL_TOOL_NAME)) {
       this.tools.register(createUseSkillTool({
@@ -476,6 +478,86 @@ export class AgentLoop {
         executor: this._skillExecutor,
         getWorkspaceRoot: () => this.config.workspaceRoot,
       }));
+    }
+
+    if (!this.tools.get('update_cognition')) {
+      this.tools.register({
+        name: 'update_cognition',
+        description: 'Update your internal task cognition state. Use this when you discover new facts, identify new risks, resolve unknowns, or want to record constraints discovered during execution. This updates your mental model so subsequent turns have accurate context.',
+        requiredPolicy: 'readonly',
+        parameters: {
+          type: 'object',
+          properties: {
+            addKnownFacts: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'New facts you have confirmed (e.g. "The project uses pnpm workspaces")',
+            },
+            addUnknowns: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'New questions/unknowns you need to resolve',
+            },
+            resolveUnknowns: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Previously-unknown items that are now resolved (exact text matches)',
+            },
+            addConstraints: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'New constraints discovered (e.g. "Must support Node 18")',
+            },
+            addRisks: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  description: { type: 'string' },
+                  severity: { type: 'string', enum: ['low', 'medium', 'high'] },
+                  mitigation: { type: 'string' },
+                },
+                required: ['description', 'severity'],
+              },
+              description: 'New risks identified',
+            },
+            confidence: {
+              type: 'number',
+              description: 'Your current confidence in completing the task (0.0 = completely stuck, 1.0 = certain of success)',
+            },
+          },
+          additionalProperties: false,
+        },
+        execute: async (_args, toolCtx) => {
+          const args = _args as Record<string, unknown>;
+          const threadId = toolCtx.threadId as ThreadId;
+          if (!threadId) {
+            return { output: 'No thread context available', status: 'failed' };
+          }
+          this.updateTaskCognition(threadId, {
+            addKnownFacts: args.addKnownFacts as string[] | undefined,
+            addUnknowns: args.addUnknowns as string[] | undefined,
+            resolveUnknowns: args.resolveUnknowns as string[] | undefined,
+            addConstraints: args.addConstraints as string[] | undefined,
+            addRisks: args.addRisks as Array<{ description: string; severity: 'low'|'medium'|'high'; mitigation?: string }> | undefined,
+            confidence: typeof args.confidence === 'number' ? args.confidence : undefined,
+          });
+          const ctx = this.getOrCreateAgentContext(threadId);
+          const t = ctx.cognition.task;
+          return {
+            output: [
+              'Cognition updated. Current state:',
+              `Goal: ${t.goal || '(none set)'}`,
+              `Confidence: ${Math.round(t.confidence * 100)}%`,
+              `Known facts (${t.knownFacts.length}): ${t.knownFacts.length > 0 ? t.knownFacts.slice(-5).join('; ') : 'none'}`,
+              `Unknowns (${t.unknowns.length}): ${t.unknowns.length > 0 ? t.unknowns.slice(-5).join('; ') : 'none'}`,
+              `Constraints (${t.constraints.length}): ${t.constraints.length > 0 ? t.constraints.slice(-3).join('; ') : 'none'}`,
+              `Risks (${t.risks.length}): ${t.risks.length > 0 ? t.risks.slice(-3).map((r) => `[${r.severity}] ${r.description}`).join('; ') : 'none'}`,
+            ].join('\n'),
+            status: 'completed',
+          };
+        },
+      });
     }
 
     this.runtimeMiddleware = composeRuntimeMiddleware([
@@ -494,15 +576,29 @@ export class AgentLoop {
       }),
       createDynamicContextMiddleware({
         contextEngine: this._contextEngine,
-        experienceEngine: this._experienceEngine,
         getExecutableSkillsBlock: () => buildSkillsIndexBlock(this.loadedSkills),
         getAgentContext: (threadId) => this.getOrCreateAgentContext(threadId),
         setAgentContext: (threadId, ctx) => this.agentContextByThread.set(threadId, ctx),
         contextBudget,
+        emit: (event) => this.emit(event),
       }),
       createExperienceWritebackMiddleware({
         experienceEngine: this._experienceEngine,
       }),
+      {
+        afterTool: (_ctx, request, response) => {
+          if (response.status === 'failed') return;
+          const mutatingTools = new Set([
+            'shell', 'write_file', 'patch', 'edit_file', 'apply_patch',
+            'create_file', 'delete_file', 'rename_file', 'mkdir', 'git_apply',
+            'run_tests', 'install_dependency',
+          ]);
+          if (mutatingTools.has(request.toolName) && this.projectBrainProvider) {
+            this.projectBrainProvider.invalidateArchitecture();
+            this.envContextProvider?.invalidateCache?.();
+          }
+        },
+      },
       ...this.config.runtimeMiddleware,
     ]);
     // 中文注释：初始化系统监控。仅当 enabled=true 时启动后台采样，并订阅级别变化用于主动通知。
@@ -582,20 +678,75 @@ export class AgentLoop {
   updateTaskCognition(threadId: ThreadId, update: {
     goal?: string;
     constraints?: string[];
+    assumptions?: string[];
+    knownFacts?: string[];
+    unknowns?: string[];
+    risks?: Array<{ description: string; severity: 'low' | 'medium' | 'high'; mitigation?: string }>;
+    confidence?: number;
     verificationCriteria?: string[];
+    addConstraints?: string[];
+    addKnownFacts?: string[];
+    addUnknowns?: string[];
+    resolveUnknowns?: string[];
+    addRisks?: Array<{ description: string; severity: 'low' | 'medium' | 'high'; mitigation?: string }>;
   }): void {
     const ctx = this.getOrCreateAgentContext(threadId);
+    const current = ctx.cognition.task;
+
+    const mergedConstraints = update.constraints ?? (update.addConstraints?.length
+      ? [...new Set([...current.constraints, ...update.addConstraints])]
+      : current.constraints);
+    const mergedFacts = update.knownFacts ?? (update.addKnownFacts?.length
+      ? [...new Set([...current.knownFacts, ...update.addKnownFacts])]
+      : current.knownFacts);
+    const mergedUnknowns = update.unknowns ?? (update.resolveUnknowns?.length
+      ? current.unknowns.filter((u) => !update.resolveUnknowns!.includes(u))
+      : update.addUnknowns?.length
+        ? [...new Set([...current.unknowns, ...update.addUnknowns])]
+        : current.unknowns);
+    const mergedRisks = update.risks ?? (update.addRisks?.length
+      ? [...current.risks, ...update.addRisks]
+      : current.risks);
+
+    const newConfidence = update.confidence !== undefined
+      ? Math.max(0, Math.min(1, update.confidence))
+      : update.goal
+        ? Math.max(current.confidence, 0.7)
+        : current.confidence;
+
     const updatedTask = {
-      ...ctx.cognition.task,
+      ...current,
       ...(update.goal !== undefined ? { goal: update.goal } : {}),
-      ...(update.constraints !== undefined ? { constraints: update.constraints } : {}),
+      ...(update.assumptions !== undefined ? { assumptions: update.assumptions } : {}),
+      constraints: mergedConstraints,
+      knownFacts: mergedFacts,
+      unknowns: mergedUnknowns,
+      risks: mergedRisks,
+      confidence: newConfidence,
       ...(update.verificationCriteria !== undefined ? { verificationCriteria: update.verificationCriteria } : {}),
-      confidence: update.goal ? Math.max(ctx.cognition.task.confidence, 0.7) : ctx.cognition.task.confidence,
     };
     this.agentContextByThread.set(threadId, {
       ...ctx,
       cognition: { task: updatedTask },
       updatedAt: Date.now(),
+    });
+    // emit task.cognition.updated — 让 TaskRuntimeMonitor 能看到认知状态变化
+    // 注意：只发摘要字段，不发完整 prompt
+    const activeTurnId = this.stateManager.get(threadId)?.activeTurnId;
+    this.emit({
+      type: 'task.cognition.updated',
+      threadId,
+      turnId: activeTurnId ?? undefined,
+      cognition: {
+        goal: updatedTask.goal,
+        constraints: updatedTask.constraints,
+        knownFacts: updatedTask.knownFacts,
+        unknowns: updatedTask.unknowns,
+        risks: updatedTask.risks.map((r) => r.description),
+        confidence: updatedTask.confidence,
+        verificationCriteria: updatedTask.verificationCriteria,
+      },
+      timestamp: new Date().toISOString(),
     });
   }
 
@@ -967,6 +1118,8 @@ export class AgentLoop {
         message: 'beforeTurn middleware started',
       });
       await this.runtimeMiddleware.beforeTurn(runtimeContext);
+      // 发 task.runtime.updated phase=before_turn — 普通 /turn 也会发，但不代表进入 harness
+      this.emitTaskRuntimeUpdated(threadId, turnId, 'before_turn', 'running');
       const result = await this.agentLoop(
         threadId,
         turnId,
@@ -988,6 +1141,8 @@ export class AgentLoop {
       this.stateManager.completeTurn(threadId, turnId);
       if (result.usage) await this.recordUsage(threadId, turnId, result.usage);
       this.emit({ type: 'turn.completed', threadId, turnId, usage: result.usage });
+      this.emitTaskRuntimeUpdated(threadId, turnId, 'after_turn', 'completed');
+      this.emitTaskRuntimeUpdated(threadId, turnId, 'idle', 'completed');
       terminalTurnResult = { status: 'completed', usage: result.usage };
       await this.finishRunMonitor(turnId, 'completed', result.usage);
       const resumedTurnIndex = turn?.index ?? thread.turnCount;
@@ -1008,6 +1163,8 @@ export class AgentLoop {
         await this.writeCheckpoint(threadId, this.withCheckpointState(threadId, turnId, collectedItems.length, 'interrupted'));
         this.stateManager.completeInterruptedTurn(threadId, turnId);
         this.emit({ type: 'turn.completed', threadId, turnId, usage: null, status: 'interrupted' });
+        this.emitTaskRuntimeUpdated(threadId, turnId, 'after_turn', 'interrupted');
+        this.emitTaskRuntimeUpdated(threadId, turnId, 'idle', 'interrupted');
         terminalTurnResult = { status: 'interrupted', usage: null, error: err };
         await this.finishRunMonitor(turnId, 'interrupted', null, err);
         await this.finishTurnLifecycle(runtimeContext, terminalTurnResult);
@@ -1034,6 +1191,8 @@ export class AgentLoop {
           error: { message, info },
         });
         this.emit({ type: 'turn.completed', threadId, turnId, usage: null, status: 'interrupted' });
+        this.emitTaskRuntimeUpdated(threadId, turnId, 'after_turn', 'interrupted');
+        this.emitTaskRuntimeUpdated(threadId, turnId, 'idle', 'interrupted');
         await this.appendRunMonitorEvent(turnId, {
           category: 'model',
           type: 'stream.error',
@@ -1059,6 +1218,8 @@ export class AgentLoop {
         turnId,
         error: { message: errorMsg, info: errorInfo },
       });
+      this.emitTaskRuntimeUpdated(threadId, turnId, 'after_turn', 'failed');
+      this.emitTaskRuntimeUpdated(threadId, turnId, 'idle', 'failed');
       terminalTurnResult = { status: 'failed', usage: null, error: err };
       await this.finishRunMonitor(turnId, 'failed', null, err);
       try {
@@ -1097,6 +1258,29 @@ export class AgentLoop {
         // 不让监听器错误导致循环崩溃
       }
     }
+  }
+
+  /**
+   * 发 task.runtime.updated 事件（第 2 步事件骨架）。
+   * 只发 phase/status/runProfile 等元数据，不发完整 prompt。
+   * 普通 /turn 也会发，但不代表进入 harness —— harness 只是 runtime 底座里的约束/证据/验收层。
+   * — English: emit task.runtime.updated skeleton event, metadata only.
+   */
+  private emitTaskRuntimeUpdated(
+    threadId: ThreadId,
+    turnId: TurnId | undefined,
+    phase: 'before_turn' | 'model' | 'tool' | 'compact' | 'after_turn' | 'idle',
+    status: 'running' | 'completed' | 'failed' | 'interrupted',
+  ): void {
+    this.emit({
+      type: 'task.runtime.updated',
+      threadId,
+      turnId,
+      phase,
+      status,
+      runProfile: this.config.runProfile,
+      timestamp: new Date().toISOString(),
+    });
   }
 
   private discardTransientItem(
@@ -1495,6 +1679,8 @@ export class AgentLoop {
         message: 'beforeTurn middleware started',
       });
       await this.runtimeMiddleware.beforeTurn(runtimeContext);
+      // 发 task.runtime.updated phase=before_turn — harness turn 也走相同 runtime 事件骨架
+      this.emitTaskRuntimeUpdated(threadId, turnId, 'before_turn', 'running');
       const result = await this.agentLoop(
         threadId,
         turnId,
@@ -1512,6 +1698,8 @@ export class AgentLoop {
       this.stateManager.completeTurn(threadId, turnId);
       if (result.usage) await this.recordUsage(threadId, turnId, result.usage);
       this.emit({ type: 'turn.completed', threadId, turnId, usage: result.usage });
+      this.emitTaskRuntimeUpdated(threadId, turnId, 'after_turn', 'completed');
+      this.emitTaskRuntimeUpdated(threadId, turnId, 'idle', 'completed');
       terminalTurnResult = { status: 'completed', usage: result.usage };
       await this.finishRunMonitor(turnId, 'completed', result.usage);
       // Gap 9: 副作用控制 — harness 续跑按 options 决定是否更新 episode / 提取 cold memory
@@ -1532,6 +1720,8 @@ export class AgentLoop {
         await this.writeCheckpoint(threadId, this.withCheckpointState(threadId, turnId, collectedItems.length, 'interrupted'));
         this.stateManager.completeInterruptedTurn(threadId, turnId);
         this.emit({ type: 'turn.completed', threadId, turnId, usage: null, status: 'interrupted' });
+        this.emitTaskRuntimeUpdated(threadId, turnId, 'after_turn', 'interrupted');
+        this.emitTaskRuntimeUpdated(threadId, turnId, 'idle', 'interrupted');
         terminalTurnResult = { status: 'interrupted', usage: null, error: err };
         await this.finishRunMonitor(turnId, 'interrupted', null, err);
         await this.finishTurnLifecycle(runtimeContext, terminalTurnResult);
@@ -1565,6 +1755,8 @@ export class AgentLoop {
           error: { message, info },
         });
         this.emit({ type: 'turn.completed', threadId, turnId, usage: null, status: 'interrupted' });
+        this.emitTaskRuntimeUpdated(threadId, turnId, 'after_turn', 'interrupted');
+        this.emitTaskRuntimeUpdated(threadId, turnId, 'idle', 'interrupted');
         await this.appendRunMonitorEvent(turnId, {
           category: 'model',
           type: 'stream.error',
@@ -1604,6 +1796,8 @@ export class AgentLoop {
         turnId,
         error: { message: errorMsg, info: errorInfo },
       });
+      this.emitTaskRuntimeUpdated(threadId, turnId, 'after_turn', 'failed');
+      this.emitTaskRuntimeUpdated(threadId, turnId, 'idle', 'failed');
       terminalTurnResult = { status: 'failed', usage: null, error: err };
       await this.finishRunMonitor(turnId, 'failed', null, err);
       try {
@@ -1657,6 +1851,47 @@ export class AgentLoop {
       },
     };
 
+    const onHarnessStateChange: HarnessStateChangeCallback = ({ threadId: tid, harnessRunId, state, evaluation, evidenceCount }) => {
+      this.emit({
+        type: 'harness.state.updated',
+        threadId: tid,
+        harnessRunId,
+        status: state.status,
+        iteration: state.iteration,
+        maxContinuations: state.goal.maxContinuations,
+        noProgressCount: state.noProgressCount,
+        maxNoProgress: state.goal.maxNoProgress,
+        goal: state.goal.objective,
+        acceptanceCriteria: state.goal.acceptanceCriteria,
+        satisfied: state.status === 'satisfied',
+        blocker: state.lastEvaluation?.blocker,
+        failedCriteria: evaluation?.failedCriteria ?? state.lastEvaluation?.failedCriteria ?? [],
+        evidenceCount,
+        planNodes: state.plan.map((n) => ({ id: n.id, description: n.description, status: n.status })),
+        activeNodeId: state.activeNodeId,
+        nextHint: evaluation?.nextHint,
+        startedAt: state.startedAt,
+        updatedAt: state.updatedAt,
+      });
+      // 发 task.loop.updated — harness continuation 是 loop 状态的一个来源，不叫 harness
+      // — English: emit task.loop.updated; harness loop is one source of loop state, not the only one
+      const loopStatus: 'active' | 'satisfied' | 'blocked' | 'no_progress' | 'max_continuations' =
+        state.status === 'cancelled' ? 'blocked' : state.status;
+      const activeTurnId = this.stateManager.get(tid)?.activeTurnId;
+      this.emit({
+        type: 'task.loop.updated',
+        threadId: tid,
+        turnId: activeTurnId ?? undefined,
+        loopId: harnessRunId,
+        iteration: state.iteration,
+        maxIterations: state.goal.maxContinuations,
+        noProgressCount: state.noProgressCount,
+        continuationReason: state.lastEvaluation?.status,
+        status: loopStatus,
+        timestamp: new Date().toISOString(),
+      });
+    };
+
     // 构造 TaskHarnessEngine：this 作为 HarnessAgentLoop（runTurn 已扩展为 4 参数）
     // — English: build TaskHarnessEngine with this agent as the loop delegate
     const engine = new TaskHarnessEngine(
@@ -1665,6 +1900,7 @@ export class AgentLoop {
       this.config.store,
       DEFAULT_HARNESS_CONFIG,
       this._experienceEngine,
+      onHarnessStateChange,
     );
 
     return engine.runHarness(threadId, userInput, options);
@@ -1855,6 +2091,8 @@ export class AgentLoop {
       metadata: { messageCount: messages.length, toolCount: tools.length },
     });
     modelRequest = await this.runtimeMiddleware.beforeModel(runtimeContext, modelRequest);
+    // 发 task.runtime.updated phase=model — 让 monitor 知道当前进入模型调用阶段
+    this.emitTaskRuntimeUpdated(threadId, turnId, 'model', 'running');
     const cacheShape = buildPromptCacheShape(modelRequest.messages, modelRequest.tools ?? []);
     const cacheComparison = comparePromptCacheShape(this.promptCacheShapes.get(threadId), cacheShape);
     this.promptCacheShapes.set(threadId, cacheShape);
@@ -2348,6 +2586,8 @@ export class AgentLoop {
       toolName,
     });
     const middlewareShortCircuit = await this.runtimeMiddleware.beforeTool(runtimeContext, runtimeToolRequest);
+    // 发 task.runtime.updated phase=tool — 进入工具调用阶段
+    this.emitTaskRuntimeUpdated(threadId, turnId, 'tool', 'running');
     if (middlewareShortCircuit) {
       await this.runtimeMiddleware.afterTool(runtimeContext, runtimeToolRequest, middlewareShortCircuit);
       const output = await this.recordMiddlewareToolResponse(
@@ -4152,6 +4392,8 @@ export class AgentLoop {
       message: 'Automatic context compaction started',
       metadata: { trigger: 'auto', phase: phaseContext, strategy: compactionOptions.strategy, pressure: pressureWithWindow },
     });
+    // 发 task.runtime.updated phase=compact — 进入上下文压缩阶段
+    this.emitTaskRuntimeUpdated(threadId, turnId, 'compact', 'running');
     try {
       await this.config.hooks.trigger('pre_compact', {
         threadId,

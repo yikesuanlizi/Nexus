@@ -1453,6 +1453,38 @@
     @apply bg-white text-slate-950 shadow-sm;
   }
 
+  .rightPaneStatusStack {
+    @apply grid min-h-0 gap-2 overflow-hidden;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .rightPaneStatusSplit {
+    @apply grid min-h-0 gap-3 overflow-hidden;
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .rightPaneStatusSplit > .agentStage,
+  .rightPaneStatusSplit > .taskRuntimePanel {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .rightPaneStatusSplit > .agentStage {
+    display: grid;
+    grid-template-rows: auto auto auto minmax(0, 1fr);
+    padding: 0;
+  }
+
+  .rightPaneStatusSplit > .agentStage .agentStageAvatarCard {
+    margin: 0;
+  }
+
+  .rightPaneStatusSplit > .agentStage .agentStageGrid {
+    min-height: 0;
+    overflow: auto;
+    padding-right: 2px;
+  }
+
   .workspaceFiles {
     @apply grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] gap-2 overflow-hidden;
   }
@@ -1974,6 +2006,133 @@
 
   .messageText {
     @apply m-0 whitespace-pre-wrap;
+  }
+
+  .markdownMessageText {
+    @apply min-w-0 max-w-full text-sm leading-6;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .markdownMessageText :where(p, ul, ol, blockquote, table, hr) {
+    @apply my-2 first:mt-0 last:mb-0;
+  }
+
+  .markdownMessageText :where(h1, h2, h3, h4, h5, h6) {
+    @apply mb-2 mt-3 text-sm font-bold leading-6 text-slate-800 first:mt-0;
+  }
+
+  .message.user .markdownMessageText :where(h1, h2, h3, h4, h5, h6) {
+    @apply text-white;
+  }
+
+  .markdownMessageText :where(ul, ol) {
+    @apply pl-5;
+  }
+
+  .markdownMessageText ul {
+    @apply list-disc;
+  }
+
+  .markdownMessageText ol {
+    @apply list-decimal;
+  }
+
+  .markdownMessageText li {
+    @apply my-1;
+  }
+
+  .markdownMessageText strong {
+    @apply mb-0 inline font-bold text-inherit;
+  }
+
+  .markdownMessageText hr {
+    @apply border-0 border-t border-slate-200;
+  }
+
+  .message.user .markdownMessageText hr {
+    @apply border-white/25;
+  }
+
+  .markdownMessageText table {
+    @apply block max-w-full overflow-x-auto rounded-md border border-slate-200 text-left text-xs;
+    border-collapse: collapse;
+  }
+
+  .markdownMessageText th,
+  .markdownMessageText td {
+    @apply border border-slate-200 px-2.5 py-1.5 align-top;
+  }
+
+  .markdownMessageText th {
+    @apply bg-slate-50 font-bold text-slate-700;
+  }
+
+  .message.user .markdownMessageText table,
+  .message.user .markdownMessageText th,
+  .message.user .markdownMessageText td {
+    @apply border-white/20;
+  }
+
+  .message.user .markdownMessageText th {
+    @apply bg-white/10 text-white;
+  }
+
+  .turnFileSummary {
+    @apply mt-1 grid gap-2 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2 text-xs;
+  }
+
+  .turnFileSummaryHeader {
+    @apply flex min-w-0 items-center justify-between gap-3;
+  }
+
+  .turnFileSummaryHeader strong {
+    @apply mb-0 text-xs font-bold text-slate-700;
+  }
+
+  .turnFileSummaryHeader span {
+    @apply shrink-0 text-[11px] font-semibold text-slate-500;
+  }
+
+  .turnFileSummaryRows {
+    @apply grid gap-1;
+  }
+
+  .turnFileSummaryRow {
+    @apply grid min-w-0 items-center gap-2 rounded-md bg-white/80 px-2 py-1.5;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .turnFileSummaryBadge {
+    @apply rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-bold text-sky-700;
+  }
+
+  .turnFileSummaryBadge.changed {
+    @apply bg-emerald-50 text-emerald-700;
+  }
+
+  .turnFileSummaryRow code {
+    @apply min-w-0 overflow-hidden text-ellipsis whitespace-nowrap bg-transparent p-0 font-mono text-[11px] text-slate-700;
+  }
+
+  .turnFileSummaryStats {
+    @apply flex items-center gap-1 font-mono text-[11px] font-bold;
+  }
+
+  .turnFileSummaryStats .added {
+    @apply text-emerald-600;
+  }
+
+  .turnFileSummaryStats .removed {
+    @apply text-rose-600;
+  }
+
+  .turnFileSummaryMore {
+    @apply grid gap-1;
+  }
+
+  .turnFileSummaryMore summary {
+    @apply cursor-pointer justify-start text-[11px] font-bold text-slate-500;
   }
 
   .codeBlock {
@@ -2860,27 +3019,38 @@
   }
 
   .commandInputRow {
-    @apply grid gap-2;
+    @apply grid gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-2 shadow-none;
+    align-items: start;
   }
 
   .commandInputRow.active {
-    @apply flex min-h-12 items-start gap-2 rounded-lg border border-slate-950 bg-white px-2 py-1.5 shadow-none;
+    @apply border-slate-950;
   }
 
-  .commandInputRow.active textarea {
-    @apply min-h-9 flex-1 resize-none border-0 bg-transparent px-1 py-1 shadow-none;
+  .commandInputMeta {
+    @apply grid gap-2;
   }
 
-  .commandInputRow textarea {
-    @apply min-h-10 overflow-hidden;
+  .commandInputRow.withTokens .commandInputMeta,
+  .commandInputRow.withTokens > .commandTokenRow {
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(148, 163, 184, .24);
   }
 
-  .commandInputRow.active textarea:focus {
-    @apply border-0 bg-transparent shadow-none;
+  .commandTokenRow {
+    @apply flex min-w-0 flex-wrap gap-1.5;
+  }
+
+  .commandUrlChip {
+    @apply inline-flex max-w-full items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-600 shadow-none;
+  }
+
+  .commandUrlChip span {
+    @apply min-w-0 truncate;
   }
 
   .commandChip {
-    @apply flex h-7 max-w-[220px] shrink-0 items-center gap-2 rounded-md border border-slate-950 bg-white px-2.5 text-xs font-semibold text-slate-950 shadow-none;
+    @apply inline-flex h-7 max-w-full min-w-0 shrink-0 items-center gap-2 rounded-full border border-slate-950 bg-white px-2.5 text-xs font-semibold text-slate-950 shadow-none;
   }
 
   .commandChip span {
@@ -2897,6 +3067,14 @@
 
   .commandChip svg {
     @apply h-3.5 w-3.5;
+  }
+
+  .commandInputRow textarea {
+    @apply min-h-10 w-full resize-none border-0 bg-transparent px-1 py-1 shadow-none;
+  }
+
+  .commandInputRow textarea:focus {
+    @apply border-0 bg-transparent shadow-none;
   }
 
   .skillDraftDialog {
@@ -4118,16 +4296,25 @@
     align-items: end;
   }
 
-  .composerInner textarea,
-  .commandInputRow.active {
+  .composerInner textarea {
     border-color: transparent;
+    background: transparent;
+    color: #f0f2f5;
+  }
+
+  .commandInputRow.active {
+    border-color: rgba(240,242,245,.62);
     background: rgba(255,255,255,.045);
     color: #f0f2f5;
   }
 
-  .composerInner textarea:focus {
+  .commandInputRow:focus-within {
     border-color: rgba(91,141,255,.44);
     box-shadow: 0 0 0 2px rgba(91,141,255,.13);
+  }
+
+  .composerInner textarea:focus {
+    box-shadow: none;
   }
 
   .sendButton {
@@ -5345,6 +5532,9 @@
 
   .runMonitorHeader > div:first-child {
     @apply grid gap-0.5;
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
   }
 
   .runMonitorHeader strong,
@@ -5363,15 +5553,19 @@
   .runMonitorHeaderActions,
   .runMonitorControlActions {
     @apply flex items-center gap-2;
+    flex-shrink: 0;
   }
 
   .runMonitorHeaderActions button,
   .runMonitorControlActions button {
     @apply h-8 rounded-md border border-slate-200 bg-slate-50 px-3 text-xs font-bold text-slate-700 shadow-none;
+    white-space: nowrap;
   }
 
   .runMonitorAutoRefresh {
     @apply flex items-center gap-1.5 text-[11px] font-semibold text-slate-600;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 
   .runMonitorAutoRefresh input[type="checkbox"] {
@@ -5380,6 +5574,8 @@
 
   .runMonitorRefreshInterval {
     @apply h-8 rounded-md border border-slate-200 bg-slate-50 px-2 text-[11px] font-semibold text-slate-700;
+    width: 72px;
+    flex-shrink: 0;
   }
 
   .runMonitorStats {
@@ -5488,6 +5684,16 @@
 
   .runMonitorTimeline {
     @apply grid content-start gap-2 overflow-auto p-3;
+  }
+
+  .runMonitorTaskRuntime {
+    @apply min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-50;
+  }
+
+  .runMonitorTaskRuntime .taskRuntimePanel {
+    max-height: 320px;
+    border: 0;
+    background: transparent;
   }
 
   .runMonitorEvent {
@@ -6542,6 +6748,14 @@
     width: min(420px, 72vw);
   }
 
+  .settingsDrawer .settingsHero.modelSettingsPanel .modelPresetInline {
+    padding-inline: 28px;
+  }
+
+  .settingsDrawer .settingsHero.modelSettingsPanel .modelPresetInlineSelect {
+    width: 100%;
+  }
+
   .settingsDrawer .settingsHero.modelSettingsPanel .modelKeyCard {
     display: grid;
     grid-template-columns: 136px minmax(0, 1fr);
@@ -6568,6 +6782,37 @@
     min-width: 0;
   }
 
+  .settingsDrawer .settingsHero.modelSettingsPanel .modelEnvVarBox {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .settingsDrawer .settingsHero.modelSettingsPanel .modelEnvVarBox label {
+    display: grid;
+    gap: 6px;
+  }
+
+  .settingsDrawer .settingsHero.modelSettingsPanel .modelEnvVarInput,
+  .settingsDrawer .settingsHero.modelSettingsPanel .modelKeyStatusInput,
+  .settingsDrawer .settingsHero.modelSettingsPanel .modelEnvBatchText {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .settingsDrawer .settingsHero.modelSettingsPanel .modelEnvVarBox .wideField,
+  .settingsDrawer .settingsHero.modelSettingsPanel .modelEnvVarBox .textButton {
+    width: 100%;
+  }
+
+  .settingsDrawer .settingsHero.modelSettingsPanel .modelEnvBatchText {
+    min-height: 74px;
+    resize: vertical;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+  }
+
   .appShell.theme-light .settingsDrawer .settingsHero.modelSettingsPanel .modelConfigRow > span {
     color: #0f172a;
   }
@@ -6580,6 +6825,10 @@
 
     .settingsDrawer .settingsHero.modelSettingsPanel .modelKeySourceSelect {
       width: 100%;
+    }
+
+    .settingsDrawer .settingsHero.modelSettingsPanel .modelPresetInline {
+      padding-inline: 0;
     }
   }
 }
@@ -7432,19 +7681,34 @@
     align-items: end;
   }
 
-  .composerInner,
-  .commandInputRow {
+  .composerInner {
     min-width: 0;
     border: 0;
     background: transparent;
     box-shadow: none;
   }
 
-  .commandInputRow textarea,
+  .commandInputRow {
+    min-width: 0;
+    display: grid;
+    gap: 8px;
+    padding: 8px 10px;
+  }
+
   .composer textarea {
     min-height: 44px;
     max-height: 180px;
     padding: 10px 4px;
+    border: 0;
+    background: transparent;
+    color: var(--nx-text);
+    resize: none;
+  }
+
+  .commandInputRow textarea {
+    min-height: 44px;
+    max-height: 180px;
+    padding: 4px 2px 2px;
     border: 0;
     background: transparent;
     color: var(--nx-text);
@@ -7833,7 +8097,13 @@
   .appShell.theme-light .commandInputRow {
     border: 1px solid #cbd5e1;
     border-radius: 12px;
-    padding: 0 10px;
+    padding: 8px 10px;
+    gap: 8px;
+  }
+
+  .appShell.theme-light .commandInputRow.withTokens .commandInputMeta,
+  .appShell.theme-light .commandInputRow.withTokens > .commandTokenRow {
+    border-bottom-color: #e2e8f0;
   }
 
   .appShell.theme-light .commandInputRow:focus-within {
@@ -8494,6 +8764,29 @@
     gap: 12px;
   }
 
+  .settingsLayer .pluginModalDialog .mcpSourceNotice {
+    display: grid;
+    gap: 6px;
+    padding: 10px 12px;
+    border: 1px solid var(--settings-border-strong);
+    border-radius: 10px;
+    background: var(--settings-panel-muted);
+    color: var(--settings-text);
+    font-size: 12px;
+  }
+
+  .settingsLayer .pluginModalDialog .mcpSourceNotice strong {
+    font-weight: 900;
+  }
+
+  .settingsLayer .pluginModalDialog .mcpSourceNotice span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--settings-text-sub);
+  }
+
   .settingsLayer .pluginModalDialog .pluginModalField {
     display: grid;
     gap: 8px;
@@ -8708,10 +9001,10 @@
   }
 
   .rightPaneMemoryControl {
-    margin: 12px 16px 0;
-    padding: 12px;
+    margin: 0;
+    padding: 8px 10px;
     border: 1px solid var(--nx-border);
-    border-radius: 12px;
+    border-radius: 8px;
     background: var(--nx-panel);
     color: var(--nx-text);
   }
@@ -10171,4 +10464,307 @@
 
 .gitNexusHelpTips .gitNexusHelpSectionTitle {
   color: var(--nx-blue, #2563eb);
+}
+/* ===== Task Runtime Monitor ===== */
+.taskRuntimePanel {
+  margin: 0;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--nx-border, #e2e8f0);
+  border-radius: 8px;
+  background: rgba(148, 163, 184, 0.08);
+  color: var(--nx-text, #0f172a);
+}
+
+.taskRuntimeBody {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.taskRuntimeHeader,
+.taskRuntimeSectionTitle,
+.taskRuntimePhase,
+.taskRuntimeLoop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.taskRuntimeHeader h2 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.taskRuntimeHeader p {
+  margin: 3px 0 0;
+  font-size: 11px;
+  color: var(--nx-muted, #64748b);
+}
+
+.taskRuntimeEmpty {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(148, 163, 184, 0.1);
+  color: var(--nx-muted, #64748b);
+  font-size: 12px;
+}
+
+.taskRuntimeStatus,
+.taskRuntimePhase span,
+.taskRuntimeSectionTitle em {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 2px 7px;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
+  background: rgba(148, 163, 184, 0.14);
+  color: var(--nx-muted, #64748b);
+}
+
+.taskRuntimeStatus.running {
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.12);
+}
+
+.taskRuntimeStatus.completed {
+  color: #059669;
+  background: rgba(5, 150, 105, 0.12);
+}
+
+.taskRuntimeStatus.failed,
+.taskRuntimeStatus.interrupted {
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.12);
+}
+
+.taskRuntimePhase {
+  min-height: 34px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.taskRuntimePhase strong,
+.taskRuntimeLoop strong {
+  font-size: 13px;
+}
+
+.taskRuntimeSection {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.taskRuntimeSectionTitle span,
+.taskRuntimeLoop span,
+.taskRuntimeList > span {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--nx-muted, #64748b);
+}
+
+.taskRuntimeChunkList,
+.taskRuntimeList,
+.taskRuntimeEventList,
+.taskRuntimeStepList,
+.taskRuntimeItemList {
+  display: grid;
+  gap: 6px;
+}
+
+.taskRuntimeStep {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 8px;
+  align-items: start;
+  padding: 7px 8px;
+  border-radius: 7px;
+  background: rgba(148, 163, 184, 0.1);
+}
+
+.taskRuntimeStepMarker {
+  grid-row: span 2;
+  width: 9px;
+  height: 9px;
+  margin-top: 4px;
+  border-radius: 999px;
+  background: #94a3b8;
+}
+
+.taskRuntimeStep.completed .taskRuntimeStepMarker {
+  background: #059669;
+}
+
+.taskRuntimeStep.running .taskRuntimeStepMarker {
+  background: #2563eb;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
+}
+
+.taskRuntimeStep.blocked .taskRuntimeStepMarker {
+  background: #dc2626;
+}
+
+.taskRuntimeStep strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.taskRuntimeStep em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  font-style: normal;
+  color: var(--nx-muted, #64748b);
+}
+
+.taskRuntimeItemList {
+  max-height: 118px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.taskRuntimeChunk {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 8px;
+  padding: 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.taskRuntimeChunk span {
+  grid-row: span 2;
+  align-self: start;
+  border-radius: 6px;
+  padding: 2px 5px;
+  font-size: 10px;
+  font-weight: 700;
+  background: rgba(37, 99, 235, 0.11);
+  color: #2563eb;
+}
+
+.taskRuntimeChunk strong,
+.taskRuntimeGoal,
+.taskRuntimeList li,
+.taskRuntimeLoop p {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+.taskRuntimeChunk em {
+  font-size: 10px;
+  font-style: normal;
+  color: var(--nx-muted, #64748b);
+}
+
+.taskRuntimeGoal {
+  margin: 0;
+  padding: 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.5);
+  font-weight: 700;
+}
+
+.taskRuntimeList ul {
+  margin: 0;
+  display: grid;
+  gap: 4px;
+  padding: 0;
+  list-style: none;
+}
+
+.taskRuntimeList li {
+  padding: 6px 8px;
+  border-radius: 7px;
+  background: rgba(148, 163, 184, 0.1);
+}
+
+.taskRuntimeLoop {
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.taskRuntimeLoop div {
+  display: grid;
+  gap: 2px;
+}
+
+.taskRuntimeLoop p {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--nx-muted, #64748b);
+}
+
+.taskRuntimeEvent {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  background: rgba(148, 163, 184, 0.1);
+}
+
+.taskRuntimeEvent span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.taskRuntimeEvent time {
+  flex: 0 0 auto;
+  font-size: 10px;
+  color: var(--nx-muted, #64748b);
+}
+
+.taskRuntimeItem {
+  display: grid;
+  gap: 3px;
+  padding: 7px 8px;
+  border-radius: 7px;
+  background: rgba(148, 163, 184, 0.1);
+}
+
+.taskRuntimeItem span {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.taskRuntimeItem strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--nx-muted, #64748b);
+}
+
+.appShell.theme-dark .taskRuntimePanel,
+.appShell.theme-dark .taskRuntimePhase,
+.appShell.theme-dark .taskRuntimeChunk,
+.appShell.theme-dark .taskRuntimeGoal {
+  background: rgba(255, 255, 255, 0.045);
 }

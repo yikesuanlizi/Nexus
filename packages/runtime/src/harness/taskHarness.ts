@@ -129,6 +129,22 @@ function makeStormInput(stormResult: StormBreakerResult): UserInput {
   };
 }
 
+function readinessEvaluation(readiness: ReadinessResult, state: HarnessState): GoalEvaluation {
+  const failedGateSummary = readiness.failedGates
+    .map((g) => `${g.name}:${g.detail}`)
+    .join('|');
+  return {
+    satisfied: false,
+    status: 'continue',
+    passedCriteria: [],
+    failedCriteria: state.goal.acceptanceCriteria,
+    blocker: readiness.retryInstruction,
+    evidenceSummary: '',
+    progressSignature: `readiness::${failedGateSummary}`,
+    reasoning: `Readiness gates failed: ${failedGateSummary}`,
+  };
+}
+
 // ─── 简单 goal / criteria 提取（MVP 占位） ──────────────────────────────────
 
 function extractGoalFromInput(userInput: UserInput): string {
@@ -158,8 +174,19 @@ async function deriveCriteriaFromInput(userInput: UserInput): Promise<string[]> 
 
 // ─── TaskHarnessEngine ───────────────────────────────────────────────────────
 
+export interface HarnessStateChangeCallback {
+  (event: {
+    threadId: ThreadId;
+    harnessRunId: string;
+    state: HarnessState;
+    evaluation?: GoalEvaluation;
+    evidenceCount: number;
+  }): void;
+}
+
 export class TaskHarnessEngine {
   private readonly experienceEngine?: ExperienceEngine;
+  private onStateChange?: HarnessStateChangeCallback;
 
   constructor(
     private agentLoop: HarnessAgentLoop,
@@ -167,8 +194,30 @@ export class TaskHarnessEngine {
     private store: GoalTrackerStore & HarnessContextStore,
     private config: HarnessConfig = DEFAULT_HARNESS_CONFIG,
     experienceEngine?: ExperienceEngine,
+    onStateChange?: HarnessStateChangeCallback,
   ) {
     this.experienceEngine = experienceEngine;
+    this.onStateChange = onStateChange;
+  }
+
+  private notifyStateChange(
+    threadId: ThreadId,
+    goalTracker: GoalTracker,
+    ledger: EvidenceLedger,
+    evaluation?: GoalEvaluation,
+  ): void {
+    if (!this.onStateChange) return;
+    try {
+      this.onStateChange({
+        threadId,
+        harnessRunId: goalTracker.getHarnessRunId(),
+        state: goalTracker.getState(),
+        evaluation,
+        evidenceCount: ledger.size(),
+      });
+    } catch {
+      // swallow callback errors
+    }
   }
 
   /**
@@ -221,6 +270,7 @@ export class TaskHarnessEngine {
     });
     ledger.setCriteria(criteria);
     await goalTracker.persist(this.store);
+    this.notifyStateChange(threadId, goalTracker, ledger);
 
     // P2: 同步 goal/criteria 到 AgentContext.cognition.task，供 TaskContextProvider 使用
     this.agentLoop.updateTaskCognition?.(threadId, {
@@ -231,6 +281,7 @@ export class TaskHarnessEngine {
     // 2. 第一轮：正常 runTurn（用户输入）
     let result = await this.agentLoop.runTurn(threadId, userInput, signal);
     ledger.recordTurn(result.items, threadId, '', harnessRunId);
+    this.notifyStateChange(threadId, goalTracker, ledger);
 
     // 3. 自主循环
     while (goalTracker.canContinue()) {
@@ -238,6 +289,25 @@ export class TaskHarnessEngine {
       const stormCheck = stormBreaker.check(result.items);
       const readiness = readinessCritic.check(result.items, stormCheck);
       if (!readiness.passed) {
+        const eval_ = readinessEvaluation(readiness, goalTracker.getState());
+        goalTracker.recordEvaluation(eval_);
+        await goalTracker.persist(this.store);
+        this.notifyStateChange(threadId, goalTracker, ledger, eval_);
+        if (goalTracker.checkNoProgress()) {
+          goalTracker.markNoProgress();
+          await goalTracker.persist(this.store);
+          this.notifyStateChange(threadId, goalTracker, ledger, eval_);
+          return this.buildResult('no_progress', goalTracker, ledger, result, threadId);
+        }
+        if (!goalTracker.canContinue()) {
+          const status = goalTracker.getState().status;
+          await goalTracker.persist(this.store);
+          this.notifyStateChange(threadId, goalTracker, ledger, eval_);
+          if (status === 'max_continuations') {
+            return this.buildResult('max_continuations', goalTracker, ledger, result, threadId);
+          }
+          return this.buildResult('no_progress', goalTracker, ledger, result, threadId);
+        }
         // 注入 retry instruction，继续 AgentLoop
         const retryInput = makeRetryInput(readiness.retryInstruction ?? 'readiness gate failed');
         result = await this.agentLoop.runTurn(threadId, retryInput, signal, {
@@ -284,16 +354,19 @@ export class TaskHarnessEngine {
       // 3e. 记录评估，更新状态
       goalTracker.recordEvaluation(eval_);
       await goalTracker.persist(this.store);
+      this.notifyStateChange(threadId, goalTracker, ledger, eval_);
 
       // 3f. 判定
       if (eval_.satisfied || eval_.status === 'satisfied') {
         goalTracker.markSatisfied();
         await goalTracker.persist(this.store);
+        this.notifyStateChange(threadId, goalTracker, ledger, eval_);
         return this.buildResult('satisfied', goalTracker, ledger, result, threadId);
       }
       if (eval_.status === 'needs_user_input' || eval_.status === 'blocked') {
         goalTracker.markBlocked(eval_.blocker ?? eval_.status);
         await goalTracker.persist(this.store);
+        this.notifyStateChange(threadId, goalTracker, ledger, eval_);
         return this.buildResult('blocked', goalTracker, ledger, result, threadId);
       }
 
@@ -301,6 +374,7 @@ export class TaskHarnessEngine {
       if (goalTracker.checkNoProgress()) {
         goalTracker.markNoProgress();
         await goalTracker.persist(this.store);
+        this.notifyStateChange(threadId, goalTracker, ledger, eval_);
         return this.buildResult('no_progress', goalTracker, ledger, result, threadId);
       }
 
@@ -308,6 +382,7 @@ export class TaskHarnessEngine {
       if (!goalTracker.canContinue()) {
         const status = goalTracker.getState().status;
         await goalTracker.persist(this.store);
+        this.notifyStateChange(threadId, goalTracker, ledger, eval_);
         if (status === 'max_continuations') {
           return this.buildResult('max_continuations', goalTracker, ledger, result, threadId);
         }
@@ -333,11 +408,13 @@ export class TaskHarnessEngine {
         },
       );
       ledger.recordTurn(result.items, threadId, '', harnessRunId);
+      this.notifyStateChange(threadId, goalTracker, ledger, eval_);
     }
 
     // 4. 到达上限
     const finalStatus = goalTracker.getState().status;
     await goalTracker.persist(this.store);
+    this.notifyStateChange(threadId, goalTracker, ledger);
     if (finalStatus === 'max_continuations') {
       return this.buildResult('max_continuations', goalTracker, ledger, result, threadId);
     }
@@ -402,6 +479,25 @@ export class TaskHarnessEngine {
       const stormCheck = stormBreaker.check(result.items);
       const readiness = readinessCritic.check(result.items, stormCheck);
       if (!readiness.passed) {
+        const eval_ = readinessEvaluation(readiness, goalTracker.getState());
+        goalTracker.recordEvaluation(eval_);
+        await goalTracker.persist(this.store);
+        this.notifyStateChange(threadId, goalTracker, ledger, eval_);
+        if (goalTracker.checkNoProgress()) {
+          goalTracker.markNoProgress();
+          await goalTracker.persist(this.store);
+          this.notifyStateChange(threadId, goalTracker, ledger, eval_);
+          return this.buildResult('no_progress', goalTracker, ledger, result, threadId);
+        }
+        if (!goalTracker.canContinue()) {
+          await goalTracker.persist(this.store);
+          const status = goalTracker.getState().status;
+          this.notifyStateChange(threadId, goalTracker, ledger, eval_);
+          if (status === 'max_continuations') {
+            return this.buildResult('max_continuations', goalTracker, ledger, result, threadId);
+          }
+          return this.buildResult('no_progress', goalTracker, ledger, result, threadId);
+        }
         const retryInput = makeRetryInput(readiness.retryInstruction ?? 'readiness gate failed');
         result = await this.agentLoop.runTurn(threadId, retryInput, options?.signal, {
           source: 'harness',

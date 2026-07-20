@@ -3,6 +3,7 @@ import {
   completeLocalSkillDraftItem,
   createLocalSkillDraftItems,
   mergeIncomingItems,
+  removeLocalThreadItems,
 } from './threadItems.js';
 
 describe('local skill draft transcript items', () => {
@@ -80,5 +81,15 @@ describe('transcript item merging', () => {
     );
 
     expect(merged.map((item) => item.id)).toEqual(['agent-1']);
+  });
+
+  it('removes local skill install placeholders before merging persisted install items', () => {
+    const local = createLocalSkillDraftItems('https://github.com/anthropics/skills/tree/main/skills/pdf', 'zh');
+    const current = [
+      ...local.items,
+      { id: 'kept', type: 'agent_message', text: '之前的消息' },
+    ] as never;
+
+    expect(removeLocalThreadItems(current, local.items).map((item) => item.id)).toEqual(['kept']);
   });
 });

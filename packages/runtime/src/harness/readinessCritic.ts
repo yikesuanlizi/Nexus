@@ -144,6 +144,9 @@ export class ReadinessCritic {
     if (criteria.length === 0) {
       return { name: 'criteria_evidence', passed: true, detail: 'no criteria to check' };
     }
+    if (this.ledger.size() === 0) {
+      return { name: 'criteria_evidence', passed: true, detail: 'no structured evidence; defer to evaluator' };
+    }
     const missing = criteria.filter(c => this.ledger.getEvidenceForCriteria(c).length === 0);
     if (missing.length > 0) {
       return {

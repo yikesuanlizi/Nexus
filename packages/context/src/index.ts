@@ -31,6 +31,8 @@ export { TaskContextProvider } from './providers/taskContext.js';
 export type { TaskContextProviderOptions } from './providers/taskContext.js';
 export { ProjectBrainContextProvider } from './providers/projectBrainContext.js';
 export type { ProjectBrainProviderOptions } from './providers/projectBrainContext.js';
+export { ExperienceContextProvider } from './providers/experienceContext.js';
+export type { ExperienceContextProviderOptions } from './providers/experienceContext.js';
 export { scanLocalProject, scanGitDelta, hashArchitectureSummary } from './providers/localProjectScanner.js';
 export type {
   ArchitectureSummary,

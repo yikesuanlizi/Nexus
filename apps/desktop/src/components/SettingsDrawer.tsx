@@ -4,7 +4,7 @@ import { Icon, type IconName } from './Icon.js';
 import { DropdownSelect, type DropdownOption } from './DropdownSelect.js';
 import { emptyMcp } from '../config/defaults.js';
 import { readDesktopCapabilities, type DesktopCapabilities } from '../api/desktopBridge.js';
-import { formatTimestamp, t } from '../shared/i18n.js';
+import { t } from '../shared/i18n.js';
 import { localizedSkillDescription } from '../features/settings/skillDescriptions.js';
 import { recommendedPluginCatalog, type RecommendedMcp, type RecommendedSkill } from '../features/settings/pluginCatalog.js';
 import { upsertById } from '../features/chat/threadItems.js';
@@ -51,12 +51,12 @@ const defaultBotConfig: BotConfig = {
 
 const defaultWeixinBridgeUrl = 'http://127.0.0.1:18790/api/v1/admin/rpc';
 
+type ModelConfigDraft = Pick<RunConfig, 'provider' | 'model' | 'baseUrl'>;
+
 export function SettingsDrawer({
-  applyModelPreset,
   botConfig,
   botStatus,
   config,
-  deleteModelPreset,
   deleteSkill,
   keyStates,
   locale,
@@ -68,11 +68,13 @@ export function SettingsDrawer({
   saveModelPreset,
   saveSkillDraft,
   saveProviderKey,
+  saveProviderEnvVar,
+  saveEnvironmentVariables,
   skillsList,
   refreshSkills,
   refreshMcpStatus,
   refreshBotStatus,
-  selectProvider,
+  refreshProviders,
   setConfig,
   setMcps,
   setOpen,
@@ -86,12 +88,10 @@ export function SettingsDrawer({
   stopDingtalkStream,
   testDingtalkMessage,
 }: {
-  applyModelPreset: (preset: ModelPreset) => void;
   botConfig: BotConfig | null;
   botStatus: BotStatus | null;
   clearProviderKey: (providerId: string) => Promise<void>;
   config: RunConfig;
-  deleteModelPreset: (id: string) => Promise<void>;
   deleteSkill: (name: string) => Promise<void>;
   keyStates: ApiKeyState[];
   locale: Locale;
@@ -104,14 +104,16 @@ export function SettingsDrawer({
   refreshSkills: (options?: { forceReload?: boolean }) => Promise<void>;
   refreshMcpStatus: (detail?: 'light' | 'full') => Promise<void>;
   refreshBotStatus: () => Promise<void>;
-  saveModelPreset: () => Promise<void>;
+  refreshProviders: () => Promise<void>;
+  saveModelPreset: (override?: Partial<RunConfig>) => Promise<void>;
   saveSkillDraft: (draft: import('../shared/types.js').SkillDraft) => Promise<void>;
   saveBotConfig: (config: BotConfig) => Promise<void>;
   logoutWeixin: () => Promise<void>;
   saveProviderKey: (providerId: string, apiKey: string) => Promise<void>;
+  saveProviderEnvVar: (providerId: string, envVar: string) => Promise<void>;
+  saveEnvironmentVariables: (text: string) => Promise<void>;
   saveWebProviderKey: (apiKey: string) => Promise<void>;
   clearWebProviderKey: () => Promise<void>;
-  selectProvider: (providerId: string) => void;
   setConfig: React.Dispatch<React.SetStateAction<RunConfig>>;
   setMcps: React.Dispatch<React.SetStateAction<McpConfig[]>>;
   setOpen: (open: boolean) => void;
@@ -131,7 +133,13 @@ export function SettingsDrawer({
   const [mcpDraft, setMcpDraft] = useState<McpConfig>(emptyMcp());
   const [editingMcpId, setEditingMcpId] = useState('');
   const [mcpPanelOpen, setMcpPanelOpen] = useState(false);
+  const [modelConfigDraft, setModelConfigDraft] = useState<ModelConfigDraft>(() => modelConfigDraftFromConfig(config));
+  const [modelEnvVarDraft, setModelEnvVarDraft] = useState('');
+  const [modelEnvVarRemoteOptions, setModelEnvVarRemoteOptions] = useState<string[]>([]);
+  const [modelEnvBatchText, setModelEnvBatchText] = useState('');
+  const [modelKeyNotice, setModelKeyNotice] = useState('');
   const [apiKeyDraft, setApiKeyDraft] = useState('');
+  const [customProviderName, setCustomProviderName] = useState('');
   const [webKeyDraft, setWebKeyDraft] = useState('');
   const [firecrawlDialogOpen, setFirecrawlDialogOpen] = useState(false);
   const [activeSection, setActiveSection] = useState('agent');
@@ -143,13 +151,32 @@ export function SettingsDrawer({
   const [memoryAdvancedExpanded, setMemoryAdvancedExpanded] = useState(false);
   const [modelKeySource, setModelKeySource] = useState<SecretSource>('env');
   const [showSavedModelKey, setShowSavedModelKey] = useState(false);
-  const selectedProvider = providers.find((provider) => provider.id === config.provider);
-  const selectedKeyState = keyStates.find((state) => state.providerId === config.provider);
+  const selectedProvider = providers.find((provider) => provider.id === modelConfigDraft.provider);
+  const selectedKeyState = keyStates.find((state) => state.providerId === modelConfigDraft.provider);
+  const modelEnvVarOptions = [...new Set([
+    selectedKeyState?.envVar,
+    selectedKeyState?.defaultEnvVar,
+    selectedProvider?.apiKeyEnvVar,
+    ...(selectedKeyState?.envVarCandidates ?? []),
+    ...modelEnvVarRemoteOptions,
+  ].filter((value): value is string => Boolean(value?.trim())))];
+  const matchedDraftPreset = modelPresets.find((preset) => modelPresetMatchesRunConfig(preset, { ...config, ...modelConfigDraft }));
+  const modelPresetDraftOptions: Array<DropdownOption<string>> = [
+    { value: '__draft__', label: locale === 'zh' ? '当前编辑草稿' : 'Current draft' },
+    ...modelPresets.map((preset) => ({
+      value: preset.id,
+      label: preset.name,
+      detail: [providers.find((provider) => provider.id === preset.config.provider)?.name ?? preset.config.provider, preset.config.model].filter(Boolean).join(' / '),
+      current: matchedDraftPreset?.id === preset.id,
+    })),
+  ];
   const firecrawlMasked = webProviderState?.firecrawl.masked ?? '';
   const firecrawlHasPreview = /[.•·]/.test(firecrawlMasked);
   const firecrawlConfigured = Boolean(webProviderState?.firecrawl.configured && firecrawlHasPreview);
   const firecrawlEnabled = config.webProvider === 'firecrawl';
   const mcpPanelTitle = editingMcpId ? t(locale, 'editMcp') : t(locale, 'addMcp');
+  const mcpDraftSourceUrl = mcpDraft.sourceKind === 'url' ? mcpDraft.sourceUrl?.trim() ?? '' : '';
+  const mcpCanSave = Boolean(mcpDraft.name.trim() && mcpDraft.command.trim());
   const pluginQuery = pluginSearch.trim().toLowerCase();
   const filteredRecommendedCatalog = recommendedPluginCatalog.filter((item) => {
     if (!pluginQuery) return true;
@@ -225,7 +252,6 @@ export function SettingsDrawer({
     { id: 'appearance', label: locale === 'zh' ? '外观' : 'Appearance' },
     { id: 'memory', label: locale === 'zh' ? '记忆' : 'Memory' },
     { id: 'performance', label: locale === 'zh' ? '性能' : 'Performance' },
-    { id: 'presets', label: t(locale, 'modelPresets') },
     { id: 'plugins', label: locale === 'zh' ? '插件中心' : 'Plugins' },
     { id: 'remote', label: locale === 'zh' ? '远程助手' : 'Remote bots' },
   ];
@@ -264,10 +290,24 @@ export function SettingsDrawer({
   }, [config.webSearchMode, setConfig]);
 
   useEffect(() => {
+    setModelConfigDraft(modelConfigDraftFromConfig(config));
+  }, [config.provider, config.model, config.baseUrl]);
+
+  useEffect(() => {
     setModelKeySource(selectedKeyState?.source === 'config' ? 'config' : 'env');
+    setModelEnvVarDraft(selectedKeyState?.envVar || selectedProvider?.apiKeyEnvVar || '');
     setApiKeyDraft('');
     setShowSavedModelKey(false);
-  }, [config.provider, selectedKeyState?.source]);
+    setModelKeyNotice('');
+  }, [modelConfigDraft.provider, selectedKeyState?.envVar, selectedKeyState?.source, selectedProvider?.apiKeyEnvVar]);
+
+  useEffect(() => {
+    if (activeSection !== 'agent') return;
+    fetch('/api/keys/env-vars')
+      .then((response) => response.ok ? response.json() : null)
+      .then((data: { envVars?: string[] } | null) => setModelEnvVarRemoteOptions(data?.envVars ?? []))
+      .catch(() => setModelEnvVarRemoteOptions([]));
+  }, [activeSection]);
 
   async function ensureSkillsRoot() {
     const response = await fetch('/api/settings');
@@ -408,8 +448,14 @@ export function SettingsDrawer({
   }
 
   function saveMcp() {
-    if (!mcpDraft.name.trim() || !mcpDraft.command.trim()) return;
-    setMcps((current) => upsertById(current, { ...mcpDraft, id: editingMcpId || crypto.randomUUID() }));
+    if (!mcpCanSave) return;
+    setMcps((current) => upsertById(current, {
+      id: editingMcpId || crypto.randomUUID(),
+      name: mcpDraft.name.trim(),
+      command: mcpDraft.command.trim(),
+      args: mcpDraft.args.trim(),
+      enabled: mcpDraft.enabled,
+    }));
     closeMcpPanel();
   }
 
@@ -459,18 +505,80 @@ export function SettingsDrawer({
     }
   }
 
-  async function saveModelKeyDraftIfNeeded() {
-    if (selectedProvider?.isLocal) return;
+  async function ensureCustomProvider(): Promise<string | null> {
+    if (modelConfigDraft.provider !== 'openai_compatible') return modelConfigDraft.provider;
+    const name = customProviderName.trim();
+    if (!name) return modelConfigDraft.provider;
+    if (name === 'OpenAI-compatible') return modelConfigDraft.provider;
+    const response = await fetch('/api/providers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name,
+        baseUrl: modelConfigDraft.baseUrl,
+        protocol: 'openai',
+      }),
+    });
+    if (!response.ok) {
+      const err = await response.text().catch(() => '');
+      throw new Error(`Failed to create custom provider: ${err.slice(0, 200)}`);
+    }
+    const data = (await response.json()) as { provider?: ProviderEntry };
+    const newProvider = data.provider;
+    if (!newProvider?.id) return modelConfigDraft.provider;
+    await refreshProviders();
+    setCustomProviderName('');
+    return newProvider.id;
+  }
+
+  async function saveModelKeyDraftIfNeeded(providerId?: string) {
     if (modelKeySource !== 'config') return;
     const nextKey = apiKeyDraft.trim();
     if (!nextKey) return;
-    await saveProviderKey(config.provider, nextKey);
+    await saveProviderKey(providerId ?? modelConfigDraft.provider, nextKey);
     setApiKeyDraft('');
   }
 
+  async function saveModelEnvVarDraftIfNeeded(providerId?: string) {
+    if (modelKeySource !== 'env') return;
+    const envVar = modelEnvVarDraft.trim();
+    if (!envVar) return;
+    await saveProviderEnvVar(providerId ?? modelConfigDraft.provider, envVar);
+    setModelEnvVarRemoteOptions((current) => current.includes(envVar) ? current : [...current, envVar].sort((a, b) => a.localeCompare(b)));
+  }
+
+  async function handleModelEnvVarBlur() {
+    const envVar = modelEnvVarDraft.trim();
+    if (!envVar || modelKeySource !== 'env') return;
+    const currentBound = selectedKeyState?.envVar || selectedProvider?.apiKeyEnvVar || '';
+    if (envVar === currentBound) return;
+    try {
+      await saveProviderEnvVar(modelConfigDraft.provider, envVar);
+    } catch {
+      // ignore
+    }
+  }
+
+  function applyModelConfigDraft(providerId: string): RunConfig {
+    return {
+      ...config,
+      ...modelConfigDraft,
+      provider: providerId,
+      webSearchMode: 'auto',
+    };
+  }
+
   async function handleSaveModelConfig() {
-    await saveModelKeyDraftIfNeeded();
-    await saveModelPreset();
+    const targetProviderId = await ensureCustomProvider();
+    if (targetProviderId) {
+      await saveModelKeyDraftIfNeeded(targetProviderId);
+      await saveModelEnvVarDraftIfNeeded(targetProviderId);
+      await saveModelPreset({ ...modelConfigDraft, provider: targetProviderId });
+    } else {
+      await saveModelKeyDraftIfNeeded();
+      await saveModelEnvVarDraftIfNeeded();
+      await saveModelPreset(modelConfigDraft);
+    }
   }
 
   async function refreshMemories() {
@@ -526,16 +634,60 @@ export function SettingsDrawer({
   }
 
   async function handleSetCurrentModelConfig() {
-    await saveModelKeyDraftIfNeeded();
-    const normalizedConfig = { ...config, webSearchMode: 'auto' as const };
+    const targetProviderId = await ensureCustomProvider();
+    await saveModelKeyDraftIfNeeded(targetProviderId ?? modelConfigDraft.provider);
+    await saveModelEnvVarDraftIfNeeded(targetProviderId ?? modelConfigDraft.provider);
+    const normalizedConfig = applyModelConfigDraft(targetProviderId ?? modelConfigDraft.provider);
     localStorage.setItem(RUN_CONFIG_STORAGE_KEY, JSON.stringify(normalizedConfig));
     setConfig(normalizedConfig);
   }
 
   function modelKeyEnvStatus() {
-    const envVar = selectedProvider?.apiKeyEnvVar || selectedKeyState?.envVar || 'API_KEY';
-    const configuredByEnv = selectedKeyState?.configured && selectedKeyState.source === 'env';
-    return `${envVar}(${configuredByEnv ? (locale === 'zh' ? '已配置' : 'configured') : (locale === 'zh' ? '未发现' : 'missing')})`;
+    const envVar = modelEnvVarDraft.trim() || selectedProvider?.apiKeyEnvVar || selectedKeyState?.envVar;
+    if (!envVar) {
+      return locale === 'zh' ? '该 provider 未指定环境变量，请改用「已保存密钥」' : 'No env var for this provider, use "Saved key"';
+    }
+    const boundEnvVar = selectedKeyState?.envVar || selectedProvider?.apiKeyEnvVar;
+    if (selectedKeyState?.configured && selectedKeyState.source === 'env' && boundEnvVar === envVar) {
+      return `${envVar}(${locale === 'zh' ? '已配置' : 'configured'})`;
+    }
+    if (boundEnvVar === envVar) {
+      return `${envVar}(${locale === 'zh' ? '未发现' : 'missing'})`;
+    }
+    return `${envVar}(${locale === 'zh' ? '失焦后自动检测' : 'blur to detect'})`;
+  }
+
+  function selectModelProviderDraft(providerId: string) {
+    const normalizedProviderId = providerId === 'doubao' ? 'volcengine' : providerId;
+    const provider = providers.find((item) => item.id === normalizedProviderId);
+    setModelConfigDraft((current) => ({
+      ...current,
+      provider: normalizedProviderId,
+      baseUrl: provider?.baseUrl ?? current.baseUrl,
+    }));
+  }
+
+  function loadModelPresetIntoDraft(presetId: string) {
+    if (presetId === '__draft__') return;
+    const preset = modelPresets.find((item) => item.id === presetId);
+    if (!preset) return;
+    setModelConfigDraft((current) => ({
+      ...current,
+      provider: preset.config.provider ?? current.provider,
+      model: preset.config.model ?? current.model,
+      baseUrl: preset.config.baseUrl ?? current.baseUrl,
+    }));
+  }
+
+  async function handleBatchSetModelEnv() {
+    await saveEnvironmentVariables(modelEnvBatchText);
+    const response = await fetch('/api/keys/env-vars');
+    if (response.ok) {
+      const data = (await response.json()) as { envVars?: string[] };
+      setModelEnvVarRemoteOptions(data.envVars ?? []);
+    }
+    setModelEnvBatchText('');
+    setModelKeyNotice(locale === 'zh' ? '环境变量已写入 Nexus 当前运行时。' : 'Environment variables saved to the current Nexus runtime.');
   }
 
   function savedModelKeyPlaceholder() {
@@ -608,56 +760,100 @@ export function SettingsDrawer({
               <div className="formGrid modelSettingsList">
                 <label className="wideField">
                   {t(locale, 'provider')}
-                  <DropdownSelect className="modelProviderSelect" value={config.provider} onChange={selectProvider} options={providerDropdownOptions(providers, locale)} />
+                  <DropdownSelect className="modelProviderSelect" value={modelConfigDraft.provider} onChange={selectModelProviderDraft} options={providerDropdownOptions(providers, locale)} />
                 </label>
+                {modelConfigDraft.provider === 'openai_compatible' ? (
+                  <label className="wideField">
+                    {locale === 'zh' ? '提供方名称' : 'Provider name'}
+                    <input
+                      placeholder={locale === 'zh' ? '例如：NVIDIA、OpenRouter、LMStudio' : 'e.g. NVIDIA, OpenRouter, LMStudio'}
+                      value={customProviderName}
+                      onChange={(event) => setCustomProviderName(event.target.value)}
+                    />
+                  </label>
+                ) : null}
                 <label className="wideField">
                   {t(locale, 'model')}
-                  <input value={config.model} onChange={(event) => setConfig({ ...config, model: event.target.value })} />
+                  <input value={modelConfigDraft.model} onChange={(event) => setModelConfigDraft((current) => ({ ...current, model: event.target.value }))} />
                 </label>
                 <label className="wideField">
                   {t(locale, 'baseUrl')}
-                  <input placeholder="provider default" value={config.baseUrl} onChange={(event) => setConfig({ ...config, baseUrl: event.target.value })} />
+                  <input placeholder="provider default" value={modelConfigDraft.baseUrl} onChange={(event) => setModelConfigDraft((current) => ({ ...current, baseUrl: event.target.value }))} />
+                </label>
+              </div>
+              <div className="modelPresetInline">
+                <label className="wideField">
+                  {t(locale, 'modelPresets')}
+                  <DropdownSelect
+                    className="modelPresetInlineSelect"
+                    value={matchedDraftPreset?.id ?? '__draft__'}
+                    onChange={loadModelPresetIntoDraft}
+                    options={modelPresetDraftOptions}
+                  />
                 </label>
               </div>
               <div className="providerCard compactProviderCard modelKeyCard">
-                {selectedProvider?.isLocal ? (
-                  <input readOnly value={t(locale, 'noKeyNeeded')} />
-                ) : (
-                  <>
-                    <DropdownSelect<SecretSource>
-                      className="modelKeySourceSelect"
-                      value={modelKeySource}
-                      onChange={(source) => {
-                        setModelKeySource(source);
-                        setApiKeyDraft('');
-                        setShowSavedModelKey(false);
-                      }}
-                      options={[
-                        { value: 'env', label: locale === 'zh' ? '环境变量' : 'Environment' },
-                        { value: 'config', label: locale === 'zh' ? '已保存密钥' : 'Saved key' },
-                      ]}
-                    />
-                    {modelKeySource === 'env' ? (
-                      <input className="modelKeyStatusInput" readOnly value={modelKeyEnvStatus()} />
-                    ) : (
-                      <div className="savedModelKeyField">
+                <DropdownSelect<SecretSource>
+                  className="modelKeySourceSelect"
+                  value={modelKeySource}
+                  onChange={(source) => {
+                    setModelKeySource(source);
+                    setApiKeyDraft('');
+                    setShowSavedModelKey(false);
+                  }}
+                  options={[
+                    { value: 'env', label: locale === 'zh' ? '环境变量' : 'Environment' },
+                    { value: 'config', label: locale === 'zh' ? '已保存密钥' : 'Saved key' },
+                  ]}
+                />
+                {modelKeySource === 'env' ? (
+                  <div className="modelEnvVarBox">
+                    <label>
+                      {locale === 'zh' ? '环境变量名' : 'Env var name'}
                       <input
-                        placeholder={savedModelKeyPlaceholder()}
-                        value={apiKeyDraft}
-                        onChange={(event) => setApiKeyDraft(event.target.value)}
-                        type={showSavedModelKey ? 'text' : 'password'}
+                        className="modelEnvVarInput"
+                        list="model-env-var-options"
+                        value={modelEnvVarDraft}
+                        onChange={(event) => setModelEnvVarDraft(event.target.value)}
+                        onBlur={() => void handleModelEnvVarBlur()}
+                        placeholder={selectedProvider?.apiKeyEnvVar || 'OPENAI_API_KEY'}
                       />
-                      <button
-                        aria-label={showSavedModelKey ? (locale === 'zh' ? '隐藏密钥' : 'Hide key') : (locale === 'zh' ? '显示密钥' : 'Show key')}
-                        className="miniIconButton"
-                        onClick={() => setShowSavedModelKey((current) => !current)}
-                        type="button"
-                      >
-                        <Icon name={showSavedModelKey ? 'eyeOff' : 'eye'} />
-                      </button>
-                      </div>
-                    )}
-                  </>
+                    </label>
+                    <datalist id="model-env-var-options">
+                      {modelEnvVarOptions.map((envVar) => <option key={envVar} value={envVar} />)}
+                    </datalist>
+                    <input className="modelKeyStatusInput" readOnly value={modelKeyEnvStatus()} />
+                    <label className="wideField">
+                      {locale === 'zh' ? '批量设置环境变量' : 'Batch env vars'}
+                      <textarea
+                        className="modelEnvBatchText"
+                        value={modelEnvBatchText}
+                        onChange={(event) => setModelEnvBatchText(event.target.value)}
+                        placeholder={'OPENAI_API_KEY=sk-...\nDEEPSEEK_API_KEY=...'}
+                      />
+                    </label>
+                    <button className="textButton" type="button" onClick={() => void handleBatchSetModelEnv()} disabled={!modelEnvBatchText.trim()}>
+                      {locale === 'zh' ? '一次性设置环境变量' : 'Set env vars'}
+                    </button>
+                    {modelKeyNotice ? <p className="botNotice">{modelKeyNotice}</p> : null}
+                  </div>
+                ) : (
+                  <div className="savedModelKeyField">
+                  <input
+                    placeholder={savedModelKeyPlaceholder()}
+                    value={apiKeyDraft}
+                    onChange={(event) => setApiKeyDraft(event.target.value)}
+                    type={showSavedModelKey ? 'text' : 'password'}
+                  />
+                  <button
+                    aria-label={showSavedModelKey ? (locale === 'zh' ? '隐藏密钥' : 'Hide key') : (locale === 'zh' ? '显示密钥' : 'Show key')}
+                    className="miniIconButton"
+                    onClick={() => setShowSavedModelKey((current) => !current)}
+                    type="button"
+                  >
+                    <Icon name={showSavedModelKey ? 'eyeOff' : 'eye'} />
+                  </button>
+                  </div>
                 )}
               </div>
               <div className="modelSettingsActions">
@@ -1074,51 +1270,6 @@ export function SettingsDrawer({
                 </ul>
                 <p className="muted">{locale === 'zh' ? '⚠ 开启后下次 agent 调用时生效。阈值与采样间隔可在配置文件中自定义。' : '⚠ Takes effect on the next agent call. Thresholds and sample interval can be customized in config.'}</p>
               </div>
-            </section>
-            ) : null}
-
-            {activeSection === 'presets' ? (
-            <section className="settingsSection" id="settings-presets">
-              <div className="presetHeader">
-                <div>
-                  <h3>{t(locale, 'modelPresets')}</h3>
-                </div>
-              </div>
-              {modelPresets.length === 0 ? (
-                <p className="emptyHint">{t(locale, 'noModelPresets')}</p>
-              ) : (
-                <div className="presetList">
-                  {modelPresets.map((preset) => {
-                    const presetProvider = providers.find((provider) => provider.id === preset.config.provider);
-                    const applied = modelPresetMatchesRunConfig(preset, config);
-                    return (
-                      <article className={applied ? 'presetItem applied' : 'presetItem'} key={preset.id}>
-                        <div>
-                          <strong>{preset.name}</strong>
-                          <span>
-                            {presetProvider?.name ?? preset.config.provider ?? ''} · {preset.config.model ?? ''} · {formatTimestamp(preset.updatedAt, locale)}
-                          </span>
-                        </div>
-                        {applied ? (
-                          <span className="presetAppliedBadge">{locale === 'zh' ? '已应用' : 'Applied'}</span>
-                        ) : (
-                          <button className="textButton" onClick={() => applyModelPreset(preset)}>
-                            {t(locale, 'applyPreset')}
-                          </button>
-                        )}
-                        <button
-                          className="iconButton danger"
-                          title={t(locale, 'deletePreset')}
-                          aria-label={t(locale, 'deletePreset')}
-                          onClick={() => void deleteModelPreset(preset.id)}
-                        >
-                          <Icon name="trash" />
-                        </button>
-                      </article>
-                    );
-                  })}
-                </div>
-              )}
             </section>
             ) : null}
 
@@ -1722,13 +1873,22 @@ export function SettingsDrawer({
             <header className="dialogHeader">
               <div>
                 <h2 id="mcp-panel-title">{mcpPanelTitle}</h2>
-                <p className="dialogMessage">{locale === 'zh' ? '命令、参数和启用状态都会立即影响当前插件中心中的 MCP 配置。' : 'Command, args, and enabled state immediately affect the MCP configuration in Plugin Hub.'}</p>
+                <p className="dialogMessage">{mcpDraftSourceUrl
+                  ? (locale === 'zh' ? '已识别 MCP 来源 URL。请根据 README 或文档补全启动命令后再保存；Nexus 不会把 URL 直接当作命令执行。' : 'Detected an MCP source URL. Fill in the launch command from its README or docs before saving; Nexus will not execute a URL as a command.')
+                  : (locale === 'zh' ? '命令、参数和启用状态都会立即影响当前插件中心中的 MCP 配置。' : 'Command, args, and enabled state immediately affect the MCP configuration in Plugin Hub.')}
+                </p>
               </div>
               <button className="iconButton" title={t(locale, 'cancel')} aria-label={t(locale, 'cancel')} onClick={closeMcpPanel}>
                 <Icon name="x" />
               </button>
             </header>
             <div className="mcpPanelForm">
+              {mcpDraftSourceUrl ? (
+                <div className="mcpSourceNotice">
+                  <strong>{locale === 'zh' ? '来源 URL' : 'Source URL'}</strong>
+                  <span title={mcpDraftSourceUrl}>{mcpDraftSourceUrl}</span>
+                </div>
+              ) : null}
               <label className="pluginModalField">
                 {t(locale, 'name')}
                 <input value={mcpDraft.name} onChange={(event) => setMcpDraft({ ...mcpDraft, name: event.target.value })} />
@@ -1757,7 +1917,7 @@ export function SettingsDrawer({
             </div>
             <div className="dialogActions">
               <button className="textButton" onClick={closeMcpPanel}>{t(locale, 'cancel')}</button>
-              <button className="solidButton" onClick={saveMcp}>{t(locale, 'save')}</button>
+              <button className="solidButton" onClick={saveMcp} disabled={!mcpCanSave} title={!mcpCanSave && mcpDraftSourceUrl ? (locale === 'zh' ? '先填写可执行命令' : 'Fill in an executable command first') : undefined}>{t(locale, 'save')}</button>
             </div>
           </section>
         </div>
@@ -1873,12 +2033,20 @@ function modelPresetMatchesRunConfig(preset: ModelPreset, config: RunConfig): bo
   return entries.length > 0 && entries.every(([key, value]) => value === undefined || config[key] === value);
 }
 
+function modelConfigDraftFromConfig(config: RunConfig): ModelConfigDraft {
+  return {
+    provider: config.provider,
+    model: config.model,
+    baseUrl: config.baseUrl,
+  };
+}
+
 function providerDropdownOptions(providers: ProviderEntry[], locale: Locale): Array<DropdownOption<string>> {
-  const local = providers.filter((provider) => provider.isLocal && provider.id !== 'openai_compatible');
-  const generic = providers.filter((provider) => provider.id === 'openai_compatible');
-  const chinaIds = new Set(['deepseek', 'zhipu', 'kimi', 'qwen', 'baidu', 'volcengine', 'siliconflow']);
+  const local = providers.filter((provider) => provider.isLocal && provider.id !== 'openai_compatible' && !provider.id.startsWith('custom_'));
+  const generic = providers.filter((provider) => provider.id === 'openai_compatible' || provider.id.startsWith('custom_'));
+  const chinaIds = new Set(['deepseek', 'zhipu', 'kimi', 'qwen', 'baidu', 'volcengine', 'siliconflow', 'minimax']);
   const china = providers.filter((provider) => chinaIds.has(provider.id));
-  const global = providers.filter((provider) => !provider.isLocal && !chinaIds.has(provider.id));
+  const global = providers.filter((provider) => !provider.isLocal && !chinaIds.has(provider.id) && !provider.id.startsWith('custom_'));
   const map = (group: string, provider: ProviderEntry): DropdownOption<string> => ({
     group,
     value: provider.id,

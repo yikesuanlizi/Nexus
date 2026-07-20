@@ -11,6 +11,15 @@ describe('parseSlashCommand', () => {
       kind: 'mcp.add',
       args: 'npx @playwright/mcp@latest',
     });
+    expect(parseSlashCommand('/skills add https://github.com/anthropics/skills/tree/main/skills/pdf\n继续读取更多说明')).toEqual({
+      kind: 'skills.add',
+      args: 'https://github.com/anthropics/skills/tree/main/skills/pdf\n继续读取更多说明',
+    });
+    const planCommand = parseSlashCommand('/plan 重构侧栏\n补充右侧面板和监控');
+    expect(planCommand).toMatchObject({
+      kind: 'task.mode',
+      args: '重构侧栏\n补充右侧面板和监控',
+    });
   });
 
   it('parses web search mode commands without treating normal messages as slash commands', () => {

@@ -1,9 +1,13 @@
 import type React from 'react';
 import { lazy, Suspense, useMemo } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type { Locale } from '../config/config.js';
 import { Icon } from './Icon.js';
 import { formatTimestamp } from '../shared/i18n.js';
 import { itemHeading } from '../features/chat/threadView.js';
+import { normalizeMarkdownForDisplay } from '../features/chat/markdownText.js';
+import { buildTurnFileSummary, type TurnChangedFileSummaryEntry, type TurnFileSummaryEntry } from '../features/chat/turnFileSummary.js';
 import type { ThreadItem } from '../shared/types.js';
 import { childActivityForCollabItem } from '../features/agents/subagentActivity.js';
 import { RobotMoodIcon, type RobotMoodVariant } from './AgentStagePanel.js';
@@ -149,6 +153,7 @@ export function AssistantTurnView({
   onPreviewFile,
   onOpenFile,
   childActivityByThread = {},
+  workspaceRoot = '',
 }: {
   group: AssistantTurnGroup;
   locale: Locale;
@@ -161,6 +166,7 @@ export function AssistantTurnView({
   // — Chinese: called when "open in editor" is clicked, with file path (desktop only)
   onOpenFile?: (path: string) => void;
   childActivityByThread?: Record<string, ThreadItem[]>;
+  workspaceRoot?: string;
 }) {
   const text = group.items
     .filter((item) => item.type === 'agent_message' && item.text)
@@ -231,8 +237,79 @@ export function AssistantTurnView({
           }
           return <pre key={item.id}>{JSON.stringify(item, null, 2)}</pre>;
         })}
+        <TurnFileSummaryBlock items={group.items as ThreadItem[]} locale={locale} workspaceRoot={workspaceRoot} />
       </article>
     </MessageFrame>
+  );
+}
+
+function TurnFileSummaryBlock({
+  items,
+  locale,
+  workspaceRoot,
+}: {
+  items: ThreadItem[];
+  locale: Locale;
+  workspaceRoot: string;
+}) {
+  const summary = buildTurnFileSummary(items as unknown as Array<Record<string, unknown>>, workspaceRoot);
+  const rows = [
+    ...summary.readFiles.map((entry) => ({ kind: 'read' as const, entry })),
+    ...summary.changedFiles.map((entry) => ({ kind: 'changed' as const, entry })),
+  ];
+  if (rows.length === 0) return null;
+  const visibleRows = rows.slice(0, 3);
+  const hiddenRows = rows.slice(3);
+  const zh = locale === 'zh';
+  return (
+    <section className="turnFileSummary" aria-label={zh ? '本轮涉及文件' : 'Files touched in this turn'}>
+      <div className="turnFileSummaryHeader">
+        <strong>{zh ? '涉及文件' : 'Files'}</strong>
+        <span>{zh ? `阅读 ${summary.readFiles.length} · 修改 ${summary.changedFiles.length}` : `read ${summary.readFiles.length} · changed ${summary.changedFiles.length}`}</span>
+      </div>
+      <div className="turnFileSummaryRows">
+        {visibleRows.map((row) => (
+          <TurnFileSummaryRow key={`${row.kind}:${row.entry.path}`} kind={row.kind} entry={row.entry} locale={locale} />
+        ))}
+      </div>
+      {hiddenRows.length > 0 ? (
+        <details className="turnFileSummaryMore">
+          <summary>{zh ? `展开其余 ${hiddenRows.length} 个文件` : `Show ${hiddenRows.length} more files`}</summary>
+          <div className="turnFileSummaryRows">
+            {hiddenRows.map((row) => (
+              <TurnFileSummaryRow key={`${row.kind}:${row.entry.path}`} kind={row.kind} entry={row.entry} locale={locale} />
+            ))}
+          </div>
+        </details>
+      ) : null}
+    </section>
+  );
+}
+
+function TurnFileSummaryRow({
+  entry,
+  kind,
+  locale,
+}: {
+  entry: TurnFileSummaryEntry | TurnChangedFileSummaryEntry;
+  kind: 'read' | 'changed';
+  locale: Locale;
+}) {
+  const zh = locale === 'zh';
+  const changed = kind === 'changed' ? entry as TurnChangedFileSummaryEntry : null;
+  return (
+    <div className="turnFileSummaryRow">
+      <span className={kind === 'changed' ? 'turnFileSummaryBadge changed' : 'turnFileSummaryBadge'}>
+        {kind === 'changed' ? (zh ? '修改文件' : 'changed') : (zh ? '阅读文件' : 'read')}
+      </span>
+      <code title={entry.path}>{entry.path}</code>
+      {changed ? (
+        <span className="turnFileSummaryStats">
+          <span className="added">+{changed.addedLines}</span>
+          <span className="removed">-{changed.removedLines}</span>
+        </span>
+      ) : null}
+    </div>
   );
 }
 
@@ -266,10 +343,10 @@ function RichMessageText({
   const parts = splitFencedCode(text);
   if (parts.length === 1 && parts[0]?.kind === 'text') {
     return (
-      <p className={streamingTextClassName(className ?? 'messageText', showStreamingOutputIcon)}>
+      <div className={streamingTextClassName(className ?? 'messageText', showStreamingOutputIcon)}>
         {showStreamingOutputIcon ? <StreamingOutputIcon /> : null}
-        <span>{text}</span>
-      </p>
+        <MarkdownMessageText text={text} />
+      </div>
     );
   }
   return (
@@ -287,12 +364,22 @@ function RichMessageText({
         }
         const showIcon = showStreamingOutputIcon && index === firstTextPartIndex(parts);
         return part.text ? (
-          <p className={streamingTextClassName('messageText', showIcon)} key={`${part.kind}-${index}`}>
+          <div className={streamingTextClassName('messageText', showIcon)} key={`${part.kind}-${index}`}>
             {showIcon ? <StreamingOutputIcon /> : null}
-            <span>{part.text}</span>
-          </p>
+            <MarkdownMessageText text={part.text} />
+          </div>
         ) : null;
       })}
+    </div>
+  );
+}
+
+function MarkdownMessageText({ text }: { text: string }) {
+  return (
+    <div className="markdownMessageText">
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+        {normalizeMarkdownForDisplay(text)}
+      </ReactMarkdown>
     </div>
   );
 }

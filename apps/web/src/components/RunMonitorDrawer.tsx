@@ -4,6 +4,8 @@
 import { useState } from 'react';
 import type { Locale } from '../config/config.js';
 import { CheckpointPanel } from './CheckpointPanel.js';
+import { TaskRuntimeMonitorPanel } from './TaskRuntimeMonitorPanel.js';
+import type { TaskRuntimeMonitorState } from '../features/monitor/taskRuntimeMonitor.js';
 import type { RunEvent, RunRecord, ThreadItem, ThreadWithRuns } from '../shared/types.js';
 
 export function RunMonitorDrawer({
@@ -22,6 +24,8 @@ export function RunMonitorDrawer({
   autoRefreshInterval,
   checkpoints,
   currentTurnCount,
+  taskRuntimeState,
+  runtimeItems = [],
   onClose,
   onRefresh,
   onSelectRun,
@@ -50,6 +54,8 @@ export function RunMonitorDrawer({
   checkpoints: ThreadItem[];
   /** 当前回合数，用于判断最新快照 */
   currentTurnCount: number;
+  taskRuntimeState?: TaskRuntimeMonitorState;
+  runtimeItems?: ThreadItem[];
   onClose(): void;
   onRefresh(): void;
   onSelectRun(runId: string): void;
@@ -71,6 +77,7 @@ export function RunMonitorDrawer({
   const runningCount = runs.filter((run) => run.status === 'running').length;
   const failedCount = runs.filter((run) => run.status === 'failed' || run.status === 'blocked').length;
   const zh = locale === 'zh';
+  const showTaskRuntime = Boolean(taskRuntimeState || runtimeItems.length > 0);
 
   function formatTime(iso: string): string {
     try {
@@ -219,6 +226,11 @@ export function RunMonitorDrawer({
                 </div>
               </div>
               <div className="runMonitorTimeline">
+                {showTaskRuntime ? (
+                  <div className="runMonitorTaskRuntime">
+                    <TaskRuntimeMonitorPanel locale={locale} state={taskRuntimeState} items={runtimeItems} />
+                  </div>
+                ) : null}
                 {visibleEvents.length === 0 ? (
                   <p className="runMonitorEmpty">{zh ? '暂无事件' : 'No events'}</p>
                 ) : visibleEvents.map((event) => (
@@ -249,7 +261,14 @@ export function RunMonitorDrawer({
               )}
             </>
           ) : (
-            <p className="runMonitorEmpty">{zh ? '选择一次运行查看详情' : 'Select a run to inspect details'}</p>
+            <>
+              {showTaskRuntime ? (
+                <div className="runMonitorTaskRuntime">
+                  <TaskRuntimeMonitorPanel locale={locale} state={taskRuntimeState} items={runtimeItems} />
+                </div>
+              ) : null}
+              <p className="runMonitorEmpty">{zh ? '选择一次运行查看详情' : 'Select a run to inspect details'}</p>
+            </>
           )}
         </div>
       </section>

@@ -19,9 +19,10 @@ export type ReasoningEffort = 'low' | 'medium' | 'high';
 // 界面主题：深色 / 浅色 / 跟随系统
 // Chinese translation: UI theme: dark / light / follow system.
 export type ThemeMode = 'dark' | 'light' | 'system';
-// 运行模式：缓存优先 / 长链路运行 / Harness 自主循环
-// Chinese translation: Run profile: cache first / long-running OS / harness autonomous loop.
-export type RunProfile = 'cache_first' | 'runtime_os' | 'harness';
+// 运行模式：缓存优先 / 长运行
+// harness 不再是 RunProfile，已降级为 runtime 底座能力，旧值自动降级为 runtime_os
+// Chinese translation: Run profile: cache first / long-running. harness is a runtime subsystem, not a profile.
+export type RunProfile = 'cache_first' | 'runtime_os';
 // 用户头像预设 id，最后一个为自定义上传
 // Chinese translation: User avatar preset IDs, the last one is for custom uploads.
 export type UserAvatarId = 'asteroid' | 'rocket' | 'owl' | 'crystal' | 'paper-plane' | 'fox' | 'lightning' | 'mushroom' | 'custom';

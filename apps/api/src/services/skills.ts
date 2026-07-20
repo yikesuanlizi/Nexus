@@ -42,6 +42,7 @@ export interface InstallSkillsResult {
 export interface SkillInstallTurnInput {
   turnId: TurnId;
   input: string;
+  installUrls?: string[];
   installed: InstalledSkill[];
   skillsRoot: string;
   agentText: string;
@@ -78,13 +79,28 @@ export function buildSkillDraftSystemPrompt(locale: Locale = 'zh'): string {
 
 export async function prepareSkillDraftRequest(description: string): Promise<PreparedSkillDraftRequest> {
   const original = description.trim();
-  const sourceUrl = extractFirstUrl(original);
-  if (!sourceUrl) {
+  const sourceUrls = extractUrls(original);
+  if (sourceUrls.length === 0) {
     return { original, prompt: original };
   }
 
+  let sourceUrl = sourceUrls[0];
   try {
-    const sourceContent = await fetchSkillSourceContent(sourceUrl);
+    let sourceContent = '';
+    let sourceError = '';
+    for (const candidate of sourceUrls) {
+      try {
+        sourceContent = await fetchSkillSourceContent(candidate);
+        sourceUrl = candidate;
+        sourceError = '';
+        break;
+      } catch (error) {
+        sourceError = error instanceof Error ? error.message : String(error);
+      }
+    }
+    if (!sourceContent) {
+      throw new Error(sourceError || 'No source candidates available');
+    }
     return {
       original,
       sourceUrl,
@@ -198,6 +214,7 @@ export async function deleteSkill(
 export function createSkillInstallTurnItems(input: SkillInstallTurnInput): ThreadItem[] {
   const timestamp = input.timestamp ?? new Date().toISOString();
   const skillUrl = input.input.replace(/^\/skills\s+add\s+/i, '').trim();
+  const installUrls = input.installUrls?.map((url) => url.trim()).filter(Boolean) ?? [];
   const names = input.installed.map((skill) => skill.name);
   const sourcePaths = input.installed.map((skill) => skill.sourcePath);
   const paths = input.installed.map((skill) => skill.path);
@@ -214,7 +231,10 @@ export function createSkillInstallTurnItems(input: SkillInstallTurnInput): Threa
       type: 'tool_call',
       turnId: input.turnId,
       toolName: 'skills_add',
-      arguments: { input: skillUrl },
+      arguments: {
+        input: skillUrl,
+        ...(installUrls.length > 0 ? { urls: installUrls } : {}),
+      },
       result: {
         count: input.installed.length,
         names,
@@ -310,6 +330,36 @@ export async function installSkillsFromGitHubUrl(
   }
 
   return { installed, skillsRoot: root };
+}
+
+export async function installSkillsFromGitHubUrls(
+  skillsRoot: string,
+  urls: string[],
+): Promise<InstallSkillsResult> {
+  const uniqueUrls = urls.map((url) => url.trim()).filter(Boolean)
+    .filter((url, index, current) => current.indexOf(url) === index);
+  if (uniqueUrls.length === 0) {
+    throw new Error('Skill URL is required');
+  }
+  const installed: InstalledSkill[] = [];
+  let resolvedRoot = path.resolve(skillsRoot);
+  for (const url of uniqueUrls) {
+    try {
+      const result = await installSkillsFromGitHubUrl(skillsRoot, url);
+      resolvedRoot = result.skillsRoot;
+      installed.push(...result.installed);
+    } catch (error) {
+      if (uniqueUrls.length > 1 && isDestinationAlreadyExistsError(error)) {
+        continue;
+      }
+      throw error;
+    }
+  }
+  return { installed, skillsRoot: resolvedRoot };
+}
+
+function isDestinationAlreadyExistsError(error: unknown): boolean {
+  return error instanceof Error && error.message.startsWith('Destination already exists:');
 }
 
 async function installSkillsFromGitHubZip(
@@ -576,8 +626,13 @@ export function normalizeSkillBody(name: string, description: string, body: stri
   });
 }
 
-function extractFirstUrl(text: string): string | undefined {
-  return text.match(/https?:\/\/[^\s"'<>]+/i)?.[0];
+function extractUrls(text: string): string[] {
+  const matches = text.match(/https?:\/\/[^\s"'<>]+/gi) ?? [];
+  return [...new Set(matches.map(stripUrlPunctuation).filter(Boolean))];
+}
+
+function stripUrlPunctuation(value: string): string {
+  return value.replace(/[),.;:!?]+$/g, '').trim();
 }
 
 function inferSkillName(prepared: PreparedSkillDraftRequest): string {
@@ -702,6 +757,14 @@ function candidateSourceUrls(url: string): string[] {
       const [owner, repo, marker, branch, ...rest] = parts;
       if (owner && repo && marker === 'blob' && branch && rest.length > 0) {
         return [`https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${rest.join('/')}`, url];
+      }
+      if (owner && repo && marker === 'tree' && branch && rest.length > 0) {
+        const sourceDir = rest.join('/');
+        return [
+          `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${sourceDir}/SKILL.md`,
+          `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${sourceDir}/README.md`,
+          url,
+        ];
       }
       if (owner && repo) {
         return [

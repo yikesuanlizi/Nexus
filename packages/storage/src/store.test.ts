@@ -518,6 +518,70 @@ describe('LocalThreadStore threads', () => {
     ]);
   });
 
+  it('prunes stale turns so new turns do not resurrect history', async () => {
+    const { store } = createStore(mkdtempSync(join(tmpdir(), 'nexus-storage-rollback-')));
+    const now = '2026-07-19T00:00:00.000Z';
+    const thread: ThreadMeta = {
+      threadId: 'thread-rollback-reuse',
+      title: 'Rollback reuse',
+      workspaceRoot: process.cwd(),
+      status: 'active',
+      turnCount: 3,
+      createdAt: now,
+      updatedAt: now,
+      archivedAt: null,
+      ephemeral: false,
+      tags: {},
+    };
+    await store.createThread(thread);
+
+    const turns: TurnMeta[] = [
+      { turnId: 'turn-0', threadId: thread.threadId, index: 0, userInput: { type: 'text', text: 'first' }, status: 'completed', startedAt: now, completedAt: now },
+      { turnId: 'turn-1', threadId: thread.threadId, index: 1, userInput: { type: 'text', text: 'second' }, status: 'completed', startedAt: now, completedAt: now },
+      { turnId: 'turn-2', threadId: thread.threadId, index: 2, userInput: { type: 'text', text: 'stale third' }, status: 'completed', startedAt: now, completedAt: now },
+    ];
+    for (const turn of turns) {
+      await store.saveTurn(turn);
+    }
+    await store.appendItems(thread.threadId, [
+      { id: 'turn-0-user', type: 'user_message', turnId: 'turn-0', text: 'first' },
+      { id: 'turn-0-agent', type: 'agent_message', turnId: 'turn-0', text: 'reply 0' },
+      { id: 'turn-1-user', type: 'user_message', turnId: 'turn-1', text: 'second' },
+      { id: 'turn-1-agent', type: 'agent_message', turnId: 'turn-1', text: 'reply 1' },
+      { id: 'turn-2-user', type: 'user_message', turnId: 'turn-2', text: 'stale third' },
+      { id: 'turn-2-agent', type: 'agent_message', turnId: 'turn-2', text: 'reply 2' },
+    ]);
+
+    await store.deleteTurnsAfter!(thread.threadId, 2);
+    await store.saveTurn({
+      turnId: 'turn-2-new',
+      threadId: thread.threadId,
+      index: 2,
+      userInput: { type: 'text', text: 'new third' },
+      status: 'completed',
+      startedAt: now,
+      completedAt: now,
+    });
+    await store.appendItems(thread.threadId, [
+      { id: 'turn-2-new-user', type: 'user_message', turnId: 'turn-2-new', text: 'new third' },
+      { id: 'turn-2-new-agent', type: 'agent_message', turnId: 'turn-2-new', text: 'reply new' },
+    ]);
+
+    await expect(store.getTurns(thread.threadId)).resolves.toEqual([
+      expect.objectContaining({ turnId: 'turn-0', index: 0 }),
+      expect.objectContaining({ turnId: 'turn-1', index: 1 }),
+      expect.objectContaining({ turnId: 'turn-2-new', index: 2 }),
+    ]);
+    await expect(store.getItems(thread.threadId)).resolves.toEqual([
+      expect.objectContaining({ id: 'turn-0-user', turnId: 'turn-0' }),
+      expect.objectContaining({ id: 'turn-0-agent', turnId: 'turn-0' }),
+      expect.objectContaining({ id: 'turn-1-user', turnId: 'turn-1' }),
+      expect.objectContaining({ id: 'turn-1-agent', turnId: 'turn-1' }),
+      expect.objectContaining({ id: 'turn-2-new-user', turnId: 'turn-2-new' }),
+      expect.objectContaining({ id: 'turn-2-new-agent', turnId: 'turn-2-new' }),
+    ]);
+  });
+
   it('records schema migrations so future upgrades are explicit', async () => {
     const { store } = createStore(mkdtempSync(join(tmpdir(), 'nexus-storage-')));
 

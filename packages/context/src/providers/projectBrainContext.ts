@@ -237,6 +237,11 @@ export class ProjectBrainContextProvider implements ContextProvider {
     this.perThreadCache.delete(threadId);
   }
 
+  invalidateArchitecture(): void {
+    this.sharedArchitecture = { summary: null, hash: '', lastScannedAt: 0, changeVersion: this.sharedArchitecture.changeVersion + 1 };
+    this.architectureScanPromise = null;
+  }
+
   private formatFullArchitecture(arch: ArchitectureSummary): string {
     const lines: string[] = ['<project_brain>'];
     lines.push(`Language: ${arch.language}`);

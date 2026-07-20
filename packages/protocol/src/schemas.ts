@@ -792,6 +792,73 @@ export const errorEventSchema = z.object({
   message: z.string(),
 });
 
+// ─── Task Runtime 事件（第 2 步：事件骨架） ─────────────────────────────────
+// 与 types.ts 中 TaskRuntimeUpdatedEvent 等四个接口一一对应。
+// 只发 metadata，不发完整 prompt / chunk content。
+// — English: skeleton events for task runtime, metadata-only
+
+// 当前 turn / runtime phase 变化
+export const taskRuntimeUpdatedEventSchema = z.object({
+  type: z.literal('task.runtime.updated'),
+  threadId: threadIdSchema,
+  turnId: turnIdSchema.optional(),
+  phase: z.enum(['before_turn', 'model', 'tool', 'compact', 'after_turn', 'idle']),
+  status: z.enum(['running', 'completed', 'failed', 'interrupted']),
+  runProfile: z.enum(['cache_first', 'runtime_os']),
+  checkpoint: z.boolean().optional(),
+  resumable: z.boolean().optional(),
+  timestamp: z.string(),
+});
+
+// AgentContext.cognition.task 变化
+export const taskCognitionUpdatedEventSchema = z.object({
+  type: z.literal('task.cognition.updated'),
+  threadId: threadIdSchema,
+  turnId: turnIdSchema.optional(),
+  cognition: z.object({
+    goal: z.string(),
+    constraints: z.array(z.string()),
+    knownFacts: z.array(z.string()),
+    unknowns: z.array(z.string()),
+    risks: z.array(z.string()),
+    confidence: z.number().min(0).max(1),
+    verificationCriteria: z.array(z.string()),
+  }),
+  timestamp: z.string(),
+});
+
+// ContextEngine 本轮注入了哪些 chunk（只发 metadata，不发 content）
+export const taskContextUpdatedEventSchema = z.object({
+  type: z.literal('task.context.updated'),
+  threadId: threadIdSchema,
+  turnId: turnIdSchema,
+  chunks: z.array(z.object({
+    id: z.string(),
+    source: z.string(),
+    tokens: z.number().int().min(0),
+    priority: z.number(),
+    truncated: z.boolean(),
+    summary: z.string(),
+  })),
+  usedTokens: z.number().int().min(0),
+  remainingTokens: z.number().int().min(0),
+  timestamp: z.string(),
+});
+
+// 长运行 / continuation 状态变化（兼容 harness loop，但不叫 harness）
+export const taskLoopUpdatedEventSchema = z.object({
+  type: z.literal('task.loop.updated'),
+  threadId: threadIdSchema,
+  turnId: turnIdSchema.optional(),
+  loopId: z.string().optional(),
+  iteration: z.number().int().min(0),
+  maxIterations: z.number().int().min(0),
+  noProgressCount: z.number().int().min(0),
+  continuationReason: z.string().optional(),
+  status: z.enum(['active', 'satisfied', 'blocked', 'no_progress', 'max_continuations']),
+  timestamp: z.string(),
+});
+
 // 线程事件总 schema：按 type 判别
 export const threadEventSchema = z.discriminatedUnion('type', [
   threadStartedEventSchema,
@@ -822,6 +889,10 @@ export const threadEventSchema = z.discriminatedUnion('type', [
   threadRollbackFailedEventSchema,
   resumedEventSchema,
   episodeWorkingSetRebuiltEventSchema,
+  taskRuntimeUpdatedEventSchema,
+  taskCognitionUpdatedEventSchema,
+  taskContextUpdatedEventSchema,
+  taskLoopUpdatedEventSchema,
   errorEventSchema,
 ]);
 
