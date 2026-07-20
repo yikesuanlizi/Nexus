@@ -71,7 +71,18 @@ Run:
 rg -n "item\.started|item\.updated|item\.completed|item\.discarded" packages/protocol/src packages/runtime/src apps/api/src apps/web/src
 ```
 
-Expected: 新代码消费 canonical `ThreadEvent`，不新增与其并行的 UI-only item lifecycle。
+Expected: canonical `ThreadEvent` 是唯一跨层 item lifecycle；UI 临时 item 使用独立 local entry 类型，不伪装或复制一套 `ThreadEvent`。
+
+**执行记录（2026-07-20）：**
+
+采用：保留 canonical item 的 started/completed 配对与稳定 item id；thread status 与 active turn 分离；resume 后重新建立事件订阅；transcript item 是真相源，Monitor 只做投影。
+
+不采用：不复制 Codex CLI/TUI 布局、JSON-RPC transport 或 Rust rollout bundle 文件结构；Nexus 继续使用 React + HTTP/SSE + SQLite/PostgreSQL，只采用生命周期与投影原则。
+
+- **Local transient item：** 必须有显式 source、correlation id 和 reconciliation，禁止仅靠字符串前缀与 canonical item 协调；测试 snapshot、成功、失败、线程切换时的替换与清理。对应 P0 Task 4；Product 计划 Task 5 继续保持 controller 边界。
+- **Monitor item identity：** 必须使用稳定 `item.id`；测试同一 turn 两次同名 tool、两个 `file_change`、两个 `error` 均不折叠。对应 P0 Task 6、Trace 计划 Task 7、Product 计划 Task 6。
+- **Resume/SSE：** 必须先订阅缓冲再取 snapshot，或使用 cursor replay，并按序去重；测试 snapshot/live 边界无 gap、无 duplicate。对应 P0 Task 4、Trace 计划 Task 6、Product 计划 Task 5。
+- **Item lifecycle closure：** 所有 `item.started` 必须在成功、middleware/tool 抛错、取消路径中，以同一 `item.id` 的 `item.completed` 或 `item.discarded` 闭合。对应 P0 Task 6、Trace 计划 Task 4。
 
 ### Task 1: 恢复生成物与 lint 门禁
 
