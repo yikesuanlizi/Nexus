@@ -1562,59 +1562,6 @@ export function SettingsDrawer({
             </section>
             ) : null}
 
-            {false && activeSection === 'skills' ? (
-            <section className="settingsSection" id="settings-skills">
-              <div className="presetHeader">
-                <div>
-                  <h3>{t(locale, 'skills')}</h3>
-                  <span>{t(locale, 'installedSkills')} · {skillsList.length}</span>
-                </div>
-                <button className="textButton" onClick={() => void refreshSkills({ forceReload: true })}>{t(locale, 'refresh')}</button>
-              </div>
-              <div className="inlineSaveRow">
-                <label>
-                  {t(locale, 'skillsRoot')}
-                  <input value={skillsRootDraft} onChange={(event) => setSkillsRootDraft(event.target.value)} />
-                </label>
-                <button className="solidButton" onClick={saveSkillsRoot} disabled={skillsRootDraft === config.skillsRoot}>
-                  {t(locale, 'saveSkillsRoot')}
-                </button>
-              </div>
-              {skillsList.length === 0 ? (
-                <p className="emptyHint">{t(locale, 'noSkills')}</p>
-              ) : (
-                <div className="skillsList">
-                  {skillsList.map((skill) => (
-                    <article className="skillItem" key={skill.sourcePath || skill.name}>
-                      <div>
-                        <strong>{skill.name}</strong>
-                        <span>{localizedSkillDescription(skill, locale)}</span>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              )}
-            </section>
-            ) : null}
-
-            {false && activeSection === 'mcp' ? (
-            <McpSection
-              addLabel={t(locale, 'addMcp')}
-              id="settings-mcp"
-              items={mcps}
-              locale={locale}
-              statuses={mcpStatuses}
-              onDelete={(id) => setMcps((current) => current.filter((item) => item.id !== id))}
-              onEdit={openEditMcpPanel}
-              onToggleEnabled={(id) => setMcps((current) => current.map((item) => (
-                item.id === id ? { ...item, enabled: !item.enabled } : item
-              )))}
-              onAdd={openAddMcpPanel}
-              onRefresh={() => void refreshMcpStatus('full')}
-              title={t(locale, 'mcp')}
-            />
-            ) : null}
-
             {activeSection === 'remote' ? (
             <section className="settingsSection remoteBots" id="settings-remote">
               <div className="presetHeader">

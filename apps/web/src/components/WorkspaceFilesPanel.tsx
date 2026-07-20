@@ -212,7 +212,6 @@ export function WorkspaceFilesPanel({
         }
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [externalPreviewRequest?.nonce, externalPreviewRequest?.path, externalPreviewRequest?.pin, workspaceRoot]);
 
   async function fetchDirectory(path = ''): Promise<WorkspaceFileEntry[]> {
@@ -242,7 +241,6 @@ export function WorkspaceFilesPanel({
     if (!workspaceRoot) return;
     if (filter.trim()) return;
     void loadDirectory('');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter, reloadKey, workspaceRoot]);
 
   useEffect(() => {

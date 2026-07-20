@@ -16,9 +16,11 @@
     "desktop:dev": "npm --workspace @nexus/desktop run dev",
     "desktop:build": "npm --workspace @nexus/desktop run build",
     "clean": "tsc -b --clean",
+    "check:source-artifacts": "node scripts/check-source-artifacts.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint packages/ apps/ --ext .ts",
+    "lint": "eslint packages/ apps/",
+    "verify": "npm run check:source-artifacts && npm run lint && npm test && npm run build",
     "format": "prettier --write \"packages/**/*.ts\" \"apps/**/*.ts\""
   },
   "dependencies": {
@@ -29,6 +31,7 @@
     "eslint": "^9.0.0",
     "prettier": "^3.5.0",
     "typescript": "^5.8.0",
+    "typescript-eslint": "^8.64.0",
     "vitest": "^3.0.0"
   },
   "engines": {
