@@ -79,10 +79,10 @@ Expected: canonical `ThreadEvent` 是唯一跨层 item lifecycle；UI 临时 ite
 
 不采用：不复制 Codex CLI/TUI 布局、JSON-RPC transport 或 Rust rollout bundle 文件结构；Nexus 继续使用 React + HTTP/SSE + SQLite/PostgreSQL，只采用生命周期与投影原则。
 
-- **Local transient item：** 必须有显式 source、correlation id 和 reconciliation，禁止仅靠字符串前缀与 canonical item 协调；测试 snapshot、成功、失败、线程切换时的替换与清理。对应 P0 Task 4；Product 计划 Task 5 继续保持 controller 边界。
-- **Monitor item identity：** 必须使用稳定 `item.id`；测试同一 turn 两次同名 tool、两个 `file_change`、两个 `error` 均不折叠。对应 P0 Task 6、Trace 计划 Task 7、Product 计划 Task 6。
-- **Resume/SSE：** 必须先订阅缓冲再取 snapshot，或使用 cursor replay，并按序去重；测试 snapshot/live 边界无 gap、无 duplicate。对应 P0 Task 4、Trace 计划 Task 6、Product 计划 Task 5。
-- **Item lifecycle closure：** 所有 `item.started` 必须在成功、middleware/tool 抛错、取消路径中，以同一 `item.id` 的 `item.completed` 或 `item.discarded` 闭合。对应 P0 Task 6、Trace 计划 Task 4。
+- **Local transient item：** 必须有显式 source、correlation id 和 reconciliation，禁止仅靠字符串前缀与 canonical item 协调；测试 snapshot、成功、失败、线程切换时的替换与清理。对应 P0 Task 4。
+- **Monitor item identity：** 必须使用稳定 `item.id`；测试同一 turn 两次同名 tool、两个 `file_change`、两个 `error` 均不折叠。对应 P0 Task 6、Trace 计划 Task 7。
+- **Resume/SSE：** 必须先订阅缓冲再取 snapshot，或使用 cursor replay，并按序去重；测试 snapshot/live 边界无 gap、无 duplicate。对应 P0 Task 4、Trace 计划 Task 6。
+- **Item lifecycle closure：** 所有 `item.started` 必须在成功、middleware/tool 抛错、取消路径中，以同一 `item.id` 的 `item.completed` 或 `item.discarded` 闭合。仅对应 Trace 计划 Task 4。
 
 ### Task 1: 恢复生成物与 lint 门禁
 
@@ -773,6 +773,11 @@ git commit -m "fix: separate global and thread configuration scopes"
 **Files:**
 - Create: `apps/web/src/features/chat/latestRequestGuard.ts`
 - Create: `apps/web/src/features/chat/latestRequestGuard.test.ts`
+- Create: `apps/web/src/features/chat/localTranscriptEntry.ts`
+- Create: `apps/web/src/features/chat/localTranscriptEntry.test.ts`
+- Modify: `apps/web/src/features/chat/threadItems.ts`
+- Modify: `apps/web/src/features/chat/threadItems.test.ts`
+- Modify: `apps/web/src/features/chat/threads.test.ts`
 - Modify: `apps/web/src/main.tsx`
 
 - [ ] **Step 1: 写 generation guard 的失败测试**
@@ -793,6 +798,10 @@ describe('createLatestRequestGuard', () => {
   });
 });
 ```
+
+- [ ] **Step 1a: 写 local transcript reconciliation 失败测试**
+
+`localTranscriptEntry.test.ts` 固定判别联合和四个可观察结果：local entry 必须是 `{source:'local', correlationId, threadId, item}`，canonical entry 必须是 `{source:'canonical', item}`；snapshot 用 canonical item 替换并清除该线程 local entry；成功按 correlationId 原子移除 local 后合并 canonical items；失败移除 local 且不伪造 canonical item；线程切换清除旧线程 local entry，不能进入新线程。测试不得读取 `pending_user_`、`skill_draft_` 等 id 前缀。
 
 - [ ] **Step 2: 实现 guard**
 
@@ -820,29 +829,46 @@ export function createLatestRequestGuard() {
 }
 ```
 
+- [ ] **Step 2a: 实现显式 local entry 与协调边界**
+
+```typescript
+// apps/web/src/features/chat/localTranscriptEntry.ts
+export type TranscriptEntry =
+  | { source: 'canonical'; item: ThreadItem }
+  | { source: 'local'; correlationId: string; threadId: ThreadId; item: ThreadItem };
+```
+
+`main.tsx` 为每次 optimistic action 创建不依赖 item id 格式的 correlationId；`threadItems.ts` 只通过 `source` 与 correlationId 执行 replace/remove，并在渲染边界解包 `entry.item`。删除所有用 `startsWith('pending_user')`、`startsWith('skill_draft')` 判断生命周期的分支。REST 成功先 reconcile 再合并 canonical items；REST 失败先清理 correlation，再重拉 snapshot；snapshot commit 和线程切换都显式清理相应 local entries。
+
 - [ ] **Step 3: 将线程快照加载改为纯 fetch + 条件提交**
 
-`reloadThreadSnapshot(id, signal)` 必须把相同 signal 传给 thread、workflow、children 和 context-pressure 请求；解析完成后先检查 `guard.isCurrent(generation)`，再一次性提交 items/turns/usage/config/workflow。`loadThread` 在开始 fetch 前关闭旧 EventSource，只有最新请求提交后才创建新 EventSource。
+`reloadThreadSnapshot(id, signal)` 必须把相同 signal 传给 thread、workflow、children 和 context-pressure 请求；解析完成后先检查 `guard.isCurrent(generation)`，再一次性提交 items/turns/usage/config/workflow。`loadThread` 必须先关闭旧 EventSource，再为目标线程创建 buffering EventSource；收到 connected 后才拉 snapshot。snapshot 期间事件只进入带单调 receive cursor 的 buffer；commit 后按 cursor 排序，并以事件 cursor 或 canonical `(event.type, item.id)` identity 去重 flush，随后切为 live。generation 失效时必须同时 abort fetch、关闭该 stream 并丢弃 buffer；断线重连完整重走“订阅缓冲 → snapshot → flush → live”，禁止先 snapshot 后开 SSE。
 
 核心顺序固定为：
 
 ```typescript
 const request = threadLoadGuardRef.current.begin();
 eventSourceRef.current?.close();
+const stream = openBufferedThreadEventSource(id, request.generation);
+await stream.connected;
 const snapshot = await fetchThreadSnapshot(id, request.signal);
-if (!threadLoadGuardRef.current.isCurrent(request.generation)) return;
+if (!threadLoadGuardRef.current.isCurrent(request.generation)) {
+  stream.close();
+  return;
+}
 commitThreadSnapshot(snapshot);
-openThreadEventSource(id, request.generation);
+stream.flushOrderedUnique(applyCanonicalThreadEvent);
+stream.goLive(applyCanonicalThreadEvent);
 ```
 
 - [ ] **Step 4: 添加交错响应回归测试**
 
-测试创建 A、B 两个 deferred fetch：先请求 A，再请求 B；先 resolve B、后 resolve A。最终 state 必须只包含 B，且只有 B 建立 SSE。
+测试创建 A、B 两个 deferred fetch：先请求 A，再请求 B；先 resolve B、后 resolve A。最终 state 必须只包含 B，且只有 B 的 stream 存活。再将 canonical item 事件分别插在 connected 后/snapshot 返回前、snapshot commit 后/flush 前与 live 阶段，断言 snapshot 未包含的事件不会丢失；让 snapshot 与 buffer 含同一 item，并重复投递同 cursor/同 lifecycle identity，断言最终 items/turns 各只有一份且顺序稳定。
 
 Run:
 
 ```powershell
-npx vitest run apps/web/src/features/chat/latestRequestGuard.test.ts apps/web/src/features/chat/threads.test.ts
+npx vitest run apps/web/src/features/chat/latestRequestGuard.test.ts apps/web/src/features/chat/localTranscriptEntry.test.ts apps/web/src/features/chat/threadItems.test.ts apps/web/src/features/chat/threads.test.ts
 ```
 
 Expected: PASS。
@@ -850,7 +876,7 @@ Expected: PASS。
 - [ ] **Step 5: 提交线程加载修复**
 
 ```powershell
-git add apps/web/src/features/chat/latestRequestGuard.ts apps/web/src/features/chat/latestRequestGuard.test.ts apps/web/src/main.tsx
+git add apps/web/src/features/chat/latestRequestGuard.ts apps/web/src/features/chat/latestRequestGuard.test.ts apps/web/src/features/chat/localTranscriptEntry.ts apps/web/src/features/chat/localTranscriptEntry.test.ts apps/web/src/features/chat/threadItems.ts apps/web/src/features/chat/threadItems.test.ts apps/web/src/features/chat/threads.test.ts apps/web/src/main.tsx
 git commit -m "fix: reject stale thread snapshot responses"
 ```
 
@@ -953,6 +979,8 @@ git commit -m "fix: preserve transcript reading position"
 - Create: `apps/web/src/features/monitor/runMonitorState.ts`
 - Create: `apps/web/src/features/monitor/runMonitorState.test.ts`
 - Modify: `apps/web/src/features/monitor/runMonitor.ts`
+- Modify: `apps/web/src/features/chat/threadView.ts`
+- Modify: `apps/web/src/features/chat/threadView.test.ts`
 - Modify: `apps/web/src/components/RunMonitorDrawer.tsx`
 - Modify: `apps/web/src/main.tsx`
 
@@ -986,6 +1014,10 @@ describe('runMonitorReducer', () => {
   });
 });
 ```
+
+- [ ] **Step 1a: 写 Monitor item identity 失败测试**
+
+在 `threadView.test.ts` 用同一 turn 构造两次同名 tool、两个 `file_change`、两个 `error`，每个 item 使用不同 id；断言 `describeEvent` 产生六个不同 key。再对同一 item id 的 started/completed 断言 key 相同，证明更新原行而不是新增。测试不得接受仅由 turnId、item type 或 tool name 组成的 key。
 
 - [ ] **Step 2: 给 storage 增加租户限定的单 Run 查询**
 
@@ -1096,6 +1128,8 @@ export interface RunMonitorState {
 
 `runs.loaded` 仅在当前选择已不存在时选择第一项；`events.loaded` 必须同时匹配 requestId 与 selectedRunId。切换 thread 时终止旧 AbortController。展开另一个 thread 时按该 threadId 请求 runs，不能继续使用主界面 currentThreadId。
 
+同时将 `threadView.ts` 的 item `eventKey` 固定为包含完整稳定 `item.id`（例如 `item:${item.id}`）；turnId、item type 与 tool name 只用于分组或可见标签，不能参与身份替代。
+
 - [ ] **Step 5: 删除历史 Drawer 的当前线程数据注入**
 
 从 `RunMonitorDrawer` props 与 `main.tsx` 调用中删除：
@@ -1118,7 +1152,7 @@ currentTurnCount
 Run:
 
 ```powershell
-npx vitest run packages/protocol/src/runControl.test.ts packages/protocol/src/schemas.test.ts packages/storage/src/store.test.ts packages/storage/src/postgres.test.ts packages/storage/src/backend.test.ts packages/runtime/src/agent.test.ts apps/api/src/runtime/activeRunRegistry.test.ts apps/api/src/runtime/tenantRuntime.test.ts apps/api/src/routes/runMonitorRoute.test.ts apps/web/src/features/monitor/runMonitorState.test.ts apps/web/src/components/RunMonitorDrawer.test.ts
+npx vitest run packages/protocol/src/runControl.test.ts packages/protocol/src/schemas.test.ts packages/storage/src/store.test.ts packages/storage/src/postgres.test.ts packages/storage/src/backend.test.ts packages/runtime/src/agent.test.ts apps/api/src/runtime/activeRunRegistry.test.ts apps/api/src/runtime/tenantRuntime.test.ts apps/api/src/routes/runMonitorRoute.test.ts apps/web/src/features/monitor/runMonitorState.test.ts apps/web/src/features/chat/threadView.test.ts apps/web/src/components/RunMonitorDrawer.test.ts
 npm run build
 ```
 
@@ -1127,7 +1161,7 @@ Expected: PASS 且 build 退出 0；API 测试同时覆盖 404、请求携带 th
 - [ ] **Step 8: 提交 Monitor 正确性修复**
 
 ```powershell
-git add packages/protocol/src/runControl.ts packages/protocol/src/runControl.test.ts packages/protocol/src/index.ts packages/protocol/src/types.ts packages/protocol/src/schemas.ts packages/protocol/src/schemas.test.ts packages/storage/src/store.ts packages/storage/src/store.test.ts packages/storage/src/postgres.ts packages/storage/src/postgres.test.ts packages/storage/src/index.ts packages/storage/src/backend.test.ts packages/runtime/src/agent.ts packages/runtime/src/agent.test.ts apps/api/src/runtime/activeRunRegistry.ts apps/api/src/runtime/activeRunRegistry.test.ts apps/api/src/runtime/tenantRuntime.ts apps/api/src/runtime/tenantRuntime.test.ts apps/api/src/server.ts apps/api/src/routes/runMonitorRoute.ts apps/api/src/routes/runMonitorRoute.test.ts apps/api/src/routes/threadRuntimeActions.ts apps/web/src/features/monitor apps/web/src/components/RunMonitorDrawer.tsx apps/web/src/main.tsx
+git add packages/protocol/src/runControl.ts packages/protocol/src/runControl.test.ts packages/protocol/src/index.ts packages/protocol/src/types.ts packages/protocol/src/schemas.ts packages/protocol/src/schemas.test.ts packages/storage/src/store.ts packages/storage/src/store.test.ts packages/storage/src/postgres.ts packages/storage/src/postgres.test.ts packages/storage/src/index.ts packages/storage/src/backend.test.ts packages/runtime/src/agent.ts packages/runtime/src/agent.test.ts apps/api/src/runtime/activeRunRegistry.ts apps/api/src/runtime/activeRunRegistry.test.ts apps/api/src/runtime/tenantRuntime.ts apps/api/src/runtime/tenantRuntime.test.ts apps/api/src/server.ts apps/api/src/routes/runMonitorRoute.ts apps/api/src/routes/runMonitorRoute.test.ts apps/api/src/routes/threadRuntimeActions.ts apps/web/src/features/monitor apps/web/src/features/chat/threadView.ts apps/web/src/features/chat/threadView.test.ts apps/web/src/components/RunMonitorDrawer.tsx apps/web/src/main.tsx
 git commit -m "fix: bind monitor state and controls to selected runs"
 ```
 
