@@ -161,6 +161,9 @@ export interface UserMessageItem {
   /** 实施点 2：harness 续跑作为 user-side 输入时也打标记 */
   harnessRunId?: string;
   harnessIteration?: number;
+  /** P6.3: 关联的 runId，用于 run monitor timeline 严格按 run 过滤 */
+  // — Chinese: associated runId for strict run-scoped timeline filtering
+  runId?: string;
 }
 
 // 智能体消息条目：来自模型的回复
@@ -178,6 +181,9 @@ export interface AgentMessageItem {
   /** 实施点 2：harness turn 产生的普通 items 打 harnessRunId 标记 */
   harnessRunId?: string;
   harnessIteration?: number;
+  /** P6.3: 关联的 runId，用于 run monitor timeline 严格按 run 过滤 */
+  // — Chinese: associated runId for strict run-scoped timeline filtering
+  runId?: string;
 }
 
 // 推理过程条目：模型的思考过程（chain-of-thought）
@@ -189,6 +195,9 @@ export interface ReasoningItem {
   timestamp?: string;
   harnessRunId?: string;
   harnessIteration?: number;
+  /** P6.3: 关联的 runId，用于 run monitor timeline 严格按 run 过滤 */
+  // — Chinese: associated runId for strict run-scoped timeline filtering
+  runId?: string;
 }
 
 // 命令执行状态：in_progress（进行中）/ completed（已完成）/ failed（失败）
@@ -206,6 +215,9 @@ export interface CommandExecutionItem {
   timestamp?: string;
   harnessRunId?: string;
   harnessIteration?: number;
+  /** P6.3: 关联的 runId，用于 run monitor timeline 严格按 run 过滤 */
+  // — Chinese: associated runId for strict run-scoped timeline filtering
+  runId?: string;
 }
 
 // 补丁变更类型：add（新增）/ delete（删除）/ update（更新）
@@ -249,6 +261,9 @@ export interface FileChangeItem {
   timestamp?: string;
   harnessRunId?: string;
   harnessIteration?: number;
+  /** P6.3: 关联的 runId，用于 run monitor timeline 严格按 run 过滤 */
+  // — Chinese: associated runId for strict run-scoped timeline filtering
+  runId?: string;
 }
 
 // 工作流检查点条目：用于工作流的回放/恢复
@@ -261,6 +276,9 @@ export interface WorkflowCheckpointItem {
   timestamp?: string;
   harnessRunId?: string;
   harnessIteration?: number;
+  /** P6.3: 关联的 runId，用于 run monitor timeline 严格按 run 过滤 */
+  // — Chinese: associated runId for strict run-scoped timeline filtering
+  runId?: string;
 }
 
 // 工程级检查点里的单个文件快照
@@ -284,6 +302,9 @@ export interface ProjectCheckpointItem {
   timestamp?: string;
   harnessRunId?: string;
   harnessIteration?: number;
+  /** P6.3: 关联的 runId，用于 run monitor timeline 严格按 run 过滤 */
+  // — Chinese: associated runId for strict run-scoped timeline filtering
+  runId?: string;
 }
 
 // 回滚冲突条目：回滚时遇到文件被修改、哈希不一致等冲突
@@ -302,6 +323,9 @@ export interface RollbackConflictItem {
   timestamp?: string;
   harnessRunId?: string;
   harnessIteration?: number;
+  /** P6.3: 关联的 runId，用于 run monitor timeline 严格按 run 过滤 */
+  // — Chinese: associated runId for strict run-scoped timeline filtering
+  runId?: string;
 }
 
 // 通用工件引用：跨线程/跨工具的轻量指针，避免传递大段内容
@@ -377,6 +401,9 @@ export interface ContextCompactionItem {
   timestamp?: string;
   harnessRunId?: string;
   harnessIteration?: number;
+  /** P6.3: 关联的 runId，用于 run monitor timeline 严格按 run 过滤 */
+  // — Chinese: associated runId for strict run-scoped timeline filtering
+  runId?: string;
 }
 
 // 记忆记录类型：偏好/项目事实/工作流模式/失败教训/环境备注
@@ -503,6 +530,9 @@ export interface ToolCallItem {
   timestamp?: string;
   harnessRunId?: string;
   harnessIteration?: number;
+  /** P6.3: 关联的 runId，用于 run monitor timeline 严格按 run 过滤 */
+  // — Chinese: associated runId for strict run-scoped timeline filtering
+  runId?: string;
 }
 
 // 协作类工具名：spawn_agent / send_input / wait 等子代理协作原语
@@ -549,6 +579,9 @@ export interface CollabToolCallItem {
   remoteTextStream?: RemoteAgentTextChunk[];
   harnessRunId?: string;
   harnessIteration?: number;
+  /** P6.3: 关联的 runId，用于 run monitor timeline 严格按 run 过滤 */
+  // — Chinese: associated runId for strict run-scoped timeline filtering
+  runId?: string;
 }
 
 /** 远程 Agent 状态轨迹条目。 */
@@ -616,6 +649,9 @@ export interface McpToolCallItem {
   timestamp?: string;
   harnessRunId?: string;
   harnessIteration?: number;
+  /** P6.3: 关联的 runId，用于 run monitor timeline 严格按 run 过滤 */
+  // — Chinese: associated runId for strict run-scoped timeline filtering
+  runId?: string;
 }
 
 // Web 搜索条目：记录一次网络搜索动作
@@ -627,6 +663,9 @@ export interface WebSearchItem {
   timestamp?: string;
   harnessRunId?: string;
   harnessIteration?: number;
+  /** P6.3: 关联的 runId，用于 run monitor timeline 严格按 run 过滤 */
+  // — Chinese: associated runId for strict run-scoped timeline filtering
+  runId?: string;
 }
 
 // 待办条目项
@@ -644,6 +683,9 @@ export interface TodoListItem {
   timestamp?: string;
   harnessRunId?: string;
   harnessIteration?: number;
+  /** P6.3: 关联的 runId，用于 run monitor timeline 严格按 run 过滤 */
+  // — Chinese: associated runId for strict run-scoped timeline filtering
+  runId?: string;
 }
 
 // 错误条目：在回合内出现的可恢复/不可恢复错误
@@ -657,6 +699,9 @@ export interface ErrorItem {
   timestamp?: string;
   harnessRunId?: string;
   harnessIteration?: number;
+  /** P6.3: 关联的 runId，用于 run monitor timeline 严格按 run 过滤 */
+  // — Chinese: associated runId for strict run-scoped timeline filtering
+  runId?: string;
 }
 
 // ─── Events ──────────────────────────────────────────────────────────────────
@@ -861,6 +906,7 @@ export interface TurnStartedEvent {
   type: 'turn.started';
   threadId: ThreadId;
   turnId: TurnId;
+  runId: string;
   turnIndex: number;
 }
 
@@ -869,6 +915,7 @@ export interface TurnCompletedEvent {
   type: 'turn.completed';
   threadId: ThreadId;
   turnId: TurnId;
+  runId: string;
   usage: Usage | null;
   status?: 'completed' | 'interrupted';
 }
@@ -878,6 +925,7 @@ export interface TurnFailedEvent {
   type: 'turn.failed';
   threadId: ThreadId;
   turnId: TurnId;
+  runId: string;
   error: { message: string; info?: NexusErrorInfo };
 }
 
@@ -1390,4 +1438,7 @@ export interface HarnessContinuationItem {
   timestamp: string;
   /** P2: AgentContext 快照，用于续跑/恢复时还原认知状态 */
   agentContext?: unknown;
+  /** P6.3: 关联的 runId，用于 run monitor timeline 严格按 run 过滤 */
+  // — Chinese: associated runId for strict run-scoped timeline filtering
+  runId?: string;
 }

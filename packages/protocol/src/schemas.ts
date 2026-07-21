@@ -525,6 +525,7 @@ export const turnStartedEventSchema = z.object({
   type: z.literal('turn.started'),
   threadId: threadIdSchema,
   turnId: turnIdSchema,
+  runId: z.string(),
   turnIndex: z.number().int().min(0),
 });
 
@@ -533,6 +534,7 @@ export const turnCompletedEventSchema = z.object({
   type: z.literal('turn.completed'),
   threadId: threadIdSchema,
   turnId: turnIdSchema,
+  runId: z.string(),
   usage: usageSchema.nullable(),
   status: z.enum(['completed', 'interrupted']).optional(),
 });
@@ -542,6 +544,7 @@ export const turnFailedEventSchema = z.object({
   type: z.literal('turn.failed'),
   threadId: threadIdSchema,
   turnId: turnIdSchema,
+  runId: z.string(),
   error: z.object({ message: z.string(), info: nexusErrorInfoSchema.optional() }),
 });
 

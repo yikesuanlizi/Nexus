@@ -1,7 +1,11 @@
-// 协议层统一入口：聚合 types、schemas 和 a2a 三个模块
-// 英文说明：Central entry re-exporting types + schemas + a2a adapters
+// 协议层统一入口：聚合 types、schemas、runConfig、runControl、runTrace 和 a2a 模块
+// 英文说明：Central entry re-exporting types + schemas + runConfig + runControl + runTrace + a2a
 export * from './types.js';
 export * from './schemas.js';
+export * from './runConfig.js';
+export * from './runControl.js';
+export * from './runTrace.js';
+export * from './runTraceSchemas.js';
 export * from './a2a/index.js';
 
 // 协议版本号：用于跨端兼容性与版本协商；英文说明：Protocol version for cross-runtime compatibility
