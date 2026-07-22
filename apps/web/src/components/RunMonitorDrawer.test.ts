@@ -2,7 +2,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { RunMonitorDrawer } from './RunMonitorDrawer.js';
-import type { TaskRuntimeMonitorState } from '../features/monitor/taskRuntimeMonitor.js';
+import type { RunTraceCategory, RunTraceEnvelope } from '@nexus/protocol';
 import type { RunEvent, RunRecord, ThreadWithRuns } from '../shared/types.js';
 
 const run: RunRecord = {
@@ -42,6 +42,23 @@ const events: RunEvent[] = [{
   createdAt: '2026-06-16T00:00:01.000Z',
 }];
 
+const traces: RunTraceEnvelope[] = [{
+  version: 2,
+  eventId: 'trace-1',
+  sequence: 1,
+  runId: 'run-1',
+  runKind: 'turn',
+  threadId: 'thread-1',
+  turnId: 'turn-1',
+  spanId: 'span:run-1:tool:current_time',
+  category: 'tool',
+  name: 'tool.completed',
+  lifecycle: 'completed',
+  level: 'info',
+  occurredAt: '2026-06-16T00:00:01.000Z',
+  payload: { toolName: 'current_time', callId: 'call-1' },
+}];
+
 const threads: ThreadWithRuns[] = [{
   threadId: 'thread-1',
   title: 'Test Thread',
@@ -51,91 +68,61 @@ const threads: ThreadWithRuns[] = [{
   lastActiveAt: '2026-06-16T00:00:01.000Z',
 }];
 
-const taskRuntimeState: TaskRuntimeMonitorState = {
-  runtime: {
-    type: 'task.runtime.updated',
-    threadId: 'thread-1',
-    turnId: 'turn-1',
-    phase: 'tool',
-    status: 'running',
-    runProfile: 'runtime_os',
-    timestamp: '2026-06-16T00:00:00.000Z',
-  },
-  cognition: null,
-  context: null,
-  loop: null,
-  events: [],
+const allCategories: RunTraceCategory[] = ['turn', 'iteration', 'context', 'memory', 'middleware', 'model', 'tool', 'item', 'agent', 'file', 'checkpoint', 'evidence', 'error', 'control'];
+
+const baseProps = {
+  zh: true,
+  open: true,
+  adminMode: false,
+  adminToken: '',
+  threadId: 'thread-1',
+  runs: [run],
+  events,
+  traces,
+  visibleTraces: traces,
+  selectedRunId: 'run-1',
+  selectedRun: run,
+  selectedEventId: '',
+  selectedTrace: null,
+  categoryFilter: [] as RunTraceCategory[],
+  errorsOnly: false,
+  tracePage: null,
+  threads,
+  expandedThreadId: 'thread-1',
+  autoRefresh: false,
+  autoRefreshInterval: 5000,
+  loading: false,
+  allCategories,
+  onClose: vi.fn(),
+  onRefresh: vi.fn(),
+  onSelectRun: vi.fn(),
+  onControlRun: vi.fn(),
+  onToggleThread: vi.fn(),
+  onSelectEvent: vi.fn(),
+  onToggleCategory: vi.fn(),
+  onSetErrorsOnly: vi.fn(),
+  onAutoRefreshChange: vi.fn(),
+  onAutoRefreshIntervalChange: vi.fn(),
+  onAdminTokenChange: vi.fn(),
+  onLoadOlder: vi.fn(),
 };
 
 describe('RunMonitorDrawer', () => {
-  it('includes the current task list and operational thread items in the monitor drawer', () => {
-    const html = renderToStaticMarkup(React.createElement(RunMonitorDrawer, {
-      locale: 'zh',
-      open: true,
-      adminMode: false,
-      runs: [run],
-      events,
-      selectedRunId: 'run-1',
-      threads,
-      expandedThreadId: 'thread-1',
-      expandedEventId: '',
-      autoRefresh: false,
-      autoRefreshInterval: 5000,
-      loading: false,
-      onClose: vi.fn(),
-      onRefresh: vi.fn(),
-      onSelectRun: vi.fn(),
-      onControlRun: vi.fn(),
-      onToggleThread: vi.fn(),
-      onToggleEvent: vi.fn(),
-      onAutoRefreshChange: vi.fn(),
-      onAutoRefreshIntervalChange: vi.fn(),
-      checkpoints: [],
-      currentTurnCount: 0,
-      runtimeItems: [
-        {
-          id: 'user-1',
-          type: 'user_message',
-          text: '普通用户消息',
-          status: 'completed',
-          timestamp: '2026-06-16T00:00:00.000Z',
-        },
-        {
-          id: 'todo-1',
-          type: 'todo_list',
-          items: [
-            { text: '确认监控入口', completed: true },
-            { text: '展示运行态 item', completed: false },
-          ],
-          status: 'completed',
-          timestamp: '2026-06-16T00:00:00.000Z',
-        },
-        {
-          id: 'tool-1',
-          type: 'tool_call',
-          toolName: 'read_file',
-          status: 'completed',
-          timestamp: '2026-06-16T00:00:01.000Z',
-        },
-        {
-          id: 'file-1',
-          type: 'file_change',
-          status: 'completed',
-          changes: [{ path: 'apps/web/src/main.tsx', kind: 'update', addedLines: 2, removedLines: 1, hunks: [] }],
-          timestamp: '2026-06-16T00:00:02.000Z',
-        },
-      ],
-      taskRuntimeState,
-      onRollbackCheckpoint: vi.fn(),
-    }));
+  it('renders workbench with explorer, timeline, inspector columns', () => {
+    const html = renderToStaticMarkup(React.createElement(RunMonitorDrawer, baseProps));
+    expect(html).toContain('runMonitorWorkbench');
+    expect(html).toContain('runExplorer');
+    expect(html).toContain('traceTimeline');
+  });
 
-    expect(html).toContain('任务列表');
-    expect(html).toContain('确认监控入口');
-    expect(html).toContain('展示运行态 item');
-    expect(html).toContain('执行项');
-    expect(html).toContain('read_file · completed');
-    expect(html).toContain('apps/web/src/main.tsx');
-    expect(html).not.toContain('普通用户消息');
-    expect(html).not.toContain('任务运行态');
+  it('returns empty string when closed', () => {
+    const html = renderToStaticMarkup(React.createElement(RunMonitorDrawer, { ...baseProps, open: false }));
+    expect(html).toBe('');
+  });
+
+  it('renders trace timeline with trace data', () => {
+    const html = renderToStaticMarkup(React.createElement(RunMonitorDrawer, { ...baseProps, selectedEventId: 'trace-1', selectedTrace: traces[0] ?? null }));
+    expect(html).toContain('traceRow');
+    expect(html).toContain('tool.completed');
   });
 });

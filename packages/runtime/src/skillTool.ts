@@ -1,4 +1,4 @@
-import { ToolRegistry, type ToolDefinition, type ToolResult } from '@nexus/tools';
+import type { ToolDefinition, ToolResult } from '@nexus/tools';
 import type { LoadedSkill } from '@nexus/extensions';
 import { SkillExecutor } from './skillExecutor.js';
 

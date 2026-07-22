@@ -1,3 +1,6 @@
+// 图标组件：统一输出 24x24 SVG，各图标名称映射到对应的 path 数据
+// Icon component: outputs a unified 24x24 SVG, each name maps to its path data
+
 import React from 'react';
 
 export type IconName =
@@ -27,6 +30,7 @@ export type IconName =
   | 'link'
   | 'memoryChip'
   | 'mermaid'
+  | 'menu'
   | 'message'
   | 'monitor'
   | 'moon'
@@ -139,6 +143,15 @@ export function Icon({ name }: { name: IconName }) {
         <line x1="18" y1="9" x2="18" y2="15" />
       </>
     ),
+    // 中文注释：移动端菜单按钮的汉堡图标
+    // — Chinese: hamburger icon for mobile menu button
+    menu: (
+      <>
+        <line x1="3" y1="6" x2="21" y2="6" />
+        <line x1="3" y1="12" x2="21" y2="12" />
+        <line x1="3" y1="18" x2="21" y2="18" />
+      </>
+    ),
     message: <path d="M4 5h16v11H8l-4 4V5Z" />,
     monitor: (
       <>
@@ -204,6 +217,8 @@ export function Icon({ name }: { name: IconName }) {
     wrench: <path d="M14.7 6.3a4 4 0 0 0-5 5L3 18l3 3 6.7-6.7a4 4 0 0 0 5-5l-2.8 2.8-2.1-2.1 2.8-2.8Z" />,
     x: <path d="M18 6 6 18M6 6l12 12" />,
   };
+  // paths 映射：图标名称到 SVG path 节点
+  // paths map: icon name to SVG path node
 
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24">

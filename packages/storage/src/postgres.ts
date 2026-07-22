@@ -1,4 +1,8 @@
 import type {
+  RunTraceDraft,
+  RunTraceEnvelope,
+  RunTracePage,
+  RunTraceSummary,
   Checkpoint,
   ThreadId,
   ThreadItem,
@@ -10,8 +14,11 @@ import type {
   TurnMeta,
   ThreadWorkingSetSnapshot,
 } from '@nexus/protocol';
+import { RUN_TRACE_VERSION } from '@nexus/protocol';
+import { randomUUID } from 'node:crypto';
 import { DEFAULT_TENANT_ID, safeTenantId, type ThreadStore } from './store.js';
 import type { RunEvent, RunFeedback, RunRecord, RunStatus } from './store.js';
+import type { RunTraceQuery } from './runTraceStore.js';
 
 export interface PgQueryResult<T = Record<string, unknown>> {
   rows: T[];
@@ -139,17 +146,52 @@ export class PostgresThreadStore implements ThreadStore {
     }
   }
 
-  async getItems(threadId: ThreadId, since?: number): Promise<ThreadItem[]> {
+  async getItems(
+    threadId: ThreadId,
+    filter?: {
+      runId?: string;
+      turnId?: string;
+      type?: string;
+      limit?: number;
+      afterSequence?: number;
+      beforeSequence?: number;
+    },
+  ): Promise<ThreadItem[]> {
     await this.ready;
     const thread = await this.getThread(threadId);
-    const params: unknown[] = [this.tenantId, threadId, since ?? 0];
-    const result = await this.client.query<{ payload: unknown }>(
-      `SELECT payload FROM thread_rollout_entries
-       WHERE tenant_id = $1 AND thread_id = $2 AND kind = 'item' AND entry_index >= $3
-       ORDER BY entry_index ASC`,
-      params,
-    );
-    const items = result.rows.map((row) => parseJson(row.payload) as ThreadItem).filter(Boolean);
+    // P6.3: 动态构造 SQL，支持 runId/turnId/type 严格过滤与 cursor 分页
+    // — Chinese: build SQL dynamically to support strict run/turn/type filter and cursor pagination
+    const params: unknown[] = [this.tenantId, threadId];
+    let sql = `SELECT entry_index, payload FROM thread_rollout_entries
+       WHERE tenant_id = $1 AND thread_id = $2 AND kind = 'item'`;
+    if (filter?.afterSequence !== undefined) {
+      params.push(filter.afterSequence);
+      sql += ` AND entry_index > $${params.length}`;
+    }
+    if (filter?.beforeSequence !== undefined) {
+      params.push(filter.beforeSequence);
+      sql += ` AND entry_index < $${params.length}`;
+    }
+    // runId/turnId/type 走 payload JSONB 字段过滤
+    if (filter?.runId !== undefined) {
+      params.push(filter.runId);
+      sql += ` AND payload->>'runId' = $${params.length}`;
+    }
+    if (filter?.turnId !== undefined) {
+      params.push(filter.turnId);
+      sql += ` AND payload->>'turnId' = $${params.length}`;
+    }
+    if (filter?.type !== undefined) {
+      params.push(filter.type);
+      sql += ` AND payload->>'type' = $${params.length}`;
+    }
+    sql += ` ORDER BY entry_index ASC`;
+    const result = await this.client.query<{ payload: unknown }>(sql, params);
+    let items = result.rows.map((row) => parseJson(row.payload) as ThreadItem).filter(Boolean);
+    // limit 取最后 N 个，与 LocalThreadStore 行为一致
+    if (filter?.limit !== undefined) {
+      items = items.slice(-filter.limit);
+    }
     if (!thread) return items;
     const activeTurnIds = new Set((await this.getTurns(threadId)).map((turn) => turn.turnId));
     return items.filter((item) => isActiveThreadItem(item, activeTurnIds, thread.turnCount));
@@ -525,13 +567,15 @@ export class PostgresThreadStore implements ThreadStore {
         kind, status, title, caller, active_step, model, error,
         input_tokens, cached_input_tokens, output_tokens, reasoning_output_tokens,
         tool_call_count, model_call_count, subagent_count, middleware_event_count,
-        first_human_message, last_ai_message, started_at, updated_at, completed_at, metadata
+        first_human_message, last_ai_message, started_at, updated_at, completed_at, metadata,
+        trace_version, trace_summary_json
       )
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-        $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28::jsonb)
+        $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28::jsonb, $29, $30::jsonb)
       ON CONFLICT (tenant_id, run_id)
       DO UPDATE SET status = excluded.status, active_step = excluded.active_step, updated_at = excluded.updated_at,
-        completed_at = excluded.completed_at, error = excluded.error, metadata = excluded.metadata`,
+        completed_at = excluded.completed_at, error = excluded.error, metadata = excluded.metadata,
+        trace_version = excluded.trace_version, trace_summary_json = excluded.trace_summary_json`,
       [
         this.tenantId,
         record.runId,
@@ -561,6 +605,8 @@ export class PostgresThreadStore implements ThreadStore {
         record.updatedAt,
         record.completedAt ?? null,
         JSON.stringify(record.metadata ?? {}),
+        record.traceVersion ?? null,
+        record.traceSummary === undefined ? null : JSON.stringify(record.traceSummary),
       ],
     );
   }
@@ -570,8 +616,9 @@ export class PostgresThreadStore implements ThreadStore {
     const params: unknown[] = [this.tenantId, runId];
     const sets: string[] = [];
     const add = (column: string, value: unknown) => {
-      params.push(column === 'metadata' ? JSON.stringify(value ?? {}) : value);
-      sets.push(`${column} = $${params.length}${column === 'metadata' ? '::jsonb' : ''}`);
+      const isJson = column === 'metadata' || column === 'trace_summary_json';
+      params.push(isJson ? JSON.stringify(value ?? {}) : value);
+      sets.push(`${column} = $${params.length}${isJson ? '::jsonb' : ''}`);
     };
     if (patch.threadId !== undefined) add('thread_id', patch.threadId);
     if (patch.turnId !== undefined) add('turn_id', patch.turnId);
@@ -599,6 +646,8 @@ export class PostgresThreadStore implements ThreadStore {
     if (patch.updatedAt !== undefined) add('updated_at', patch.updatedAt);
     if (patch.completedAt !== undefined) add('completed_at', patch.completedAt);
     if (patch.metadata !== undefined) add('metadata', patch.metadata);
+    if (patch.traceVersion !== undefined) add('trace_version', patch.traceVersion);
+    if (patch.traceSummary !== undefined) add('trace_summary_json', patch.traceSummary);
     if (!sets.some((set) => set.startsWith('updated_at ='))) add('updated_at', new Date().toISOString());
     if (sets.length === 0) return;
     await this.client.query(`UPDATE run_records SET ${sets.join(', ')} WHERE tenant_id = $1 AND run_id = $2`, params);
@@ -658,13 +707,34 @@ export class PostgresThreadStore implements ThreadStore {
     return result.rows.map(rowToRunRecord);
   }
 
-  async listRunEvents(runId: string, filter: { limit?: number; category?: string } = {}): Promise<RunEvent[]> {
+  async getRunRecord(runId: string): Promise<RunRecord | null> {
+    await this.ready;
+    const result = await this.client.query(
+      'SELECT * FROM run_records WHERE tenant_id = $1 AND run_id = $2',
+      [this.tenantId, runId],
+    );
+    return result.rows.length > 0 ? rowToRunRecord(result.rows[0]) : null;
+  }
+
+  async listRunEvents(runId: string, filter: { limit?: number; category?: string; type?: string; afterSequence?: number; beforeSequence?: number } = {}): Promise<RunEvent[]> {
     await this.ready;
     const params: unknown[] = [this.tenantId, runId];
     let sql = 'SELECT * FROM run_events WHERE tenant_id = $1 AND run_id = $2';
     if (filter.category) {
       params.push(filter.category);
       sql += ` AND category = $${params.length}`;
+    }
+    if (filter.type) {
+      params.push(filter.type);
+      sql += ` AND type = $${params.length}`;
+    }
+    if (filter.afterSequence !== undefined) {
+      params.push(filter.afterSequence);
+      sql += ` AND sequence > $${params.length}`;
+    }
+    if (filter.beforeSequence !== undefined) {
+      params.push(filter.beforeSequence);
+      sql += ` AND sequence < $${params.length}`;
     }
     sql += ' ORDER BY sequence ASC';
     if (filter.limit) {
@@ -673,6 +743,166 @@ export class PostgresThreadStore implements ThreadStore {
     }
     const result = await this.client.query(sql, params);
     return result.rows.map(rowToRunEvent);
+  }
+
+  async appendRunTraceEvent(draft: RunTraceDraft): Promise<RunTraceEnvelope> {
+    await this.ready;
+    const run = await this.getRunRecord(draft.runId);
+    if (!run) throw new Error('RUN_NOT_FOUND');
+
+    const head = await this.client.query<{ next_sequence: number | string }>(
+      'SELECT next_sequence FROM run_trace_heads WHERE tenant_id = $1 AND run_id = $2',
+      [this.tenantId, draft.runId],
+    );
+    const sequence = numberValue(head.rows[0]?.next_sequence);
+    const nextSequence = sequence > 0 ? sequence : 1;
+    if (head.rows.length > 0) {
+      await this.client.query(
+        'UPDATE run_trace_heads SET next_sequence = $1 WHERE tenant_id = $2 AND run_id = $3',
+        [nextSequence + 1, this.tenantId, draft.runId],
+      );
+    } else {
+      await this.client.query(
+        'INSERT INTO run_trace_heads (tenant_id, run_id, next_sequence) VALUES ($1, $2, $3)',
+        [this.tenantId, draft.runId, nextSequence + 1],
+      );
+    }
+
+    const envelope = {
+      ...draft,
+      version: RUN_TRACE_VERSION,
+      eventId: randomUUID(),
+      sequence: nextSequence,
+    } as RunTraceEnvelope;
+
+    await this.client.query(
+      `INSERT INTO run_trace_events (
+        tenant_id, run_id, sequence, event_id, thread_id, turn_id,
+        category, lifecycle, occurred_at, envelope_json
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
+      ON CONFLICT (tenant_id, run_id, sequence) DO NOTHING`,
+      [
+        this.tenantId,
+        envelope.runId,
+        envelope.sequence,
+        envelope.eventId,
+        envelope.threadId,
+        envelope.turnId ?? null,
+        envelope.category,
+        envelope.lifecycle,
+        envelope.occurredAt,
+        JSON.stringify(envelope),
+      ],
+    );
+
+    return envelope;
+  }
+
+  async getRunTraceHead(runId: string): Promise<number> {
+    await this.ready;
+    const run = await this.getRunRecord(runId);
+    if (!run) return 0;
+    const head = await this.client.query<{ next_sequence: number | string }>(
+      'SELECT next_sequence FROM run_trace_heads WHERE tenant_id = $1 AND run_id = $2',
+      [this.tenantId, runId],
+    );
+    return Math.max(0, numberValue(head.rows[0]?.next_sequence) - 1);
+  }
+
+  async listRunTraceEvents(runId: string, query: RunTraceQuery = {}): Promise<RunTracePage> {
+    await this.ready;
+    if (query.before !== undefined && query.after !== undefined) {
+      throw new Error('INVALID_CURSOR');
+    }
+    const run = await this.getRunRecord(runId);
+    if (!run) return { events: [], hasMoreBefore: false, hasMoreAfter: false };
+
+    const limit = Math.max(1, Math.min(500, Math.floor(query.limit ?? 100)));
+    const filters = this.runTraceWhereClause(runId, query);
+    const rows = await this.selectRunTraceRows(filters.sql, filters.params, query, limit);
+    const events = rows.map(rowToRunTraceEnvelope);
+    const firstSequence = events[0]?.sequence;
+    const lastSequence = events.at(-1)?.sequence;
+
+    return {
+      events,
+      hasMoreBefore: firstSequence === undefined
+        ? false
+        : await this.hasRunTraceBeyond(filters.sql, filters.params, 'before', firstSequence),
+      hasMoreAfter: lastSequence === undefined
+        ? false
+        : await this.hasRunTraceBeyond(filters.sql, filters.params, 'after', lastSequence),
+      nextBefore: firstSequence,
+      nextAfter: lastSequence,
+    };
+  }
+
+  private runTraceWhereClause(runId: string, query: RunTraceQuery): { sql: string; params: unknown[] } {
+    const clauses = ['tenant_id = $1', 'run_id = $2'];
+    const params: unknown[] = [this.tenantId, runId];
+    if (query.categories && query.categories.length > 0) {
+      const placeholders = query.categories.map((category) => {
+        params.push(category);
+        return `$${params.length}`;
+      });
+      clauses.push(`category IN (${placeholders.join(', ')})`);
+    }
+    if (query.errorsOnly) {
+      params.push('error', 'error');
+      clauses.push(`(category = $${params.length - 1} OR envelope_json->>'level' = $${params.length})`);
+    }
+    return { sql: clauses.join(' AND '), params };
+  }
+
+  private async selectRunTraceRows(
+    baseWhere: string,
+    baseParams: unknown[],
+    query: RunTraceQuery,
+    limit: number,
+  ): Promise<Record<string, unknown>[]> {
+    const params = [...baseParams];
+    if (query.after !== undefined) {
+      params.push(query.after, limit);
+      const result = await this.client.query(
+        `SELECT * FROM run_trace_events WHERE ${baseWhere} AND sequence > $${params.length - 1} ORDER BY sequence ASC LIMIT $${params.length}`,
+        params,
+      );
+      return result.rows;
+    }
+    if (query.before !== undefined) {
+      params.push(query.before, limit);
+      const result = await this.client.query(
+        `SELECT * FROM (
+          SELECT * FROM run_trace_events WHERE ${baseWhere} AND sequence < $${params.length - 1} ORDER BY sequence DESC LIMIT $${params.length}
+        ) trace_page ORDER BY sequence ASC`,
+        params,
+      );
+      return result.rows;
+    }
+    params.push(limit);
+    const result = await this.client.query(
+      `SELECT * FROM (
+        SELECT * FROM run_trace_events WHERE ${baseWhere} ORDER BY sequence DESC LIMIT $${params.length}
+      ) trace_page ORDER BY sequence ASC`,
+      params,
+    );
+    return result.rows;
+  }
+
+  private async hasRunTraceBeyond(
+    baseWhere: string,
+    baseParams: unknown[],
+    direction: 'before' | 'after',
+    sequence: number,
+  ): Promise<boolean> {
+    const operator = direction === 'before' ? '<' : '>';
+    const params = [...baseParams, sequence];
+    const result = await this.client.query(
+      `SELECT sequence FROM run_trace_events WHERE ${baseWhere} AND sequence ${operator} $${params.length} LIMIT 1`,
+      params,
+    );
+    return result.rows.length > 0;
   }
 
   async upsertRunFeedback(feedback: RunFeedback): Promise<void> {
@@ -787,10 +1017,14 @@ export class PostgresThreadStore implements ThreadStore {
         updated_at TEXT NOT NULL,
         completed_at TEXT,
         metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+        trace_version INTEGER,
+        trace_summary_json JSONB,
         PRIMARY KEY (tenant_id, run_id)
       );
       CREATE INDEX IF NOT EXISTS idx_run_records_tenant_thread ON run_records(tenant_id, thread_id, updated_at DESC);
       CREATE INDEX IF NOT EXISTS idx_run_records_tenant_status ON run_records(tenant_id, status, updated_at DESC);
+      ALTER TABLE run_records ADD COLUMN IF NOT EXISTS trace_version INTEGER;
+      ALTER TABLE run_records ADD COLUMN IF NOT EXISTS trace_summary_json JSONB;
 
       CREATE TABLE IF NOT EXISTS run_events (
         tenant_id TEXT NOT NULL,
@@ -814,6 +1048,30 @@ export class PostgresThreadStore implements ThreadStore {
         PRIMARY KEY (tenant_id, event_id)
       );
       CREATE INDEX IF NOT EXISTS idx_run_events_tenant_run ON run_events(tenant_id, run_id, sequence);
+
+      CREATE TABLE IF NOT EXISTS run_trace_heads (
+        tenant_id TEXT NOT NULL,
+        run_id TEXT NOT NULL,
+        next_sequence INTEGER NOT NULL,
+        PRIMARY KEY (tenant_id, run_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS run_trace_events (
+        tenant_id TEXT NOT NULL,
+        run_id TEXT NOT NULL,
+        sequence INTEGER NOT NULL,
+        event_id TEXT NOT NULL,
+        thread_id TEXT NOT NULL,
+        turn_id TEXT,
+        category TEXT NOT NULL,
+        lifecycle TEXT NOT NULL,
+        occurred_at TEXT NOT NULL,
+        envelope_json JSONB NOT NULL,
+        PRIMARY KEY (tenant_id, run_id, sequence),
+        UNIQUE (tenant_id, event_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_run_trace_events_tenant_run_category
+        ON run_trace_events(tenant_id, run_id, category, sequence);
 
       CREATE TABLE IF NOT EXISTS run_feedback (
         tenant_id TEXT NOT NULL,
@@ -872,7 +1130,7 @@ export class PostgresThreadStore implements ThreadStore {
        VALUES ($1, $2::jsonb, $3)
        ON CONFLICT (key)
        DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-      ['storage.schemaVersion', JSON.stringify({ version: 5, backend: 'postgres' }), new Date().toISOString()],
+      ['storage.schemaVersion', JSON.stringify({ version: 6, backend: 'postgres' }), new Date().toISOString()],
     );
   }
 
@@ -962,7 +1220,13 @@ function rowToRunRecord(row: Record<string, unknown>): RunRecord {
     updatedAt: String(row.updated_at),
     completedAt: row.completed_at == null ? null : String(row.completed_at),
     metadata: parseJson(row.metadata) as Record<string, unknown>,
+    traceVersion: row.trace_version == null ? null : numberValue(row.trace_version as number | string | undefined) as 2,
+    traceSummary: row.trace_summary_json == null ? null : parseJson(row.trace_summary_json) as RunTraceSummary,
   };
+}
+
+function rowToRunTraceEnvelope(row: Record<string, unknown>): RunTraceEnvelope {
+  return parseJson(row.envelope_json) as RunTraceEnvelope;
 }
 
 function rowToRunEvent(row: Record<string, unknown>): RunEvent {

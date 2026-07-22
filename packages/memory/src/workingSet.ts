@@ -8,7 +8,7 @@ import type {
   UserInput,
 } from '@nexus/protocol';
 import type { ThreadStore } from '@nexus/storage';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import {
   buildEpisodePromptBlock,
   createEpisodeRecord,

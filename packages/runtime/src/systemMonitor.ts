@@ -297,7 +297,7 @@ export class SystemMonitor implements SystemMonitorInterface {
 
   /** 根据级别生成人类可读的建议。 */
   // — Chinese: build human-readable recommendation per level
-  private buildRecommendation(level: SystemMonitorLevel, snapshot: SystemMonitorSnapshot): string {
+  private buildRecommendation(level: SystemMonitorLevel, _snapshot: SystemMonitorSnapshot): string {
     switch (level) {
       case 'severe':
         return 'Host under severe pressure. Only readonly tools allowed. Do not spawn subagents. Wait for load to decrease before resuming write operations.';

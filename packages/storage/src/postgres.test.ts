@@ -1,15 +1,38 @@
 import { describe, expect, it } from 'vitest';
 import { PostgresThreadStore, type PgClientLike } from './postgres.js';
-import type { ThreadMeta } from '@nexus/protocol';
+import type { RunTraceDraft, ThreadMeta } from '@nexus/protocol';
+import type { RunTraceStore } from './runTraceStore.js';
 
 class RecordingPgClient implements PgClientLike {
   calls: Array<{ text: string; params: unknown[] }> = [];
+  runRows = new Map<string, Record<string, unknown>>();
+  traceHeads = new Map<string, number>();
+
   async query<T = Record<string, unknown>>(text: string, params: unknown[] = []) {
     this.calls.push({ text, params });
     if (/SELECT \* FROM threads WHERE tenant_id = \$1 AND thread_id = \$2/.test(text)) {
       return { rows: [] as T[] };
     }
     if (/SELECT \* FROM threads WHERE tenant_id = \$1/.test(text)) {
+      return { rows: [] as T[] };
+    }
+    if (/SELECT \* FROM run_records WHERE tenant_id = \$1 AND run_id = \$2/.test(text)) {
+      const row = this.runRows.get(`${String(params[0])}:${String(params[1])}`);
+      return { rows: (row ? [row] : []) as T[] };
+    }
+    if (/SELECT next_sequence FROM run_trace_heads WHERE tenant_id = \$1 AND run_id = \$2/.test(text)) {
+      const next = this.traceHeads.get(`${String(params[0])}:${String(params[1])}`);
+      return { rows: (next === undefined ? [] : [{ next_sequence: next }]) as T[] };
+    }
+    if (/INSERT INTO run_trace_heads/.test(text)) {
+      this.traceHeads.set(`${String(params[0])}:${String(params[1])}`, Number(params[2]));
+      return { rows: [] as T[] };
+    }
+    if (/UPDATE run_trace_heads SET next_sequence/.test(text)) {
+      this.traceHeads.set(`${String(params[1])}:${String(params[2])}`, Number(params[0]));
+      return { rows: [] as T[] };
+    }
+    if (/SELECT \* FROM run_trace_events/.test(text)) {
       return { rows: [] as T[] };
     }
     if (/SELECT value FROM settings/.test(text)) {
@@ -20,6 +43,46 @@ class RecordingPgClient implements PgClientLike {
     }
     return { rows: [] as T[] };
   }
+}
+
+function pgRunRow(runId = 'run-pg', tenantId = 'tenantTrace'): Record<string, unknown> {
+  const now = '2026-07-21T00:00:00.000Z';
+  return {
+    tenant_id: tenantId,
+    run_id: runId,
+    thread_id: 'thread-pg',
+    turn_id: 'turn-pg',
+    kind: 'turn',
+    status: 'running',
+    caller: 'lead_agent',
+    input_tokens: 0,
+    cached_input_tokens: 0,
+    output_tokens: 0,
+    reasoning_output_tokens: 0,
+    tool_call_count: 0,
+    model_call_count: 0,
+    subagent_count: 0,
+    middleware_event_count: 0,
+    started_at: now,
+    updated_at: now,
+    metadata: {},
+  };
+}
+
+function pgTraceDraft(runId = 'run-pg'): RunTraceDraft {
+  return {
+    runId,
+    runKind: 'turn',
+    threadId: 'thread-pg',
+    turnId: 'turn-pg',
+    spanId: 'span:run-pg:model:1',
+    category: 'model',
+    name: 'model',
+    lifecycle: 'started',
+    level: 'info',
+    occurredAt: '2026-07-21T00:00:00.000Z',
+    payload: { provider: 'openai', model: 'gpt-5', attempt: 1, streaming: true },
+  };
 }
 
 function thread(threadId: string): ThreadMeta {
@@ -150,5 +213,21 @@ describe('PostgresThreadStore', () => {
     expect(client.calls.find((call) => call.text.includes('INSERT INTO run_events'))?.params[0]).toBe('tenantRun');
     expect(client.calls.some((call) => /FROM run_records WHERE tenant_id = \$1/.test(call.text))).toBe(true);
     expect(client.calls.some((call) => /FROM run_events WHERE tenant_id = \$1 AND run_id = \$2/.test(call.text))).toBe(true);
+  });
+
+  it('writes and queries run trace rows with tenant scope and sequence heads', async () => {
+    const client = new RecordingPgClient();
+    client.runRows.set('tenantTrace:run-pg', pgRunRow());
+    const store = new PostgresThreadStore(client, 'tenantTrace') as PostgresThreadStore & RunTraceStore;
+
+    const first = await store.appendRunTraceEvent(pgTraceDraft());
+    const second = await store.appendRunTraceEvent({ ...pgTraceDraft(), spanId: 'span:run-pg:model:2' });
+    await store.listRunTraceEvents('run-pg', { after: 1, limit: 10 });
+
+    expect(first.sequence).toBe(1);
+    expect(second.sequence).toBe(2);
+    expect(client.calls.find((call) => call.text.includes('INSERT INTO run_trace_events'))?.params[0]).toBe('tenantTrace');
+    expect(client.calls.some((call) => /FROM run_trace_events WHERE tenant_id = \$1 AND run_id = \$2/.test(call.text))).toBe(true);
+    expect(client.traceHeads.get('tenantTrace:run-pg')).toBe(3);
   });
 });

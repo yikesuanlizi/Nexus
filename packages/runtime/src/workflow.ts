@@ -1767,38 +1767,6 @@ function extractWorkflowVariableRefs(text: string): string[] {
   return [...text.matchAll(/\{\{\s*([A-Za-z_][\w-]*(?:\.[A-Za-z_][\w-]*){1,2})\s*\}\}/g)].map((match) => match[1]);
 }
 
-function topologicalWorkflowNodeIds(
-  nodeIds: string[],
-  adjacency: Map<string, string[]>,
-  indegree: Map<string, number>,
-): string[] {
-  const remaining = new Map(indegree);
-  const queue = nodeIds.filter((id) => (remaining.get(id) ?? 0) === 0);
-  const ordered: string[] = [];
-  while (queue.length > 0) {
-    const id = queue.shift()!;
-    ordered.push(id);
-    for (const next of adjacency.get(id) ?? []) {
-      remaining.set(next, (remaining.get(next) ?? 0) - 1);
-      if ((remaining.get(next) ?? 0) === 0) queue.push(next);
-    }
-  }
-  return ordered;
-}
-
-function extractMissingInputLines(node: WorkflowNode): string[] {
-  return [
-    node.prompt,
-    node.inputRequirements,
-    node.outputRequirements,
-    JSON.stringify(node.params ?? {}),
-  ]
-    .join('\n')
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => /待用户补充|待补充|未填写|missing input/i.test(line));
-}
-
 function uniqueStrings(values: string[]): string[] {
   return [...new Set(values.filter(Boolean))];
 }

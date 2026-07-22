@@ -1,6 +1,6 @@
 import React from 'react';
 import type { RunConfig } from '../config/config.js';
-import { runProfileDescription, runProfileLabel } from '../config/runProfiles.js';
+import { runProfileLabel } from '../config/runProfiles.js';
 import { extractUrlTokens, summarizeUrlToken } from '../features/input/composerInput.js';
 import type { SlashCommandOption } from '../features/slash/slashCommands.js';
 import { resizeTextareaToContent } from '../shared/composer.js';
@@ -119,9 +119,6 @@ export function ComposerBar({
       current: matchedModelPreset?.id === preset.id,
     })),
   ];
-  const modelPresetTooltip = matchedModelPreset
-    ? modelPresetDetails(matchedModelPreset.name, { ...config, ...matchedModelPreset.config }, config.locale)
-    : modelPresetDetails(config.locale === 'zh' ? '当前模型配置' : 'Current model config', config, config.locale);
   const workflowBusy = workflowMode && workflowPlanning;
   const urlTokens = React.useMemo(() => extractUrlTokens(input), [input]);
   const commandInputClassName = [
@@ -295,7 +292,7 @@ export function ComposerBar({
           <DropdownSelect
             ariaLabel={config.locale === 'zh' ? '模型配置' : 'Model preset'}
             className="modelPresetSelect"
-            title={modelPresetTooltip}
+            title={config.locale === 'zh' ? '模型配置' : 'Model preset'}
             value={modelPresetValue}
             onChange={(presetId) => {
               if (presetId === '__current__') return;
@@ -347,7 +344,7 @@ export function ComposerBar({
           </label>
           <DropdownSelect ariaLabel={t(config.locale, 'mode')} className="modeSelect" title={t(config.locale, 'mode')} value={config.permissions} onChange={(permissions) => setConfig({ ...config, permissions })} options={[{ value: 'read_only', label: config.locale === 'zh' ? '只读' : 'Read' }, { value: 'workspace', label: config.locale === 'zh' ? '默认' : 'Default' }, { value: 'danger_full_access', label: config.locale === 'zh' ? '自主' : 'Auto' }]} />
           <DropdownSelect ariaLabel={config.locale === 'zh' ? '思考程度' : 'Reasoning effort'} className="modeSelect reasoningSelect" title={config.locale === 'zh' ? '思考程度' : 'Reasoning effort'} value={config.reasoningEffort} onChange={(reasoningEffort) => setConfig({ ...config, reasoningEffort })} options={[{ value: 'low', label: config.locale === 'zh' ? '快速' : 'Fast' }, { value: 'medium', label: config.locale === 'zh' ? '均衡' : 'Balanced' }, { value: 'high', label: config.locale === 'zh' ? '深度' : 'Deep' }]} />
-          <DropdownSelect ariaLabel={config.locale === 'zh' ? '运行模式' : 'Run profile'} className="modeSelect runProfileSelect" title={runProfileDescription(config.runProfile, config.locale)} value={(config.runProfile as string) === 'harness' ? 'runtime_os' : config.runProfile} onChange={(runProfile) => setConfig({ ...config, runProfile })} options={[{ value: 'cache_first', label: runProfileLabel('cache_first', config.locale) }, { value: 'runtime_os', label: runProfileLabel('runtime_os', config.locale) }]} />
+          <DropdownSelect ariaLabel={config.locale === 'zh' ? '运行模式' : 'Run profile'} className="modeSelect runProfileSelect" title={config.locale === 'zh' ? '运行模式' : 'Run profile'} value={(config.runProfile as string) === 'harness' ? 'runtime_os' : config.runProfile} onChange={(runProfile) => setConfig({ ...config, runProfile })} options={[{ value: 'cache_first', label: runProfileLabel('cache_first', config.locale) }, { value: 'runtime_os', label: runProfileLabel('runtime_os', config.locale) }]} />
           </div>
         </>
         )}
@@ -408,37 +405,6 @@ function clearComposerDraft(): void {
 
 function modelPresetSummary(config: Partial<RunConfig>): string {
   return [config.provider, config.model].filter(Boolean).join(' / ') || 'model';
-}
-
-function modelPresetDetails(name: string, config: Partial<RunConfig>, locale: RunConfig['locale']): string {
-  const labels = locale === 'zh'
-    ? {
-        name: '配置',
-        provider: '提供商',
-        model: '模型',
-        baseUrl: 'Base URL',
-        permissions: '权限',
-        reasoningEffort: '思考程度',
-        runProfile: '运行模式',
-      }
-    : {
-        name: 'Preset',
-        provider: 'Provider',
-        model: 'Model',
-        baseUrl: 'Base URL',
-        permissions: 'Permissions',
-        reasoningEffort: 'Reasoning',
-        runProfile: 'Run profile',
-      };
-  return [
-    `${labels.name}: ${name}`,
-    `${labels.provider}: ${config.provider ?? '-'}`,
-    `${labels.model}: ${config.model ?? '-'}`,
-    `${labels.baseUrl}: ${config.baseUrl ?? '-'}`,
-    `${labels.permissions}: ${config.permissions ?? '-'}`,
-    `${labels.reasoningEffort}: ${config.reasoningEffort ?? '-'}`,
-    `${labels.runProfile}: ${config.runProfile ?? '-'}`,
-  ].join('\n');
 }
 
 function RemotePlatformIcon({ platform }: { platform: RemoteAssistantPlatform }) {

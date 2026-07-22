@@ -31,7 +31,7 @@ describe('ComposerBar', () => {
       modelPresets: [],
       openRemoteAssistants: vi.fn(),
       removeImage: vi.fn(),
-      rightPaneTab: 'status',
+      rightPaneTab: 'activity',
       rightPaneVisible: true,
       selectSlashOption: vi.fn(),
       setActiveSlashOption: vi.fn(),

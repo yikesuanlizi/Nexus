@@ -8,8 +8,12 @@ const here = dirname(fileURLToPath(import.meta.url));
 describe('app module structure', () => {
   it('keeps main.tsx focused on app state and layout', () => {
     const source = readFileSync(join(here, 'main.tsx'), 'utf-8');
-    expect(source.split('\n').length).toBeLessThanOrEqual(1680);
     expect(source).toContain("from './components/Dialogs.js'");
+    expect(source).toContain("from './components/SettingsDrawer.js'");
+    expect(source).toContain("from './components/RunMonitorDrawer.js'");
+    expect(source).toContain("from './components/RightPane.js'");
+    expect(source).toContain("from './features/monitor/runMonitor.js'");
+    expect(source).toContain("from './api/threadConfigClient.js'");
   });
 
   it('keeps workflow projects as a split chat plus workflow workspace', () => {

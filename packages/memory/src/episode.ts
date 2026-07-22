@@ -2,9 +2,7 @@ import type {
   EpisodeLifecycle,
   EpisodeRecord,
   EpisodeSearchOptions,
-  EpisodeTemperature,
   ThreadId,
-  ThreadWorkingSetSnapshot,
   TurnId,
 } from '@nexus/protocol';
 import type { ThreadStore } from '@nexus/storage';
@@ -446,7 +444,6 @@ function unique<T>(items: T[]): T[] {
 function extractListItems(text: string, regex: RegExp): string[] {
   const out: string[] = [];
   let match: RegExpExecArray | null;
-  // eslint-disable-next-line no-cond-assign
   while ((match = regex.exec(text)) !== null) {
     out.push(match[1] ?? match[0]);
   }

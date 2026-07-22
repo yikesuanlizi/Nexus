@@ -1,4 +1,9 @@
+import { RUN_TRACE_VERSION } from '@nexus/protocol';
 import type {
+  RunTraceDraft,
+  RunTraceEnvelope,
+  RunTracePage,
+  RunTraceSummary,
   Checkpoint,
   ThreadId,
   ThreadItem,
@@ -15,6 +20,8 @@ import type {
 } from '@nexus/protocol';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+import { randomUUID } from 'node:crypto';
+import type { RunTraceQuery } from './runTraceStore.js';
 
 export const DEFAULT_TENANT_ID = 'default';
 
@@ -60,6 +67,8 @@ export interface RunRecord {
   updatedAt: string;
   completedAt?: string | null;
   metadata?: Record<string, unknown>;
+  traceVersion?: 2 | null;
+  traceSummary?: RunTraceSummary | null;
 }
 
 export interface RunEvent {
@@ -72,7 +81,7 @@ export interface RunEvent {
   workflowId?: string | null;
   workflowNodeId?: string | null;
   sequence: number;
-  category: RunKind | 'approval' | 'compaction' | 'rollback' | 'memory';
+  category: RunKind | 'approval' | 'compaction' | 'rollback' | 'memory' | 'item';
   type: string;
   level: RunEventLevel;
   message: string;
@@ -145,7 +154,25 @@ export interface ThreadStore {
   // 删除线程元信息、所有回合与执行历史
   deleteThread(threadId: ThreadId): Promise<void>;
 
-  getItems(threadId: ThreadId, since?: number): Promise<ThreadItem[]>;
+  /**
+   * P6.3: 读取 thread 的 items，支持按 runId/turnId/type 严格过滤与 cursor 分页。
+   * - runId/turnId/type: 仅返回匹配的 item（用于 run monitor 严格按 run 关联）
+   * - afterSequence/beforeSequence: 基于行索引的 cursor 分页（exclusive）
+   * - limit: 返回最后 N 个匹配 item（与 timeline.slice(-limit) 行为一致）
+   * 不传 filter 时返回全部 active items（保持现有调用方行为）。
+   */
+  // — Chinese: read thread items with optional run/turn/type filter and cursor pagination
+  getItems(
+    threadId: ThreadId,
+    filter?: {
+      runId?: string;
+      turnId?: string;
+      type?: string;
+      limit?: number;
+      afterSequence?: number;
+      beforeSequence?: number;
+    },
+  ): Promise<ThreadItem[]>;
 
   /** Get all turns for a thread. */
   // 获取一个线程的所有回合元信息
@@ -247,6 +274,8 @@ export interface ThreadStore {
 
   updateRunRecord?(runId: string, patch: Partial<RunRecord>): Promise<void>;
 
+  getRunRecord?(runId: string): Promise<RunRecord | null>;
+
   appendRunEvent?(event: RunEvent): Promise<void>;
 
   listRunRecords?(filter?: {
@@ -255,7 +284,7 @@ export interface ThreadStore {
     limit?: number;
   }): Promise<RunRecord[]>;
 
-  listRunEvents?(runId: string, filter?: { limit?: number; category?: string }): Promise<RunEvent[]>;
+  listRunEvents?(runId: string, filter?: { limit?: number; category?: string; type?: string; afterSequence?: number; beforeSequence?: number }): Promise<RunEvent[]>;
 
   upsertRunFeedback?(feedback: RunFeedback): Promise<void>;
 
@@ -367,6 +396,8 @@ export class LocalThreadStore implements ThreadStore {
         updated_at TEXT NOT NULL,
         completed_at TEXT,
         metadata TEXT NOT NULL DEFAULT '{}',
+        trace_version INTEGER,
+        trace_summary_json TEXT,
         PRIMARY KEY (tenant_id, run_id)
       );
       CREATE INDEX IF NOT EXISTS idx_run_records_tenant_thread
@@ -397,6 +428,30 @@ export class LocalThreadStore implements ThreadStore {
       );
       CREATE INDEX IF NOT EXISTS idx_run_events_tenant_run
         ON run_events(tenant_id, run_id, sequence);
+
+      CREATE TABLE IF NOT EXISTS run_trace_heads (
+        tenant_id TEXT NOT NULL DEFAULT 'default',
+        run_id TEXT NOT NULL,
+        next_sequence INTEGER NOT NULL,
+        PRIMARY KEY (tenant_id, run_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS run_trace_events (
+        tenant_id TEXT NOT NULL DEFAULT 'default',
+        run_id TEXT NOT NULL,
+        sequence INTEGER NOT NULL,
+        event_id TEXT NOT NULL,
+        thread_id TEXT NOT NULL,
+        turn_id TEXT,
+        category TEXT NOT NULL,
+        lifecycle TEXT NOT NULL,
+        occurred_at TEXT NOT NULL,
+        envelope_json TEXT NOT NULL,
+        PRIMARY KEY (tenant_id, run_id, sequence),
+        UNIQUE (tenant_id, event_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_run_trace_events_tenant_run_category
+        ON run_trace_events(tenant_id, run_id, category, sequence);
 
       CREATE TABLE IF NOT EXISTS run_feedback (
         tenant_id TEXT NOT NULL DEFAULT 'default',
@@ -496,6 +551,8 @@ export class LocalThreadStore implements ThreadStore {
     this.addColumnIfMissing('threads', 'agent_nickname', 'TEXT');
     this.addColumnIfMissing('threads', 'agent_role', 'TEXT');
     this.addColumnIfMissing('thread_spawn_edges', 'tenant_id', `TEXT NOT NULL DEFAULT '${DEFAULT_TENANT_ID}'`);
+    this.addColumnIfMissing('run_records', 'trace_version', 'INTEGER');
+    this.addColumnIfMissing('run_records', 'trace_summary_json', 'TEXT');
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_threads_tenant_updated
         ON threads(tenant_id, updated_at);
@@ -513,6 +570,7 @@ export class LocalThreadStore implements ThreadStore {
       .prepare('INSERT OR REPLACE INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)')
       .run(4, 'episode_memory_store', now);
     this.migrateV5IfNeeded();
+    this.migrateV6IfNeeded();
   }
 
   private migrateV5IfNeeded(): void {
@@ -566,6 +624,22 @@ export class LocalThreadStore implements ThreadStore {
     this.db
       .prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)')
       .run('storage.schemaVersion', JSON.stringify({ version: 5 }), now);
+  }
+
+  private migrateV6IfNeeded(): void {
+    const versionRow = this.db.prepare('SELECT value FROM settings WHERE key = ?').get('storage.schemaVersion') as
+      | { value?: string }
+      | undefined;
+    const currentVersion = versionRow ? (JSON.parse(versionRow.value ?? '{}') as { version?: number }).version ?? 0 : 0;
+    if (currentVersion >= 6) return;
+
+    const now = new Date().toISOString();
+    this.db
+      .prepare('INSERT OR REPLACE INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)')
+      .run(6, 'run_trace_v2_events', now);
+    this.db
+      .prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)')
+      .run('storage.schemaVersion', JSON.stringify({ version: 6 }), now);
   }
 
   private addColumnIfMissing(table: string, column: string, definition: string): void {
@@ -681,7 +755,17 @@ export class LocalThreadStore implements ThreadStore {
     await fs.appendFile(rolloutPath, lines, 'utf-8');
   }
 
-  async getItems(threadId: ThreadId, since?: number): Promise<ThreadItem[]> {
+  async getItems(
+    threadId: ThreadId,
+    filter?: {
+      runId?: string;
+      turnId?: string;
+      type?: string;
+      limit?: number;
+      afterSequence?: number;
+      beforeSequence?: number;
+    },
+  ): Promise<ThreadItem[]> {
     const thread = await this.getThread(threadId);
     const rolloutPath = await this.readableRolloutPath(threadId);
     let content: string;
@@ -691,20 +775,30 @@ export class LocalThreadStore implements ThreadStore {
       return [];
     }
     const lines = content.split('\n').filter((l) => l.trim());
+    // P6.3: 行索引即 sequence，用于 cursor 分页 — Chinese: line index acts as sequence for cursor pagination
     const items: ThreadItem[] = [];
-    for (let i = since ?? 0; i < lines.length; i++) {
+    for (let i = 0; i < lines.length; i++) {
+      // afterSequence/beforeSequence 基于 JSONL 行索引做 cursor 分页（exclusive）
+      if (filter?.afterSequence !== undefined && i <= filter.afterSequence) continue;
+      if (filter?.beforeSequence !== undefined && i >= filter.beforeSequence) continue;
       try {
         const parsed = JSON.parse(lines[i]);
         // Skip control lines - they are not ThreadItems.
         if (parsed.type === '__checkpoint__' || parsed.type === '__rollback__') continue;
+        // P6.3: 严格按 runId/turnId/type 过滤 — Chinese: strict run/turn/type filtering
+        if (filter?.runId !== undefined && parsed.runId !== filter.runId) continue;
+        if (filter?.turnId !== undefined && parsed.turnId !== filter.turnId) continue;
+        if (filter?.type !== undefined && parsed.type !== filter.type) continue;
         items.push(parsed as ThreadItem);
       } catch {
         // skip malformed lines
       }
     }
-    if (!thread) return items;
+    // limit 取最后 N 个，与 timeline.slice(-limit) 行为一致
+    const limited = filter?.limit !== undefined ? items.slice(-filter.limit) : items;
+    if (!thread) return limited;
     const activeTurnIds = new Set((await this.getTurns(threadId)).map((turn) => turn.turnId));
-    return items.filter((item) => isActiveThreadItem(item, activeTurnIds, thread.turnCount));
+    return limited.filter((item) => isActiveThreadItem(item, activeTurnIds, thread.turnCount));
   }
 
   async getRecentItems(threadId: ThreadId, maxItems: number = 100): Promise<ThreadItem[]> {
@@ -1206,8 +1300,9 @@ export class LocalThreadStore implements ThreadStore {
         kind, status, title, caller, active_step, model, error,
         input_tokens, cached_input_tokens, output_tokens, reasoning_output_tokens,
         tool_call_count, model_call_count, subagent_count, middleware_event_count,
-        first_human_message, last_ai_message, started_at, updated_at, completed_at, metadata
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        first_human_message, last_ai_message, started_at, updated_at, completed_at, metadata,
+        trace_version, trace_summary_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       record.runId,
       this.tenantId,
@@ -1237,6 +1332,8 @@ export class LocalThreadStore implements ThreadStore {
       record.updatedAt,
       record.completedAt ?? null,
       JSON.stringify(record.metadata ?? {}),
+      record.traceVersion ?? null,
+      record.traceSummary === undefined ? null : JSON.stringify(record.traceSummary),
     );
   }
 
@@ -1268,6 +1365,8 @@ export class LocalThreadStore implements ThreadStore {
       ['updatedAt', 'updated_at', patch.updatedAt],
       ['completedAt', 'completed_at', patch.completedAt],
       ['metadata', 'metadata', patch.metadata === undefined ? undefined : JSON.stringify(patch.metadata ?? {})],
+      ['traceVersion', 'trace_version', patch.traceVersion],
+      ['traceSummary', 'trace_summary_json', patch.traceSummary === undefined ? undefined : JSON.stringify(patch.traceSummary)],
     ];
     const sets: string[] = [];
     const params: unknown[] = [];
@@ -1333,12 +1432,31 @@ export class LocalThreadStore implements ThreadStore {
     return (this.db.prepare(sql).all(...params) as Record<string, unknown>[]).map(rowToRunRecord);
   }
 
-  async listRunEvents(runId: string, filter: { limit?: number; category?: string } = {}): Promise<RunEvent[]> {
+  async getRunRecord(runId: string): Promise<RunRecord | null> {
+    const row = this.db.prepare(
+      'SELECT * FROM run_records WHERE tenant_id = ? AND run_id = ?',
+    ).get(this.tenantId, runId) as Record<string, unknown> | undefined;
+    return row ? rowToRunRecord(row) : null;
+  }
+
+  async listRunEvents(runId: string, filter: { limit?: number; category?: string; type?: string; afterSequence?: number; beforeSequence?: number } = {}): Promise<RunEvent[]> {
     const params: unknown[] = [this.tenantId, runId];
     let sql = 'SELECT * FROM run_events WHERE tenant_id = ? AND run_id = ?';
     if (filter.category) {
       sql += ' AND category = ?';
       params.push(filter.category);
+    }
+    if (filter.type) {
+      sql += ' AND type = ?';
+      params.push(filter.type);
+    }
+    if (filter.afterSequence !== undefined) {
+      sql += ' AND sequence > ?';
+      params.push(filter.afterSequence);
+    }
+    if (filter.beforeSequence !== undefined) {
+      sql += ' AND sequence < ?';
+      params.push(filter.beforeSequence);
     }
     sql += ' ORDER BY sequence ASC';
     if (filter.limit) {
@@ -1346,6 +1464,139 @@ export class LocalThreadStore implements ThreadStore {
       params.push(filter.limit);
     }
     return (this.db.prepare(sql).all(...params) as Record<string, unknown>[]).map(rowToRunEvent);
+  }
+
+  async appendRunTraceEvent(draft: RunTraceDraft): Promise<RunTraceEnvelope> {
+    const run = await this.getRunRecord(draft.runId);
+    if (!run) throw new Error('RUN_NOT_FOUND');
+
+    const head = this.db.prepare(
+      'SELECT next_sequence FROM run_trace_heads WHERE tenant_id = ? AND run_id = ?',
+    ).get(this.tenantId, draft.runId) as { next_sequence?: number } | undefined;
+    const sequence = Number(head?.next_sequence ?? 1);
+    if (head) {
+      this.db.prepare(
+        'UPDATE run_trace_heads SET next_sequence = ? WHERE tenant_id = ? AND run_id = ?',
+      ).run(sequence + 1, this.tenantId, draft.runId);
+    } else {
+      this.db.prepare(
+        'INSERT INTO run_trace_heads (tenant_id, run_id, next_sequence) VALUES (?, ?, ?)',
+      ).run(this.tenantId, draft.runId, sequence + 1);
+    }
+
+    const envelope = {
+      ...draft,
+      version: RUN_TRACE_VERSION,
+      eventId: randomUUID(),
+      sequence,
+    } as RunTraceEnvelope;
+
+    this.db.prepare(
+      `INSERT INTO run_trace_events (
+        tenant_id, run_id, sequence, event_id, thread_id, turn_id,
+        category, lifecycle, occurred_at, envelope_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      this.tenantId,
+      envelope.runId,
+      envelope.sequence,
+      envelope.eventId,
+      envelope.threadId,
+      envelope.turnId ?? null,
+      envelope.category,
+      envelope.lifecycle,
+      envelope.occurredAt,
+      JSON.stringify(envelope),
+    );
+
+    return envelope;
+  }
+
+  async getRunTraceHead(runId: string): Promise<number> {
+    const run = await this.getRunRecord(runId);
+    if (!run) return 0;
+    const head = this.db.prepare(
+      'SELECT next_sequence FROM run_trace_heads WHERE tenant_id = ? AND run_id = ?',
+    ).get(this.tenantId, runId) as { next_sequence?: number } | undefined;
+    return Math.max(0, Number(head?.next_sequence ?? 1) - 1);
+  }
+
+  async listRunTraceEvents(runId: string, query: RunTraceQuery = {}): Promise<RunTracePage> {
+    if (query.before !== undefined && query.after !== undefined) {
+      throw new Error('INVALID_CURSOR');
+    }
+    const run = await this.getRunRecord(runId);
+    if (!run) return { events: [], hasMoreBefore: false, hasMoreAfter: false };
+
+    const limit = Math.max(1, Math.min(500, Math.floor(query.limit ?? 100)));
+    const filters = this.runTraceWhereClause(runId, query);
+    const events = this.selectRunTraceRows(filters.sql, filters.params, query, limit).map(rowToRunTraceEnvelope);
+    const firstSequence = events[0]?.sequence;
+    const lastSequence = events.at(-1)?.sequence;
+
+    return {
+      events,
+      hasMoreBefore: firstSequence === undefined
+        ? false
+        : this.hasRunTraceBeyond(filters.sql, filters.params, 'before', firstSequence),
+      hasMoreAfter: lastSequence === undefined
+        ? false
+        : this.hasRunTraceBeyond(filters.sql, filters.params, 'after', lastSequence),
+      nextBefore: firstSequence,
+      nextAfter: lastSequence,
+    };
+  }
+
+  private runTraceWhereClause(runId: string, query: RunTraceQuery): { sql: string; params: unknown[] } {
+    const clauses = ['tenant_id = ?', 'run_id = ?'];
+    const params: unknown[] = [this.tenantId, runId];
+    if (query.categories && query.categories.length > 0) {
+      clauses.push(`category IN (${query.categories.map(() => '?').join(', ')})`);
+      params.push(...query.categories);
+    }
+    if (query.errorsOnly) {
+      clauses.push(`(category = ? OR json_extract(envelope_json, '$.level') = ?)`);
+      params.push('error', 'error');
+    }
+    return { sql: clauses.join(' AND '), params };
+  }
+
+  private selectRunTraceRows(
+    baseWhere: string,
+    baseParams: unknown[],
+    query: RunTraceQuery,
+    limit: number,
+  ): Record<string, unknown>[] {
+    if (query.after !== undefined) {
+      return this.db.prepare(
+        `SELECT * FROM run_trace_events WHERE ${baseWhere} AND sequence > ? ORDER BY sequence ASC LIMIT ?`,
+      ).all(...baseParams, query.after, limit) as Record<string, unknown>[];
+    }
+    if (query.before !== undefined) {
+      return this.db.prepare(
+        `SELECT * FROM (
+          SELECT * FROM run_trace_events WHERE ${baseWhere} AND sequence < ? ORDER BY sequence DESC LIMIT ?
+        ) ORDER BY sequence ASC`,
+      ).all(...baseParams, query.before, limit) as Record<string, unknown>[];
+    }
+    return this.db.prepare(
+      `SELECT * FROM (
+        SELECT * FROM run_trace_events WHERE ${baseWhere} ORDER BY sequence DESC LIMIT ?
+      ) ORDER BY sequence ASC`,
+    ).all(...baseParams, limit) as Record<string, unknown>[];
+  }
+
+  private hasRunTraceBeyond(
+    baseWhere: string,
+    baseParams: unknown[],
+    direction: 'before' | 'after',
+    sequence: number,
+  ): boolean {
+    const operator = direction === 'before' ? '<' : '>';
+    const row = this.db.prepare(
+      `SELECT sequence FROM run_trace_events WHERE ${baseWhere} AND sequence ${operator} ? LIMIT 1`,
+    ).get(...baseParams, sequence) as Record<string, unknown> | undefined;
+    return Boolean(row);
   }
 
   async upsertRunFeedback(feedback: RunFeedback): Promise<void> {
@@ -1461,6 +1712,8 @@ function rowToRunRecord(row: Record<string, unknown>): RunRecord {
     updatedAt: row.updated_at as string,
     completedAt: (row.completed_at as string | null | undefined) ?? null,
     metadata: parseJsonRecord(row.metadata),
+    traceVersion: row.trace_version == null ? null : Number(row.trace_version) as 2,
+    traceSummary: parseNullableJsonRecord(row.trace_summary_json) as RunTraceSummary | null,
   };
 }
 
@@ -1485,6 +1738,11 @@ function rowToRunEvent(row: Record<string, unknown>): RunEvent {
     metadata: parseJsonRecord(row.metadata),
     createdAt: row.created_at as string,
   };
+}
+
+function rowToRunTraceEnvelope(row: Record<string, unknown>): RunTraceEnvelope {
+  const parsed = JSON.parse(String(row.envelope_json ?? '{}')) as RunTraceEnvelope;
+  return parsed;
 }
 
 function rowToRunFeedback(row: Record<string, unknown>): RunFeedback {
@@ -1642,6 +1900,12 @@ function parseJsonRecord(value: unknown): Record<string, unknown> {
   } catch {
     return {};
   }
+}
+
+function parseNullableJsonRecord(value: unknown): Record<string, unknown> | null {
+  if (value == null || value === '') return null;
+  const parsed = parseJsonRecord(value);
+  return Object.keys(parsed).length > 0 ? parsed : null;
 }
 
 function isActiveThreadItem(item: ThreadItem, activeTurnIds: Set<string>, activeTurnCount: number): boolean {

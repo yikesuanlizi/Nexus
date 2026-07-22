@@ -5,7 +5,6 @@
 import type {
   CompactionSummary,
   GoalEvaluation,
-  HarnessContinuationItem,
   ItemId,
   ThreadId,
   ThreadItem,

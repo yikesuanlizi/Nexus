@@ -30,6 +30,7 @@ export type IconName =
   | 'link'
   | 'memoryChip'
   | 'mermaid'
+  | 'menu'
   | 'message'
   | 'monitor'
   | 'moon'
@@ -140,6 +141,15 @@ export function Icon({ name }: { name: IconName }) {
         <rect x="15" y="3" width="6" height="6" rx="1" />
         <line x1="9" y1="6" x2="15" y2="6" />
         <line x1="18" y1="9" x2="18" y2="15" />
+      </>
+    ),
+    // 中文注释：移动端菜单按钮的汉堡图标
+    // — Chinese: hamburger icon for mobile menu button
+    menu: (
+      <>
+        <line x1="3" y1="6" x2="21" y2="6" />
+        <line x1="3" y1="12" x2="21" y2="12" />
+        <line x1="3" y1="18" x2="21" y2="18" />
       </>
     ),
     message: <path d="M4 5h16v11H8l-4 4V5Z" />,

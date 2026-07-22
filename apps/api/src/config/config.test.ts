@@ -142,7 +142,7 @@ describe('thread appearance persistence', () => {
     expect(config.themeMode).toBe('dark');
   });
 
-  it('does not persist themeMode into thread metadata when saving thread config', async () => {
+  it('does not persist UI-only appearance fields into thread metadata when saving thread config', async () => {
     const store = new FakeThreadStore();
     const repo = createConfigRepository(store as unknown as ThreadStore);
     const threadId = 'thread-2' as ThreadId;
@@ -150,12 +150,126 @@ describe('thread appearance persistence', () => {
     store.threads.set(threadId, fakeThread(threadId, {
       tags: {},
     }));
-    await repo.saveDefaultRunConfig({ themeMode: 'dark' });
+    await repo.saveDefaultRunConfig({
+      themeMode: 'dark',
+      userAvatarId: 'asteroid',
+      customUserAvatarDataUrl: 'data:image/png;base64,abc',
+    } as never);
     await repo.saveThreadRunConfig(threadId, { model: 'thread-model' });
 
     const saved = store.threads.get(threadId)?.tags?.runConfig;
 
     expect(saved).toBeTruthy();
-    expect(JSON.parse(saved ?? '{}')).not.toHaveProperty('themeMode');
+    const parsed = JSON.parse(saved ?? '{}');
+    expect(parsed).not.toHaveProperty('themeMode');
+    expect(parsed).not.toHaveProperty('userAvatarId');
+    expect(parsed).not.toHaveProperty('customUserAvatarDataUrl');
+  });
+});
+
+describe('model preset persistence', () => {
+  it('stores only provider, model, and baseUrl', async () => {
+    const store = new FakeThreadStore();
+    const repo = createConfigRepository(store as unknown as ThreadStore);
+
+    const { preset } = await repo.upsertModelPreset({
+      name: 'OpenAI',
+      config: {
+        provider: 'openai',
+        model: 'gpt-5',
+        baseUrl: 'https://example.test/v1',
+        permissions: 'danger_full_access',
+        workspaceRoot: 'E:/secret',
+        memoryEnabled: false,
+      },
+    });
+
+    expect(preset.config).toEqual({
+      provider: 'openai',
+      model: 'gpt-5',
+      baseUrl: 'https://example.test/v1',
+    });
+  });
+
+  it('rejects presets without provider or model', async () => {
+    const store = new FakeThreadStore();
+    const repo = createConfigRepository(store as unknown as ThreadStore);
+
+    await expect(repo.upsertModelPreset({
+      config: { provider: '', model: '' },
+    })).rejects.toThrow('provider and model are required');
+  });
+});
+
+describe('thread config overrides', () => {
+  it('returns empty object by default', async () => {
+    const store = new FakeThreadStore();
+    const repo = createConfigRepository(store as unknown as ThreadStore);
+    const threadId = 'thread-overrides-1' as ThreadId;
+
+    const overrides = await repo.getThreadConfigOverrides(threadId);
+
+    expect(overrides).toEqual({});
+  });
+
+  it('filters input to only provider, model, and baseUrl', async () => {
+    const store = new FakeThreadStore();
+    const repo = createConfigRepository(store as unknown as ThreadStore);
+    const threadId = 'thread-overrides-2' as ThreadId;
+
+    const overrides = await repo.updateThreadConfigOverrides(threadId, {
+      provider: 'openai',
+      model: 'gpt-5',
+      baseUrl: 'https://example.test/v1',
+      permissions: 'danger_full_access',
+      workspaceRoot: 'E:/secret',
+      memoryEnabled: false,
+      extraField: 'should-be-stripped',
+    });
+
+    expect(overrides).toEqual({
+      provider: 'openai',
+      model: 'gpt-5',
+      baseUrl: 'https://example.test/v1',
+    });
+  });
+
+  it('persists only the three whitelisted fields', async () => {
+    const store = new FakeThreadStore();
+    const repo = createConfigRepository(store as unknown as ThreadStore);
+    const threadId = 'thread-overrides-3' as ThreadId;
+
+    await repo.updateThreadConfigOverrides(threadId, {
+      provider: 'anthropic',
+      model: 'claude-3-5-sonnet',
+      baseUrl: 'https://api.anthropic.com',
+      permissions: 'workspace',
+    });
+
+    const stored = await repo.getThreadConfigOverrides(threadId);
+    expect(stored).toEqual({
+      provider: 'anthropic',
+      model: 'claude-3-5-sonnet',
+      baseUrl: 'https://api.anthropic.com',
+    });
+    expect(stored).not.toHaveProperty('permissions');
+  });
+
+  it('merges overrides into thread run config', async () => {
+    const store = new FakeThreadStore();
+    const repo = createConfigRepository(store as unknown as ThreadStore);
+    const threadId = 'thread-overrides-4' as ThreadId;
+
+    store.threads.set(threadId, fakeThread(threadId, { tags: {} }));
+    await repo.saveDefaultRunConfig({ provider: 'ollama', model: 'qwen2.5-coder:7b' });
+    await repo.updateThreadConfigOverrides(threadId, {
+      provider: 'openai',
+      model: 'gpt-5',
+    });
+
+    const config = await repo.getThreadRunConfig(threadId);
+
+    expect(config.provider).toBe('openai');
+    expect(config.model).toBe('gpt-5');
   });
 });

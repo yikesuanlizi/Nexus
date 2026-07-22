@@ -85,6 +85,21 @@ describe('resolveCacheStrategy', () => {
 });
 
 describe('ModelGateway retry policy', () => {
+  it('normalizes provider, model, and baseUrl before selecting protocol and credentials', () => {
+    const gateway = new ModelGateway({
+      provider: ' minimax ',
+      model: '\tMiniMax-M3 ',
+      baseUrl: ' https://api.minimaxi.com/anthropic/v1 ',
+    });
+
+    expect((gateway as unknown as { protocol: string }).protocol).toBe('anthropic');
+    expect((gateway as unknown as { config: { provider: string; model: string; baseUrl: string } }).config).toMatchObject({
+      provider: 'minimax',
+      model: 'MiniMax-M3',
+      baseUrl: 'https://api.minimaxi.com/anthropic/v1',
+    });
+  });
+
   it('adds Anthropic cache control to the last system block and final user message', async () => {
     let requestBody: unknown;
     globalThis.fetch = async (_url, init) => {

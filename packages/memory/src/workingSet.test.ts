@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { EpisodeRecord, ThreadMeta, TurnId, UserInput } from '@nexus/protocol';
+import type { EpisodeRecord, ThreadMeta, UserInput } from '@nexus/protocol';
 import type { ThreadStore } from '@nexus/storage';
 import {
   buildOrReuseWorkingSet,
@@ -8,7 +8,6 @@ import {
   getThreadWorkingSetSnapshot,
   saveThreadWorkingSetSnapshot,
 } from './workingSet.js';
-import { createEpisodeRecord, saveEpisodeRecord } from './episode.js';
 
 class WorkingSetStore implements ThreadStore {
   episodes: EpisodeRecord[] = [];

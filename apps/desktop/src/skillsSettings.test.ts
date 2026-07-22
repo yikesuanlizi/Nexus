@@ -21,58 +21,72 @@ describe('skills settings', () => {
 
   it('saves skillsRoot only when the save button is clicked', () => {
     const settingsDrawer = readFileSync(join(here, 'components', 'SettingsDrawer.tsx'), 'utf-8');
+    const tools = readFileSync(join(here, 'components', 'settings', 'ToolsPage.tsx'), 'utf-8');
 
+    // skillsRoot state 与 ensureSkillsRoot / fetch 在主 SettingsDrawer 中
     expect(settingsDrawer).toContain('skillsRootDraft');
     expect(settingsDrawer).toContain('ensureSkillsRoot');
     expect(settingsDrawer).toContain("fetch('/api/settings')");
     expect(settingsDrawer).toContain('saveSkillsRoot');
-    expect(settingsDrawer).toContain("t(locale, 'saveSkillsRoot')");
-    expect(settingsDrawer).not.toContain('onChange={(event) => setConfig({ ...config, skillsRoot: event.target.value })}');
+    // 保存按钮文案在 ToolsPage.tsx 中渲染
+    expect(tools).toContain("t(locale, 'saveSkillsRoot')");
+    expect(tools).not.toContain('onChange={(event) => setConfig({ ...config, skillsRoot: event.target.value })}');
   });
 
   it('opens MCP add and edit forms in an internal panel', () => {
     const settingsDrawer = readFileSync(join(here, 'components', 'SettingsDrawer.tsx'), 'utf-8');
+    const mcpDialog = readFileSync(join(here, 'components', 'settings', 'McpConfigDialog.tsx'), 'utf-8');
     const styles = readFileSync(join(here, 'styles.css'), 'utf-8');
 
+    // mcpPanelOpen state 在主 SettingsDrawer 中（控制 dialog 显隐）
     expect(settingsDrawer).toContain('mcpPanelOpen');
-    expect(settingsDrawer).toContain('mcpPanelTitle');
-    expect(settingsDrawer).toContain('role="dialog"');
+    // dialog 标题与 role 已迁到 McpConfigDialog.tsx
+    expect(mcpDialog).toContain('mcpPanelTitle');
+    expect(mcpDialog).toContain('role="dialog"');
     expect(settingsDrawer).not.toContain('className="crudForm"');
     expect(styles).toMatch(/\.dialogLayer\s*\{\s*@apply[^;]*pointer-events-auto/);
   });
 
   it('renders MCP enabled state as a clickable toggle button', () => {
     const settingsDrawer = readFileSync(join(here, 'components', 'SettingsDrawer.tsx'), 'utf-8');
+    const mcpSection = readFileSync(join(here, 'components', 'settings', 'McpSection.tsx'), 'utf-8');
     const styles = readFileSync(join(here, 'styles.css'), 'utf-8');
 
-    expect(settingsDrawer).toContain('onToggleEnabled');
-    expect(settingsDrawer).toContain('mcpToggle');
+    // onToggleEnabled 与 mcpToggle 渲染已迁到 McpSection.tsx
+    expect(mcpSection).toContain('onToggleEnabled');
+    expect(mcpSection).toContain('mcpToggle');
     expect(settingsDrawer).not.toContain('<small className={item.enabled');
     expect(styles).toMatch(/\.mcpToggle\s*\{\s*@apply[^;]*cursor-pointer/);
   });
 
   it('shows the installed skills list and a refresh action', () => {
     const settingsDrawer = readFileSync(join(here, 'components', 'SettingsDrawer.tsx'), 'utf-8');
+    const tools = readFileSync(join(here, 'components', 'settings', 'ToolsPage.tsx'), 'utf-8');
     const main = readFileSync(join(here, 'main.tsx'), 'utf-8');
     const types = readFileSync(join(here, 'shared', 'types.ts'), 'utf-8');
 
     expect(types).toContain('interface SkillEntry');
+    // skillsList 与 refreshSkills 回调通过 props 传递，主文件持有
     expect(settingsDrawer).toContain('skillsList');
     expect(settingsDrawer).toContain('refreshSkills');
     expect(main).toContain("'/api/skills?forceReload=1'");
     expect(main).toContain("'/api/skills'");
     expect(settingsDrawer).toContain('refreshSkills({ forceReload: true })');
-    expect(settingsDrawer).toContain("t(locale, 'refresh')");
-    expect(settingsDrawer).toContain('localizedSkillDescription(skill, locale)');
-    expect(settingsDrawer).not.toContain('<code>{skill.sourcePath}</code>');
+    // 列表渲染与刷新按钮 UI 已迁到 ToolsPage.tsx
+    expect(tools).toContain("t(locale, 'refresh')");
+    expect(tools).toContain('localizedSkillDescription(skill, locale)');
+    expect(tools).not.toContain('<code>{skill.sourcePath}</code>');
   });
 
   it('provides a recommended plugin catalog for built-in MCP and Skills', () => {
     const settingsDrawer = readFileSync(join(here, 'components', 'SettingsDrawer.tsx'), 'utf-8');
+    const tools = readFileSync(join(here, 'components', 'settings', 'ToolsPage.tsx'), 'utf-8');
     const catalog = readFileSync(join(here, 'features', 'settings', 'pluginCatalog.ts'), 'utf-8');
 
-    expect(settingsDrawer).toContain("useState<'recommended' | 'mcp' | 'skills' | 'web'>('recommended')");
-    expect(settingsDrawer).toContain('recommendedPluginCatalog');
+    // 插件中心内部 tab 与 catalog 渲染已迁到 ToolsPage.tsx
+    expect(tools).toContain("useState<'recommended' | 'mcp' | 'skills' | 'web'>('recommended')");
+    expect(tools).toContain('recommendedPluginCatalog');
+    // install/add 回调仍在主 SettingsDrawer 中（与 saveSkillDraft 联动）
     expect(settingsDrawer).toContain('installRecommendedSkill');
     expect(settingsDrawer).toContain('addRecommendedMcp');
     expect(catalog).toContain('recommendedSkills');
@@ -84,11 +98,14 @@ describe('skills settings', () => {
 
   it('lets users remove installed skills from the plugin center', () => {
     const settingsDrawer = readFileSync(join(here, 'components', 'SettingsDrawer.tsx'), 'utf-8');
+    const tools = readFileSync(join(here, 'components', 'settings', 'ToolsPage.tsx'), 'utf-8');
     const main = readFileSync(join(here, 'main.tsx'), 'utf-8');
 
+    // deleteSkill 通过 props 从主文件传入
     expect(settingsDrawer).toContain('deleteSkill');
-    expect(settingsDrawer).toContain('onClick={() => void deleteSkill(skill.name)}');
-    expect(settingsDrawer).toContain("aria-label={t(locale, 'remove')}");
+    // 删除按钮 UI 已迁到 ToolsPage.tsx
+    expect(tools).toContain('onClick={() => void deleteSkill(skill.name)}');
+    expect(tools).toContain("aria-label={t(locale, 'remove')}");
     expect(main).toContain('async function deleteSkill');
     expect(main).toContain("method: 'DELETE'");
     expect(main).toContain("`/api/skills/${encodeURIComponent(name)}`");
@@ -117,37 +134,41 @@ describe('skills settings', () => {
   });
 
   it('uses locale-aware skill descriptions without showing per-skill paths', () => {
-    const settingsDrawer = readFileSync(join(here, 'components', 'SettingsDrawer.tsx'), 'utf-8');
+    const tools = readFileSync(join(here, 'components', 'settings', 'ToolsPage.tsx'), 'utf-8');
     const descriptions = readFileSync(join(here, 'features', 'settings', 'skillDescriptions.ts'), 'utf-8');
     const styles = readFileSync(join(here, 'styles.css'), 'utf-8');
 
-    expect(settingsDrawer).toContain('localizedSkillDescription(skill, locale)');
+    // localizedSkillDescription 调用已迁到 ToolsPage.tsx
+    expect(tools).toContain('localizedSkillDescription(skill, locale)');
     expect(descriptions).toContain('ZH_SKILL_DESCRIPTIONS');
     expect(descriptions).toContain("'frontend-design': '设计高质量、具有明确风格的前端界面。'");
     expect(styles).not.toContain('grid-cols-[minmax(0,1fr)_minmax(180px,320px)]');
   });
 
   it('keeps provider dropdown options focused on provider names only', () => {
-    const settingsDrawer = readFileSync(join(here, 'components', 'SettingsDrawer.tsx'), 'utf-8');
-    const providerOptions = settingsDrawer.slice(settingsDrawer.indexOf('function providerDropdownOptions'));
+    const shared = readFileSync(join(here, 'components', 'settings', 'shared.ts'), 'utf-8');
+    // providerDropdownOptions 已迁到 settings/shared.ts
+    const providerOptions = shared.slice(shared.indexOf('function providerDropdownOptions'));
 
     expect(providerOptions).toContain('label: provider.name');
+    expect(providerOptions).toContain("provider.id === 'openai_compatible'");
+    expect(providerOptions).toContain("provider.id.startsWith('custom_')");
+    expect(providerOptions).toContain("t(locale, 'customProvider')");
     expect(providerOptions).not.toContain('detail: provider');
     expect(providerOptions).not.toContain('apiKeyEnvVar');
     expect(providerOptions).not.toContain('baseUrl.replace');
   });
 
   it('loads model presets inside the model page without applying them immediately', () => {
+    const models = readFileSync(join(here, 'components', 'settings', 'ModelsPage.tsx'), 'utf-8');
     const settingsDrawer = readFileSync(join(here, 'components', 'SettingsDrawer.tsx'), 'utf-8');
-    const modelSection = settingsDrawer.slice(
-      settingsDrawer.indexOf("activeSection === 'agent'"),
-      settingsDrawer.lastIndexOf("activeSection === 'appearance'"),
-    );
 
+    // 模型 section UI 已迁到 ModelsPage.tsx
     expect(settingsDrawer).not.toContain("{ id: 'presets'");
-    expect(modelSection).toContain('modelPresetInlineSelect');
-    expect(modelSection).toContain('loadModelPresetIntoDraft');
-    expect(modelSection).not.toContain('applyModelPreset(preset)');
-    expect(modelSection).not.toContain('saveModelPreset()');
+    expect(models).toContain('modelPresetDraftOptions');
+    expect(models).toContain('<DropdownSelect');
+    expect(models).toContain('loadModelPresetIntoDraft');
+    expect(models).not.toContain('applyModelPreset(preset)');
+    expect(models).not.toContain('saveModelPreset()');
   });
 });

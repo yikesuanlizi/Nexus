@@ -2,6 +2,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { execFileSync } from 'node:child_process';
 
 // ─── Provider Entry ─────────────────────────────────────────────────────────
 // provider 条目：描述一个完整 provider（local 或 remote）
@@ -276,7 +277,7 @@ export function resolveApiKey(
   const envVar = resolveProviderApiKeyEnvVar(providerId);
 
   if (envVar) {
-    const envKey = process.env[envVar];
+    const envKey = readApiKeyEnvironmentValue(envVar);
     if (envKey) return envKey;
   }
 
@@ -306,7 +307,7 @@ export function detectAvailableProviders(): ProviderEntry[] {
   return KNOWN_PROVIDERS.filter((p) => {
     if (p.isLocal) return true; // 本地 provider 始终可用
     const envVar = config.apiKeyEnvVars?.[p.id] || p.apiKeyEnvVar;
-    if (envVar && process.env[envVar]) return true;
+    if (envVar && readApiKeyEnvironmentValue(envVar)) return true;
     if (config.apiKeys?.[p.id]) return true;
     return false;
   });
@@ -413,6 +414,29 @@ export function saveRuntimeEnvironmentVariables(vars: Record<string, string>): v
   if (Object.keys(cleaned).length > 0) saveConfig({ runtimeEnv: cleaned });
 }
 
+/** Read an API key env var from the active process, Nexus runtime env, or Windows user/system env. */
+// 读取 API key 环境变量：当前进程 > Nexus runtimeEnv > Windows 用户/系统环境变量
+export function readApiKeyEnvironmentValue(name: string): string | undefined {
+  const normalizedName = name.trim();
+  if (!normalizedName || !isValidEnvVarName(normalizedName)) return undefined;
+  const direct = process.env[normalizedName];
+  if (direct) return direct;
+
+  const runtimeValue = loadConfig().runtimeEnv?.[normalizedName];
+  if (runtimeValue) return runtimeValue;
+
+  const externalEnv = readExternalEnvironmentSnapshot();
+  const externalValue = externalEnv[normalizedName];
+  if (externalValue) return externalValue;
+
+  if (process.platform === 'win32') {
+    const lowered = normalizedName.toLowerCase();
+    const matchedKey = Object.keys(externalEnv).find((key) => key.toLowerCase() === lowered);
+    if (matchedKey && externalEnv[matchedKey]) return externalEnv[matchedKey];
+  }
+  return undefined;
+}
+
 /** List plausible API key env var names for the UI datalist. */
 // 列出 UI 可搜索的 API key 环境变量候选
 export function listApiKeyEnvVarCandidates(providerId?: string): string[] {
@@ -428,7 +452,7 @@ export function listApiKeyEnvVarCandidates(providerId?: string): string[] {
       add(config.apiKeyEnvVars?.[provider.id]);
     }
   }
-  for (const name of Object.keys({ ...process.env, ...config.runtimeEnv })) {
+  for (const name of Object.keys({ ...readExternalEnvironmentSnapshot(), ...process.env, ...config.runtimeEnv })) {
     if (/(API|KEY|TOKEN|SECRET)/i.test(name)) add(name);
   }
   return [...names].sort((a, b) => a.localeCompare(b));
@@ -466,13 +490,51 @@ export function apiKeySummary(): string[] {
         ? key.slice(0, 4) + '...' + key.slice(-4)
         : '****';
       const envVar = config.apiKeyEnvVars?.[provider.id] || provider.apiKeyEnvVar;
-      const source = process.env[envVar] ? 'env' : 'config';
+      const source = readApiKeyEnvironmentValue(envVar) ? 'env' : 'config';
       lines.push(`${provider.name}: ${masked} (${source})`);
     } else {
       lines.push(`${provider.name}: not set`);
     }
   }
   return lines;
+}
+
+export function parseWindowsRegistryEnvironmentOutput(output: string): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const line of output.split(/\r?\n/)) {
+    const match = line.trim().match(/^([A-Za-z_][A-Za-z0-9_]*)\s+REG_(?:SZ|EXPAND_SZ|MULTI_SZ)\s+(.+)$/);
+    if (!match) continue;
+    env[match[1]] = match[2].trim();
+  }
+  return env;
+}
+
+let externalEnvCache: { at: number; values: Record<string, string> } | null = null;
+
+function readExternalEnvironmentSnapshot(): Record<string, string> {
+  if (process.platform !== 'win32') return {};
+  const now = Date.now();
+  if (externalEnvCache && now - externalEnvCache.at < 5000) return externalEnvCache.values;
+
+  const values: Record<string, string> = {};
+  const registryKeys = [
+    'HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment',
+    'HKCU\\Environment',
+  ];
+  for (const registryKey of registryKeys) {
+    try {
+      const output = execFileSync('reg', ['query', registryKey], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+        windowsHide: true,
+      });
+      Object.assign(values, parseWindowsRegistryEnvironmentOutput(output));
+    } catch {
+      // Registry access is best-effort; process.env and Nexus runtimeEnv remain authoritative.
+    }
+  }
+  externalEnvCache = { at: now, values };
+  return values;
 }
 
 function isValidEnvVarName(name: string): boolean {

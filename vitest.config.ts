@@ -21,8 +21,11 @@ export default defineConfig({
     globals: true,
     include: [
       'tests/**/*.test.ts',
+      'tests/**/*.test.tsx',
       'packages/*/src/**/*.test.ts',
+      'packages/*/src/**/*.test.tsx',
       'apps/*/src/**/*.test.ts',
+      'apps/*/src/**/*.test.tsx',
     ],
     exclude: [
       '**/node_modules/**',

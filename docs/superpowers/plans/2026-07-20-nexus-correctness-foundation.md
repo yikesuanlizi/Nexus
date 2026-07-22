@@ -768,7 +768,7 @@ git add packages/protocol/src/runConfig.ts apps/api/src/config/config.ts apps/ap
 git commit -m "fix: separate global and thread configuration scopes"
 ```
 
-### Task 4: 阻止线程切换竞态
+### Task 4: 阻止线程切换竞态 ✅ DONE
 
 **Files:**
 - Create: `apps/web/src/features/chat/latestRequestGuard.ts`

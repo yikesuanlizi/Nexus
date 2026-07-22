@@ -942,7 +942,7 @@ describe('bot route', () => {
         targetGroupConversationId: 'cid_group_target',
       },
     });
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, _init) => {
       const href = String(url);
       if (href.endsWith('/v1.0/oauth2/accessToken')) {
         return new Response(JSON.stringify({ accessToken: 'token_1', expireIn: 7200 }), { status: 200 });

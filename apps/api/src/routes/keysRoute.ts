@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import {
   listAllProviders,
   listApiKeyEnvVarCandidates,
+  readApiKeyEnvironmentValue,
   removeApiKey,
   resolveApiKey,
   resolveProviderApiKeyEnvVar,
@@ -22,7 +23,7 @@ export function listApiKeyStates(): ApiKeyState[] {
       const key = resolveApiKey(provider.id);
       const envCandidates = listApiKeyEnvVarCandidates(provider.id);
       const envVar = resolveProviderApiKeyEnvVar(provider.id);
-      const fromEnv = envVar ? Boolean(process.env[envVar]) : false;
+      const fromEnv = envVar ? Boolean(readApiKeyEnvironmentValue(envVar)) : false;
       return {
         providerId: provider.id,
         envVar,

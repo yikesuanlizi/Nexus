@@ -2,7 +2,6 @@ import type {
   AgentContext,
   ContextChunk,
   ContextEngineConfig,
-  ContextProvider,
   AssembledContext,
   ProviderContext,
   ContextPhase,

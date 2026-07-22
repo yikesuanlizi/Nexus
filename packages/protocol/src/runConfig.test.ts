@@ -12,9 +12,9 @@ import {
 describe('modelPresetConfigFrom', () => {
   it('keeps only provider, model, and baseUrl', () => {
     expect(modelPresetConfigFrom({
-      provider: 'openai',
-      model: 'gpt-5',
-      baseUrl: 'https://example.test/v1',
+      provider: ' openai ',
+      model: '\tgpt-5 ',
+      baseUrl: ' https://example.test/v1 ',
       permissions: 'danger_full_access',
       workspaceRoot: 'E:/secret',
       memoryEnabled: false,
@@ -28,9 +28,9 @@ describe('modelPresetConfigFrom', () => {
   it('projects only fields that may override a thread', () => {
     expect(threadRunConfigOverridesFrom({
       workspaceRoot: 'E:/repo',
-      provider: 'openai',
-      model: 'gpt-5',
-      baseUrl: '',
+      provider: ' openai ',
+      model: '\tgpt-5 ',
+      baseUrl: ' ',
       permissions: 'workspace',
       webSearchMode: 'auto',
       reasoningEffort: 'high',

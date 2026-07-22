@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyAgentMessageDelta, describeEvent, eventRenderKey, groupTranscriptItems, mergeThreadItems, removeThreadItem, withSyntheticUserMessages } from './threadView.js';
+import { applyAgentMessageDelta, describeEvent, eventKey, eventRenderKey, groupTranscriptItems, itemKey, mergeThreadItems, removeThreadItem, withSyntheticUserMessages } from './threadView.js';
 
 describe('threadView', () => {
   it('groups assistant text and tool calls from the same turn into one assistant bubble', () => {
@@ -283,5 +283,36 @@ describe('threadView', () => {
         text: '现在是上午 10 点。',
       },
     ]);
+  });
+
+  it('produces distinct keys for two same-named tool calls in the same turn', () => {
+    const toolCall1 = { id: 'tool-1', type: 'tool_call' as const, turnId: 'turn-1', toolName: 'read_file' };
+    const toolCall2 = { id: 'tool-2', type: 'tool_call' as const, turnId: 'turn-1', toolName: 'read_file' };
+    expect(itemKey(toolCall1)).not.toBe(itemKey(toolCall2));
+  });
+
+  it('produces distinct keys for two file_change items in the same turn', () => {
+    const change1 = { id: 'change-1', type: 'file_change' as const, turnId: 'turn-1' };
+    const change2 = { id: 'change-2', type: 'file_change' as const, turnId: 'turn-1' };
+    expect(itemKey(change1)).not.toBe(itemKey(change2));
+  });
+
+  it('produces distinct keys for two error items in the same turn', () => {
+    const error1 = { id: 'error-1', type: 'error' as const, turnId: 'turn-1', message: 'fail' };
+    const error2 = { id: 'error-2', type: 'error' as const, turnId: 'turn-1', message: 'fail' };
+    expect(itemKey(error1)).not.toBe(itemKey(error2));
+  });
+
+  it('produces the same key for the same item id across started/completed updates', () => {
+    const started = { id: 'item-1', type: 'tool_call' as const, turnId: 'turn-1', toolName: 'test', status: 'in_progress' as const };
+    const completed = { id: 'item-1', type: 'tool_call' as const, turnId: 'turn-1', toolName: 'test', status: 'completed' as const };
+    expect(itemKey(started)).toBe(itemKey(completed));
+    expect(eventKey(started)).toBe(eventKey(completed));
+  });
+
+  it('keys always start with item: for real items', () => {
+    const item = { id: 'real-item', type: 'agent_message' as const, text: 'hello' };
+    expect(itemKey(item)).toMatch(/^item:/);
+    expect(eventKey(item)).toMatch(/^item:/);
   });
 });

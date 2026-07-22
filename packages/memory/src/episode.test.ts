@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { EpisodeRecord, ThreadId, TurnId } from '@nexus/protocol';
+import type { EpisodeRecord, ThreadId } from '@nexus/protocol';
 import type { ThreadStore } from '@nexus/storage';
 import {
   createEpisodeRecord,

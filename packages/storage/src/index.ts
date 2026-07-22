@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import { DEFAULT_TENANT_ID, LocalThreadStore, safeTenantId } from './store.js';
 import { PostgresThreadStore, type PgClientLike } from './postgres.js';
 import type { ThreadStore } from './store.js';
+export type { RunTraceQuery, RunTraceStore } from './runTraceStore.js';
 
 export { DEFAULT_TENANT_ID, LocalThreadStore, PostgresThreadStore, safeTenantId };
 export type { RunCaller, RunEvent, RunEventLevel, RunFeedback, RunKind, RunRecord, RunStatus, ThreadStore } from './store.js';
@@ -51,7 +52,7 @@ export function createStore(
       db = new Database(path.join(dataDir, 'threads.db'));
       (db as { pragma(sql: string): void }).pragma('journal_mode = WAL');
       console.log('[storage] Using SQLite backend');
-    } catch (_err) {
+    } catch {
       console.warn(
         '[storage] better-sqlite3 unavailable, falling back to JSON file backend.\n' +
         '  Install better-sqlite3 for better concurrent-write safety:\n' +

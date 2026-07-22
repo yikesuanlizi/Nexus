@@ -7,9 +7,8 @@ import { URL } from 'node:url';
 import type { ThreadStore } from '@nexus/storage';
 import type { AgentLoop } from '@nexus/runtime';
 import type { ModelGateway } from '@nexus/model-gateway';
-import type { ThreadEvent, ThreadId, ThreadMeta } from '@nexus/protocol';
-import type { AgentRunConfig } from '../config/config.js';
-import { publicRunConfig } from '../config/config.js';
+import type { ThreadEvent, ThreadId } from '@nexus/protocol';
+import type { AgentRunConfig, ThreadConfigOverrides } from '../config/config.js';
 import { readJson, sendError, sendJson } from '../shared/http.js';
 import type { TenantContext } from '../shared/tenant.js';
 import { buildThreadChildInfos } from '../services/threadChildren.js';
@@ -29,6 +28,8 @@ export interface ThreadRouteContext {
   publishTenantEvent: (event: ThreadEvent) => void;
   getThreadRunConfig: (threadId: ThreadId) => Promise<AgentRunConfig>;
   saveThreadRunConfig: (threadId: ThreadId, config: Partial<AgentRunConfig>) => Promise<AgentRunConfig>;
+  getThreadConfigOverrides: (threadId: string) => Promise<ThreadConfigOverrides>;
+  updateThreadConfigOverrides: (threadId: string, input: Record<string, unknown>) => Promise<ThreadConfigOverrides>;
   publicThreadRunConfig: (config: AgentRunConfig, thread: { tags?: Record<string, string> } | null) => AgentRunConfig;
   closeThreadEventClients: (threadId: ThreadId, tenantId: string) => void;
 }
@@ -59,6 +60,7 @@ export async function handleThreadRoutes(
     req, res, url, segments, store, tenantContext,
     createAgent: async (config) => (await createTenantAgent(config)).agent,
     publishEvent: publishTenantEvent,
+    getThreadRunConfig: ctx.getThreadRunConfig,
   })) return true;
 
   // GET /api/threads/:id — 线程详情
@@ -119,11 +121,22 @@ export async function handleThreadRoutes(
     return true;
   }
 
+  // GET /api/threads/:id/config
+  if (req.method === 'GET' && segments[3] === 'config' && segments.length === 4) {
+    const thread = await store.getThread(threadId);
+    if (!thread) { sendError(res, 404, 'Thread not found'); return true; }
+    const overrides = await ctx.getThreadConfigOverrides(threadId);
+    sendJson(res, 200, { overrides });
+    return true;
+  }
+
   // PATCH /api/threads/:id/config
-  if (req.method === 'PATCH' && segments[3] === 'config') {
-    const body = await readJson<{ config?: Partial<AgentRunConfig> }>(req);
-    const config = await ctx.saveThreadRunConfig(threadId, body.config ?? {});
-    sendJson(res, 200, { ok: true, config: publicRunConfig(config) });
+  if (req.method === 'PATCH' && segments[3] === 'config' && segments.length === 4) {
+    const thread = await store.getThread(threadId);
+    if (!thread) { sendError(res, 404, 'Thread not found'); return true; }
+    const body = await readJson<{ overrides?: Record<string, unknown> }>(req);
+    const overrides = await ctx.updateThreadConfigOverrides(threadId, body.overrides ?? {});
+    sendJson(res, 200, { overrides });
     return true;
   }
 

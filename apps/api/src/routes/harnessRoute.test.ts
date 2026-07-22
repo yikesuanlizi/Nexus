@@ -7,6 +7,8 @@ import type { AgentLoop, HarnessResult, RunTurnOptions } from '@nexus/runtime';
 import { handleHarnessRoute } from './harnessRoute.js';
 import { harnessRuntimeRegistry } from '../services/harnessRuntime.js';
 import type { TenantContext } from '../shared/tenant.js';
+import type { AgentRunConfig } from '../config/config.js';
+import { defaultConfig } from '../config/config.js';
 
 class FakeStore implements Partial<ThreadStore> {
   thread: ThreadMeta;
@@ -96,6 +98,11 @@ afterEach(() => {
 });
 
 describe('harness route', () => {
+  const mockGetThreadRunConfig = vi.fn(async (_threadId: string): Promise<AgentRunConfig> => ({
+    ...defaultConfig,
+    model: 'thread-model',
+  }));
+
   it('returns false for non-harness paths', async () => {
     const handled = await handleHarnessRoute({
       req: request('GET', '/api/threads/thread-harness'),
@@ -106,6 +113,7 @@ describe('harness route', () => {
       tenantContext,
       createAgent: async () => ({}) as AgentLoop,
       publishEvent: vi.fn(),
+      getThreadRunConfig: mockGetThreadRunConfig,
     });
 
     expect(handled).toBe(false);
@@ -143,6 +151,7 @@ describe('harness route', () => {
       tenantContext,
       createAgent: async () => ({ runHarness }) as unknown as AgentLoop,
       publishEvent: vi.fn(),
+      getThreadRunConfig: mockGetThreadRunConfig,
     });
 
     expect(handled).toBe(true);
@@ -176,6 +185,7 @@ describe('harness route', () => {
       tenantContext,
       createAgent: async () => ({}) as AgentLoop,
       publishEvent: vi.fn(),
+      getThreadRunConfig: mockGetThreadRunConfig,
     });
 
     expect(statusRes.statusCode).toBe(200);
@@ -199,6 +209,7 @@ describe('harness route', () => {
       tenantContext,
       createAgent: async () => ({}) as AgentLoop,
       publishEvent: vi.fn(),
+      getThreadRunConfig: mockGetThreadRunConfig,
     });
 
     expect(res.statusCode).toBe(409);
@@ -241,6 +252,7 @@ describe('harness route', () => {
       tenantContext,
       createAgent: async () => ({}) as AgentLoop,
       publishEvent: vi.fn(),
+      getThreadRunConfig: mockGetThreadRunConfig,
     });
 
     expect(res.statusCode).toBe(200);
@@ -276,6 +288,7 @@ describe('harness route', () => {
       tenantContext,
       createAgent: async () => ({}) as AgentLoop,
       publishEvent: vi.fn(),
+      getThreadRunConfig: mockGetThreadRunConfig,
     });
 
     expect(res.statusCode).toBe(200);
@@ -284,5 +297,86 @@ describe('harness route', () => {
       harnessRunId: 'harness-route-cancel',
       runtimeStatus: 'cancelled',
     });
+  });
+
+  it('uses thread config when body.config is not provided', async () => {
+    const threadConfig: AgentRunConfig = {
+      ...defaultConfig,
+      model: 'thread-specific-model',
+      provider: 'thread-provider',
+    };
+    const getConfig = vi.fn(async () => threadConfig);
+    let capturedConfig: Partial<AgentRunConfig> | undefined;
+    const createAgent = vi.fn(async (config?: Partial<AgentRunConfig>) => {
+      capturedConfig = config;
+      return {
+        runHarness: vi.fn(async () => harnessResult('harness-test')),
+      } as unknown as AgentLoop;
+    });
+
+    const res = response();
+    await handleHarnessRoute({
+      req: request('POST', '/api/threads/thread-harness/harness/start', {
+        input: 'test input',
+      }),
+      res,
+      url: new URL('http://localhost/api/threads/thread-harness/harness/start'),
+      segments: ['api', 'threads', 'thread-harness', 'harness', 'start'],
+      store: new FakeStore() as unknown as ThreadStore,
+      tenantContext,
+      createAgent,
+      publishEvent: vi.fn(),
+      getThreadRunConfig: getConfig,
+    });
+
+    expect(getConfig).toHaveBeenCalledWith('thread-harness');
+    expect(createAgent).toHaveBeenCalled();
+    expect(capturedConfig).toMatchObject({
+      model: 'thread-specific-model',
+      provider: 'thread-provider',
+    });
+    expect(res.statusCode).toBe(202);
+  });
+
+  it('merges body.config as overlay on top of thread config (without persistence)', async () => {
+    const threadConfig: AgentRunConfig = {
+      ...defaultConfig,
+      model: 'thread-model',
+      provider: 'thread-provider',
+    };
+    const getConfig = vi.fn(async () => threadConfig);
+    let capturedConfig: Partial<AgentRunConfig> | undefined;
+    const createAgent = vi.fn(async (config?: Partial<AgentRunConfig>) => {
+      capturedConfig = config;
+      return {
+        runHarness: vi.fn(async () => harnessResult('harness-test')),
+      } as unknown as AgentLoop;
+    });
+
+    const res = response();
+    await handleHarnessRoute({
+      req: request('POST', '/api/threads/thread-harness/harness/start', {
+        input: 'test input',
+        config: {
+          model: 'overlay-model',
+        },
+      }),
+      res,
+      url: new URL('http://localhost/api/threads/thread-harness/harness/start'),
+      segments: ['api', 'threads', 'thread-harness', 'harness', 'start'],
+      store: new FakeStore() as unknown as ThreadStore,
+      tenantContext,
+      createAgent,
+      publishEvent: vi.fn(),
+      getThreadRunConfig: getConfig,
+    });
+
+    expect(getConfig).toHaveBeenCalledWith('thread-harness');
+    expect(createAgent).toHaveBeenCalled();
+    expect(capturedConfig).toMatchObject({
+      model: 'overlay-model',
+      provider: 'thread-provider',
+    });
+    expect(res.statusCode).toBe(202);
   });
 });

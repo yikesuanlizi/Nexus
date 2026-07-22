@@ -10,14 +10,12 @@
 // 5. no_storm: StormBreaker 未触发
 
 import type { ThreadItem } from '@nexus/protocol';
-import type { GoalEvaluation } from '@nexus/protocol';
 import type {
   EvidenceLedger,
 } from './evidenceLedger.js';
 import type { GoalTracker } from './goalTracker.js';
 import type {
   ReadinessGate,
-  ReadinessGateName,
   ReadinessResult,
   StormBreakerResult,
 } from './types.js';

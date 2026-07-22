@@ -9,7 +9,6 @@ import type { CompactionSummary, ThreadId, ThreadItem } from '@nexus/protocol';
 import type {
   EvidenceReceipt,
   HarnessContextSlice,
-  HarnessPlanNode,
 } from './types.js';
 import type { EvidenceLedger } from './evidenceLedger.js';
 import type { GoalTracker } from './goalTracker.js';
@@ -17,7 +16,19 @@ import type { GoalTracker } from './goalTracker.js';
 // ─── ThreadStore 最小接口 ────────────────────────────────────────────────────
 export interface HarnessContextStore {
   getRecentItems(threadId: ThreadId, maxItems?: number): Promise<ThreadItem[]>;
-  getItems(threadId: ThreadId, since?: number): Promise<ThreadItem[]>;
+  // P6.3: getItems 签名与 ThreadStore.getItems 保持一致，支持 filter 对象
+  // — Chinese: getItems signature aligned with ThreadStore.getItems, supports filter object
+  getItems(
+    threadId: ThreadId,
+    filter?: {
+      runId?: string;
+      turnId?: string;
+      type?: string;
+      limit?: number;
+      afterSequence?: number;
+      beforeSequence?: number;
+    },
+  ): Promise<ThreadItem[]>;
 }
 
 // ─── token 估算（粗略，1 token ≈ 4 字符） ─────────────────────────────────────
@@ -49,11 +60,6 @@ function estimateItemsTokens(items: ThreadItem[]): number {
 }
 
 // ─── 裁切辅助函数 ────────────────────────────────────────────────────────────
-
-function basename(p: string): string {
-  const parts = p.replace(/\\/g, '/').split('/');
-  return parts[parts.length - 1] ?? p;
-}
 
 function isItemRelatedToNode(item: ThreadItem, activeNodeId?: string): boolean {
   // MVP: 简单判断 — 如果 item 是 file_change 且改了含 activeNodeId 的路径
@@ -275,7 +281,7 @@ export class HarnessContextManager {
    * 压缩已完成节点的上下文（标记为已压缩，下轮不再全量保留）。
    * MVP: 仅从 recentItems 中过滤掉已完成节点的旧 reasoning item。
    */
-  compactCompletedIteration(nodeId: string): void {
+  compactCompletedIteration(_nodeId: string): void {
     // 实际过滤在 buildIterationContext 中按 activeNodeId 判断
     // 这里保留接口供未来扩展（例如写 tag 标记节点已压缩）
   }
@@ -283,7 +289,7 @@ export class HarnessContextManager {
   /**
    * 保留失败上下文（不压缩）。
    */
-  retainFailureContext(nodeId: string, reason: string): void {
+  retainFailureContext(_nodeId: string, _reason: string): void {
     // 失败节点的 item 在 filterRelevantItems 中优先保留
   }
 
@@ -344,11 +350,9 @@ export class HarnessContextManager {
 
   private filterRelevantItems(
     items: ThreadItem[],
-    activeNodeId: string | null,
-    plan: { id: string; status: string }[],
+    _activeNodeId: string | null,
+    _plan: { id: string; status: string }[],
   ): ThreadItem[] {
-    const completedNodeIds = new Set(plan.filter(n => n.status === 'completed').map(n => n.id));
-
     return items.filter((item) => {
       // 规则 4: 已完成节点的旧 item 优先丢弃（但保留 error / file_change 作为证据）
       // 规则 7: 旧 reasoning item 默认丢弃

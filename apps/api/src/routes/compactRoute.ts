@@ -61,7 +61,8 @@ export async function handleCompactThread(options: {
   await options.store.saveTurn(turn);
   await options.store.updateThreadMetadata(options.threadId, { turnCount: thread.turnCount + 1 });
   await options.store.appendCheckpoint(options.threadId, compactCheckpoint(options.threadId, turnId, 0, 'running'));
-  options.publishEvent({ type: 'turn.started', threadId: options.threadId, turnId, turnIndex: thread.turnCount });
+  const compactRunId = `run_${turnId}`;
+  options.publishEvent({ type: 'turn.started', threadId: options.threadId, turnId, runId: compactRunId, turnIndex: thread.turnCount });
 
   try {
     const result = await compactThread(options.threadId, options.store, model, {
@@ -85,7 +86,7 @@ export async function handleCompactThread(options: {
     await options.store.saveTurn(turn);
     const itemIndex = (await options.store.getItems(options.threadId)).length;
     await options.store.appendCheckpoint(options.threadId, compactCheckpoint(options.threadId, turnId, itemIndex, 'completed'));
-    options.publishEvent({ type: 'turn.completed', threadId: options.threadId, turnId, usage: null, status: 'completed' });
+    options.publishEvent({ type: 'turn.completed', threadId: options.threadId, turnId, runId: compactRunId, usage: null, status: 'completed' });
     sendJson(options.res, 200, result);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -103,7 +104,7 @@ export async function handleCompactThread(options: {
     await options.store.saveTurn(turn);
     const itemIndex = (await options.store.getItems(options.threadId)).length;
     await options.store.appendCheckpoint(options.threadId, compactCheckpoint(options.threadId, turnId, itemIndex, 'failed'));
-    options.publishEvent({ type: 'turn.failed', threadId: options.threadId, turnId, error: { message } });
+    options.publishEvent({ type: 'turn.failed', threadId: options.threadId, turnId, runId: compactRunId, error: { message } });
     sendError(options.res, 500, message);
   }
 }

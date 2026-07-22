@@ -27,7 +27,7 @@ import { buildSkillDraftSystemPrompt, createSkillInstallTurnItems, createTemplat
 import { prepareMcpDraftRequest } from './services/mcpDraft.js';
 import { shouldRetitleThread, titleFromInput } from './services/threadTitle.js';
 import { buildUserInputFromTurnRequest } from './services/turnInput.js';
-import { defaultConfig, hiddenChatWorkspaceRoot, publicRunConfig, resolveConfig, type AgentRunConfig, type TurnRequest, A2A_CONFIG_KEY, normalizeA2AConfig } from './config/config.js';
+import { defaultConfig, hiddenChatWorkspaceRoot, resolveConfig, type AgentRunConfig, type TurnRequest, A2A_CONFIG_KEY, normalizeA2AConfig } from './config/config.js';
 import { createTenantRuntime } from './runtime/tenantRuntime.js';
 import { applyCorsHeaders, resolveCorsOptions } from './shared/cors.js';
 import { handleRequestGate } from './routes/requestGate.js';
@@ -136,7 +136,7 @@ function getA2AHandler(
   return handler;
 }
 
-function serializeThreadState(state: ThreadState): unknown {
+export function serializeThreadState(state: ThreadState): unknown {
   return {
     status: state.status,
     activeTurnId: state.activeTurnId,
@@ -345,12 +345,14 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const {
     deleteModelPreset,
     getDefaultRunConfig,
+    getThreadConfigOverrides,
     getThreadRunConfig,
     listMcpServers,
     listModelPresets,
     publicThreadRunConfig,
     saveMcpServers,
     saveThreadRunConfig,
+    updateThreadConfigOverrides,
     upsertModelPreset,
   } = configRepo;
   const saveTenantDefaultRunConfig = (configPatch: Partial<AgentRunConfig>) => tenantRuntime.saveDefaultRunConfig(configPatch, tenantContext);
@@ -593,6 +595,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     tenantContext,
     isAdmin: authIdentity?.role === 'admin',
     adminToken: process.env.NEXUS_ADMIN_TOKEN,
+    activeRunRegistry: tenantRuntime.activeRunRegistry,
     onControlRun: (action, request) => handleRunControlAction(action, request, getTenantDefaultAgent),
   })) return;
 
@@ -623,12 +626,14 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       workspaceRoot: conversationKind === 'chat' ? '' : effectiveConfig.workspaceRoot,
       tags: conversationKind === 'chat' ? { conversationKind: 'chat' } : body.workflowProject ? { workflowProject: 'true' } : {},
     });
-    const config = await saveThreadRunConfig(thread.threadId, effectiveConfig);
+    const threadConfigPatch: Partial<AgentRunConfig> = body.config ? { ...body.config } : {};
+    if (conversationKind === 'chat') threadConfigPatch.workspaceRoot = '';
+    const config = await saveThreadRunConfig(thread.threadId, threadConfigPatch);
     sendJson(res, 200, { thread: await store.getThread(thread.threadId), config: publicThreadRunConfig(config, await store.getThread(thread.threadId)) });
     return;
   }
 
-  if (await handleThreadRoutes(req, res, url, segments, { store, tenantContext, createTenantAgent, getTenantDefaultAgent, publishTenantEvent, getThreadRunConfig, saveThreadRunConfig, publicThreadRunConfig, closeThreadEventClients })) return;
+  if (await handleThreadRoutes(req, res, url, segments, { store, tenantContext, createTenantAgent, getTenantDefaultAgent, publishTenantEvent, getThreadRunConfig, saveThreadRunConfig, getThreadConfigOverrides, updateThreadConfigOverrides, publicThreadRunConfig, closeThreadEventClients })) return;
 
   if (req.method === 'GET' && segments[0] === 'api' && segments[1] === 'events' && segments[2]) {
     const threadId = segments[2];
@@ -674,6 +679,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
 
       const turnId = generateServerId();
       const startedAt = new Date().toISOString();
+      const skillsRunId = `run_${turnId}`;
       const turn: TurnMeta = {
         turnId,
         threadId,
@@ -685,7 +691,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       };
       await store.saveTurn(turn);
       await store.updateThreadMetadata(threadId, { turnCount: thread.turnCount + 1 });
-      publishTenantEvent({ type: 'turn.started', threadId, turnId, turnIndex: thread.turnCount });
+      publishTenantEvent({ type: 'turn.started', threadId, turnId, runId: skillsRunId, turnIndex: thread.turnCount });
 
       try {
         const result = await installSkillsFromGitHubUrls(config.skillsRoot, skillUrls);
@@ -706,7 +712,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
         turn.status = 'completed';
         turn.completedAt = new Date().toISOString();
         await store.saveTurn(turn);
-        publishTenantEvent({ type: 'turn.completed', threadId, turnId, usage: null, status: 'completed' });
+        publishTenantEvent({ type: 'turn.completed', threadId, turnId, runId: skillsRunId, usage: null, status: 'completed' });
         sendJson(res, 200, { ok: true, items, ...result });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -716,7 +722,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
         turn.status = 'failed';
         turn.completedAt = new Date().toISOString();
         await store.saveTurn(turn);
-        publishTenantEvent({ type: 'turn.failed', threadId, turnId, error: { message } });
+        publishTenantEvent({ type: 'turn.failed', threadId, turnId, runId: skillsRunId, error: { message } });
         sendError(res, 400, message);
       }
       return;

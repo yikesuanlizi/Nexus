@@ -284,7 +284,8 @@ describe('WorkflowPanel', () => {
 
   it('keeps workflow styles theme-aware instead of shipping hard-coded white panels', () => {
     const css = readFileSync(resolve(process.cwd(), 'apps/desktop/src/styles.css'), 'utf8');
-    const workflowCss = css.slice(css.lastIndexOf('@layer components'));
+    const workflowStart = css.indexOf('.workflowCanvasStage');
+    const workflowCss = workflowStart === -1 ? css : css.slice(workflowStart);
 
     expect(workflowCss).not.toContain('.workflowFlowHeader');
     expect(workflowCss).not.toMatch(/\.workflow(?:PlanDraft|Graph|Editor)[^{]*\{[^}]*bg-white/s);

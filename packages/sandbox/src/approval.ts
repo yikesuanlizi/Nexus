@@ -16,7 +16,7 @@ export interface ApprovalHandler {
 /** A no-op handler that auto-denies everything (safest default). */
 // 默认拒绝处理器：所有审批请求一律拒绝（最安全兜底）
 export class DenyAllApprovalHandler implements ApprovalHandler {
-  async requestApproval(req: ApprovalRequest) {
+  async requestApproval(_req: ApprovalRequest) {
     return { approved: false, reason: 'No approval handler configured — denying by default' };
   }
 }
@@ -24,7 +24,7 @@ export class DenyAllApprovalHandler implements ApprovalHandler {
 /** Auto-approve handler (for trusted environments). */
 // 自动通过处理器：所有审批请求一律通过（仅用于受信任环境）
 export class AutoApproveHandler implements ApprovalHandler {
-  async requestApproval(req: ApprovalRequest) {
+  async requestApproval(_req: ApprovalRequest) {
     return { approved: true, reason: 'auto-approved' };
   }
 }

@@ -23,28 +23,6 @@ function getItemHarnessRunId(item: ThreadItem): string | undefined {
 
 // ─── 辅助：从 ThreadItem 提取文本/路径/命令 ───────────────────────────────────
 
-function extractItemText(item: ThreadItem): string {
-  if (item.type === 'agent_message' || item.type === 'user_message' || item.type === 'reasoning') {
-    return item.text ?? '';
-  }
-  if (item.type === 'command_execution') {
-    return `${item.command}\n${item.aggregatedOutput ?? ''}`;
-  }
-  if (item.type === 'tool_call') {
-    return `${item.toolName}\n${JSON.stringify(item.result ?? '')}`;
-  }
-  if (item.type === 'mcp_tool_call') {
-    return `${item.server}:${item.tool}\n${JSON.stringify(item.result ?? '')}`;
-  }
-  if (item.type === 'file_change') {
-    return (item.changes ?? []).map(c => `${c.kind} ${c.path}`).join('\n');
-  }
-  if (item.type === 'error') {
-    return item.message;
-  }
-  return '';
-}
-
 function extractItemPaths(item: ThreadItem): string[] {
   if (item.type === 'file_change') {
     return (item.changes ?? []).map(c => c.path);
@@ -83,7 +61,6 @@ function basename(p: string): string {
 // 真正的 verification 判定由 ReadinessCritic.mutation_verified gate 完成。
 function deriveSupportsCriteria(item: ThreadItem, criteria: string[]): string[] {
   const supported: string[] = [];
-  const text = extractItemText(item).toLowerCase();
   const paths = extractItemPaths(item);
   const command = extractItemCommand(item);
   const toolName = extractItemToolName(item);

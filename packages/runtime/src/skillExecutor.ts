@@ -293,15 +293,6 @@ function runWithTimeout<T>(fn: () => Promise<T> | T, timeoutMs: number, signal?:
   });
 }
 
-function createNoopLogger(): SkillExecutionContext['logger'] {
-  return {
-    info: () => {},
-    warn: () => {},
-    error: () => {},
-    debug: () => {},
-  };
-}
-
 function createTaggedLogger(skillName: string, threadId: string, turnId?: string): SkillExecutionContext['logger'] {
   const tag = `[skill:${skillName}${turnId ? ` turn=${turnId.slice(0, 8)}` : ` thread=${threadId.slice(0, 8)}`}]`;
   return {

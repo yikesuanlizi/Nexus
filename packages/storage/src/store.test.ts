@@ -586,7 +586,7 @@ describe('LocalThreadStore threads', () => {
     const { store } = createStore(mkdtempSync(join(tmpdir(), 'nexus-storage-')));
 
     await expect(store.getSetting('storage.schemaVersion')).resolves.toEqual({
-      version: 5,
+      version: 6,
     });
   });
 

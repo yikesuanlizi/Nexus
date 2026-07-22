@@ -6,10 +6,8 @@
 import type { ThreadId, ThreadMeta } from '@nexus/protocol';
 import type { GoalEvaluation } from '@nexus/protocol';
 import type {
-  HarnessGoal,
   HarnessPlanNode,
   HarnessState,
-  HarnessStatus,
 } from './types.js';
 
 // ─── ThreadStore 最小接口（避免依赖具体实现） ─────────────────────────────────

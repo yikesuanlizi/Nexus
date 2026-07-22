@@ -16,8 +16,6 @@ import type {
 } from '@nexus/protocol';
 import type { ExperienceEngine } from '@nexus/context';
 import type {
-  ContinuationInput,
-  EvidenceReceipt,
   HarnessConfig,
   HarnessResult,
   HarnessState,

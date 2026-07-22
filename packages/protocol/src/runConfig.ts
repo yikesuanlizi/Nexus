@@ -66,7 +66,7 @@ export function threadRunConfigOverridesFrom(input: Record<string, unknown>): Th
   for (const key of THREAD_RUN_CONFIG_KEYS) {
     const value = input[key];
     if (typeof value === 'string') {
-      (result as Record<string, string>)[key] = value;
+      (result as Record<string, string>)[key] = value.trim();
     }
   }
   return result;

@@ -259,7 +259,7 @@ export function WorkflowPanel({
     }));
   }
 
-  function endNodeDrag(event: PointerEvent<HTMLElement>): void {
+  function endNodeDrag(_event: PointerEvent<HTMLElement>): void {
     if (!nodeDragRef.current) return;
     const nodeId = nodeDragRef.current.nodeId;
     nodeDragRef.current = null;

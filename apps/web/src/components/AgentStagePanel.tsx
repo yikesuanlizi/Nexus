@@ -10,9 +10,13 @@ import type { AgentStageRow } from '../shared/types.js';
 export function AgentStagePanel({
   locale,
   rows,
+  selectedThreadId,
+  onSelectAgent,
 }: {
   locale: Locale;
   rows: AgentStageRow[];
+  selectedThreadId?: string | null;
+  onSelectAgent?(threadId: string): void;
 }) {
   if (rows.length === 0) return null;
   const mainRow = rows.find((row) => row.kind === 'main') ?? rows[0];
@@ -50,7 +54,20 @@ export function AgentStagePanel({
         </div>
         <span>{childRows.length > 0 ? childRows.length : 1}</span>
       </div>
-      <article className={['agentStageAvatarCard', mainRow.tone].join(' ')}>
+      <article className={['agentStageAvatarCard', mainRow.tone].join(' ')} data-selected={selectedThreadId === mainRow.threadId ? 'true' : undefined}>
+        {onSelectAgent ? (
+          <button
+            type="button"
+            className="agentStageInfoButton"
+            onClick={() => onSelectAgent(mainRow.threadId)}
+            aria-pressed={selectedThreadId === mainRow.threadId}
+            aria-label={selectedThreadId === mainRow.threadId
+              ? (locale === 'zh' ? '收起主 Agent 详情' : 'Collapse main agent details')
+              : (locale === 'zh' ? '查看主 Agent 详情' : 'View main agent details')}
+          >
+            i
+          </button>
+        ) : null}
         <div className="agentStageHeroAvatar" aria-hidden="true">
           <RobotMoodIcon variant="main" onInteract={handleNudgeClick} />
           {showNudge && childRows.length === 0 && (
@@ -90,6 +107,7 @@ export function AgentStagePanel({
             className={['agentStageCard', row.kind, row.tone, childRows.length === 0 ? 'solo' : ''].join(' ')}
             key={row.threadId}
             style={{ '--agent-depth': row.depth } as CSSProperties}
+            data-selected={selectedThreadId === row.threadId ? 'true' : undefined}
           >
             <div className="agentCardTop">
               <div className="agentAvatar" aria-hidden="true">
@@ -98,6 +116,19 @@ export function AgentStagePanel({
               <span className={['agentStageBadge', row.tone].join(' ')}>
                 {row.statusLabel}
               </span>
+              {onSelectAgent ? (
+                <button
+                  type="button"
+                  className="agentStageInfoButton"
+                  onClick={() => onSelectAgent(row.threadId)}
+                  aria-pressed={selectedThreadId === row.threadId}
+                  aria-label={selectedThreadId === row.threadId
+                    ? (locale === 'zh' ? `收起 ${row.title} 详情` : `Collapse ${row.title} details`)
+                    : (locale === 'zh' ? `查看 ${row.title} 详情` : `View ${row.title} details`)}
+                >
+                  i
+                </button>
+              ) : null}
             </div>
             <div className="agentStageMain">
               <div className="agentStageTitleLine">

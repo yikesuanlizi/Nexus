@@ -110,6 +110,56 @@ describe('message markdown rendering', () => {
   });
 });
 
+describe('message action visibility', () => {
+  it('shows timestamp and copy actions for error-only assistant turns', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AssistantTurnView, {
+        group: {
+          turnId: 'turn-error',
+          items: [
+            { id: 'err-1', type: 'error', turnId: 'turn-error', message: 'OpenAI gateway error (401)', status: 'failed' },
+          ],
+        },
+        locale: 'zh',
+      }),
+    );
+
+    expect(html).toContain('OpenAI gateway error (401)');
+    expect(html).toContain('messageActions');
+    expect(html).toContain('messageTimestamp');
+    expect(html).toContain('aria-label="复制"');
+  });
+
+  it('only renders rollback on a user message when explicitly allowed', () => {
+    const baseItem = { id: 'u1', type: 'user_message', turnId: 'turn-1', text: '你好', status: 'completed' };
+    const hidden = renderToStaticMarkup(
+      React.createElement(ItemView, { item: baseItem, locale: 'zh', canRollback: false }),
+    );
+    const visible = renderToStaticMarkup(
+      React.createElement(ItemView, { item: baseItem, locale: 'zh', canRollback: true }),
+    );
+
+    expect(hidden).not.toContain('回退到这里');
+    expect(visible).toContain('回退到这里');
+  });
+
+  it('renders regenerate only for the latest assistant turn when allowed', () => {
+    const group = {
+      turnId: 'turn-1',
+      items: [{ id: 'a1', type: 'agent_message', turnId: 'turn-1', text: '回答', status: 'completed' }],
+    };
+    const hidden = renderToStaticMarkup(
+      React.createElement(AssistantTurnView, { group, locale: 'zh', canRegenerate: false }),
+    );
+    const visible = renderToStaticMarkup(
+      React.createElement(AssistantTurnView, { group, locale: 'zh', canRegenerate: true }),
+    );
+
+    expect(hidden).not.toContain('重新回答');
+    expect(visible).toContain('重新回答');
+  });
+});
+
 describe('assistant turn file summary', () => {
   it('renders read and changed files after assistant turn content', () => {
     const html = renderToStaticMarkup(

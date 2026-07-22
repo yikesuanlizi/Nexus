@@ -1,4 +1,4 @@
-import type { ContextProvider, ProviderContext, TaskCognition, ContextProviderResult, RiskAssessment } from '../types.js';
+import type { ContextProvider, ProviderContext, TaskCognition, ContextProviderResult } from '../types.js';
 
 export interface TaskContextProviderOptions {
   initialGoal?: string;

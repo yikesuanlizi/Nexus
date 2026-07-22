@@ -12,6 +12,7 @@ export {
   resolveProviderApiKeyEnvVar,
   detectAvailableProviders,
   listApiKeyEnvVarCandidates,
+  readApiKeyEnvironmentValue,
   loadConfig,
   saveConfig,
   saveApiKey,

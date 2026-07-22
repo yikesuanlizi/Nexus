@@ -3,7 +3,6 @@ import type {
   ExperienceCandidate,
   ExperienceQuery,
   ExperienceStore,
-  ExperienceType,
 } from './types.js';
 import { evaluateCandidate, estimateSignalStrength, DEFAULT_EVALUATION_GATE_CONFIG, type EvaluationGateConfig } from './evaluationGate.js';
 import { InMemoryExperienceStore } from './experienceStore.js';

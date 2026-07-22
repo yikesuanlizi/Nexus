@@ -5,10 +5,11 @@ import type {
   TurnMeta,
   ThreadItem,
   ThreadEvent,
+  RunTraceObservation,
+  RunTraceRunKind,
   UserInput,
   ItemId,
   Usage,
-  TextInput,
   CollabToolCallItem,
   CollabToolName,
   AgentTransferEnvelope,
@@ -20,12 +21,13 @@ import type {
   ThreadWorkingSetSnapshot,
   EpisodeMemoryMode,
 } from '@nexus/protocol';
+import { RUN_TRACE_VERSION } from '@nexus/protocol';
 import { ModelGateway, type ChatMessage, type ToolCall } from '@nexus/model-gateway';
 import { ToolRegistry, type ToolContext, type ToolDefinition, type WebProviderRouterOptions, BUILTIN_TOOLS } from '@nexus/tools';
 import { Sandbox, resolveSandboxEffective, type SandboxConfig, type SandboxLevel, DenyAllApprovalHandler } from '@nexus/sandbox';
 import type { ApprovalHandler } from '@nexus/sandbox';
 import type { PermissionPreset } from '@nexus/sandbox';
-import type { RunEvent, RunEventLevel, RunRecord, ThreadStore } from '@nexus/storage';
+import type { RunEvent, RunEventLevel, RunRecord, RunTraceStore, ThreadStore } from '@nexus/storage';
 import type { RemoteAgentClient } from './a2aClient/remoteAgentClient.js';
 import {
   DEFAULT_MEMORY_SETTINGS,
@@ -40,18 +42,13 @@ import {
   buildOrReuseWorkingSet,
   getThreadWorkingSetSnapshot,
   saveThreadWorkingSetSnapshot,
-  emptyWorkingSetSnapshot,
-  createEpisodeRecord,
   getOpenEpisodeForThread,
   saveEpisodeRecord,
   sealEpisode,
   updateEpisodeFromTurn,
-  recordEpisodeUsage,
-  promoteEpisodeToWarm,
   invalidateEpisodesByTurnRange,
   getEpisodeMemorySettings,
   normalizeEpisodeMemorySettings,
-  DEFAULT_EPISODE_MEMORY_SETTINGS,
   listLightMemories,
   type MemorySettings,
   type EpisodeMemorySettings,
@@ -71,7 +68,7 @@ import { parseMcpNamespacedToolName } from './mcpClient.js';
 import { buildPromptCacheShape, comparePromptCacheShape, type PromptCacheShape } from './cacheShape.js';
 import { compactionOptionsForRunProfile, contextBudgetForRunProfile, normalizeRunProfile, type RunProfile } from './runProfile.js';
 import { leaksToolProtocol, validateThreadItemsForPersistence } from './modelOutput.js';
-import { NexusRuntimeError, affectsTurnStatus, isRecoverableStreamError, toNexusErrorInfo } from './runtimeError.js';
+import { NexusRuntimeError, isRecoverableStreamError, toNexusErrorInfo } from './runtimeError.js';
 import type { RunTurnOptions, HarnessItemFields, HarnessResult } from './harness/types.js';
 import { TaskHarnessEngine, type HarnessAgentLoop, type HarnessStateChangeCallback } from './harness/taskHarness.js';
 import { DEFAULT_HARNESS_CONFIG } from './harness/types.js';
@@ -121,6 +118,7 @@ import {
 } from '@nexus/extensions';
 import { SkillExecutor } from './skillExecutor.js';
 import { createUseSkillTool, USE_SKILL_TOOL_NAME } from './skillTool.js';
+import { RunTraceSession } from './runTraceSession.js';
 
 const RUNNING_CHECKPOINT_TTL_MS = 30 * 60 * 1000;
 const MAX_WEB_SEARCH_CALLS_PER_TURN = 6;
@@ -324,6 +322,7 @@ export class AgentLoop {
   private promptCacheShapes = new Map<ThreadId, PromptCacheShape>();
   private runMonitorSessions = new Map<TurnId, {
     runId: string;
+    runKind: RunTraceRunKind;
     threadId: ThreadId;
     turnId: TurnId;
     sequence: number;
@@ -336,6 +335,7 @@ export class AgentLoop {
     cachedInputTokens: number;
     outputTokens: number;
     reasoningOutputTokens: number;
+    traceSession: RunTraceSession | null;
   }>();
   private runtimeMiddleware: ReturnType<typeof composeRuntimeMiddleware>;
   /** Per-thread episode working set snapshot (in-memory cache). */
@@ -1030,10 +1030,13 @@ export class AgentLoop {
     if (state.status !== 'running' || !state.activeTurnId) return false;
     const turnId = state.activeTurnId;
     this.stateManager.interruptTurn(threadId, turnId, requestId ?? generateId());
+    const session = this.runMonitorSessions.get(turnId);
+    const runId = session?.runId ?? `run_${turnId}`;
     this.emit({
       type: 'turn.completed',
       threadId,
       turnId,
+      runId,
       usage: null,
       status: 'interrupted',
     });
@@ -1104,6 +1107,7 @@ export class AgentLoop {
       collectedItems,
     );
     await this.beginRunMonitor({ threadId, turnId, title: thread.title, userInput });
+    const resumeRunId = `run_${turnId}`;
     await this.maybeEmitWorkingSetRestored(threadId, turnId);
 
     const webSearchRecommended = shouldEnableWebSearch(this.config.webSearchMode, userInput);
@@ -1140,7 +1144,7 @@ export class AgentLoop {
       await this.writeCheckpoint(threadId, this.withCheckpointState(threadId, turnId, collectedItems.length, 'completed'));
       this.stateManager.completeTurn(threadId, turnId);
       if (result.usage) await this.recordUsage(threadId, turnId, result.usage);
-      this.emit({ type: 'turn.completed', threadId, turnId, usage: result.usage });
+      this.emit({ type: 'turn.completed', threadId, turnId, runId: resumeRunId, usage: result.usage });
       this.emitTaskRuntimeUpdated(threadId, turnId, 'after_turn', 'completed');
       this.emitTaskRuntimeUpdated(threadId, turnId, 'idle', 'completed');
       terminalTurnResult = { status: 'completed', usage: result.usage };
@@ -1162,7 +1166,7 @@ export class AgentLoop {
         }
         await this.writeCheckpoint(threadId, this.withCheckpointState(threadId, turnId, collectedItems.length, 'interrupted'));
         this.stateManager.completeInterruptedTurn(threadId, turnId);
-        this.emit({ type: 'turn.completed', threadId, turnId, usage: null, status: 'interrupted' });
+        this.emit({ type: 'turn.completed', threadId, turnId, runId: resumeRunId, usage: null, status: 'interrupted' });
         this.emitTaskRuntimeUpdated(threadId, turnId, 'after_turn', 'interrupted');
         this.emitTaskRuntimeUpdated(threadId, turnId, 'idle', 'interrupted');
         terminalTurnResult = { status: 'interrupted', usage: null, error: err };
@@ -1190,7 +1194,7 @@ export class AgentLoop {
           recoverable: true,
           error: { message, info },
         });
-        this.emit({ type: 'turn.completed', threadId, turnId, usage: null, status: 'interrupted' });
+        this.emit({ type: 'turn.completed', threadId, turnId, runId: resumeRunId, usage: null, status: 'interrupted' });
         this.emitTaskRuntimeUpdated(threadId, turnId, 'after_turn', 'interrupted');
         this.emitTaskRuntimeUpdated(threadId, turnId, 'idle', 'interrupted');
         await this.appendRunMonitorEvent(turnId, {
@@ -1216,6 +1220,7 @@ export class AgentLoop {
         type: 'turn.failed',
         threadId,
         turnId,
+        runId: resumeRunId,
         error: { message: errorMsg, info: errorInfo },
       });
       this.emitTaskRuntimeUpdated(threadId, turnId, 'after_turn', 'failed');
@@ -1291,8 +1296,12 @@ export class AgentLoop {
   ): void {
     if (!itemId) return;
     const itemIndex = collectedItems.findIndex((item) => item.id === itemId);
+    const discardedItem = itemIndex >= 0 ? collectedItems[itemIndex] : null;
     if (itemIndex >= 0) collectedItems.splice(itemIndex, 1);
     this.emit({ type: 'item.discarded', threadId, turnId, itemId });
+    if (discardedItem) {
+      void this.appendItemRunMonitorEvent(threadId, turnId, discardedItem, 'item.discarded');
+    }
   }
 
   private async beginRunMonitor(options: {
@@ -1300,11 +1309,12 @@ export class AgentLoop {
     turnId: TurnId;
     title: string;
     userInput: UserInput;
-  }): Promise<void> {
+  }): Promise<string> {
     const now = new Date().toISOString();
     const runId = `run_${options.turnId}`;
     const session = {
       runId,
+      runKind: 'turn' as const,
       threadId: options.threadId,
       turnId: options.turnId,
       sequence: 0,
@@ -1317,6 +1327,12 @@ export class AgentLoop {
       cachedInputTokens: 0,
       outputTokens: 0,
       reasoningOutputTokens: 0,
+      traceSession: this.createRunTraceSession({
+        runId,
+        runKind: 'turn',
+        threadId: options.threadId,
+        turnId: options.turnId,
+      }),
     };
     this.runMonitorSessions.set(options.turnId, session);
     await this.safeMonitorWrite(async () => {
@@ -1352,6 +1368,7 @@ export class AgentLoop {
       message: 'Turn started',
       metadata: { tenantId: this.config.tenantId },
     });
+    return runId;
   }
 
   private async beginControlRun(runKey: TurnId, threadId: ThreadId, title: string): Promise<void> {
@@ -1359,6 +1376,7 @@ export class AgentLoop {
     const runId = `run_${runKey}`;
     const session = {
       runId,
+      runKind: 'control' as const,
       threadId,
       turnId: runKey,
       sequence: 0,
@@ -1371,6 +1389,12 @@ export class AgentLoop {
       cachedInputTokens: 0,
       outputTokens: 0,
       reasoningOutputTokens: 0,
+      traceSession: this.createRunTraceSession({
+        runId,
+        runKind: 'control',
+        threadId,
+        turnId: null,
+      }),
     };
     this.runMonitorSessions.set(runKey, session);
     await this.safeMonitorWrite(async () => {
@@ -1444,6 +1468,271 @@ export class AgentLoop {
         middlewareEventCount: session.middlewareEventCount,
       });
     });
+    await this.appendRunTraceFromMonitorEvent(session, event, createdAt);
+  }
+
+  private createRunTraceSession(options: {
+    runId: string;
+    runKind: RunTraceRunKind;
+    threadId: ThreadId;
+    turnId?: TurnId | null;
+  }): RunTraceSession | null {
+    const traceStore = this.config.store as ThreadStore & Partial<RunTraceStore>;
+    if (!traceStore.appendRunTraceEvent || !this.config.store.updateRunRecord) return null;
+    return new RunTraceSession({
+      runId: options.runId,
+      runKind: options.runKind,
+      threadId: options.threadId,
+      turnId: options.turnId,
+      redaction: { workspaceRoot: this.config.workspaceRoot },
+      sink: {
+        append: (draft) => traceStore.appendRunTraceEvent!(draft),
+        updateRun: async (runId, summary) => {
+          await this.config.store.updateRunRecord?.(runId, {
+            traceVersion: RUN_TRACE_VERSION,
+            traceSummary: summary,
+          });
+        },
+        publish: () => {},
+        reportFailure: (error) => {
+          this.emit({
+            type: 'error',
+            message: `Run trace write failed: ${error instanceof Error ? error.message : String(error)}`,
+          });
+        },
+      },
+    });
+  }
+
+  private async appendRunTraceFromMonitorEvent(
+    session: {
+      runId: string;
+      runKind: RunTraceRunKind;
+      turnId: TurnId;
+      traceSession: RunTraceSession | null;
+    },
+    event: {
+      category: RunEvent['category'];
+      type: string;
+      level?: RunEventLevel;
+      message: string;
+      toolName?: string | null;
+      model?: string | null;
+      durationMs?: number | null;
+      metadata?: Record<string, unknown>;
+    },
+    occurredAt: string,
+  ): Promise<void> {
+    if (!session.traceSession) return;
+    const observation = this.runTraceObservationFromMonitorEvent(session.runId, session.runKind, session.turnId, event, occurredAt);
+    if (!observation) return;
+    await session.traceSession.record(observation);
+  }
+
+  private runTraceObservationFromMonitorEvent(
+    runId: string,
+    runKind: RunTraceRunKind,
+    turnId: TurnId,
+    event: {
+      category: RunEvent['category'];
+      type: string;
+      level?: RunEventLevel;
+      message: string;
+      toolName?: string | null;
+      model?: string | null;
+      durationMs?: number | null;
+      metadata?: Record<string, unknown>;
+    },
+    occurredAt: string,
+  ): RunTraceObservation | null {
+    const metadata = event.metadata ?? {};
+    const lifecycle = monitorTypeToTraceLifecycle(event.type);
+    const spanId = `span:${runId}:${event.category}:${monitorSpanSuffix(event, turnId)}`;
+    const level = event.level ?? 'info';
+    const base = {
+      spanId,
+      runKind,
+      name: event.type,
+      lifecycle,
+      level,
+      occurredAt,
+      durationMs: event.durationMs ?? undefined,
+    };
+
+    if (event.category === 'turn') {
+      return {
+        ...base,
+        category: 'turn',
+        payload: {
+          status: monitorTypeToTurnStatus(event.type),
+          reason: level === 'error' ? event.message : undefined,
+        },
+      };
+    }
+
+    if (event.category === 'middleware') {
+      return {
+        ...base,
+        category: 'middleware',
+        payload: {
+          middlewareId: String(metadata.middlewareId ?? event.type.split('.')[1] ?? 'runtime'),
+          stage: monitorTypeToMiddlewareStage(event.type, level),
+          attempt: numberMetadata(metadata.attempt),
+        },
+      };
+    }
+
+    if (event.category === 'model') {
+      const usage = metadata.usage as Partial<Usage> | undefined;
+      return {
+        ...base,
+        category: 'model',
+        payload: {
+          provider: String(metadata.provider ?? 'unknown'),
+          model: event.model ?? String(metadata.model ?? 'unknown'),
+          attempt: numberMetadata(metadata.attempt) ?? 1,
+          streaming: metadata.streaming === undefined ? true : Boolean(metadata.streaming),
+          inputTokens: usage?.inputTokens,
+          outputTokens: usage?.outputTokens,
+          cacheReadTokens: usage?.cachedInputTokens,
+          finishReason: String(metadata.finishReason ?? ''),
+        },
+      };
+    }
+
+    if (event.category === 'tool') {
+      return {
+        ...base,
+        category: 'tool',
+        payload: {
+          toolName: event.toolName ?? String(metadata.toolName ?? 'unknown'),
+          callId: String(metadata.callId ?? metadata.itemId ?? spanId),
+          decision: metadata.decision as 'allow' | 'deny' | 'approval_required' | undefined,
+          approvalId: metadata.approvalId == null ? undefined : String(metadata.approvalId),
+          argsSummary: metadata.argsSummary,
+          resultSummary: metadata.resultSummary ?? metadata.outputSummary,
+          exitCode: numberMetadata(metadata.exitCode),
+          outputBytes: numberMetadata(metadata.outputBytes),
+        },
+      };
+    }
+
+    if (event.category === 'item') {
+      return {
+        ...base,
+        category: 'item',
+        itemId: metadata.itemId == null ? undefined : String(metadata.itemId),
+        payload: {
+          itemType: String(metadata.itemType ?? 'agent_message') as ThreadItem['type'],
+          status: event.type.split('.').at(-1),
+        },
+      };
+    }
+
+    if (event.category === 'subagent') {
+      return {
+        ...base,
+        category: 'agent',
+        payload: {
+          agentThreadId: String(metadata.agentThreadId ?? metadata.threadId ?? 'unknown'),
+          role: String(metadata.role ?? 'subagent'),
+          action: monitorTypeToAgentAction(event.type, lifecycle),
+          childRunId: metadata.childRunId == null ? undefined : String(metadata.childRunId),
+        },
+      };
+    }
+
+    if (event.category === 'checkpoint') {
+      return {
+        ...base,
+        category: 'checkpoint',
+        payload: {
+          checkpointId: String(metadata.checkpointId ?? spanId),
+          turnCount: numberMetadata(metadata.turnCount) ?? 0,
+          itemIndex: numberMetadata(metadata.itemIndex) ?? 0,
+          status: String(metadata.status ?? 'running') as CheckpointStatus,
+        },
+      };
+    }
+
+    if (event.category === 'control') {
+      return {
+        ...base,
+        category: 'control',
+        payload: {
+          action: monitorTypeToControlAction(event.type),
+          outcome: level === 'error' ? 'rejected' : 'completed',
+          checkpointId: metadata.checkpointId == null ? undefined : String(metadata.checkpointId),
+          reason: level === 'error' ? event.message : undefined,
+        },
+      };
+    }
+
+    if (level === 'error') {
+      return {
+        ...base,
+        category: 'error',
+        payload: {
+          code: String(metadata.code ?? event.type.toUpperCase().replace(/[^A-Z0-9_]+/g, '_')),
+          message: event.message,
+          retryable: Boolean(metadata.retryable),
+          source: event.category,
+        },
+      };
+    }
+
+    return null;
+  }
+
+  // 为 item 生命周期事件追加 run monitor 审计记录
+  // — English: append run monitor audit event for item lifecycle
+  private async appendItemRunMonitorEvent(
+    threadId: ThreadId,
+    turnId: TurnId,
+    item: ThreadItem,
+    lifecycle: 'item.started' | 'item.updated' | 'item.completed' | 'item.discarded',
+  ): Promise<void> {
+    const session = this.runMonitorSessions.get(turnId);
+    if (!session) return;
+    const itemType = item.type;
+    const itemId = (item as { id?: string }).id ?? '';
+    const summary = this.summarizeItemForMonitor(item);
+    await this.appendRunMonitorEvent(turnId, {
+      category: 'item',
+      type: lifecycle,
+      level: lifecycle === 'item.discarded' ? 'debug' : 'info',
+      message: `${itemType} ${lifecycle.split('.')[1]}${summary ? `: ${summary}` : ''}`,
+      metadata: {
+        itemId,
+        itemType,
+        threadId,
+        turnId,
+      },
+    });
+  }
+
+  // 为监控事件提供简短人类可读摘要（不包含完整内容，只取关键字段）
+  // — English: provide short human-readable summary for monitor events (no full content)
+  private summarizeItemForMonitor(item: ThreadItem): string {
+    switch (item.type) {
+      case 'user_message': return (item.text ?? '').slice(0, 80);
+      case 'agent_message': return (item.text ?? '').slice(0, 80);
+      case 'reasoning': return (item.text ?? '').slice(0, 80);
+      case 'tool_call': return item.toolName;
+      case 'mcp_tool_call': return `${item.server}/${item.tool}`;
+      case 'collab_tool_call': return item.tool;
+      case 'command_execution': return item.command;
+      case 'file_change': return item.changes?.map((c) => c.path).join(', ') ?? '';
+      case 'web_search': return item.query;
+      case 'todo_list': return `${item.items?.length ?? 0} items`;
+      case 'error': return (item.message ?? '').slice(0, 80);
+      case 'context_compaction': return item.trigger;
+      case 'workflow_checkpoint': return `turn ${item.turnCount}`;
+      case 'project_checkpoint': return `turn ${item.turnCount}`;
+      case 'rollback_conflict': return (item.message ?? '').slice(0, 80);
+      case 'harness_continuation': return `iteration ${item.iteration}`;
+      default: return '';
+    }
   }
 
   private async finishRunMonitor(turnId: TurnId, status: RunRecord['status'], usage: Usage | null, error?: unknown): Promise<void> {
@@ -1627,8 +1916,8 @@ export class AgentLoop {
       turnCount: turnIndex + 1,
     });
 
-    await this.beginRunMonitor({ threadId, turnId, title: thread.title, userInput });
-    this.emit({ type: 'turn.started', threadId, turnId, turnIndex });
+    const runId = await this.beginRunMonitor({ threadId, turnId, title: thread.title, userInput });
+    this.emit({ type: 'turn.started', threadId, turnId, runId, turnIndex });
     await this.config.hooks.trigger('turn_start', {
       threadId,
       turnId,
@@ -1697,7 +1986,7 @@ export class AgentLoop {
       await this.writeCheckpoint(threadId, this.withCheckpointState(threadId, turnId, collectedItems.length, 'completed'));
       this.stateManager.completeTurn(threadId, turnId);
       if (result.usage) await this.recordUsage(threadId, turnId, result.usage);
-      this.emit({ type: 'turn.completed', threadId, turnId, usage: result.usage });
+      this.emit({ type: 'turn.completed', threadId, turnId, runId, usage: result.usage });
       this.emitTaskRuntimeUpdated(threadId, turnId, 'after_turn', 'completed');
       this.emitTaskRuntimeUpdated(threadId, turnId, 'idle', 'completed');
       terminalTurnResult = { status: 'completed', usage: result.usage };
@@ -1719,7 +2008,7 @@ export class AgentLoop {
         await this.config.store.saveTurn(turn);
         await this.writeCheckpoint(threadId, this.withCheckpointState(threadId, turnId, collectedItems.length, 'interrupted'));
         this.stateManager.completeInterruptedTurn(threadId, turnId);
-        this.emit({ type: 'turn.completed', threadId, turnId, usage: null, status: 'interrupted' });
+        this.emit({ type: 'turn.completed', threadId, turnId, runId, usage: null, status: 'interrupted' });
         this.emitTaskRuntimeUpdated(threadId, turnId, 'after_turn', 'interrupted');
         this.emitTaskRuntimeUpdated(threadId, turnId, 'idle', 'interrupted');
         terminalTurnResult = { status: 'interrupted', usage: null, error: err };
@@ -1754,7 +2043,7 @@ export class AgentLoop {
           recoverable: true,
           error: { message, info },
         });
-        this.emit({ type: 'turn.completed', threadId, turnId, usage: null, status: 'interrupted' });
+        this.emit({ type: 'turn.completed', threadId, turnId, runId, usage: null, status: 'interrupted' });
         this.emitTaskRuntimeUpdated(threadId, turnId, 'after_turn', 'interrupted');
         this.emitTaskRuntimeUpdated(threadId, turnId, 'idle', 'interrupted');
         await this.appendRunMonitorEvent(turnId, {
@@ -1794,6 +2083,7 @@ export class AgentLoop {
         type: 'turn.failed',
         threadId,
         turnId,
+        runId,
         error: { message: errorMsg, info: errorInfo },
       });
       this.emitTaskRuntimeUpdated(threadId, turnId, 'after_turn', 'failed');
@@ -2158,6 +2448,7 @@ export class AgentLoop {
             };
             collectedItems.push(agentItem);
             this.emit({ type: 'item.started', threadId, turnId, item: agentItem });
+            void this.appendItemRunMonitorEvent(threadId, turnId, agentItem, 'item.started');
           }
           content += event.content;
           agentItem.text = content;
@@ -2211,6 +2502,7 @@ export class AgentLoop {
           const partialValidation = validateThreadItemsForPersistence([agentItem]);
           if (partialValidation.ok) {
             this.emit({ type: 'item.completed', threadId, turnId, item: agentItem });
+            void this.appendItemRunMonitorEvent(threadId, turnId, agentItem, 'item.completed');
             await this.persistItems(threadId, [agentItem]);
           } else {
             this.discardTransientItem(threadId, turnId, collectedItems, agentItem.id);
@@ -2258,6 +2550,7 @@ export class AgentLoop {
           throw validation.error;
         }
         this.emit({ type: 'item.completed', threadId, turnId, item: agentItem });
+        void this.appendItemRunMonitorEvent(threadId, turnId, agentItem, 'item.completed');
         await this.persistItems(threadId, [agentItem]);
       }
 
@@ -2699,6 +2992,7 @@ export class AgentLoop {
     } as ThreadItem;
     collectedItems.push(toolItem);
     this.emit({ type: 'item.started', threadId, turnId, item: toolItem });
+    void this.appendItemRunMonitorEvent(threadId, turnId, toolItem, 'item.started');
     await this.appendRunMonitorEvent(turnId, {
       category: 'tool',
       type: 'tool.started',
@@ -2739,6 +3033,7 @@ export class AgentLoop {
       (toolItem as ThreadItem & { result?: unknown }).result = result.data ?? result.output;
     }
     this.emit({ type: 'item.completed', threadId, turnId, item: toolItem });
+    void this.appendItemRunMonitorEvent(threadId, turnId, toolItem, 'item.completed');
 
     // Persist
     // 持久化
@@ -2762,6 +3057,8 @@ export class AgentLoop {
         collectedItems.push(fileItem);
         this.emit({ type: 'item.started', threadId, turnId, item: fileItem });
         this.emit({ type: 'item.completed', threadId, turnId, item: fileItem });
+        void this.appendItemRunMonitorEvent(threadId, turnId, fileItem, 'item.started');
+        void this.appendItemRunMonitorEvent(threadId, turnId, fileItem, 'item.completed');
         await this.persistItems(threadId, [fileItem]);
         const projectCheckpoint = await createProjectCheckpointItem({
           threadId,
@@ -2776,6 +3073,8 @@ export class AgentLoop {
           collectedItems.push(projectCheckpoint);
           this.emit({ type: 'item.started', threadId, turnId, item: projectCheckpoint });
           this.emit({ type: 'item.completed', threadId, turnId, item: projectCheckpoint });
+          void this.appendItemRunMonitorEvent(threadId, turnId, projectCheckpoint, 'item.started');
+          void this.appendItemRunMonitorEvent(threadId, turnId, projectCheckpoint, 'item.completed');
           await this.persistItems(threadId, [projectCheckpoint]);
         }
         this.emit({
@@ -2842,6 +3141,8 @@ export class AgentLoop {
       collectedItems.push(item);
       this.emit({ type: 'item.started', threadId, turnId, item });
       this.emit({ type: 'item.completed', threadId, turnId, item });
+      void this.appendItemRunMonitorEvent(threadId, turnId, item, 'item.started');
+      void this.appendItemRunMonitorEvent(threadId, turnId, item, 'item.completed');
       await this.persistItems(threadId, [item]);
       return response.output;
     }
@@ -2869,6 +3170,8 @@ export class AgentLoop {
     collectedItems.push(toolItem);
     this.emit({ type: 'item.started', threadId, turnId, item: toolItem });
     this.emit({ type: 'item.completed', threadId, turnId, item: toolItem });
+    void this.appendItemRunMonitorEvent(threadId, turnId, toolItem, 'item.started');
+    void this.appendItemRunMonitorEvent(threadId, turnId, toolItem, 'item.completed');
     await this.persistItems(threadId, [toolItem]);
     return response.output;
   }
@@ -2893,6 +3196,7 @@ export class AgentLoop {
     };
     collectedItems.push(item);
     this.emit({ type: 'item.started', threadId, turnId, item });
+    void this.appendItemRunMonitorEvent(threadId, turnId, item, 'item.started');
 
     try {
       const result = await this.runCollabTool(threadId, toolName, args, item);
@@ -2909,6 +3213,7 @@ export class AgentLoop {
     }
 
     this.emit({ type: 'item.completed', threadId, turnId, item });
+    void this.appendItemRunMonitorEvent(threadId, turnId, item, 'item.completed');
     await this.persistItems(threadId, [item]);
     return { output: formatCollabToolOutput(item, this.config.locale) };
   }
@@ -2979,7 +3284,7 @@ export class AgentLoop {
       // 流式模式：实时消费远程事件并转发 item.updated 到父线程
       // — Chinese: streaming mode: consume remote events, forward as item.updated
       result = await this.consumeRemoteAgentStream(remoteClient, agentUrl, task, context, parentThreadId, item);
-    } catch (streamError) {
+    } catch {
       // 流式建立失败（远程 Agent 不支持 streaming 或连接异常）→ 回退到阻塞模式
       // — Chinese: streaming setup failed (unsupported or connection error) → fall back to blocking
       result = await remoteClient.sendTask(agentUrl, task, context);
@@ -3979,8 +4284,7 @@ export class AgentLoop {
     if (!this.storeSupportsEpisodes()) return normalizeEpisodeMemorySettings(undefined);
     try {
       return await getEpisodeMemorySettings(this.config.store);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+    } catch {
       // 无 turn 上下文时静默回退；有上下文的地方会额外上报 warning
       return normalizeEpisodeMemorySettings(undefined);
     }
@@ -4413,6 +4717,8 @@ export class AgentLoop {
       if (result.item) {
         this.emit({ type: 'item.started', threadId, turnId, item: result.item });
         this.emit({ type: 'item.completed', threadId, turnId, item: result.item });
+        void this.appendItemRunMonitorEvent(threadId, turnId, result.item, 'item.started');
+        void this.appendItemRunMonitorEvent(threadId, turnId, result.item, 'item.completed');
         this.emit({
           type: 'thread.compacted',
           threadId,
@@ -4630,8 +4936,11 @@ export class AgentLoop {
   private emitItem(threadId: ThreadId, turnId: TurnId, item: ThreadItem): void {
     // 实施点 2：emit 前注入 harnessRunId 标记（保证事件与持久化一致）
     this.applyHarnessFields(threadId, item);
+    // P6.3：注入 runId，使 timeline 严格按 run 过滤 — Chinese: inject runId for strict run-scoped timeline
+    this.applyRunIdField(turnId, item);
     this.emit({ type: 'item.started', threadId, turnId, item });
     this.emit({ type: 'item.completed', threadId, turnId, item });
+    void this.appendItemRunMonitorEvent(threadId, turnId, item, 'item.completed');
   }
 
   // 实施点 2：从 per-thread Map 取 harnessFields，注入到 item（仅 harness turn 产生时生效）
@@ -4645,11 +4954,23 @@ export class AgentLoop {
     }
   }
 
+  // P6.3：从 runMonitorSessions 取 turnId 对应的 runId 注入到 item，保证持久化 item 可被 store.getItems({ runId }) 严格过滤
+  // — English: read runId from runMonitorSessions by turnId and inject onto item for strict run-scoped filtering
+  private applyRunIdField(turnId: TurnId, item: ThreadItem): void {
+    const session = this.runMonitorSessions.get(turnId);
+    if (!session) return;
+    (item as ThreadItem & { runId?: string }).runId = session.runId;
+  }
+
   // 实施点 2：appendItems 包装，store 前注入 harnessRunId 标记，保证持久化 item 可被 EvidenceLedger.rebuildFromThreadItems 按 harnessRunId 过滤
   // — English: appendItems wrapper that tags items with harness fields before persistence
   private async persistItems(threadId: ThreadId, items: ThreadItem[]): Promise<void> {
     for (const item of items) {
       this.applyHarnessFields(threadId, item);
+      // P6.3：持久化前注入 runId（从 item.turnId 查 runMonitorSessions）— Chinese: inject runId before persistence
+      if (typeof item.turnId === 'string') {
+        this.applyRunIdField(item.turnId, item);
+      }
     }
     await this.config.store.appendItems(threadId, items);
   }
@@ -4662,6 +4983,67 @@ function emptyUsage(): Usage {
     outputTokens: 0,
     reasoningOutputTokens: 0,
   };
+}
+
+function monitorTypeToTraceLifecycle(type: string): RunTraceObservation['lifecycle'] {
+  const suffix = type.split('.').at(-1);
+  if (suffix === 'started') return 'started';
+  if (suffix === 'completed') return 'completed';
+  if (suffix === 'failed') return 'failed';
+  if (suffix === 'discarded') return 'discarded';
+  return 'instant';
+}
+
+function monitorTypeToTurnStatus(type: string): 'running' | 'completed' | 'failed' | 'interrupted' | undefined {
+  const suffix = type.split('.').at(-1);
+  if (suffix === 'started') return 'running';
+  if (suffix === 'completed') return 'completed';
+  if (suffix === 'failed') return 'failed';
+  if (suffix === 'interrupted') return 'interrupted';
+  return undefined;
+}
+
+function monitorTypeToMiddlewareStage(type: string, level: RunEventLevel): 'before' | 'after' | 'error' {
+  if (level === 'error' || type.includes('failed') || type.includes('error')) return 'error';
+  if (type.toLowerCase().includes('after')) return 'after';
+  return 'before';
+}
+
+function monitorTypeToAgentAction(
+  type: string,
+  lifecycle: RunTraceObservation['lifecycle'],
+): 'spawn' | 'started' | 'joined' | 'failed' | 'interrupted' {
+  if (type.includes('spawn')) return 'spawn';
+  if (type.includes('join') || type.includes('completed')) return 'joined';
+  if (type.includes('interrupt')) return 'interrupted';
+  if (lifecycle === 'failed') return 'failed';
+  return 'started';
+}
+
+function monitorTypeToControlAction(type: string): 'interrupt' | 'resume' | 'rollback' {
+  if (type.includes('resume')) return 'resume';
+  if (type.includes('rollback')) return 'rollback';
+  return 'interrupt';
+}
+
+function monitorSpanSuffix(
+  event: {
+    type: string;
+    metadata?: Record<string, unknown>;
+  },
+  turnId: TurnId,
+): string {
+  const metadata = event.metadata ?? {};
+  return String(metadata.itemId ?? metadata.callId ?? `${turnId}:${event.type}`);
+}
+
+function numberMetadata(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
 }
 
 function combineCacheStrategy(
@@ -5285,19 +5667,6 @@ function createCollabToolDefinitions(options?: { a2aClientEnabled?: boolean; a2a
   return tools;
 }
 
-function buildDefaultSystemPrompt(): string {
-  return `You are a helpful coding agent running locally. You have access to tools for reading/writing files, running shell commands, searching code, and applying patches.
-
-Rules:
-- Read files before editing them.
-- Use absolute or workspace-relative paths.
-- Always explain what you're about to do before executing commands.
-- If a tool requires approval, wait for it — never bypass.
-- Do NOT use window.THREE, @ts-nocheck, or assume browser globals.
-- Always use ESM imports.
-- Prefer simple, clear solutions.`;
-}
-
 function itemToMessage(item: ThreadItem): ChatMessage | null {
   switch (item.type) {
     case 'user_message':
@@ -5344,7 +5713,7 @@ function itemToMessage(item: ThreadItem): ChatMessage | null {
         content: `[Command ${item.status}]\n${item.command}\n${item.aggregatedOutput}`,
       };
     case 'error':
-      return { role: 'assistant', content: `[Error] ${item.message}` };
+      return null;
     default:
       return null;
   }

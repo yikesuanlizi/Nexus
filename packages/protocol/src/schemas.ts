@@ -507,12 +507,6 @@ export const threadUsageSchema = z.object({
   includedThreadIds: z.array(threadIdSchema).optional(),
 });
 
-// 事件共有的基础字段
-const baseThreadEvent = z.object({
-  threadId: threadIdSchema,
-  turnId: turnIdSchema.optional(),
-});
-
 // 线程已创建事件 schema
 export const threadStartedEventSchema = z.object({
   type: z.literal('thread.started'),

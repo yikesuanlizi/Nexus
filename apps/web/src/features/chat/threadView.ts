@@ -445,17 +445,8 @@ function describeItemEvent(type: string, item: ThreadItemLike, locale: Locale): 
   };
 }
 
-function eventKey(item: ThreadItemLike): string {
-  if (item.type === 'tool_call') {
-    return `item:${item.turnId ?? ''}:tool:${item.toolName ?? item.id}`;
-  }
-  if (item.type === 'collab_tool_call') {
-    return `item:${item.turnId ?? ''}:collab:${item.tool ?? item.id}:${item.receiverThreadId ?? item.newThreadId ?? ''}`;
-  }
-  if (item.type === 'mcp_tool_call') {
-    return `item:${item.turnId ?? ''}:mcp:${item.server ?? ''}:${item.tool ?? item.id}`;
-  }
-  return `item:${item.turnId ?? ''}:${item.type}`;
+export function eventKey(item: ThreadItemLike): string {
+  return `item:${item.id}`;
 }
 
 function itemDetail(item: ThreadItemLike, locale: Locale): string {
@@ -504,6 +495,11 @@ function isThreadItem(value: unknown): value is ThreadItemLike {
   return Boolean(value && typeof value === 'object' && 'type' in value && 'id' in value);
 }
 
-function itemKey(item: ThreadItemLike): string {
-  return item.id || [item.turnId, item.type, item.toolName, item.command, item.text].filter(Boolean).join(':');
+export function itemKey(item: ThreadItemLike): string {
+  if (item.id) {
+    return `item:${item.id}`;
+  }
+  const discriminator = item.text ?? item.toolName ?? item.command ?? item.message ?? '';
+  const timestamp = item.timestamp ?? Math.random().toString(36).slice(2);
+  return `synthetic:${item.turnId ?? ''}:${item.type}:${discriminator}:${timestamp}`;
 }

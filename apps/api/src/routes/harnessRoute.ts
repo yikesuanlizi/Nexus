@@ -99,8 +99,9 @@ export async function handleHarnessRoute(options: {
   tenantContext: TenantContext;
   createAgent: (config?: Partial<AgentRunConfig>) => Promise<AgentLoop>;
   publishEvent: (event: ThreadEvent) => void;
+  getThreadRunConfig: (threadId: string) => Promise<AgentRunConfig>;
 }): Promise<boolean> {
-  const { req, res, url, segments, store, tenantContext, createAgent, publishEvent } = options;
+  const { req, res, url, segments, store, tenantContext, createAgent, publishEvent, getThreadRunConfig } = options;
 
   // 匹配 /api/threads/:id/harness/...
   const isHarnessPath =
@@ -121,7 +122,7 @@ export async function handleHarnessRoute(options: {
   }
 
   if (action === 'start' && req.method === 'POST') {
-    await handleHarnessStart({ req, res, threadId, store, tenantContext, createAgent, publishEvent });
+    await handleHarnessStart({ req, res, threadId, store, tenantContext, createAgent, publishEvent, getThreadRunConfig });
     return true;
   }
 
@@ -148,8 +149,9 @@ async function handleHarnessStart(options: {
   tenantContext: TenantContext;
   createAgent: (config?: Partial<AgentRunConfig>) => Promise<AgentLoop>;
   publishEvent: (event: ThreadEvent) => void;
+  getThreadRunConfig: (threadId: string) => Promise<AgentRunConfig>;
 }): Promise<void> {
-  const { req, res, threadId, store, tenantContext, createAgent, publishEvent } = options;
+  const { req, res, threadId, store, tenantContext, createAgent, publishEvent, getThreadRunConfig } = options;
   const body = await readJson<HarnessStartRequest>(req);
 
   // 校验输入
@@ -175,8 +177,12 @@ async function handleHarnessStart(options: {
     text: inputText ?? body.goal ?? '',
   };
 
+  // 获取线程配置作为 base，body.config 作为本次 run 的临时 overlay（不持久化）
+  const threadConfig = await getThreadRunConfig(threadId);
+  const runConfig = body.config ? { ...threadConfig, ...body.config } : threadConfig;
+
   // 预解析配置（先于后台启动，便于早期失败）
-  const agent = await createAgent(body.config);
+  const agent = await createAgent(runConfig);
 
   // 发布 harness.started 事件（前端可订阅）
   publishEvent({

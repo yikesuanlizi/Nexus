@@ -428,7 +428,7 @@ export async function resumeThread(
 export async function forkThread(
   sourceThreadId: ThreadId,
   store: ThreadStore,
-  workspaceRoot: string,
+  _workspaceRoot: string,
 ): Promise<ThreadMeta> {
   const source = await store.getThread(sourceThreadId);
   if (!source) throw new Error(`Source thread ${sourceThreadId} not found`);

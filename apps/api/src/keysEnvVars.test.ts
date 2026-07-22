@@ -11,7 +11,10 @@ describe('model key environment variables', () => {
     expect(providerSource).toContain('saveProviderApiKeyEnvVar');
     expect(providerSource).toContain('saveRuntimeEnvironmentVariables');
     expect(providerSource).toContain('listApiKeyEnvVarCandidates');
+    expect(providerSource).toContain('readApiKeyEnvironmentValue');
+    expect(providerSource).toContain('parseWindowsRegistryEnvironmentOutput');
     expect(routeSource).toContain('/api/keys/env-vars');
     expect(routeSource).toContain('/api/keys/env');
+    expect(routeSource).toContain('readApiKeyEnvironmentValue(envVar)');
   });
 });

@@ -116,24 +116,6 @@ async function apiJson<T>(url: string, init?: RequestInit): Promise<T> {
   return data;
 }
 
-function detectProjectRoots(entries: Array<{ path: string; name: string; kind: string }>): string[] {
-  const markers = [
-    'package.json', 'pom.xml', 'build.gradle', 'build.gradle.kts',
-    'Cargo.toml', 'go.mod', 'pyproject.toml', 'requirements.txt',
-    'Gemfile', 'composer.json', 'Cargo.lock', 'pnpm-lock.yaml',
-    'package-lock.json', 'yarn.lock', '.git',
-  ];
-  const roots: string[] = [];
-  for (const entry of entries) {
-    if (entry.kind !== 'directory') continue;
-    if (markers.some((m) => entry.name === m)) {
-      const parent = entry.path.includes('/') ? entry.path.slice(0, entry.path.lastIndexOf('/')) : '';
-      if (parent && !roots.includes(parent)) roots.push(parent);
-    }
-  }
-  return roots;
-}
-
 function normalizePath(p: string): string {
   const normalized = p.replace(/\\/g, '/').replace(/\/+$/, '');
   return typeof navigator !== 'undefined' && navigator.userAgent.includes('Windows')
@@ -164,7 +146,7 @@ export function GitNexusPanel({
   const [resultData, setResultData] = useState<GitNexusGraphData | null>(null);
   const [resultError, setResultError] = useState('');
   const [repos, setRepos] = useState<GitNexusRepo[]>([]);
-  const [reposLoaded, setReposLoaded] = useState(false);
+  const [, setReposLoaded] = useState(false);
   const [overviewData, setOverviewData] = useState<{
     labels: Array<{ label: string; count: number }>;
     relations: Array<{ type: string; count: number }>;
@@ -319,7 +301,7 @@ export function GitNexusPanel({
     setAnalyzeError('');
     setAnalyzeStatus(locale === 'zh' ? '正在构建索引...' : 'Building index...');
     try {
-      const data = await apiJson<{ data: unknown }>('/api/gitnexus/analyze', {
+      await apiJson<{ data: unknown }>('/api/gitnexus/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: currentPath, force }),
@@ -368,7 +350,7 @@ export function GitNexusPanel({
       const data = await apiJson<{ data: unknown }>(
         `/api/gitnexus/query?q=${encodeURIComponent(queryInput)}&repo=${encodeURIComponent(currentPath)}`,
       );
-      const converted = convertRawToGraphData(data.data, 'query', queryInput, locale);
+      const converted = convertRawToGraphData(data.data, 'query', queryInput);
       setResultData(converted);
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : String(caught);
@@ -387,7 +369,7 @@ export function GitNexusPanel({
       const data = await apiJson<{ data: unknown }>(
         `/api/gitnexus/context?symbol=${encodeURIComponent(symbolInput)}&repo=${encodeURIComponent(currentPath)}`,
       );
-      const converted = convertRawToGraphData(data.data, 'context', symbolInput, locale);
+      const converted = convertRawToGraphData(data.data, 'context', symbolInput);
       setResultData(converted);
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : String(caught);
@@ -406,7 +388,7 @@ export function GitNexusPanel({
       const data = await apiJson<{ data: unknown }>(
         `/api/gitnexus/impact?symbol=${encodeURIComponent(symbolInput)}&repo=${encodeURIComponent(currentPath)}`,
       );
-      const converted = convertRawToGraphData(data.data, 'impact', symbolInput, locale);
+      const converted = convertRawToGraphData(data.data, 'impact', symbolInput);
       setResultData(converted);
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : String(caught);
@@ -425,7 +407,7 @@ export function GitNexusPanel({
       const data = await apiJson<{ data: unknown }>(
         `/api/gitnexus/trace?from=${encodeURIComponent(traceFromInput)}&to=${encodeURIComponent(traceToInput)}&repo=${encodeURIComponent(currentPath)}`,
       );
-      const converted = convertRawToGraphData(data.data, 'trace', `${traceFromInput} -> ${traceToInput}`, locale);
+      const converted = convertRawToGraphData(data.data, 'trace', `${traceFromInput} -> ${traceToInput}`);
       setResultData(converted);
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : String(caught);
@@ -923,7 +905,6 @@ function convertRawToGraphData(
   raw: unknown,
   tool: string,
   input: string,
-  locale: Locale,
 ): GitNexusGraphData {
   if (!raw || typeof raw !== 'object') {
     return {

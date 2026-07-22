@@ -1,5 +1,7 @@
-import type { RunConfig } from '../config/config.js';
 import type { EventDraft } from '../features/chat/threadView.js';
+import type { ModelPresetConfig } from '@nexus/protocol';
+
+export type { ModelPresetConfig } from '@nexus/protocol';
 
 export interface McpConfig {
   id: string;
@@ -233,6 +235,17 @@ export interface ThreadWithRuns {
   lastActiveAt: string;
 }
 
+export interface ControlCapability {
+  enabled: boolean;
+  reason?: string;
+}
+
+export interface RunControlCapabilities {
+  interrupt: ControlCapability;
+  resume: ControlCapability;
+  rollback: ControlCapability & { checkpointIds?: string[] };
+}
+
 export interface RunRecord {
   runId: string;
   tenantId: string;
@@ -262,6 +275,7 @@ export interface RunRecord {
   updatedAt: string;
   completedAt?: string | null;
   metadata?: Record<string, unknown>;
+  controlCapabilities?: RunControlCapabilities;
 }
 
 export interface RunEvent {
@@ -329,7 +343,7 @@ export interface WebProviderPublicConfig {
 export interface ModelPreset {
   id: string;
   name: string;
-  config: Partial<RunConfig>;
+  config: ModelPresetConfig;
   createdAt: string;
   updatedAt: string;
 }

@@ -22,7 +22,7 @@ describe('slash command selection UI', () => {
     expect(source).toContain('extractGitHubSkillInstallUrls(command.args)');
     expect(source).toContain('await installSkillsFromGitHub(installTargets, command.args)');
     expect(source).toContain("createLocalSkillDraftItems(text, config.locale, undefined, 'install')");
-    expect(source).toContain('body: JSON.stringify({ input: inputText, urls: installTargets, config: apiConfig })');
+    expect(source).toContain('body: JSON.stringify({ input: inputText, urls: installTargets, config: threadApiConfig })');
     expect(source).not.toContain('find((token) => isGitHubSkillInstallUrl(token.value))');
     expect(source).not.toContain("if (!text) {\n      setSettingsOpen(true);");
     expect(styles).toContain('.commandChip');
@@ -81,13 +81,14 @@ describe('slash command selection UI', () => {
   });
 
   it('marks MCP URL input as a source draft in the settings panel instead of a runnable command', () => {
-    const settings = readFileSync(join(here, 'components', 'SettingsDrawer.tsx'), 'utf-8');
+    const mcpDialog = readFileSync(join(here, 'components', 'settings', 'McpConfigDialog.tsx'), 'utf-8');
     const styles = readFileSync(join(here, 'styles.css'), 'utf-8');
 
-    expect(settings).toContain('mcpDraftSourceUrl');
-    expect(settings).toContain('mcpSourceNotice');
-    expect(settings).toContain('Nexus 不会把 URL 直接当作命令执行');
-    expect(settings).toContain('disabled={!mcpCanSave}');
+    // mcpDraftSourceUrl 已迁到 McpConfigDialog.tsx
+    expect(mcpDialog).toContain('mcpDraftSourceUrl');
+    expect(mcpDialog).toContain('mcpSourceNotice');
+    expect(mcpDialog).toContain('Nexus 不会把 URL 直接当作命令执行');
+    expect(mcpDialog).toContain('disabled={!mcpCanSave}');
     expect(styles).toContain('.mcpSourceNotice');
   });
 });

@@ -10,7 +10,7 @@ import { normalizeMarkdownForDisplay } from '../features/chat/markdownText.js';
 import { buildTurnFileSummary, type TurnChangedFileSummaryEntry, type TurnFileSummaryEntry } from '../features/chat/turnFileSummary.js';
 import type { ThreadItem } from '../shared/types.js';
 import { childActivityForCollabItem } from '../features/agents/subagentActivity.js';
-import { RobotMoodIcon, type RobotMoodVariant } from './AgentStagePanel.js';
+import { RobotMoodIcon, type RobotMoodVariant } from './RobotMoodIcon.js';
 import { UserAvatar } from './UserAvatar.js';
 // 英文说明: DiffView renders red/green line-level diffs for file_change items
 // 中文说明: DiffView 渲染 file_change 条目的红绿行级 diff
@@ -32,6 +32,7 @@ export interface AssistantTurnGroup {
 export function ItemView({
   item,
   locale,
+  canRollback,
   onBranch,
   onCopy,
   onRollback,
@@ -42,6 +43,7 @@ export function ItemView({
 }: {
   item: ThreadItem;
   locale: Locale;
+  canRollback?: boolean;
   onBranch?: (turnId: string) => void;
   onCopy?: (text: string) => void;
   onRollback?: (turnId: string) => void;
@@ -66,6 +68,7 @@ export function ItemView({
         action="rollback"
         onCopy={onCopy}
         onRollback={onRollback}
+        showTurnAction={canRollback ?? true}
         userAvatarId={userAvatarId}
         customUserAvatarDataUrl={customUserAvatarDataUrl}
       >
@@ -135,7 +138,19 @@ export function ItemView({
     return <RollbackConflictBlock item={item} locale={locale} />;
   }
   if (item.type === 'error') {
-    return <article className="message error">{item.message}</article>;
+    return (
+      <MessageFrame
+        align="agent"
+        item={item}
+        locale={locale}
+        text={item.message ?? ''}
+        action="branch"
+        onBranch={onBranch}
+        onCopy={onCopy}
+      >
+        <article className="message error">{item.message}</article>
+      </MessageFrame>
+    );
   }
   return (
     <article className="message muted">
@@ -148,8 +163,10 @@ export function ItemView({
 export function AssistantTurnView({
   group,
   locale,
+  canRegenerate = false,
   onBranch,
   onCopy,
+  onRegenerate,
   onPreviewFile,
   onOpenFile,
   childActivityByThread = {},
@@ -157,8 +174,10 @@ export function AssistantTurnView({
 }: {
   group: AssistantTurnGroup;
   locale: Locale;
+  canRegenerate?: boolean;
   onBranch?: (turnId: string) => void;
   onCopy?: (text: string) => void;
+  onRegenerate?: (turnId: string) => void;
   /** 点击"预览"按钮时调用，参数为文件路径 */
   // — Chinese: called when "preview" button is clicked, with file path as argument
   onPreviewFile?: (path: string) => void;
@@ -168,10 +187,15 @@ export function AssistantTurnView({
   childActivityByThread?: Record<string, ThreadItem[]>;
   workspaceRoot?: string;
 }) {
-  const text = group.items
+  const agentText = group.items
     .filter((item) => item.type === 'agent_message' && item.text)
     .map((item) => sanitizeAgentMessageTextForDisplay(item.text ?? '', locale))
     .join('\n\n');
+  const errorText = group.items
+    .filter((item) => item.type === 'error' && item.message)
+    .map((item) => item.message)
+    .join('\n\n');
+  const text = agentText || errorText;
   const timestamp = group.timestamp ?? group.items.find((item) => item.timestamp)?.timestamp ?? new Date().toISOString();
   const hasRunningItem = group.items.some((item) => item.status === 'in_progress');
   const agentItems = group.items.filter((item) => item.type === 'agent_message' && item.text);
@@ -193,7 +217,9 @@ export function AssistantTurnView({
       action="branch"
       onBranch={onBranch}
       onCopy={onCopy}
+      onRegenerate={onRegenerate}
       showActionRow={Boolean(text.trim())}
+      showRegenerate={canRegenerate}
     >
       <article className="message agent assistantTurnBubble">
         {group.items.map((item) => {
@@ -821,7 +847,10 @@ function MessageFrame({
   onBranch,
   onCopy,
   onRollback,
+  onRegenerate,
   showActionRow = true,
+  showTurnAction = true,
+  showRegenerate = false,
   text,
   userAvatarId,
   customUserAvatarDataUrl,
@@ -834,7 +863,10 @@ function MessageFrame({
   onBranch?: (turnId: string) => void;
   onCopy?: (text: string) => void;
   onRollback?: (turnId: string) => void;
+  onRegenerate?: (turnId: string) => void;
   showActionRow?: boolean;
+  showTurnAction?: boolean;
+  showRegenerate?: boolean;
   text: string;
   userAvatarId?: string;
   customUserAvatarDataUrl?: string;
@@ -843,6 +875,7 @@ function MessageFrame({
   const actionTitle = action === 'branch'
     ? (locale === 'zh' ? '从这里分支对话' : 'Branch from here')
     : (locale === 'zh' ? '回退到这里' : 'Rollback to here');
+  const regenerateTitle = locale === 'zh' ? '重新回答' : 'Regenerate response';
   const runAction = action === 'branch' ? onBranch : onRollback;
   const showActions = showActionRow && item.status !== 'in_progress';
   const moodVariant = messageMoodVariant(item, text);
@@ -870,7 +903,7 @@ function MessageFrame({
         >
           <Icon name="copy" />
         </button>
-        {item.turnId ? (
+        {showTurnAction && item.turnId ? (
           <button
             className="messageActionButton"
             title={actionTitle}
@@ -878,6 +911,16 @@ function MessageFrame({
             onClick={() => runAction?.(item.turnId!)}
           >
             <Icon name={action === 'branch' ? 'branch' : 'pen'} />
+          </button>
+        ) : null}
+        {showRegenerate && item.turnId ? (
+          <button
+            className="messageActionButton"
+            title={regenerateTitle}
+            aria-label={regenerateTitle}
+            onClick={() => onRegenerate?.(item.turnId!)}
+          >
+            <Icon name="refresh" />
           </button>
         ) : null}
       </div>

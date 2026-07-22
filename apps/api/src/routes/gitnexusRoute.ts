@@ -473,19 +473,6 @@ function findLatestSrcMtime(dir: string, maxDepth: number): number {
   return latest;
 }
 
-function extractList(parsed: unknown): Array<Record<string, unknown>> {
-  if (!parsed || typeof parsed !== 'object') return [];
-  const s = parsed as Record<string, unknown>;
-  const raw = Array.isArray(s.results) ? s.results
-    : Array.isArray(s.symbols) ? s.symbols
-    : Array.isArray(s.matches) ? s.matches
-    : Array.isArray(s.repositories) ? s.repositories
-    : Array.isArray(s.repos) ? s.repos
-    : Array.isArray(s) ? s
-    : [];
-  return raw.filter((r): r is Record<string, unknown> => r != null && typeof r === 'object');
-}
-
 function extractCypherRows(parsed: unknown): Array<Record<string, unknown>> {
   if (!parsed || typeof parsed !== 'object') return [];
   const s = parsed as Record<string, unknown>;

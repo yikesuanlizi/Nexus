@@ -42,4 +42,20 @@ describe('provider API key environment variables', () => {
     expect(providers.resolveApiKey('openai')).toBe('sk-test-env');
     expect(providers.listApiKeyEnvVarCandidates('openai')).toContain(envName);
   });
+
+  it('parses Windows user and system environment registry output', async () => {
+    // @ts-expect-error Vitest can load TS source modules in tests.
+    const providers = await import('./providers.ts');
+
+    expect(providers.parseWindowsRegistryEnvironmentOutput(`
+HKEY_CURRENT_USER\\Environment
+    OPENAI_API_KEY    REG_SZ    sk-user
+    MINIMAX_API_KEY    REG_EXPAND_SZ    eyJhbGciOiJIUzI1NiJ9
+    Path    REG_EXPAND_SZ    C:\\Tools
+`)).toEqual({
+      OPENAI_API_KEY: 'sk-user',
+      MINIMAX_API_KEY: 'eyJhbGciOiJIUzI1NiJ9',
+      Path: 'C:\\Tools',
+    });
+  });
 });

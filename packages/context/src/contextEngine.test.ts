@@ -116,6 +116,7 @@ describe('ContextEngine', () => {
     const engine = createContextEngine({ totalBudget: 500, providers: [p] });
     const ctx = makeProviderCtx();
     const result = await engine.assembleBeforeTurn(ctx);
+    expect(capturedCtx).toBe(ctx.agentContext);
     expect(result.updatedAgentContext.cognition.task.goal).toBe('new goal');
     expect(result.updatedAgentContext.cognition.task.constraints).toContain('c1');
   });
@@ -162,6 +163,7 @@ describe('TaskContextProvider', () => {
     const baseCtx = makeProviderCtx({ userInput: 'do something' });
     const first = await provider.provide(baseCtx);
     const firstChunks = Array.isArray(first) ? first : first.chunks;
+    expect(firstChunks[0]!.content).toContain('Goal:');
     const afterFirst = (first as { contextPatch?: unknown }).contextPatch
       ? { ...baseCtx, agentContext: { ...baseCtx.agentContext, cognition: { task: { ...baseCtx.agentContext.cognition.task, goal: 'established goal' } } } }
       : baseCtx;

@@ -4,16 +4,18 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import type {
   Checkpoint,
+  RunTraceDraft,
+  RunTraceEnvelope,
   ThreadId,
   ThreadItem,
   ThreadEvent,
   MemoryRecord,
   ThreadMeta,
   TurnMeta,
-  UserInput,
   EpisodeRecord,
   ThreadWorkingSetSnapshot,
 } from '@nexus/protocol';
+import { RUN_TRACE_VERSION } from '@nexus/protocol';
 import { AgentLoop } from './agent.js';
 import { compactionOptionsForRunProfile } from './runProfile.js';
 import { ThreadStateManager } from './state.js';
@@ -50,6 +52,7 @@ class FakeStore implements ThreadStore {
   savedTurns: TurnMeta[] = [];
   runRecords: RunRecord[] = [];
   runEvents: RunEvent[] = [];
+  runTraceEvents: RunTraceEnvelope[] = [];
   memoryRecords: MemoryRecord[] = [];
   memoryUsages: Array<{ id: string; usedAt: string }> = [];
   episodeRecords: EpisodeRecord[] = [];
@@ -201,6 +204,17 @@ class FakeStore implements ThreadStore {
     this.runEvents.push(event);
   }
 
+  async appendRunTraceEvent(draft: RunTraceDraft): Promise<RunTraceEnvelope> {
+    const event = {
+      ...draft,
+      version: RUN_TRACE_VERSION,
+      eventId: `${draft.runId}_trace_${this.runTraceEvents.length + 1}`,
+      sequence: this.runTraceEvents.length + 1,
+    } as RunTraceEnvelope;
+    this.runTraceEvents.push(event);
+    return event;
+  }
+
   async listRunRecords(): Promise<RunRecord[]> {
     return this.runRecords;
   }
@@ -316,6 +330,16 @@ class FakeModel {
     const lastUser = [...req.messages].reverse().find((msg) => msg.role === 'user');
     this.lastUserContent = typeof lastUser?.content === 'string' ? lastUser.content : null;
     yield { type: 'delta' as const, content: 'resumed' };
+    yield { type: 'done' as const };
+  }
+}
+
+class CapturingModel {
+  requests: Array<{ messages: Array<{ role: string; content: unknown }> }> = [];
+
+  async *chatStream(req: { messages: Array<{ role: string; content: unknown }> }) {
+    this.requests.push(req);
+    yield { type: 'delta' as const, content: 'ok' };
     yield { type: 'done' as const };
   }
 }
@@ -1120,6 +1144,29 @@ describe('AgentLoop runTurn failure handling', () => {
       expect.objectContaining({ category: 'model', type: 'model.completed', runId }),
       expect.objectContaining({ category: 'tool', type: 'tool.completed', runId, toolName: 'current_time' }),
     ]));
+    expect(store.runTraceEvents).toEqual(expect.arrayContaining([
+      expect.objectContaining({ category: 'turn', lifecycle: 'started', runId }),
+      expect.objectContaining({ category: 'model', lifecycle: 'completed', runId }),
+      expect.objectContaining({
+        category: 'tool',
+        lifecycle: 'completed',
+        runId,
+        payload: expect.objectContaining({ toolName: 'current_time' }),
+      }),
+      expect.objectContaining({
+        category: 'item',
+        runId,
+        payload: expect.objectContaining({ itemType: 'agent_message' }),
+      }),
+    ]));
+    expect(store.runRecords[0]).toMatchObject({
+      traceVersion: 2,
+      traceSummary: expect.objectContaining({
+        status: 'completed',
+        model: expect.objectContaining({ calls: expect.any(Number) }),
+        tools: expect.objectContaining({ calls: expect.any(Number) }),
+      }),
+    });
   });
 
   it('does not treat plain text tool placeholders as the final answer', async () => {
@@ -1194,6 +1241,44 @@ describe('AgentLoop runTurn failure handling', () => {
     expect(store.savedTurns.at(-1)).toMatchObject({
       status: 'failed',
     });
+  });
+
+  it('does not feed historical error items back into the next model request', async () => {
+    const threadId = 'thread-history-error-redaction';
+    const store = new FakeStore(threadId, 'previous-turn');
+    store.items.push(
+      {
+        id: 'previous-user',
+        type: 'user_message',
+        turnId: 'previous-turn',
+        text: '你好',
+        timestamp: '2026-06-07T00:00:00.000Z',
+      },
+      {
+        id: 'previous-error',
+        type: 'error',
+        turnId: 'previous-turn',
+        message: 'OpenAI gateway error (401): Unauthorized',
+        info: { kind: 'Other' },
+        timestamp: '2026-06-07T00:00:01.000Z',
+      },
+    );
+    const model = new CapturingModel();
+    const agent = new AgentLoop({
+      workspaceRoot: process.cwd(),
+      sandbox: { level: 'workspace_write', workspaceRoot: process.cwd() },
+      model: model as never,
+      store,
+      locale: 'zh',
+    });
+
+    await agent.runTurn(threadId, { type: 'text', text: '现在用新模型回答' });
+
+    const messages = model.requests.at(-1)?.messages ?? [];
+    expect(messages.some((message) => String(message.content).includes('OpenAI gateway error'))).toBe(false);
+    expect(messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: 'user', content: '现在用新模型回答' }),
+    ]));
   });
 
   it('keeps streamed assistant text visible when the model times out', async () => {

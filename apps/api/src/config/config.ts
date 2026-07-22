@@ -8,25 +8,26 @@ import {
   normalizeEpisodeMemorySettings,
   normalizeMemorySettings,
 } from '@nexus/memory';
-import type { PermissionPreset } from '@nexus/sandbox';
-import type { ThreadId } from '@nexus/protocol';
+import {
+  modelPresetConfigFrom,
+  type ModelPresetConfig,
+  type PermissionPresetId,
+  type ReasoningEffort,
+  type RunProfile,
+  type ThreadId,
+  type ThreadModelOverrides,
+  type WebSearchMode,
+} from '@nexus/protocol';
 import type { ThreadStore } from '@nexus/storage';
 import { MCP_SERVERS_KEY, normalizeMcpServers, type McpServerConfig } from './mcp.js';
 
-// 网页搜索模式：自动 | 开启 | 关闭 — Chinese: web search mode
-export type WebSearchMode = 'auto' | 'on' | 'off';
 // 网页提供者模式：原生 fetch | firecrawl — Chinese: web provider mode
 export type WebProviderMode = 'native_fetch' | 'firecrawl';
 // 密钥来源：项目配置 | 环境变量 — Chinese: secret source
 export type SecretSource = 'config' | 'env';
-// 推理力度：低 | 中 | 高 — Chinese: reasoning effort
-export type ReasoningEffort = 'low' | 'medium' | 'high';
 // 界面主题：深色 | 浅色 | 跟随系统 — Chinese: UI theme mode
 export type ThemeMode = 'dark' | 'light' | 'system';
-// 运行模式：缓存优先 | 长运行 — Chinese: run profile
-// harness 不再是 RunProfile，已降级为 runtime 底座的约束/证据/验收层。
-// 旧配置里出现 'harness' 时会被 normalizeRunProfile 自动降级为 'runtime_os'。
-export type RunProfile = 'cache_first' | 'runtime_os';
+export type { PermissionPresetId, ReasoningEffort, RunProfile, WebSearchMode } from '@nexus/protocol';
 
 // Codex 风格的子 Agent 角色档案（以 agent_type 为键） — Chinese: agent role profiles
 export type AgentRoleProfiles = Record<string, {
@@ -50,7 +51,7 @@ export interface AgentRunConfig {
   apiKey?: string;
   /** Permission preset id: 'read_only' | 'workspace' | 'danger_full_access'. */
   /** 中文：权限预设 id */
-  permissions: PermissionPreset['id'];
+  permissions: PermissionPresetId;
   dataDir: string;
   /** Single user-level directory containing skill subdirectories with SKILL.md. */
   /** 中文：存放 SKILL.md 子目录的根目录 */
@@ -115,7 +116,7 @@ export interface ApiKeyState {
 export interface ModelPreset {
   id: string;
   name: string;
-  config: Partial<AgentRunConfig>;
+  config: ModelPresetConfig;
   createdAt: string;
   updatedAt: string;
 }
@@ -123,8 +124,12 @@ export interface ModelPreset {
 export const DEFAULT_RUN_CONFIG_KEY = 'runConfig.default';
 export const MODEL_PRESETS_KEY = 'modelPresets';
 export const WEB_PROVIDER_SECRETS_KEY = 'webProvider.secrets.v1';
+export const THREAD_CONFIG_KEY_PREFIX = 'thread-config:';
+export const THREAD_CONFIG_OVERRIDES_KEY_PREFIX = 'thread-config-overrides:';
 // A2A 协议配置存储 key — Chinese: A2A protocol config storage key
 export const A2A_CONFIG_KEY = 'nexus.a2aConfig';
+
+export type ThreadConfigOverrides = ThreadModelOverrides;
 
 export interface WebProviderSecrets {
   firecrawlApiKey?: string;
@@ -352,40 +357,26 @@ function maskSecret(value: string): string {
 }
 
 export function createConfigRepository(store: ThreadStore) {
-  function modelPresetConfig(config: Partial<AgentRunConfig>): Partial<AgentRunConfig> {
-    const next: Partial<AgentRunConfig> = {};
-    if (config.provider !== undefined) next.provider = config.provider;
-    if (config.model !== undefined) next.model = config.model;
-    if (config.baseUrl !== undefined) next.baseUrl = config.baseUrl;
-    if (config.permissions !== undefined) next.permissions = config.permissions;
-    if (config.webSearchMode !== undefined) next.webSearchMode = config.webSearchMode;
-    if (config.webProvider !== undefined) next.webProvider = config.webProvider;
-    if (config.webProviderKeySource !== undefined) next.webProviderKeySource = config.webProviderKeySource;
-    if (config.reasoningEffort !== undefined) next.reasoningEffort = config.reasoningEffort;
-    if (config.runProfile !== undefined) next.runProfile = config.runProfile;
-    if (config.memoryEnabled !== undefined) next.memoryEnabled = config.memoryEnabled;
-    if (config.autoExtractMemories !== undefined) next.autoExtractMemories = config.autoExtractMemories;
-    if (config.useColdMemories !== undefined) next.useColdMemories = config.useColdMemories;
-    if (config.memoryInjectLimit !== undefined) next.memoryInjectLimit = config.memoryInjectLimit;
-    if (config.memoryTokenBudget !== undefined) next.memoryTokenBudget = config.memoryTokenBudget;
-    if (config.episodeMemoryEnabled !== undefined) next.episodeMemoryEnabled = config.episodeMemoryEnabled;
-    if (config.episodeInjectLimit !== undefined) next.episodeInjectLimit = config.episodeInjectLimit;
-    if (config.episodeTokenBudget !== undefined) next.episodeTokenBudget = config.episodeTokenBudget;
-    if (config.episodeSwitchCooldownTurns !== undefined) next.episodeSwitchCooldownTurns = config.episodeSwitchCooldownTurns;
-    if (config.episodeSealIdleMinutes !== undefined) next.episodeSealIdleMinutes = config.episodeSealIdleMinutes;
-    if (config.episodeColdAfterDays !== undefined) next.episodeColdAfterDays = config.episodeColdAfterDays;
-    if (config.episodeFtsCandidateLimit !== undefined) next.episodeFtsCandidateLimit = config.episodeFtsCandidateLimit;
-    if (config.episodeRerankEnabled !== undefined) next.episodeRerankEnabled = config.episodeRerankEnabled;
-    if (config.locale !== undefined) next.locale = config.locale;
-    return next;
-  }
+  const UI_ONLY_FIELDS = ['themeMode', 'userAvatarId', 'customUserAvatarDataUrl'] as const;
 
   function stripThreadOnlyGlobalAppearance(config: Partial<AgentRunConfig>): Partial<AgentRunConfig> {
     const { themeMode: _themeMode, ...threadConfig } = config;
-    return threadConfig;
+    const result = { ...threadConfig } as Record<string, unknown>;
+    for (const field of UI_ONLY_FIELDS) {
+      delete result[field];
+    }
+    return result as Partial<AgentRunConfig>;
   }
 
-  function modelPresetName(config: Partial<AgentRunConfig>): string {
+  function assertNoUiFields(configPatch: Record<string, unknown>): void {
+    for (const field of UI_ONLY_FIELDS) {
+      if (field in configPatch) {
+        throw new Error(`Field "${field}" is UI-only and cannot be set via server API`);
+      }
+    }
+  }
+
+  function modelPresetName(config: ModelPresetConfig): string {
     return [config.provider, config.model].filter(Boolean).join(' / ') || 'Model preset';
   }
 
@@ -397,10 +388,9 @@ export function createConfigRepository(store: ThreadStore) {
   async function upsertModelPreset(input: {
     id?: string;
     name?: string;
-    config?: Partial<AgentRunConfig>;
+    config?: Record<string, unknown>;
   }): Promise<{ preset: ModelPreset; presets: ModelPreset[] }> {
-    const effectiveConfig = resolveConfig({ ...await getDefaultRunConfig(), ...(input.config ?? {}) });
-    const safeConfig = modelPresetConfig(publicRunConfig(effectiveConfig));
+    const safeConfig = modelPresetConfigFrom(input.config ?? {});
     const presets = await listModelPresets();
     const id = input.id?.trim() || randomUUID();
     const existing = presets.find((preset) => preset.id === id);
@@ -476,14 +466,19 @@ export function createConfigRepository(store: ThreadStore) {
   async function getThreadRunConfig(threadId: ThreadId): Promise<AgentRunConfig> {
     const thread = await store.getThread(threadId);
     const threadConfig = thread ? readThreadRunConfig(thread) : null;
+    const overrides = await getThreadConfigOverrides(threadId);
     const base = await getDefaultRunConfig();
-    return applyThreadKindRuntimeWorkspace(resolveConfig({ ...base, ...(threadConfig ?? {}) }), thread);
+    return applyThreadKindRuntimeWorkspace(
+      resolveConfig({ ...base, ...(threadConfig ?? {}), ...overrides }),
+      thread,
+    );
   }
 
   async function saveThreadRunConfig(
     threadId: ThreadId,
     configPatch: Partial<AgentRunConfig>,
   ): Promise<AgentRunConfig> {
+    assertNoUiFields(configPatch as Record<string, unknown>);
     const thread = await store.getThread(threadId);
     if (!thread) throw new Error(`Thread ${threadId} not found`);
     const current = { ...await getDefaultRunConfig(), ...(readThreadRunConfig(thread) ?? {}) };
@@ -498,9 +493,36 @@ export function createConfigRepository(store: ThreadStore) {
     return next;
   }
 
+  function threadConfigOverridesKey(threadId: string): string {
+    return `${THREAD_CONFIG_OVERRIDES_KEY_PREFIX}${threadId}`;
+  }
+
+  function threadConfigOverridesFrom(input: Record<string, unknown>): ThreadConfigOverrides {
+    const result: ThreadConfigOverrides = {};
+    if (typeof input.provider === 'string') result.provider = input.provider.trim();
+    if (typeof input.model === 'string') result.model = input.model.trim();
+    if (typeof input.baseUrl === 'string') result.baseUrl = input.baseUrl.trim();
+    return result;
+  }
+
+  async function getThreadConfigOverrides(threadId: string): Promise<ThreadConfigOverrides> {
+    const stored = await store.getSetting<Record<string, unknown>>(threadConfigOverridesKey(threadId));
+    return stored ? threadConfigOverridesFrom(stored) : {};
+  }
+
+  async function updateThreadConfigOverrides(
+    threadId: string,
+    input: Record<string, unknown>,
+  ): Promise<ThreadConfigOverrides> {
+    const safe = threadConfigOverridesFrom(input);
+    await store.setSetting(threadConfigOverridesKey(threadId), safe);
+    return safe;
+  }
+
   return {
     deleteModelPreset,
     getDefaultRunConfig,
+    getThreadConfigOverrides,
     getThreadRunConfig,
     listMcpServers,
     listModelPresets,
@@ -508,6 +530,7 @@ export function createConfigRepository(store: ThreadStore) {
     saveMcpServers,
     saveThreadRunConfig,
     publicThreadRunConfig,
+    updateThreadConfigOverrides,
     upsertModelPreset,
   };
 }

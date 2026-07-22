@@ -14,7 +14,6 @@ import {
   type NormalizedUsage,
   type TokenEstimate,
   type ToolCall,
-  type ToolDefinition,
   resolveBaseUrl,
   protocolFor,
 } from './types.js';
@@ -32,14 +31,20 @@ export class ModelGateway {
 
   // 构造时自动解析 baseURL、API key、协议、缓存策略
   constructor(config: ModelConfig) {
+    const normalizedConfig: ModelConfig = {
+      ...config,
+      provider: config.provider.trim(),
+      model: config.model.trim(),
+      baseUrl: (config.baseUrl ?? '').trim(),
+    };
     // 解析 provider 条目
-    const providerEntry = getProvider(config.provider);
-    const resolvedBaseUrl = config.baseUrl || providerEntry?.baseUrl || resolveBaseUrl(config);
-    const resolvedApiKey = resolveApiKey(config.provider, config.apiKey);
+    const providerEntry = getProvider(normalizedConfig.provider);
+    const resolvedBaseUrl = normalizedConfig.baseUrl || providerEntry?.baseUrl || resolveBaseUrl(normalizedConfig);
+    const resolvedApiKey = resolveApiKey(normalizedConfig.provider, normalizedConfig.apiKey);
 
-    this.config = { ...config, baseUrl: resolvedBaseUrl, apiKey: resolvedApiKey };
+    this.config = { ...normalizedConfig, baseUrl: resolvedBaseUrl, apiKey: resolvedApiKey };
     this.baseUrl = resolvedBaseUrl;
-    this.protocol = providerEntry?.protocol ?? protocolFor(config.provider);
+    this.protocol = providerEntry?.protocol ?? protocolFor(normalizedConfig.provider);
     this.cacheStrategy = resolveCacheStrategy(this.config, this.protocol);
   }
 

@@ -258,7 +258,6 @@ export async function handleBotRoute(options: BotRouteOptions): Promise<boolean>
 
   // POST /api/bot/dingtalk/stop — 停止钉钉 Stream 连接
   if (req.method === 'POST' && segments[2] === 'dingtalk' && segments[3] === 'stop') {
-    const config = await readBotConfig(options.store);
     const client = getDingtalkClient(options);
     if (client) client.stopStream();
     await appendDingtalkBotLog('info', 'dingtalk stream stop', { tenantId: options.tenantId });
@@ -632,6 +631,7 @@ function publishBotTurnEvents(
       type: 'turn.completed',
       threadId,
       turnId: fallbackTurnId,
+      runId: `run_${fallbackTurnId}`,
       usage: normalizeUsageForEvent(usage),
       status: 'completed',
     });
@@ -1253,7 +1253,7 @@ function isDingtalkUserAllowed(config: BotConfigLike, userId: string): boolean {
   return allowed.includes(userId);
 }
 
-function dingtalkMultiTenantViolation(options: BotRouteOptions, _config: BotConfigLike): string {
+function dingtalkMultiTenantViolation(_options: BotRouteOptions, _config: BotConfigLike): string {
   // Stream 模式每个租户独立 WebSocket 连接，天然支持多租户
   // Webhook 模式需要不同的回调路径，也支持
   // 此处保留接口，未来可加限制

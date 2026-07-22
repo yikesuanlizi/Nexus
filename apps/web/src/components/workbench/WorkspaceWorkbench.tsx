@@ -1,0 +1,215 @@
+import { useEffect, useMemo, useState } from 'react';
+import type { Locale } from '../../config/config.js';
+import type { ThreadChildInfo, ThreadItem, ThreadMeta } from '../../shared/types.js';
+import type { RunControlCapabilities, RunTraceSummary } from '@nexus/protocol';
+import type { ExternalPreviewRequest } from '../WorkspaceFilesPanel.js';
+import { WorkspaceFilesPanel } from '../WorkspaceFilesPanel.js';
+import { Icon } from '../Icon.js';
+import { buildAgentWorkbench } from '../../features/agents/agentWorkbenchModel.js';
+import { buildAgentStageRows, buildSubagentStatusRows } from '../../features/agents/subagents.js';
+import { WorkbenchTabs, type WorkbenchTab } from './WorkbenchTabs.js';
+import { LiveActivityHud } from './LiveActivityHud.js';
+import { AgentInspector } from './AgentInspector.js';
+import { AgentStagePanel } from '../AgentStagePanel.js';
+
+export function WorkspaceWorkbench({
+  activeThread,
+  activeThreadId,
+  busy,
+  threadChildren,
+  runtimeItems = [],
+  taskRuntimeState: _taskRuntimeState,
+  traceSummary,
+  currentRunId,
+  controlCapabilities,
+  locale,
+  workspaceRoot,
+  externalPreviewRequest,
+  activeTab,
+  onTabChange,
+  onJumpToMonitor,
+  onInterrupt,
+  onResume,
+  onRollback,
+  onToggleMemoryExcluded,
+  responsiveMode,
+  onCloseRequest,
+}: {
+  activeThread?: ThreadMeta | null;
+  activeThreadId: string;
+  busy: boolean;
+  threadChildren: ThreadChildInfo[];
+  runtimeItems?: ThreadItem[];
+  taskRuntimeState?: unknown;
+  traceSummary?: RunTraceSummary | null;
+  currentRunId?: string;
+  controlCapabilities?: RunControlCapabilities;
+  locale: Locale;
+  workspaceRoot: string;
+  externalPreviewRequest?: ExternalPreviewRequest | null;
+  activeTab: WorkbenchTab;
+  onTabChange(tab: WorkbenchTab): void;
+  onJumpToMonitor?(opts: { runId?: string; eventId?: string; itemId?: string; threadId?: string }): void;
+  onInterrupt?(): void;
+  onResume?(): void;
+  onRollback?(checkpointId?: string): void;
+  onToggleMemoryExcluded?(excluded: boolean): void;
+  responsiveMode?: 'side' | 'overlay' | 'sheet';
+  onCloseRequest?(): void;
+}) {
+  const zh = locale === 'zh';
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const mainAgentThreadId = activeThreadId || 'main';
+
+  useEffect(() => {
+    setSelectedAgentId(null);
+  }, [activeThreadId]);
+
+  useEffect(() => {
+    if (externalPreviewRequest && activeTab !== 'files') {
+      onTabChange('files');
+    }
+  }, [externalPreviewRequest, activeTab, onTabChange]);
+
+  const workbench = useMemo(() => buildAgentWorkbench({
+    mainThreadId: mainAgentThreadId,
+    threadChildren,
+    traceSummary,
+    runtimeItems,
+    busy,
+    zh,
+    currentRunId,
+  }), [mainAgentThreadId, threadChildren, traceSummary, runtimeItems, busy, zh, currentRunId]);
+
+  const agentStageRows = useMemo(() => buildAgentStageRows({
+    activeThreadId: mainAgentThreadId,
+    activeThreadTitle: activeThread?.title ?? '',
+    locale,
+    busy,
+    children: buildSubagentStatusRows(threadChildren, locale),
+  }), [mainAgentThreadId, activeThread?.title, locale, busy, threadChildren]);
+
+  const runningAgentCount = useMemo(() => {
+    return workbench.nodes.filter(n => n.status === 'running' || n.status === 'waiting').length;
+  }, [workbench.nodes]);
+
+  const selectedNode = useMemo(() => {
+    if (!selectedAgentId) return null;
+    return workbench.nodes.find(n => n.threadId === selectedAgentId) ?? null;
+  }, [workbench.nodes, selectedAgentId]);
+
+  const memoryExcluded = activeThread?.tags?.memoryExcluded === 'true';
+
+  const handleTabChange = (tab: WorkbenchTab) => {
+    onTabChange(tab);
+  };
+
+  const handleSelectAgent = (threadId: string) => {
+    setSelectedAgentId((current) => current === threadId ? null : threadId);
+  };
+
+  const handleJumpToAgentMonitor = (threadId: string) => {
+    onJumpToMonitor?.({ threadId });
+  };
+
+  const handleJumpToTrace = (opts: { itemId: string; runId: string }) => {
+    onJumpToMonitor?.({ itemId: opts.itemId, runId: opts.runId, threadId: activeThreadId });
+  };
+
+  return (
+    <aside className={`eventPane workbenchPane workbench-${responsiveMode ?? 'side'}`}>
+      <WorkbenchTabs
+        activeTab={activeTab}
+        onTabChange={handleTabChange}
+        runningAgentCount={runningAgentCount}
+        locale={locale}
+      />
+
+      {responsiveMode === 'overlay' || responsiveMode === 'sheet' ? (
+        <button
+          type="button"
+          className="workbenchCloseBtn"
+          onClick={onCloseRequest}
+          aria-label={zh ? '关闭' : 'Close'}
+        >
+          <Icon name="x" />
+        </button>
+      ) : null}
+
+      <div className="workbenchContent">
+        {activeTab === 'activity' ? (
+          <div className="workbenchActivity">
+            <LiveActivityHud
+              traceSummary={traceSummary}
+              currentPhase={workbench.currentPhase}
+              recentEvents={workbench.recentEvents}
+              controlCapabilities={controlCapabilities}
+              busy={busy}
+              onInterrupt={onInterrupt}
+              onResume={onResume}
+              onRollback={onRollback}
+              onJumpToTrace={handleJumpToTrace}
+              locale={locale}
+            />
+          </div>
+        ) : null}
+
+        {activeTab === 'agents' ? (
+          <div className="workbenchAgents">
+            <div className="workbenchAgentTreeWrap">
+              <AgentStagePanel
+                locale={locale}
+                rows={agentStageRows}
+                selectedThreadId={selectedAgentId}
+                onSelectAgent={handleSelectAgent}
+              />
+            </div>
+            {selectedNode ? (
+              <div className="workbenchAgentInspectorWrap">
+                <AgentInspector
+                  node={selectedNode}
+                  onJumpToMonitor={handleJumpToAgentMonitor}
+                  locale={locale}
+                />
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {activeTab === 'files' ? (
+          <WorkspaceFilesPanel
+            locale={locale}
+            workspaceRoot={workspaceRoot}
+            externalPreviewRequest={externalPreviewRequest}
+          />
+        ) : null}
+      </div>
+
+      {activeThread && onToggleMemoryExcluded ? (
+        <div className="workbenchFooter">
+          <label className="toggle">
+            <input
+              checked={memoryExcluded}
+              onChange={(event) => onToggleMemoryExcluded(event.target.checked)}
+              type="checkbox"
+            />
+            <span className="settingRow">
+              <span className="settingLabel">
+                {zh ? '此线程不生成记忆' : 'Exclude from memory'}
+                <span className="settingHelpIcon">
+                  <Icon name="question" />
+                </span>
+              </span>
+              <span className="settingTooltip">
+                <strong>{zh ? '此线程不生成记忆' : 'Exclude from memory extraction'}</strong>
+                {zh
+                  ? '开启后，这个对话的内容不会被提取到长期记忆库里。'
+                  : 'When enabled, this conversation won\'t be saved to long-term memory.'}
+              </span>
+            </span>
+          </label>
+        </div>
+      ) : null}
+    </aside>
+  );
+}

@@ -26,21 +26,26 @@ import { getSlashCommandOptions, isSlashInput, parseSlashCommand, type SlashComm
 import { localizedSkillDescription } from './features/settings/skillDescriptions.js';
 import { readStored } from './shared/storage.js';
 import { buildChildActivityByThread } from './features/agents/subagentActivity.js';
-import { buildAgentStageRows, buildSubagentStatusRows } from './features/agents/subagents.js';
+import { buildSubagentStatusRows } from './features/agents/subagents.js';
 import { modeInstructionFor } from './config/taskModes.js';
-import { buildTokenUsageSummary, formatCacheDiagnostics, formatCompactionPressure, formatThreadTokenSummary } from './features/chat/usageDisplay.js';
+import { buildTokenUsageSummary, formatCacheDiagnostics, formatCompactionPressure } from './features/chat/usageDisplay.js';
 import { rollbackCountForTurn } from './features/chat/rollback.js';
 import { useRunMonitor } from './features/monitor/runMonitor.js';
 import { useTaskRuntimeMonitor, isTaskRuntimeEvent } from './features/monitor/taskRuntimeMonitor.js';
 import { authEventSourceUrl } from './api/authClient.js';
 import { useWebProviderSettings, type SettingsResponseWithWebProvider } from './api/webProviderClient.js';
+import { fetchThreadConfigOverrides, patchThreadConfigOverrides, type ThreadConfigOverrides } from './api/threadConfigClient.js';
+import { createLatestRequestGuard } from './features/chat/latestRequestGuard.js';
+import { nextTranscriptFollowState, type TranscriptFollowState } from './features/chat/transcriptFollow.js';
 import { actionDetail, actionTitle, completeLocalSkillDraftItem, createLocalSkillDraftItems, mergeIncomingItems, removeLocalThreadItems } from './features/chat/threadItems.js';
 import { optimisticDeleteThread } from './features/chat/threads.js';
 import { forgetWorkspaceRoot, pickWorkspaceRoot, readRememberedWorkspaceRoots, rememberWorkspaceRoots, workspacePickerNotice, workspacePickerStatus } from './features/workspaces/workspaces.js';
 import { controlThreadWorkflow, createWorkflowDraftErrorItem, createWorkflowDraftReplyItem, createWorkflowDraftUserItem, createWorkflowThread, isUntitledWorkflowProjectTitle, isWorkflowProjectThread, loadThreadWorkflow, parseThreadWorkflow, parseWorkflowCheckpointItems, planWorkflowDraft, saveThreadWorkflow, workflowThreadTitleFromGoal, type WorkflowBlueprintCompileResult, type WorkflowComponentDefinition, type WorkflowPlanDraft, type WorkflowSnapshot, type WorkflowRuntimeAction } from './features/workflow/workflow.js';
 import { applyAgentMessageDelta, describeEvent, groupTranscriptItems, removeThreadItem, withSyntheticUserMessages, type EventDraft } from './features/chat/threadView.js';
 import type { ApiKeyState, ApprovalRequest, EventLine, McpConfig, McpServerStatus, ModelPreset, ProviderEntry, SkillDraft, SkillEntry, ThreadChildInfo, ThreadItem, ThreadMeta, ThreadUsage, TurnMeta } from './shared/types.js';
+import type { ModelPresetConfig } from '@nexus/protocol';
 import './styles.css';
+type ComposerImage = { name: string; dataUrl: string };
 function resolveThemeShortcutMode(current: RunConfig['themeMode']): 'light' | 'dark' {
   if (current === 'dark') return 'dark';
   if (current === 'light') return 'light';
@@ -137,14 +142,24 @@ function App() {
   const [, setEvents] = useState<EventLine[]>([]);
   const [runningTurnIds, setRunningTurnIds] = useState<Set<string>>(() => new Set());
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false), [threadFilter, setThreadFilter] = useState(''), [input, setInput] = useState('');
+  // 窄屏 sidebar 抽屉开关 — Chinese: narrow-screen sidebar drawer toggle
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeSlashOption, setActiveSlashOption] = useState<SlashCommandOption | null>(null);
-  const [images, setImages] = useState<Array<{ name: string; dataUrl: string }>>([]);
+  const [images, setImages] = useState<ComposerImage[]>([]);
   const [draggingImage, setDraggingImage] = useState(false), [busy, setBusy] = useState(false), [actionBusy, setActionBusy] = useState(false);
   const [workflowPlanning, setWorkflowPlanning] = useState(false), [workflowSaving, setWorkflowSaving] = useState(false), [workflowRuntimeBusy, setWorkflowRuntimeBusy] = useState(false), [workflowComponents, setWorkflowComponents] = useState<WorkflowComponentDefinition[]>([]), [workflowBlueprint, setWorkflowBlueprint] = useState<WorkflowBlueprintCompileResult | null>(null), [workflowPlanDraft, setWorkflowPlanDraft] = useState<WorkflowPlanDraft | null>(null), [workflowSelectedNodeIds, setWorkflowSelectedNodeIds] = useState<string[]>([]);
   const [workspaceView, setWorkspaceView] = useState<'chat' | 'workflow'>('chat');
   const [status, setStatus] = useState('Idle');
+  const [transcriptFollow, setTranscriptFollow] = useState<TranscriptFollowState>({ following: true, showReturnToBottom: false });
   const [settingsOpen, setSettingsOpen] = useState(false), [settingsHelpOpen, setSettingsHelpOpen] = useState(false);
-  const [rightPaneVisible, setRightPaneVisible] = useState(true), [rightPaneTab, setRightPaneTab] = useState<RightPaneTab>('status');
+  const [rightPaneVisible, setRightPaneVisible] = useState(true), [rightPaneTab, setRightPaneTab] = useState<RightPaneTab>(() => {
+    try {
+      const stored = localStorage.getItem('nexus.rightPane.tab');
+      if (stored === 'files' || stored === 'agents' || stored === 'activity') return stored;
+      if (stored === 'status') return 'activity';
+    } catch { /* ignore */ }
+    return 'activity';
+  });
   // 中文注释：外部预览请求 — 从对话条目点击"预览"时驱动右侧文件面板加载该文件
   // — Chinese: external preview request — drives right file panel to load a file when "preview" is clicked from chat
   const [previewRequest, setPreviewRequest] = useState<ExternalPreviewRequest | null>(null);
@@ -160,6 +175,9 @@ function App() {
   const transcriptRef = useRef<HTMLElement | null>(null);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const activeTurnThreadIdRef = useRef<string>('');
+  const threadLoadGuardRef = useRef(createLatestRequestGuard());
+  const sendMessageGuardRef = useRef(createLatestRequestGuard());
+  const threadEventSourceGenerationRef = useRef(0);
   const isWorkflowView = workspaceView === 'workflow';
   const { rightPaneGridTemplateColumns, startRightPaneResize } = useRightPaneSizing(rightPaneVisible, rightPaneTab, isWorkflowView ? 'workflow' : 'standard');
   const { toast, showToast } = useToastNotice();
@@ -168,7 +186,6 @@ function App() {
   const activeThread = threads.find((thread) => thread.threadId === threadId);
   const activeWorkflow = useMemo(() => parseThreadWorkflow(activeThread) ?? parseWorkflowCheckpointItems(items), [activeThread, items]); const workflowTitle = isWorkflowView ? (config.locale === 'zh' ? '未命名工作流项目' : 'Untitled workflow project') : '';
   function resetWorkflowState() { setWorkflowPlanDraft(null); setWorkflowComponents([]); setWorkflowBlueprint(null); setWorkflowSelectedNodeIds([]); }
-  const activeProvider = providers.find((provider) => provider.id === config.provider);
   const apiConfig = useMemo(() => {
     const patch: Partial<RunConfig> = {};
     for (const key of Object.keys(config) as Array<keyof RunConfig>) {
@@ -187,25 +204,18 @@ function App() {
     return threadConfig;
   }, [apiConfig]);
   const transcriptGroups = useMemo(() => groupTranscriptItems(items, turns), [items, turns]);
-  // 历史快照：从 items 中提取工程级检查点条目（不在 transcript 中显示，但数据保留）
-  const checkpoints = useMemo(
-    () => items.filter((item) => item.type === 'project_checkpoint' && typeof item.turnCount === 'number'),
-    [items],
-  );
-  // 当前回合数：取 turns 长度，或最新 checkpoint 的 turnCount
-  const currentTurnCount = useMemo(() => {
-    if (turns.length > 0) return turns.length;
-    const maxTurnCount = checkpoints.reduce((max, item) => Math.max(max, item.turnCount ?? 0), 0);
-    return maxTurnCount;
-  }, [turns.length, checkpoints]);
+  const latestRollbackTurnId = useMemo(() => {
+    for (let index = items.length - 1; index >= 0; index -= 1) {
+      const item = items[index];
+      if (item.type === 'user_message' && item.turnId && item.status !== 'in_progress') {
+        return item.turnId;
+      }
+    }
+    return undefined;
+  }, [items]);
   const subagentRows = useMemo(() => buildSubagentStatusRows(threadChildren, config.locale), [config.locale, threadChildren]);
-  const agentStageRows = useMemo(() => buildAgentStageRows({
-    activeThreadId: threadId,
-    activeThreadTitle: activeThread?.title ?? '',
-    busy,
-    children: subagentRows,
-    locale: config.locale,
-  }), [activeThread?.title, busy, config.locale, subagentRows, threadId]);
+  void subagentRows; // 保留以维持现有 import；新工作台直接消费 threadChildren
+  // Agent 工作台直接消费 threadChildren + runtimeItems + busy，不再需要 buildAgentStageRows 派生
   const activeWorkspaceRoot = activeThread?.tags?.conversationKind === 'chat' ? '' : (activeThread?.workspaceRoot || config.workspaceRoot || '');
   const childActivityByThread = useMemo(() => buildChildActivityByThread(threadChildren), [threadChildren]);
   const tokenUsage = useMemo(() => {
@@ -334,6 +344,134 @@ function App() {
   const openUnifiedMonitor = useCallback(() => {
     runMonitor.openDrawer();
   }, [runMonitor]);
+
+  const workbenchCurrentRunId = useMemo(() => {
+    if (runMonitor.selectedRunId) return runMonitor.selectedRunId;
+    const runningRun = runMonitor.runs.find(r => r.threadId === threadId && r.status === 'running');
+    return runningRun?.runId ?? runMonitor.runs.find(r => r.threadId === threadId)?.runId;
+  }, [runMonitor.selectedRunId, runMonitor.runs, threadId]);
+
+  const workbenchSelectedRun = useMemo(() => {
+    return runMonitor.runs.find(r => r.runId === workbenchCurrentRunId) ?? null;
+  }, [runMonitor.runs, workbenchCurrentRunId]);
+
+  const workbenchTraceSummary = useMemo(() => {
+    if (!workbenchSelectedRun) return null;
+    const traces = runMonitor.traces;
+    const modelCalls = traces.filter(t => t.category === 'model' && t.lifecycle !== 'started').length;
+    const toolCalls = traces.filter(t => t.category === 'tool' && t.lifecycle !== 'started').length;
+    const toolFailed = traces.filter(t => t.category === 'tool' && t.lifecycle === 'failed').length;
+    const toolDenied = traces.filter(t => t.category === 'tool' && (t.payload as { decision?: string }).decision === 'deny').length;
+    const errorTraces = traces.filter(t => t.category === 'error' || t.level === 'error');
+    const lastError = errorTraces[errorTraces.length - 1];
+    const checkpointTraces = traces.filter(t => t.category === 'checkpoint' && t.lifecycle === 'completed');
+    const lastCheckpoint = checkpointTraces[checkpointTraces.length - 1];
+    const runningSpan = traces.filter(t => t.lifecycle === 'started' && !traces.some(t2 => t2.spanId === t.spanId && t2.lifecycle !== 'started')).pop();
+    const modelTraces = traces.filter(t => t.category === 'model' && t.lifecycle !== 'started') as Array<{ payload: { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number; cacheWriteTokens?: number; ttftMs?: number } }>;
+    const totalInput = modelTraces.reduce((s, t) => s + (t.payload.inputTokens ?? 0), 0);
+    const totalOutput = modelTraces.reduce((s, t) => s + (t.payload.outputTokens ?? 0), 0);
+    const totalCacheRead = modelTraces.reduce((s, t) => s + (t.payload.cacheReadTokens ?? 0), 0);
+    const totalCacheWrite = modelTraces.reduce((s, t) => s + (t.payload.cacheWriteTokens ?? 0), 0);
+    const maxTtft = Math.max(...modelTraces.map(t => t.payload.ttftMs ?? 0), 0);
+    return {
+      status: workbenchSelectedRun.status === 'blocked' ? 'running' : workbenchSelectedRun.status,
+      startedAt: workbenchSelectedRun.startedAt,
+      completedAt: workbenchSelectedRun.completedAt ?? undefined,
+      durationMs: workbenchSelectedRun.completedAt
+        ? new Date(workbenchSelectedRun.completedAt).getTime() - new Date(workbenchSelectedRun.startedAt).getTime()
+        : Date.now() - new Date(workbenchSelectedRun.startedAt).getTime(),
+      currentSpan: runningSpan ? { spanId: runningSpan.spanId, category: runningSpan.category, name: runningSpan.name } : undefined,
+      model: {
+        calls: modelCalls || workbenchSelectedRun.modelCallCount,
+        inputTokens: totalInput || workbenchSelectedRun.inputTokens,
+        outputTokens: totalOutput || workbenchSelectedRun.outputTokens,
+        cacheReadTokens: totalCacheRead || workbenchSelectedRun.cachedInputTokens,
+        cacheWriteTokens: totalCacheWrite,
+        maxTtftMs: maxTtft > 0 ? maxTtft : undefined,
+      },
+      tools: { calls: toolCalls || workbenchSelectedRun.toolCallCount, failed: toolFailed, denied: toolDenied },
+      items: { started: 0, completed: 0, failed: 0, byType: {} },
+      agents: { spawned: workbenchSelectedRun.subagentCount, running: 0, failed: 0 },
+      files: { changed: 0, addedLines: 0, removedLines: 0 },
+      lastError: lastError && lastError.category === 'error'
+        ? { code: (lastError.payload as { code?: string })?.code ?? 'ERROR', message: (lastError.payload as { message?: string })?.message ?? lastError.name }
+        : (workbenchSelectedRun.error ? { code: 'RUN_ERROR', message: workbenchSelectedRun.error } : undefined),
+      lastCheckpointId: lastCheckpoint ? (lastCheckpoint.payload as { checkpointId?: string })?.checkpointId : undefined,
+    };
+  }, [workbenchSelectedRun, runMonitor.traces]);
+
+  const jumpToMonitor = useCallback((opts: { runId?: string; eventId?: string; itemId?: string; threadId?: string }) => {
+    const { runId, eventId, itemId, threadId } = opts;
+    if (itemId && !runId && !eventId && !threadId) {
+      const target = document.querySelector<HTMLElement>(`[data-item-id="${CSS.escape(itemId)}"]`);
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        target.classList.add('itemJumpHighlight');
+        setTimeout(() => target.classList.remove('itemJumpHighlight'), 1800);
+        return;
+      }
+    }
+    runMonitor.openDrawer();
+    if (threadId) {
+      runMonitor.toggleThread(threadId);
+    }
+    let targetRunId = runId;
+    if (targetRunId) {
+      runMonitor.selectRun(targetRunId);
+    } else if (threadId) {
+      const runForThread = runMonitor.runs.find(r => r.threadId === threadId && r.status === 'running')
+        ?? runMonitor.runs.find(r => r.threadId === threadId);
+      if (runForThread) {
+        runMonitor.selectRun(runForThread.runId);
+        targetRunId = runForThread.runId;
+      }
+    }
+    if (eventId) {
+      setTimeout(() => runMonitor.selectEvent(eventId), 300);
+    }
+    if (itemId) {
+      setTimeout(() => runMonitor.selectByItemId(itemId), 500);
+    }
+  }, [runMonitor]);
+
+  const handleControlInterrupt = useCallback(() => {
+    if (workbenchSelectedRun) {
+      void runMonitor.controlRun('interrupt', workbenchSelectedRun);
+    } else {
+      void stopTurn();
+    }
+  }, [runMonitor, workbenchSelectedRun]);
+
+  const handleControlResume = useCallback(() => {
+    if (workbenchSelectedRun) {
+      void runMonitor.controlRun('resume', workbenchSelectedRun);
+    }
+  }, [runMonitor, workbenchSelectedRun]);
+
+  const handleControlRollback = useCallback((checkpointId?: string) => {
+    if (workbenchSelectedRun) {
+      void runMonitor.controlRun('rollback', workbenchSelectedRun, { checkpointId });
+    } else {
+      void threadAction('rollback', 1);
+    }
+  }, [runMonitor, workbenchSelectedRun]);
+
+  const [responsiveMode, setResponsiveMode] = useState<'side' | 'overlay' | 'sheet'>('side');
+  useEffect(() => {
+    function update() {
+      const w = window.innerWidth;
+      if (w >= 1180) setResponsiveMode('side');
+      else if (w >= 768) setResponsiveMode('overlay');
+      else setResponsiveMode('sheet');
+    }
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
+  const handleCloseWorkbench = useCallback(() => {
+    setRightPaneVisible(false);
+  }, []);
+
   const mergeApproval = useCallback((approval: ApprovalRequest) => {
     setPendingApprovals((current) =>
       current.some((item) => item.requestId === approval.requestId) ? current : [...current, approval],
@@ -363,6 +501,13 @@ function App() {
       const data = (await keyResponse.json()) as { keys?: ApiKeyState[] };
       setKeyStates(data.keys ?? []);
     }
+  }, []);
+  // P2.3 单独刷新 keyStates：保存 preset 后用于 server truth reconcile
+  const refreshKeyStates = useCallback(async () => {
+    const response = await fetch('/api/keys');
+    if (!response.ok) return;
+    const data = (await response.json()) as { keys?: ApiKeyState[] };
+    setKeyStates(data.keys ?? []);
   }, []);
   const refreshModelPresets = useCallback(async () => {
     const response = await fetch('/api/model-presets');
@@ -398,9 +543,16 @@ function App() {
     const data = (await response.json()) as { children?: ThreadChildInfo[] };
     setThreadChildren(data.children ?? []);
   }, []);
-  const reloadThreadSnapshot = useCallback(async (id: string) => {
-    const response = await fetch(`/api/threads/${id}?includeChildren=1`);
+  const reloadThreadSnapshot = useCallback(async (id: string, guard?: { signal?: AbortSignal; isCurrent: () => boolean }) => {
+    let response: Response;
+    try {
+      response = await fetch(`/api/threads/${id}?includeChildren=1`, guard?.signal ? { signal: guard.signal } : undefined);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      throw error;
+    }
     if (!response.ok) return;
+    if (guard && !guard.isCurrent()) return;
     const data = (await response.json()) as {
       thread?: ThreadMeta;
       turns?: TurnMeta[];
@@ -408,7 +560,10 @@ function App() {
       config?: Partial<RunConfig>;
       usage?: ThreadUsage;
     };
-    if (data.thread) setThreads((current) => current.map((thread) => thread.threadId === id ? data.thread! : thread));
+    if (guard && !guard.isCurrent()) return;
+    if (data.thread) {
+      setThreads((current) => current.map((thread) => thread.threadId === id ? data.thread! : thread));
+    }
     setTurns(data.turns ?? []);
     setThreadUsage(data.usage ?? null);
     setRunningTurnIds(new Set((data.turns ?? [])
@@ -426,14 +581,18 @@ function App() {
         ...(workspaceRoot ? { workspaceRoot } : {}),
       }));
     }
+    if (guard && !guard.isCurrent()) return;
     try {
       const workflowData = await loadThreadWorkflow(id);
+      if (guard && !guard.isCurrent()) return;
       setWorkflowComponents(workflowData.components ?? []);
       setWorkflowBlueprint(workflowData.blueprint ?? null);
     } catch {
+      if (guard && !guard.isCurrent()) return;
       setWorkflowComponents([]);
       setWorkflowBlueprint(null);
     }
+    if (guard && !guard.isCurrent()) return;
     await refreshThreadChildren(id);
   }, [refreshThreadChildren]);
   const requestWorkflowPlan = useCallback(async (goal: string) => {
@@ -498,23 +657,43 @@ function App() {
     } finally { setWorkflowSaving(false); }
   }, [addEvent, config.locale, threadId]);
   const controlWorkflowRuntime = useCallback(async (action: WorkflowRuntimeAction, nodeId?: string) => { if (!threadId || !activeWorkflow) return; setWorkflowRuntimeBusy(true);
-    try { const data = await controlThreadWorkflow(threadId, action, { nodeId, runId: activeWorkflow.run.id, input: { goal: activeWorkflow.definition.goal } }); if (data.thread) setThreads((current) => current.map((thread) => thread.threadId === threadId ? data.thread! : thread)); setWorkflowComponents(data.components ?? workflowComponents); setWorkflowBlueprint(data.blueprint ?? workflowBlueprint); addEvent({ kind: 'workflow', title: config.locale === 'zh' ? '工作流状态已更新' : 'Workflow updated', detail: data.workflow?.run.status ?? action, tone: data.workflow?.run.status === 'failed' ? 'danger' : data.workflow?.run.status === 'blocked' ? 'warning' : 'success' }); if (runMonitor.open) void runMonitor.refresh(); }
+    try { const data = await controlThreadWorkflow(threadId, action, { nodeId, runId: activeWorkflow.run.id, input: { goal: activeWorkflow.definition.goal } }); if (data.thread) setThreads((current) => current.map((thread) => thread.threadId === threadId ? data.thread! : thread)); setWorkflowComponents(data.components ?? workflowComponents); setWorkflowBlueprint(data.blueprint ?? workflowBlueprint); addEvent({ kind: 'workflow', title: config.locale === 'zh' ? '工作流状态已更新' : 'Workflow updated', detail: data.workflow?.run.status ?? action, tone: data.workflow?.run.status === 'failed' ? 'danger' : data.workflow?.run.status === 'blocked' ? 'warning' : 'success' }); if (runMonitor.open) void runMonitor.refresh(runMonitor.selectedRunId || undefined); }
     catch (error) { addEvent({ kind: 'workflow', title: config.locale === 'zh' ? '工作流运行失败' : 'Workflow runtime failed', detail: error instanceof Error ? error.message : String(error), tone: 'danger' }); } finally { setWorkflowRuntimeBusy(false); }
   }, [activeWorkflow, addEvent, config.locale, runMonitor, threadId, workflowBlueprint, workflowComponents]);
   const loadThread = useCallback(
     async (id: string) => {
       if (!id) return;
+      const request = threadLoadGuardRef.current.begin();
+      eventSourceRef.current?.close();
+      eventSourceRef.current = null;
       setThreadId(id);
+      setWorkflowPlanDraft(null);
       setEvents([]);
       setCacheDiagnostics(null);
       setCompactionPressure(null);
       taskRuntimeMonitor.clear();
-      await reloadThreadSnapshot(id);
+      const isCurrent = () => threadLoadGuardRef.current.isCurrent(request.generation);
+      await reloadThreadSnapshot(id, { signal: request.signal, isCurrent });
+      if (!isCurrent()) return;
+      try {
+        const overrides = await fetchThreadConfigOverrides(id);
+        if (!isCurrent()) return;
+        setConfig((current) => {
+          const next = { ...current };
+          if (overrides.provider) next.provider = overrides.provider;
+          if (overrides.model) next.model = overrides.model;
+          if (overrides.baseUrl !== undefined) next.baseUrl = overrides.baseUrl;
+          return next;
+        });
+      } catch {
+        if (!isCurrent()) return;
+      }
       void (async () => {
         try {
-          const response = await fetch(`/api/threads/${id}/context-pressure`);
+          const response = await fetch(`/api/threads/${id}/context-pressure`, request.signal ? { signal: request.signal } : undefined);
           if (!response.ok) return;
           const data = await response.json() as { pressure?: { estimatedTokens?: number; maxTokens?: number; softThreshold?: number; hardThreshold?: number; ratio?: number; status?: string } };
+          if (!isCurrent()) return;
           if (data.pressure) {
             setCompactionPressure(data.pressure as never);
           }
@@ -522,9 +701,11 @@ function App() {
           // 主动查询失败时不阻断，后续 SSE 事件仍可更新
         }
       })();
-      eventSourceRef.current?.close();
+      const sourceGeneration = request.generation;
+      threadEventSourceGenerationRef.current = sourceGeneration;
       const source = new EventSource(authEventSourceUrl(`/api/events/${id}`));
       source.onmessage = (message) => {
+        if (!threadLoadGuardRef.current.isCurrent(sourceGeneration)) return;
         try {
           const event = JSON.parse(message.data) as Record<string, unknown>;
           if (event.type === 'connected') return;
@@ -543,6 +724,7 @@ function App() {
               return next;
             });
             void refreshThreadChildren(id);
+            if (runMonitor.open) void runMonitor.refresh(runMonitor.selectedRunId || undefined);
           }
           if (event.type === 'approval.required' && typeof event.requestId === 'string') {
             mergeApproval(event as unknown as ApprovalRequest);
@@ -593,7 +775,6 @@ function App() {
               void refreshThreadChildren(id);
             }
           }
-          if (runMonitor.open) void runMonitor.refresh();
         } catch {
           addEvent({
             kind: 'event',
@@ -604,6 +785,7 @@ function App() {
         }
       };
       source.onerror = () => {
+        if (!threadLoadGuardRef.current.isCurrent(sourceGeneration)) return;
         addEvent({
           kind: 'events',
           title: config.locale === 'zh' ? '连接恢复中' : 'Reconnecting',
@@ -611,9 +793,12 @@ function App() {
           tone: 'warning',
         });
         window.setTimeout(() => {
-          if (eventSourceRef.current === source) {
-            eventSourceRef.current?.close();
-            void reloadThreadSnapshot(id);
+          if (threadLoadGuardRef.current.isCurrent(sourceGeneration)) {
+            source.close();
+            eventSourceRef.current = null;
+            void reloadThreadSnapshot(id, {
+              isCurrent: () => threadLoadGuardRef.current.isCurrent(sourceGeneration),
+            });
           }
         }, 500);
       };
@@ -657,7 +842,11 @@ function App() {
         void refreshMcpStatus('light');
       })
       .catch(() => setMcpHydrated(true));
-    return () => eventSourceRef.current?.close();
+    return () => {
+      eventSourceRef.current?.close();
+      threadLoadGuardRef.current.dispose();
+      sendMessageGuardRef.current.dispose();
+    };
   }, [applyWebProviderState, hasStoredRunConfig, refreshBotStatus, refreshMcpStatus, refreshModelPresets, refreshProviders, refreshSkills, refreshThreads]);
   useEffect(() => {
     void refreshApprovals();
@@ -667,19 +856,7 @@ function App() {
   useEffect(() => {
     if (!configHydrated) return;
     localStorage.setItem(RUN_CONFIG_STORAGE_KEY, JSON.stringify(config));
-    void fetch('/api/settings', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ config: apiConfig }),
-    });
-    if (threadId) {
-      void fetch(`/api/threads/${threadId}/config`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config: threadApiConfig }),
-      });
-    }
-  }, [apiConfig, config, configHydrated, threadApiConfig, threadId]);
+  }, [config, configHydrated]);
   useEffect(() => {
     const roots = [config.workspaceRoot, ...threads.map((thread) => thread.workspaceRoot)];
     setRememberedWorkspaceRoots((current) => rememberWorkspaceRoots(current, roots));
@@ -707,9 +884,42 @@ function App() {
   useEffect(() => {
     const transcript = transcriptRef.current;
     if (!transcript) return;
-    transcript.scrollTo({ top: transcript.scrollHeight, behavior: 'smooth' });
-  }, [lastItemSignature]);
+    if (!transcriptFollow.following) return;
+    requestAnimationFrame(() => {
+      transcript.scrollTop = transcript.scrollHeight;
+    });
+  }, [lastItemSignature, transcriptFollow.following]);
+  function handleTranscriptScroll() {
+    const transcript = transcriptRef.current;
+    if (!transcript) return;
+    const distanceFromBottom = transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight;
+    setTranscriptFollow((current: TranscriptFollowState) => nextTranscriptFollowState({
+      following: current.following,
+      distanceFromBottom,
+      source: 'user',
+    }));
+  }
+  function handleReturnToBottom() {
+    setTranscriptFollow(nextTranscriptFollowState({
+      following: false,
+      distanceFromBottom: 0,
+      source: 'return-action',
+    }));
+    const transcript = transcriptRef.current;
+    if (transcript) {
+      requestAnimationFrame(() => {
+        transcript.scrollTop = transcript.scrollHeight;
+      });
+    }
+  }
   useEffect(() => { resizeTextareaToContent(composerInputRef.current); }, [activeSlashOption, images.length, input]);
+  // 窄屏下窗口变宽时自动收起 sidebar 抽屉 — Chinese: auto-close sidebar drawer when resizing to wide
+  useEffect(() => {
+    function onResize() { if (window.innerWidth >= 768) setSidebarOpen(false); }
+    onResize();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
   async function createConversation(workspaceRoot = config.workspaceRoot, conversationKind: 'chat' | 'project' = 'project') {
     setBusy(true);
     setStatus(t(config.locale, 'creating'));
@@ -935,7 +1145,7 @@ function App() {
       const response = await fetch('/api/skills/draft', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ description: text, config: apiConfig }),
+        body: JSON.stringify({ description: text, config: threadApiConfig }),
       });
       if (!response.ok) {
         const error = (await response.json()) as { error?: string };
@@ -985,7 +1195,7 @@ function App() {
         const threadResponse = await fetch('/api/threads', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title: inputText.slice(0, 60), config: apiConfig }),
+          body: JSON.stringify({ title: inputText.slice(0, 60), config: threadApiConfig }),
         });
         if (!threadResponse.ok) {
           const error = (await threadResponse.json()) as { error?: string };
@@ -1000,7 +1210,7 @@ function App() {
       const response = await fetch(`/api/threads/${activeThreadId}/skills/install`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input: inputText, urls: installTargets, config: apiConfig }),
+        body: JSON.stringify({ input: inputText, urls: installTargets, config: threadApiConfig }),
       });
       if (!response.ok) {
         const error = (await response.json()) as { error?: string };
@@ -1073,10 +1283,17 @@ function App() {
       tone: 'success',
     });
   }
-  async function sendMessage(modeInstruction?: string, forcedText?: string) {
+  async function sendMessage(
+    modeInstruction?: string,
+    forcedText?: string,
+    options: { imagesOverride?: ComposerImage[]; clearComposerImages?: boolean } = {},
+  ) {
     const text = (forcedText ?? input).trim();
-    const hasImages = images.length > 0;
+    const outgoingImages = options.imagesOverride ?? images;
+    const hasImages = outgoingImages.length > 0;
     if (!text && !hasImages) return;
+    const sendReq = sendMessageGuardRef.current.begin();
+    const isSendCurrent = () => sendMessageGuardRef.current.isCurrent(sendReq.generation);
     let activeThreadId = threadId;
     if (!activeThreadId) {
       const response = await fetch('/api/threads', {
@@ -1084,19 +1301,29 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: (text || 'Image').slice(0, 60),
-          config: { ...apiConfig, workspaceRoot: '' },
+          config: { ...threadApiConfig, workspaceRoot: '' },
           conversationKind: 'chat',
         }),
       });
+      if (!response.ok) {
+        const error = (await response.json()) as { error?: string };
+        throw new Error(error.error ?? 'Create thread failed');
+      }
       const data = (await response.json()) as { thread: ThreadMeta };
-      activeThreadId = data.thread.threadId; activeTurnThreadIdRef.current = activeThreadId;
+      if (!data.thread?.threadId) throw new Error('Create thread failed');
+      activeThreadId = data.thread.threadId;
+      if (!isSendCurrent()) return;
+      activeTurnThreadIdRef.current = activeThreadId;
       await loadThread(activeThreadId);
+      if (!isSendCurrent()) return;
       await refreshThreads();
+      if (!isSendCurrent()) return;
     }
-    setBusy(true); activeTurnThreadIdRef.current = activeThreadId;
+    setBusy(true);
+    activeTurnThreadIdRef.current = activeThreadId;
     setInput('');
-    const sentImages = [...images];
-    setImages([]);
+    const sentImages = [...outgoingImages];
+    if (options.clearComposerImages ?? !options.imagesOverride) setImages([]);
     setStatus(t(config.locale, 'running'));
     const pendingUserItem: ThreadItem = {
       id: `pending_user_${Date.now()}`,
@@ -1105,9 +1332,14 @@ function App() {
       status: 'in_progress',
       timestamp: new Date().toISOString(),
     };
+    if (!isSendCurrent()) {
+      setBusy(false);
+      activeTurnThreadIdRef.current = '';
+      return;
+    }
     setItems((current) => mergeIncomingItems(current, [pendingUserItem]));
     try {
-      const body: Record<string, unknown> = { input: text || 'See attached image(s).', config: apiConfig };
+      const body: Record<string, unknown> = { input: text || 'See attached image(s).', config: threadApiConfig };
       if (modeInstruction) body.modeInstruction = modeInstruction;
       if (sentImages.length > 0) {
         body.images = sentImages.map((img) => ({ name: img.name, dataUrl: img.dataUrl }));
@@ -1116,17 +1348,23 @@ function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        signal: sendReq.signal,
       });
+      if (!isSendCurrent()) return;
       if (!response.ok) {
         const error = (await response.json()) as { error?: string };
         throw new Error(error.error ?? 'Turn failed');
       }
       const data = (await response.json()) as { items: ThreadItem[] };
+      if (!isSendCurrent()) return;
       setItems((current) => mergeIncomingItems(current, data.items ?? []));
       setRunningTurnIds(new Set());
       await refreshThreads();
+      if (!isSendCurrent()) return;
       setStatus(t(config.locale, 'idle'));
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      if (!isSendCurrent()) return;
       setStatus(error instanceof Error ? error.message : String(error));
       if (activeThreadId) {
         await loadThread(activeThreadId);
@@ -1137,7 +1375,12 @@ function App() {
         detail: error instanceof Error ? error.message : String(error),
         tone: 'danger',
       });
-    } finally { setBusy(false); activeTurnThreadIdRef.current = ''; }
+    } finally {
+      if (isSendCurrent()) {
+        setBusy(false);
+        activeTurnThreadIdRef.current = '';
+      }
+    }
   }
   async function stopTurn() {
     const targetThreadId = activeTurnThreadIdRef.current || threadId; if (!targetThreadId) return;
@@ -1149,7 +1392,7 @@ function App() {
       const response = await fetch(`/api/threads/${targetThreadId}/interrupt`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config: apiConfig }),
+        body: JSON.stringify({ config: threadApiConfig }),
       });
       const data = (await response.json()) as { interrupted?: boolean };
       if (!response.ok || !data.interrupted) {
@@ -1188,7 +1431,7 @@ function App() {
       const response = await fetch(`/api/threads/${threadId}/${action}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config: apiConfig, count }),
+        body: JSON.stringify({ config: threadApiConfig, count }),
       });
       const data = await response.json();
       addEvent({
@@ -1208,6 +1451,7 @@ function App() {
     }
   }
   function rollbackToTurn(turnId: string) {
+    if (turnId !== latestRollbackTurnId) return;
     const count = rollbackCountForTurn(turnId, turns, items);
     const userText = items.find((item) => item.type === 'user_message' && item.turnId === turnId)?.text;
     if (userText) {
@@ -1219,10 +1463,39 @@ function App() {
     }
     void threadAction('rollback', count);
   }
-  // 回退到指定 turnCount 的历史快照：count = 当前回合数 - 目标回合数
-  function rollbackToCheckpoint(targetTurnCount: number) {
-    const count = Math.max(1, currentTurnCount - targetTurnCount);
-    void threadAction('rollback', count);
+  async function regenerateFromTurn(turnId: string) {
+    if (!threadId || busy || actionBusy || turnId !== latestRollbackTurnId) return;
+    const userText = items.find((item) => item.type === 'user_message' && item.turnId === turnId)?.text?.trim();
+    if (!userText) return;
+    const count = rollbackCountForTurn(turnId, turns, items);
+    setActionBusy(true);
+    try {
+      const response = await fetch(`/api/threads/${threadId}/rollback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ config: threadApiConfig, count }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.error ?? 'Rollback failed');
+      addEvent({
+        kind: 'rollback',
+        title: config.locale === 'zh' ? '正在重新回答' : 'Regenerating response',
+        detail: config.locale === 'zh' ? '已回退最近一轮，正在重新发送。' : 'Rolled back the latest turn and is sending it again.',
+        tone: 'success',
+      });
+      await loadThread(threadId);
+      setActionBusy(false);
+      await sendMessage(undefined, userText, { imagesOverride: [], clearComposerImages: false });
+    } catch (error) {
+      addEvent({
+        kind: 'error',
+        title: config.locale === 'zh' ? '重新回答失败' : 'Regenerate failed',
+        detail: error instanceof Error ? error.message : String(error),
+        tone: 'danger',
+      });
+    } finally {
+      setActionBusy(false);
+    }
   }
   async function branchFromTurn(turnId: string) {
     if (!threadId) return;
@@ -1233,7 +1506,7 @@ function App() {
       const forkResponse = await fetch(`/api/threads/${threadId}/fork`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config: apiConfig }),
+        body: JSON.stringify({ config: threadApiConfig }),
       });
       const forkData = await forkResponse.json() as { thread?: ThreadMeta };
       const nextThreadId = forkData.thread?.threadId;
@@ -1380,33 +1653,32 @@ function App() {
     }
     setThreads((current) => current.map((thread) => thread.threadId === threadId ? data.thread! : thread));
   }
-  async function saveModelPreset(configOverride?: Partial<RunConfig>) {
-    const effectiveConfig = configOverride ? { ...config, ...configOverride } : config;
-    const effectiveProvider = providers.find((p) => p.id === effectiveConfig.provider);
-    const defaultName = `${effectiveProvider?.name ?? effectiveConfig.provider} / ${effectiveConfig.model}`;
+  // P2.3 拆分：requestModelPresetName 单独询问名称，saveModelPreset 只负责 POST
+  async function requestModelPresetName(defaultName: string): Promise<string | null> {
     const name = await requestTextDialog({
       title: t(config.locale, 'saveModelPreset'),
       value: defaultName,
       actionLabel: t(config.locale, 'save'),
       cancelLabel: t(config.locale, 'cancel'),
     });
-    if (name === null) return;
-    const patchForPreset: Partial<RunConfig> = {};
-    for (const key of Object.keys(effectiveConfig) as Array<keyof RunConfig>) {
-      const value = effectiveConfig[key];
-      if (value !== '' && value !== undefined) {
-        (patchForPreset as Record<string, unknown>)[key] = value;
-      }
-    }
+    if (name === null) return null;
+    return name.trim() || defaultName;
+  }
+  async function saveModelPreset(name: string, presetConfig: ModelPresetConfig): Promise<void> {
     const response = await fetch('/api/model-presets', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: name.trim() || defaultName,
-        config: patchForPreset,
-      }),
+      body: JSON.stringify({ name, config: presetConfig }),
     });
-    if (!response.ok) return;
+    if (!response.ok) throw new Error('Model preset save failed');
+    const data = (await response.json()) as { presets?: ModelPreset[] };
+    setModelPresets(data.presets ?? []);
+  }
+  async function deleteModelPreset(presetId: string): Promise<void> {
+    const response = await fetch(`/api/model-presets/${encodeURIComponent(presetId)}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) throw new Error('Model preset delete failed');
     const data = (await response.json()) as { presets?: ModelPreset[] };
     setModelPresets(data.presets ?? []);
   }
@@ -1445,6 +1717,21 @@ function App() {
       setKeyStates(data.keys ?? []);
     }
   }
+  async function saveThreadModelOverrides(overrides: ThreadConfigOverrides): Promise<void> {
+    if (!threadId) return;
+    await patchThreadConfigOverrides(threadId, overrides);
+    setConfig((current) => {
+      const next = { ...current };
+      if (overrides.provider) next.provider = overrides.provider;
+      if (overrides.model) next.model = overrides.model;
+      if (overrides.baseUrl !== undefined) next.baseUrl = overrides.baseUrl;
+      return next;
+    });
+  }
+  function saveGlobalModelConfig(nextConfig: RunConfig): void {
+    localStorage.setItem(RUN_CONFIG_STORAGE_KEY, JSON.stringify(nextConfig));
+    setConfig(nextConfig);
+  }
   const shortcutThemeMode = resolveThemeShortcutMode(config.themeMode);
   const themeShortcutLabel = shortcutThemeMode === 'dark'
     ? (config.locale === 'zh' ? '深色' : 'Dark')
@@ -1468,7 +1755,9 @@ function App() {
       <div style={{ gridColumn: '1 / -1' }}>
         <TitleBar title="Nexus" locale={config.locale} />
       </div>
-      <aside className={sidebarCollapsed ? 'conversationPane collapsed' : 'conversationPane'}>
+      {/* 窄屏 sidebar scrim 遮罩 — Chinese: narrow sidebar scrim */}
+      <button type="button" className={`sidebarScrim${sidebarOpen ? ' mobileOpen' : ''}`} aria-label={config.locale === 'zh' ? '关闭侧栏' : 'Close sidebar'} onClick={() => setSidebarOpen(false)} />
+      <aside className={[sidebarCollapsed ? 'conversationPane collapsed' : 'conversationPane', sidebarOpen ? 'mobileOpen' : ''].filter(Boolean).join(' ')}>
         <WorkspaceThreadList
           activeThreadId={threadId} busy={busy} currentWorkspaceRoot={config.workspaceRoot} locale={config.locale}
           rememberedRoots={rememberedWorkspaceRoots} runningTurnIds={runningTurnIds} searchQuery={threadFilter}
@@ -1477,10 +1766,10 @@ function App() {
           onCreateInWorkspace={(workspaceRoot) => void createConversation(workspaceRoot, 'project')} onDeleteThread={(id) => void deleteConversation(id)}
           onCreateWorkflowProject={createWorkflowProjectDraft}
           onForgetWorkspace={(workspaceRoot) => setRememberedWorkspaceRoots((current) => forgetWorkspaceRoot(current, workspaceRoot))}
-          onOpenSettings={() => setSettingsOpen(true)}
+          onOpenSettings={() => { setSettingsOpen(true); setSidebarOpen(false); }}
           onPickWorkspace={() => void createConversationWithWorkspacePicker()}
           onRenameThread={renameConversation}
-          onSearchQueryChange={setThreadFilter} onSelectThread={selectThreadFromSidebar}
+          onSearchQueryChange={setThreadFilter} onSelectThread={(id) => { selectThreadFromSidebar(id); setSidebarOpen(false); }}
           onToggleSidebar={() => setSidebarCollapsed((value) => !value)}
         />
       </aside>
@@ -1552,6 +1841,8 @@ function App() {
           {cacheSummary ? <span className="tokenPill cache">{cacheSummary}</span> : null}
           {pressureSummary ? <span className="tokenPill warn">{pressureSummary}</span> : null}
           <div className="actions">
+            {/* 移动端菜单按钮，窄屏显示 — Chinese: mobile menu button, narrow-only */}
+            <button type="button" className="iconButton mobileMenuButton" onClick={() => setSidebarOpen((value) => !value)} title={config.locale === 'zh' ? '菜单' : 'Menu'} aria-label={config.locale === 'zh' ? '菜单' : 'Menu'} aria-expanded={sidebarOpen}><Icon name="menu" /></button>
             <button
               className="iconButton themeQuickButton"
               onClick={() => setConfig((current) => ({ ...current, themeMode: nextThemeMode(current.themeMode) }))}
@@ -1564,11 +1855,11 @@ function App() {
             <button className="iconButton" onClick={() => void threadAction('compact')} disabled={!threadId || busy || actionBusy} title={t(config.locale, 'compact')} aria-label={t(config.locale, 'compact')}><Icon name="refresh" /></button>
             <button className={monitorButtonActive ? 'iconButton panelButton active' : 'iconButton panelButton'} onClick={openUnifiedMonitor} title={config.locale === 'zh' ? '任务监控' : 'Task monitor'} aria-label={config.locale === 'zh' ? '任务监控' : 'Task monitor'}><Icon name="activity" /></button>
             <button className="iconButton helpButton" onClick={() => setSettingsHelpOpen(true)} title={config.locale === 'zh' ? '设置说明' : 'Settings guide'} aria-label={config.locale === 'zh' ? '设置说明' : 'Settings guide'}><Icon name="question" /></button>
-            <button className={rightPaneVisible ? 'iconButton panelButton active' : 'iconButton panelButton'} onClick={() => setRightPaneVisible((value) => !value)} title={config.locale === 'zh' ? '显示/隐藏右侧栏' : 'Show/hide right panel'} aria-label={config.locale === 'zh' ? '显示/隐藏右侧栏' : 'Show/hide right panel'}><Icon name="panel" /></button>
+            <button className={rightPaneVisible ? 'iconButton panelButton rightPaneToggleButton active' : 'iconButton panelButton rightPaneToggleButton'} onClick={() => setRightPaneVisible((value) => !value)} title={config.locale === 'zh' ? '显示/隐藏右侧栏' : 'Show/hide right panel'} aria-label={config.locale === 'zh' ? '显示/隐藏右侧栏' : 'Show/hide right panel'}><Icon name="panel" /></button>
           </div>
         </header>
         <div className="contentGrid">
-          <section className="transcript" ref={transcriptRef}>
+          <section className="transcript" ref={transcriptRef} onScroll={handleTranscriptScroll}>
             {items.length === 0 ? (
               <div className="empty">{workspaceView === 'workflow'
                 ? (config.locale === 'zh' ? '从下方输入工作流目标，或描述节点修改要求。' : 'Describe a workflow goal or node change below.')
@@ -1576,15 +1867,17 @@ function App() {
             ) : (
               transcriptGroups.map((group, index) => (
                 group.kind === 'user' ? (
-                  <ItemView item={group.item as ThreadItem} key={`${group.item.id}-${index}`} locale={config.locale} onBranch={branchFromTurn} onCopy={copyMessage} onRollback={rollbackToTurn} onPreviewFile={previewFileFromItem} onOpenFile={openFileFromItem} userAvatarId={config.userAvatarId} customUserAvatarDataUrl={config.customUserAvatarDataUrl} />
+                  <ItemView item={group.item as ThreadItem} key={`${group.item.id}-${index}`} locale={config.locale} canRollback={Boolean(group.item.turnId && group.item.turnId === latestRollbackTurnId && !busy && !actionBusy)} onBranch={branchFromTurn} onCopy={copyMessage} onRollback={rollbackToTurn} onPreviewFile={previewFileFromItem} onOpenFile={openFileFromItem} userAvatarId={config.userAvatarId} customUserAvatarDataUrl={config.customUserAvatarDataUrl} />
                 ) : (
                   <AssistantTurnView
                     group={{ ...group, items: group.items as ThreadItem[], status: group.turnId && runningTurnIds.has(group.turnId) ? 'running' : group.status }}
                     key={`${group.id}-${index}`}
                     locale={config.locale}
+                    canRegenerate={Boolean(group.turnId && group.turnId === latestRollbackTurnId && !busy && !actionBusy)}
                     childActivityByThread={childActivityByThread}
                     onBranch={branchFromTurn}
                     onCopy={copyMessage}
+                    onRegenerate={regenerateFromTurn}
                     onPreviewFile={previewFileFromItem}
                     onOpenFile={openFileFromItem}
                     workspaceRoot={activeWorkspaceRoot}
@@ -1592,6 +1885,16 @@ function App() {
                 )
               ))
             )}
+            {transcriptFollow.showReturnToBottom ? (
+              <button
+                type="button"
+                className="returnToBottomButton"
+                onClick={handleReturnToBottom}
+                aria-label={config.locale === 'zh' ? '回到底部' : 'Return to bottom'}
+              >
+                {config.locale === 'zh' ? '回到底部' : '↓ Return to bottom'}
+              </button>
+            ) : null}
           </section>
           {rightPaneVisible ? (
             <>
@@ -1602,7 +1905,7 @@ function App() {
                 title={config.locale === 'zh' ? '拖拽调整右侧栏宽度' : 'Drag to resize right panel'}
                 onPointerDown={startRightPaneResize}
               />
-              {workspaceView === 'workflow' ? <section className="workflowSidePane"><WorkflowPanel locale={config.locale} workflow={activeWorkflow} blueprint={workflowBlueprint} components={workflowComponents} planDraft={workflowPlanDraft} saving={workflowSaving} runtimeBusy={workflowRuntimeBusy} onSave={(workflow) => void saveWorkflow(workflow)} onCancelPlan={() => setWorkflowPlanDraft(null)} onCommitPlan={() => void commitWorkflowPlan()} onSelectionChange={setWorkflowSelectedNodeIds} onRunWorkflow={() => void controlWorkflowRuntime('run')} onTestWorkflow={() => void controlWorkflowRuntime('test_run')} onPublishWorkflow={() => void controlWorkflowRuntime('publish')} onResumeWorkflow={() => void controlWorkflowRuntime('resume')} onCancelWorkflow={() => void controlWorkflowRuntime('cancel')} onRetryWorkflowNode={(nodeId) => void controlWorkflowRuntime('retry_node', nodeId)} runEvents={runMonitor.events} /></section> : <RightPane activeTab={rightPaneTab} activeThread={activeThread} agentStageRows={agentStageRows} externalPreviewRequest={previewRequest} locale={config.locale} runtimeItems={items} taskRuntimeState={taskRuntimeMonitor.state} workspaceRoot={activeWorkspaceRoot} onTabChange={setRightPaneTab} onToggleMemoryExcluded={(excluded) => void toggleThreadMemoryExcluded(excluded)} />}
+              {workspaceView === 'workflow' ? <section className="workflowSidePane"><WorkflowPanel locale={config.locale} workflow={activeWorkflow} blueprint={workflowBlueprint} components={workflowComponents} planDraft={workflowPlanDraft} saving={workflowSaving} runtimeBusy={workflowRuntimeBusy} onSave={(workflow) => void saveWorkflow(workflow)} onCancelPlan={() => setWorkflowPlanDraft(null)} onCommitPlan={() => void commitWorkflowPlan()} onSelectionChange={setWorkflowSelectedNodeIds} onRunWorkflow={() => void controlWorkflowRuntime('run')} onTestWorkflow={() => void controlWorkflowRuntime('test_run')} onPublishWorkflow={() => void controlWorkflowRuntime('publish')} onResumeWorkflow={() => void controlWorkflowRuntime('resume')} onCancelWorkflow={() => void controlWorkflowRuntime('cancel')} onRetryWorkflowNode={(nodeId) => void controlWorkflowRuntime('retry_node', nodeId)} runEvents={runMonitor.events} /></section> : <RightPane activeTab={rightPaneTab} activeThread={activeThread} activeThreadId={threadId} activeThreadTitle={activeThread?.title ?? ''} busy={busy} threadChildren={threadChildren} externalPreviewRequest={previewRequest} locale={config.locale} runtimeItems={items} workspaceRoot={activeWorkspaceRoot} onTabChange={setRightPaneTab} onJumpToMonitor={jumpToMonitor} onToggleMemoryExcluded={(excluded) => void toggleThreadMemoryExcluded(excluded)} traceSummary={workbenchTraceSummary as Parameters<typeof RightPane>[0]['traceSummary']} currentRunId={workbenchCurrentRunId} controlCapabilities={workbenchSelectedRun?.controlCapabilities ? { interrupt: workbenchSelectedRun.controlCapabilities.interrupt, resume: workbenchSelectedRun.controlCapabilities.resume, rollback: { enabled: workbenchSelectedRun.controlCapabilities.rollback.enabled, checkpointIds: workbenchSelectedRun.controlCapabilities.rollback.checkpointIds ?? [], reason: workbenchSelectedRun.controlCapabilities.rollback.reason } } : undefined} onInterrupt={handleControlInterrupt} onResume={handleControlResume} onRollback={handleControlRollback} responsiveMode={responsiveMode === 'side' ? undefined : responsiveMode} onCloseRequest={handleCloseWorkbench} />}
             </>
           ) : null}
         </div>
@@ -1636,19 +1939,60 @@ function App() {
           botConfig={botConfig} botStatus={botStatus} config={config} keyStates={keyStates} locale={config.locale}
           mcps={mcps} mcpStatuses={mcpStatuses} modelPresets={modelPresets} providers={providers} skillsList={skillsList}
           refreshSkills={refreshSkills} refreshMcpStatus={refreshMcpStatus} refreshBotStatus={refreshBotStatus}
-          refreshProviders={refreshProviders}
+          refreshProviders={refreshProviders} refreshKeyStates={refreshKeyStates}
           clearProviderKey={clearProviderKey}
           deleteSkill={deleteSkill}
-          saveModelPreset={saveModelPreset} saveProviderKey={saveProviderKey} saveProviderEnvVar={saveProviderEnvVar} saveEnvironmentVariables={saveEnvironmentVariables} saveBotConfig={saveBotConfig} saveSkillDraft={saveSkillDraft} logoutWeixin={logoutWeixin}
+          requestModelPresetName={requestModelPresetName} saveModelPreset={saveModelPreset} deleteModelPreset={deleteModelPreset} saveProviderKey={saveProviderKey} saveProviderEnvVar={saveProviderEnvVar} saveEnvironmentVariables={saveEnvironmentVariables} saveBotConfig={saveBotConfig} saveSkillDraft={saveSkillDraft} logoutWeixin={logoutWeixin}
           webProviderState={webProviderState} saveWebProviderKey={saveWebProviderKey} clearWebProviderKey={clearWebProviderKey}
           setConfig={setConfig} setMcps={setMcps} setOpen={setSettingsOpen}
           pendingMcpDraft={pendingMcpDraft}
           consumePendingMcpDraft={() => setPendingMcpDraft(null)}
           startDingtalkStream={startDingtalkStream} stopDingtalkStream={stopDingtalkStream} testDingtalkMessage={testDingtalkMessage}
+          activeThreadId={threadId}
+          saveThreadModelOverrides={saveThreadModelOverrides}
+          saveGlobalModelConfig={saveGlobalModelConfig}
         />
       ) : null}
       {settingsHelpOpen ? <SettingsHelpDialog locale={config.locale} onClose={() => setSettingsHelpOpen(false)} /> : null}
-      <RunMonitorDrawer locale={config.locale} open={runMonitor.open} adminMode={runMonitor.adminMode} adminToken={runMonitor.adminToken} runs={runMonitor.runs} events={runMonitor.events} selectedRunId={runMonitor.selectedRunId} threads={runMonitor.threads} expandedThreadId={runMonitor.expandedThreadId} expandedEventId={runMonitor.expandedEventId} autoRefresh={runMonitor.autoRefresh} autoRefreshInterval={runMonitor.autoRefreshInterval} loading={runMonitor.loading} checkpoints={checkpoints} currentTurnCount={currentTurnCount} runtimeItems={items} taskRuntimeState={taskRuntimeMonitor.state} onClose={() => runMonitor.setOpen(false)} onRefresh={() => void runMonitor.refresh(runMonitor.selectedRunId)} onSelectRun={(runId) => void runMonitor.refresh(runId)} onControlRun={(action, run) => void runMonitor.controlRun(action, run)} onToggleThread={runMonitor.toggleThread} onToggleEvent={runMonitor.toggleEvent} onAutoRefreshChange={runMonitor.setAutoRefresh} onAutoRefreshIntervalChange={runMonitor.setAutoRefreshInterval} onAdminTokenChange={runMonitor.setAdminToken} onRollbackCheckpoint={rollbackToCheckpoint} />
+      <RunMonitorDrawer
+        threadId={threadId}
+        open={runMonitor.open}
+        adminMode={runMonitor.adminMode}
+        adminToken={runMonitor.adminToken}
+        runs={runMonitor.runs}
+        traces={runMonitor.traces}
+        visibleTraces={runMonitor.visibleTraces}
+        threads={runMonitor.threads}
+        selectedRunId={runMonitor.selectedRunId}
+        selectedRun={runMonitor.selectedRun}
+        selectedEventId={runMonitor.selectedEventId}
+        selectedTrace={runMonitor.selectedTrace}
+        categoryFilter={runMonitor.categoryFilter}
+        errorsOnly={runMonitor.errorsOnly}
+        tracePage={runMonitor.tracePage}
+        expandedThreadId={runMonitor.expandedThreadId}
+        autoRefresh={runMonitor.autoRefresh}
+        autoRefreshInterval={runMonitor.autoRefreshInterval}
+        loading={runMonitor.loading}
+        allCategories={runMonitor.allCategories}
+        zh={runMonitor.zh}
+        onClose={() => runMonitor.setOpen(false)}
+        onRefresh={() => void runMonitor.refresh(runMonitor.selectedRunId || undefined)}
+        onSelectRun={(runId) => void runMonitor.refresh(runId)}
+        onControlRun={(action, opts) => {
+          if (runMonitor.selectedRun) {
+            void runMonitor.controlRun(action, runMonitor.selectedRun, opts);
+          }
+        }}
+        onToggleThread={runMonitor.toggleThread}
+        onSelectEvent={runMonitor.selectEvent}
+        onToggleCategory={runMonitor.toggleCategory}
+        onSetErrorsOnly={runMonitor.setErrorsOnly}
+        onAutoRefreshChange={runMonitor.setAutoRefresh}
+        onAutoRefreshIntervalChange={runMonitor.setAutoRefreshInterval}
+        onAdminTokenChange={runMonitor.setAdminToken}
+        onLoadOlder={() => void runMonitor.loadOlder()}
+      />
       {dialog ? <AppDialog dialog={dialog} onClose={() => setDialog(null)} /> : null}
       {toast ? <div className="toastNotice" key={toast.id}>{toast.text}</div> : null}
       {weixinConnectState ? <WeixinConnectDialog locale={config.locale} state={weixinConnectState} onClose={() => setWeixinConnectState(null)} /> : null}

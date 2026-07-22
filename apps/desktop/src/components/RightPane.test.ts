@@ -1,193 +1,110 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { RightPane } from './RightPane.js';
-import type { TaskRuntimeMonitorState } from '../features/monitor/taskRuntimeMonitor.js';
 
-const taskRuntimeState: TaskRuntimeMonitorState = {
-  runtime: {
-    type: 'task.runtime.updated',
-    threadId: 'thread_1',
-    turnId: 'turn_1',
-    phase: 'tool',
-    status: 'running',
-    runProfile: 'runtime_os',
-    timestamp: '2026-07-18T00:00:00.000Z',
-  },
-  cognition: {
-    type: 'task.cognition.updated',
-    threadId: 'thread_1',
-    turnId: 'turn_1',
-    cognition: {
-      goal: '修复桌面端监控',
-      constraints: ['不新增运行模式'],
-      knownFacts: ['task.context.updated 只包含元数据'],
-      unknowns: ['是否需要后台任务入口'],
-      risks: ['readiness retry 风暴'],
-      confidence: 0.81,
-      verificationCriteria: ['普通聊天不触发后台任务接口'],
-    },
-    timestamp: '2026-07-18T00:00:01.000Z',
-  },
-  context: {
-    type: 'task.context.updated',
-    threadId: 'thread_1',
-    turnId: 'turn_1',
-    chunks: [
-      {
-        id: 'task-cognition',
-        source: 'task',
-        tokens: 320,
-        priority: 95,
-        truncated: false,
-        summary: '当前任务认知摘要',
-      },
-    ],
-    usedTokens: 320,
-    remainingTokens: 1680,
-    timestamp: '2026-07-18T00:00:02.000Z',
-  },
-  loop: {
-    type: 'task.loop.updated',
-    threadId: 'thread_1',
-    turnId: 'turn_1',
-    loopId: 'loop_1',
-    iteration: 3,
-    maxIterations: 8,
-    noProgressCount: 0,
-    continuationReason: '继续验证',
-    status: 'active',
-    timestamp: '2026-07-18T00:00:03.000Z',
-  },
-  events: [
-    {
-      type: 'task.loop.updated',
-      threadId: 'thread_1',
-      turnId: 'turn_1',
-      loopId: 'loop_1',
-      iteration: 3,
-      maxIterations: 8,
-      noProgressCount: 0,
-      continuationReason: '继续验证',
-      status: 'active',
-      timestamp: '2026-07-18T00:00:03.000Z',
-    },
-    {
-      type: 'task.context.updated',
-      threadId: 'thread_1',
-      turnId: 'turn_1',
-      chunks: [],
-      usedTokens: 320,
-      remainingTokens: 1680,
-      timestamp: '2026-07-18T00:00:02.000Z',
-    },
-  ],
-};
+const here = dirname(fileURLToPath(import.meta.url));
 
 describe('RightPane', () => {
-  it('splits status into agent stage above task runtime', () => {
+  it('renders workbench tabs (activity/agents/files)', () => {
     const html = renderToStaticMarkup(React.createElement(RightPane, {
-      activeTab: 'status',
+      activeTab: 'activity',
+      activeThreadId: 'thread_1',
+      activeThreadTitle: 'Test Thread',
+      busy: false,
+      threadChildren: [],
+      runtimeItems: [],
       activeThread: {
         threadId: 'thread_1',
-        title: '航空保障包',
+        title: 'Test Thread',
         status: 'idle',
-        turnCount: 1,
+        turnCount: 0,
         createdAt: '2026-07-18T00:00:00.000Z',
         updatedAt: '2026-07-18T00:00:00.000Z',
       },
-      agentStageRows: [{
-        kind: 'main',
-        threadId: 'thread_1',
-        parentThreadId: '',
-        title: 'Nexus 主控 Agent',
-        role: 'primary',
-        depth: 0,
-        status: 'idle',
-        statusLabel: '待机中',
-        tone: 'muted',
-        latestAction: '等待指令',
-        updatedAt: '2026-07-18T00:00:00.000Z',
-      }],
       locale: 'zh',
       workspaceRoot: 'E:/langchain',
       onTabChange: vi.fn(),
       onToggleMemoryExcluded: vi.fn(),
     }));
 
-    expect(html).toContain('rightPaneStatusStack');
-    expect(html).toContain('rightPaneStatusSplit');
-    expect(html).toContain('任务列表');
-    expect(html.indexOf('智能体状态')).toBeLessThan(html.indexOf('任务列表'));
+    expect(html).toContain('活动');
+    expect(html).toContain('智能体');
+    expect(html).toContain('文件');
   });
 
-  it('shows only operational items in the task runtime panel', () => {
+  it('renders activity tab with idle state when not busy', () => {
     const html = renderToStaticMarkup(React.createElement(RightPane, {
-      activeTab: 'status',
-      agentStageRows: [],
+      activeTab: 'activity',
+      activeThreadId: 'thread_1',
+      activeThreadTitle: 'Test',
+      busy: false,
+      threadChildren: [],
+      runtimeItems: [],
+      activeThread: {
+        threadId: 'thread_1',
+        title: 'Test',
+        status: 'idle',
+        turnCount: 0,
+        createdAt: '2026-07-18T00:00:00.000Z',
+        updatedAt: '2026-07-18T00:00:00.000Z',
+      },
       locale: 'zh',
-      runtimeItems: [
-        {
-          id: 'user_1',
-          type: 'user_message',
-          text: '介绍一下航空保障包（扩展包）',
-          status: 'completed',
-          timestamp: '2026-07-18T00:00:03.000Z',
-        },
-        {
-          id: 'agent_1',
-          type: 'agent_message',
-          text: '航空保障包用于把领域知识、工具和流程打包给 Agent。',
-          status: 'completed',
-          timestamp: '2026-07-18T00:00:04.000Z',
-        },
-        {
-          id: 'todo_1',
-          type: 'todo_list',
-          items: [
-            { text: '读取相关上下文', completed: true },
-            { text: '整理监控视图', completed: false },
-          ],
-          status: 'completed',
-          timestamp: '2026-07-18T00:00:04.500Z',
-        },
-        {
-          id: 'tool_1',
-          type: 'tool_call',
-          toolName: 'read_file',
-          status: 'completed',
-          timestamp: '2026-07-18T00:00:05.000Z',
-        },
-      ],
       workspaceRoot: 'E:/langchain',
       onTabChange: vi.fn(),
-      taskRuntimeState,
     }));
 
-    expect(html).toContain('任务列表');
-    expect(html).toContain('taskRuntimeBody');
-    expect(html).toContain('工具执行');
-    expect(html).toContain('runtime_os');
-    expect(html).toContain('修复桌面端监控');
-    expect(html).toContain('当前任务认知摘要');
-    expect(html).toContain('3/8');
-    expect(html).toContain('任务列表');
-    expect(html).toContain('读取相关上下文');
-    expect(html).toContain('整理监控视图');
-    expect(html).toContain('事件流');
-    expect(html).toContain('执行项');
-    expect(html).toContain('read_file · completed');
-    expect(html).not.toContain('任务清单 · completed');
-    expect(html).not.toContain('agent_message · completed');
-    expect(html).not.toContain('user_message · completed');
-    expect(html).not.toContain('航空保障包用于把领域知识');
-    expect(html).not.toContain('介绍一下航空保障包');
-    expect(html).toContain('loop · active');
-    expect(html).toContain('context · 320 tok');
-    expect(html).toContain('readiness retry 风暴');
-    expect(html).not.toContain('完整 prompt');
-    expect(html).not.toContain('chunk content');
-    expect(html).not.toContain('/harness/start');
-    expect(html).not.toContain('Harness 模式');
+    expect(html).toContain('等待开始');
+  });
+
+  it('renders agents tab content', () => {
+    const html = renderToStaticMarkup(React.createElement(RightPane, {
+      activeTab: 'agents',
+      activeThreadId: 'thread_1',
+      activeThreadTitle: 'Test',
+      busy: false,
+      threadChildren: [],
+      runtimeItems: [],
+      activeThread: {
+        threadId: 'thread_1',
+        title: 'Test',
+        status: 'idle',
+        turnCount: 0,
+        createdAt: '2026-07-18T00:00:00.000Z',
+        updatedAt: '2026-07-18T00:00:00.000Z',
+      },
+      locale: 'zh',
+      workspaceRoot: 'E:/langchain',
+      onTabChange: vi.fn(),
+    }));
+
+    expect(html).toContain('主控 Agent');
+    expect(html).toContain('查看主 Agent 详情');
+    expect(html).not.toContain('在监控中查看');
+    expect(html).not.toContain('深度');
+  });
+
+  it('keeps the agent info button meaningful by not rendering inspector until an agent is selected', () => {
+    const workbenchSource = readFileSync(join(here, 'workbench', 'WorkspaceWorkbench.tsx'), 'utf-8');
+    const agentStageSource = readFileSync(join(here, 'AgentStagePanel.tsx'), 'utf-8');
+
+    expect(workbenchSource).toContain("const mainAgentThreadId = activeThreadId || 'main'");
+    expect(workbenchSource).toContain('mainThreadId: mainAgentThreadId');
+    expect(workbenchSource).toContain('if (!selectedAgentId) return null');
+    expect(workbenchSource).toContain('setSelectedAgentId((current) => current === threadId ? null : threadId)');
+    expect(workbenchSource).toContain('{selectedNode ? (');
+    expect(agentStageSource).toContain('aria-pressed={selectedThreadId === mainRow.threadId}');
+    expect(agentStageSource).toContain('收起主 Agent 详情');
+  });
+
+  it('passes item trace jumps through to monitor instead of transcript-only scrolling', () => {
+    const mainSource = readFileSync(join(here, '..', 'main.tsx'), 'utf-8');
+    const workbenchSource = readFileSync(join(here, 'workbench', 'WorkspaceWorkbench.tsx'), 'utf-8');
+
+    expect(mainSource).toContain('if (itemId && !runId && !eventId && !threadId)');
+    expect(workbenchSource).toContain('onJumpToMonitor?.({ itemId: opts.itemId, runId: opts.runId, threadId: activeThreadId })');
   });
 });

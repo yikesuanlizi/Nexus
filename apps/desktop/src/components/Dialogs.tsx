@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { Locale } from '../config/config.js';
 import { t } from '../shared/i18n.js';
-import { runProfileDescription } from '../config/runProfiles.js';
 import type { SkillDraft } from '../shared/types.js';
 import { Icon } from './Icon.js';
 

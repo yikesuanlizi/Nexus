@@ -21,6 +21,7 @@ import {
   type WebProviderSecrets,
 } from '../config/config.js';
 import { DEFAULT_TENANT_ID, type TenantContext } from '../shared/tenant.js';
+import { ActiveRunRegistry } from './activeRunRegistry.js';
 
 export type AgentRuntimeOverrides = Pick<AgentConfig, 'systemPrompt' | 'tools'> & {
   systemPromptSuffix?: string;
@@ -39,6 +40,7 @@ export interface TenantRuntime {
     configPatch?: AgentCreateConfig,
     tenantContext?: TenantContext,
   ): Promise<{ agent: AgentLoop; model: ModelGateway; config: AgentRunConfig }>;
+  activeRunRegistry: ActiveRunRegistry;
 }
 
 export function createTenantRuntime(options: {
@@ -51,6 +53,24 @@ export function createTenantRuntime(options: {
   const skillCaches = new Map<string, LocalSkillRegistryCache>();
   const defaultAgents = new Map<string, AgentLoop>();
   const defaultTenantContext: TenantContext = { tenantId: DEFAULT_TENANT_ID };
+  const activeRunRegistry = new ActiveRunRegistry();
+
+  function bindAgentToRegistry(agent: AgentLoop): void {
+    agent.onEvent((event) => {
+      if (event.type === 'turn.started') {
+        activeRunRegistry.register({
+          runId: event.runId,
+          threadId: event.threadId,
+          turnId: event.turnId,
+          interrupt: () => {
+            agent.interrupt(event.threadId);
+          },
+        });
+      } else if (event.type === 'turn.completed' || event.type === 'turn.failed') {
+        activeRunRegistry.finish(event.runId);
+      }
+    });
+  }
 
   function storeForTenant(tenantContext: TenantContext): ThreadStore {
     return options.rootStore.scope?.(tenantContext.tenantId) ?? options.rootStore;
@@ -200,6 +220,7 @@ export function createTenantRuntime(options: {
       skillsDirs: [config.skillsRoot],
     });
     agent.onEvent((event) => options.publishEvent(event, tenantContext.tenantId));
+    bindAgentToRegistry(agent);
     await agent.loadSkillsFromConfiguredDirs();
     return { agent, model, config };
   }
@@ -213,6 +234,7 @@ export function createTenantRuntime(options: {
     resetDefaultAgent,
     saveDefaultRunConfig,
     createAgent,
+    activeRunRegistry,
   };
 }
 

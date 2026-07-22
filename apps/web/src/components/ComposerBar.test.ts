@@ -30,7 +30,7 @@ function renderComposer(overrides: Partial<React.ComponentProps<typeof ComposerB
     modelPresets: [],
       openRemoteAssistants: vi.fn(),
     removeImage: vi.fn(),
-    rightPaneTab: 'status',
+    rightPaneTab: 'activity',
     rightPaneVisible: true,
     selectSlashOption: vi.fn(),
     setActiveSlashOption: vi.fn(),

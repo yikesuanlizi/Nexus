@@ -1,6 +1,6 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { pathToFileURL } from 'node:url';
 import type { SkillDefinition, SkillRegistry } from './extensions.js';
 
 export type SkillKind = 'prompt' | 'executable';

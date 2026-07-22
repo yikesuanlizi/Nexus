@@ -69,6 +69,14 @@ export type {
 export { SystemMonitor, DEFAULT_SYSTEM_MONITOR_CONFIG } from './systemMonitor.js';
 export type { SystemMonitorConfig, SystemMonitorListener } from './systemMonitor.js';
 
+// ─── Run Trace V2 基础件 ─────────────────────────────────────────────────
+// — Chinese: Run Trace V2 primitives for redaction, projection, and session writing
+export { redactTracePayload } from './runTraceRedaction.js';
+export type { TraceRedactionOptions } from './runTraceRedaction.js';
+export { projectRunTrace } from './runTraceProjector.js';
+export { RunTraceSession } from './runTraceSession.js';
+export type { RunTraceSink } from './runTraceSession.js';
+
 // ─── Task Harness Engine（跨 turn 自主循环） ─────────────────────────────
 // — Chinese: Task Harness Engine — verifiable/pausable/resumable autonomous loop
 export {

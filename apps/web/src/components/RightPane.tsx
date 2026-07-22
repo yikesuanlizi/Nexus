@@ -1,22 +1,20 @@
-// 右侧面板：切换 Agent 状态与工作区文件列表
-// Right pane: switches between Agent status and workspace file list
-
 import type { Locale } from '../config/config.js';
-import type { AgentStageRow, ThreadItem, ThreadMeta } from '../shared/types.js';
+import type { ThreadChildInfo, ThreadItem, ThreadMeta } from '../shared/types.js';
 import type { TaskRuntimeMonitorState } from '../features/monitor/taskRuntimeMonitor.js';
-import { AgentStagePanel } from './AgentStagePanel.js';
-import { TaskRuntimeMonitorPanel } from './TaskRuntimeMonitorPanel.js';
-import { WorkspaceFilesPanel, type ExternalPreviewRequest } from './WorkspaceFilesPanel.js';
-import { Icon } from './Icon.js';
+import type { RunControlCapabilities, RunTraceEnvelope, RunTraceSummary } from '@nexus/protocol';
+import type { ExternalPreviewRequest } from './WorkspaceFilesPanel.js';
+import { WorkspaceWorkbench } from './workbench/WorkspaceWorkbench.js';
+import type { WorkbenchTab } from './workbench/WorkbenchTabs.js';
 
-export type RightPaneTab = 'status' | 'files';
-// 右侧面板的 Tab 选项：Agent 状态或文件列表
-// Right pane tab options: Agent status or file list
+export type RightPaneTab = WorkbenchTab;
 
 export function RightPane({
   activeTab,
-  agentStageRows,
+  activeThreadId,
+  activeThreadTitle,
   activeThread,
+  busy,
+  threadChildren,
   locale,
   workspaceRoot,
   onTabChange,
@@ -24,69 +22,67 @@ export function RightPane({
   externalPreviewRequest,
   taskRuntimeState,
   runtimeItems = [],
+  onJumpToMonitor,
+  traceSummary,
+  currentRunId,
+  controlCapabilities,
+  recentTraces,
+  onInterrupt,
+  onResume,
+  onRollback,
+  responsiveMode,
+  onCloseRequest,
 }: {
   activeTab: RightPaneTab;
-  agentStageRows: AgentStageRow[];
+  activeThreadId: string;
+  activeThreadTitle: string;
   activeThread?: ThreadMeta | null;
+  busy: boolean;
+  threadChildren: ThreadChildInfo[];
   locale: Locale;
   workspaceRoot: string;
   onTabChange(tab: RightPaneTab): void;
   onToggleMemoryExcluded?(excluded: boolean): void;
-  /** 外部预览请求 — 从对话条目点击"预览"时传入，自动切换到 files Tab 并加载该文件 */
-  // — Chinese: external preview request — auto-switches to files tab and loads the file
   externalPreviewRequest?: ExternalPreviewRequest | null;
   taskRuntimeState?: TaskRuntimeMonitorState;
   runtimeItems?: ThreadItem[];
+  onJumpToMonitor?(opts: { runId?: string; eventId?: string; itemId?: string; threadId?: string }): void;
+  traceSummary?: RunTraceSummary | null;
+  currentRunId?: string;
+  controlCapabilities?: RunControlCapabilities;
+  recentTraces?: RunTraceEnvelope[];
+  onInterrupt?(): void;
+  onResume?(): void;
+  onRollback?(checkpointId?: string): void;
+  responsiveMode?: 'side' | 'overlay' | 'sheet';
+  onCloseRequest?(): void;
 }) {
-  const memoryExcluded = activeThread?.tags?.memoryExcluded === 'true';
-  // 线程级"不提取记忆"开关
-  // Per-thread "exclude from memory extraction" toggle
+  void activeThreadTitle;
+  void taskRuntimeState;
+  void recentTraces;
 
   return (
-    <aside className="eventPane">
-      <div className="rightPaneTabs" role="tablist" aria-label={locale === 'zh' ? '右侧面板' : 'Right panel'}>
-        <button className={activeTab === 'status' ? 'active' : ''} type="button" role="tab" aria-selected={activeTab === 'status'} onClick={() => onTabChange('status')}>
-          {locale === 'zh' ? '状态' : 'Status'}
-        </button>
-        <button className={activeTab === 'files' ? 'active' : ''} type="button" role="tab" aria-selected={activeTab === 'files'} onClick={() => onTabChange('files')}>
-          {locale === 'zh' ? '文件' : 'Files'}
-        </button>
-      </div>
-      {activeTab === 'status'
-        ? (
-          <div className="rightPaneStatusStack">
-            {activeThread && onToggleMemoryExcluded ? (
-              <div className="rightPaneMemoryControl">
-                <label className="toggle">
-                  <input
-                    checked={memoryExcluded}
-                    onChange={(event) => onToggleMemoryExcluded(event.target.checked)}
-                    type="checkbox"
-                  />
-                  <span className="settingRow">
-                    <span className="settingLabel">
-                      {locale === 'zh' ? '此线程不生成记忆' : 'Exclude this thread from memory extraction'}
-                      <span className="settingHelpIcon">
-                        <Icon name="question" />
-                      </span>
-                    </span>
-                    <span className="settingTooltip">
-                      <strong>{locale === 'zh' ? '此线程不生成记忆' : 'Exclude this thread from memory extraction'}</strong>
-                      {locale === 'zh'
-                        ? '开启后，这个对话的内容不会被提取到长期记忆库里，对话时也不会参考旧记忆。但上下文太长时仍会自动压缩摘要（为了省 token）。'
-                        : 'When enabled, this conversation won\'t be saved to long-term memory, and past memories won\'t be referenced. Auto-compaction still works to save tokens.'}
-                    </span>
-                  </span>
-                </label>
-              </div>
-            ) : null}
-            <div className="rightPaneStatusSplit">
-              <AgentStagePanel locale={locale} rows={agentStageRows} />
-              <TaskRuntimeMonitorPanel locale={locale} state={taskRuntimeState} items={runtimeItems} />
-            </div>
-          </div>
-        )
-        : <WorkspaceFilesPanel locale={locale} workspaceRoot={workspaceRoot} externalPreviewRequest={externalPreviewRequest} />}
-    </aside>
+    <WorkspaceWorkbench
+      activeThread={activeThread}
+      activeThreadId={activeThreadId}
+      busy={busy}
+      threadChildren={threadChildren}
+      runtimeItems={runtimeItems}
+      traceSummary={traceSummary}
+      currentRunId={currentRunId}
+      controlCapabilities={controlCapabilities}
+      locale={locale}
+      workspaceRoot={workspaceRoot}
+      externalPreviewRequest={externalPreviewRequest}
+      activeTab={activeTab}
+      onTabChange={onTabChange}
+      onJumpToMonitor={onJumpToMonitor}
+      onInterrupt={onInterrupt}
+      onResume={onResume}
+      onRollback={onRollback}
+      onToggleMemoryExcluded={onToggleMemoryExcluded}
+      responsiveMode={responsiveMode}
+      onCloseRequest={onCloseRequest}
+    />
   );
 }
