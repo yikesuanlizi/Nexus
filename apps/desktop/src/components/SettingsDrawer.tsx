@@ -90,7 +90,6 @@ export function SettingsDrawer({
   saveSkillDraft,
   saveProviderKey,
   saveProviderEnvVar,
-  saveEnvironmentVariables,
   skillsList,
   refreshSkills,
   refreshMcpStatus,
@@ -139,7 +138,6 @@ export function SettingsDrawer({
   logoutWeixin: () => Promise<void>;
   saveProviderKey: (providerId: string, apiKey: string) => Promise<void>;
   saveProviderEnvVar: (providerId: string, envVar: string) => Promise<void>;
-  saveEnvironmentVariables: (text: string) => Promise<void>;
   saveWebProviderKey: (apiKey: string) => Promise<void>;
   clearWebProviderKey: () => Promise<void>;
   setConfig: React.Dispatch<React.SetStateAction<RunConfig>>;
@@ -165,7 +163,6 @@ export function SettingsDrawer({
     saveModelPreset,
     saveProviderKey,
     saveProviderEnvVar,
-    saveEnvironmentVariables,
     saveThreadModelOverrides,
     saveGlobalModelConfig,
     setConfig,
@@ -499,13 +496,10 @@ export function SettingsDrawer({
             modelEnvVarDraft={settings.modelEnvVarDraft}
             setModelEnvVarDraft={settings.setModelEnvVarDraft}
             modelEnvVarOptions={settings.modelEnvVarOptions}
-            modelEnvBatchText={settings.modelEnvBatchText}
-            setModelEnvBatchText={settings.setModelEnvBatchText}
             customProviderName={settings.customProviderName}
             setCustomProviderName={settings.setCustomProviderName}
             selectModelProviderDraft={settings.selectModelProviderDraft}
             loadModelPresetIntoDraft={settings.loadModelPresetIntoDraft}
-            handleBatchSetModelEnv={settings.handleBatchSetModelEnv}
             handleSaveModelConfig={settings.handleSaveModelConfig}
             handleSetCurrentModelConfig={settings.handleSetCurrentModelConfig}
             markDirty={settings.markDirty}

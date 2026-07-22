@@ -107,6 +107,7 @@ export function ComposerBar({
       value: '__current__',
       label: config.model,
       detail: modelPresetSummary(config),
+      title: modelPresetTooltip(config),
       current: true,
     }];
   const modelPresetOptions = [
@@ -115,6 +116,7 @@ export function ComposerBar({
       value: preset.id,
       label: preset.name,
       detail: modelPresetSummary({ ...config, ...preset.config }),
+      title: modelPresetTooltip({ ...config, ...preset.config }),
       group: config.locale === 'zh' ? '已保存' : 'Saved',
       current: matchedModelPreset?.id === preset.id,
     })),
@@ -405,6 +407,15 @@ function clearComposerDraft(): void {
 
 function modelPresetSummary(config: Partial<RunConfig>): string {
   return [config.provider, config.model].filter(Boolean).join(' / ') || 'model';
+}
+
+function modelPresetTooltip(config: Partial<RunConfig>): string {
+  return [
+    modelPresetSummary(config),
+    config.baseUrl ? `API: ${config.baseUrl}` : '',
+    config.reasoningEffort ? `Reasoning: ${config.reasoningEffort}` : '',
+    config.runProfile ? `Run: ${config.runProfile}` : '',
+  ].filter(Boolean).join('\n');
 }
 
 function RemotePlatformIcon({ platform }: { platform: RemoteAssistantPlatform }) {

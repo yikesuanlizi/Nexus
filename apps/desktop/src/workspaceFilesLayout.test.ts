@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { workspaceDirectoryChainForTarget, workspaceFileRowTitle, workspaceRelativePathForTree } from './components/WorkspaceFilesPanel.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -34,5 +35,29 @@ describe('workspace files layout', () => {
     const component = readFileSync(join(here, 'components', 'WorkspaceFilesPanel.tsx'), 'utf-8');
 
     expect(component).toContain('minmax(180px, ${treeWidth}%) 7px minmax(0, 1fr)');
+  });
+
+  it('loads every ancestor directory needed to reveal an externally previewed file', () => {
+    expect(workspaceRelativePathForTree('E:\\langchain\\Nexus\\apps\\web\\src\\main.tsx', 'E:\\langchain\\Nexus')).toBe('apps/web/src/main.tsx');
+    expect(workspaceDirectoryChainForTarget('apps/web/src/main.tsx', 'file')).toEqual(['', 'apps', 'apps/web', 'apps/web/src']);
+    expect(workspaceDirectoryChainForTarget('apps/web/src', 'directory')).toEqual(['', 'apps', 'apps/web', 'apps/web/src']);
+  });
+
+  it('centers and flashes the revealed file row in the tree', () => {
+    const component = readFileSync(join(here, 'components', 'WorkspaceFilesPanel.tsx'), 'utf-8');
+    const styles = readFileSync(join(here, 'styles.css'), 'utf-8');
+
+    expect(component).toContain("scrollIntoView({ behavior: 'smooth', block: 'center' })");
+    expect(component).toContain("'workspaceFileRow spotlight'");
+    expect(styles).toContain('@keyframes workspaceFileSpotlight');
+    expect(styles).toContain('animation: workspaceFileSpotlight 720ms ease-in-out 3;');
+  });
+
+  it('shows the full path when hovering file and directory rows', () => {
+    const component = readFileSync(join(here, 'components', 'WorkspaceFilesPanel.tsx'), 'utf-8');
+
+    expect(workspaceFileRowTitle({ name: 'src', path: 'apps/web/src' }, 'E:\\langchain\\Nexus')).toBe('E:\\langchain\\Nexus\\apps\\web\\src');
+    expect(workspaceFileRowTitle({ name: 'main.tsx', path: 'apps/web/src/main.tsx' }, 'E:\\langchain\\Nexus')).toBe('E:\\langchain\\Nexus\\apps\\web\\src\\main.tsx');
+    expect(component).toContain('title={workspaceFileRowTitle(entry, workspaceRoot)}');
   });
 });

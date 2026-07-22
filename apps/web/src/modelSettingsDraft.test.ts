@@ -17,7 +17,8 @@ describe('model settings draft state', () => {
     expect(source).toContain('handleSetCurrentModelConfig');
     expect(source).toContain('defaultModelForProvider(provider, current.model)');
     // 输入框绑定已迁到 ModelsPage.tsx
-    expect(models).toContain('value={modelConfigDraft.provider}');
+    expect(models).toContain('value={providerSelectValue}');
+    expect(models).toContain('normalizeModelConfigDraftForSettings(modelConfigDraft, providers)');
     expect(models).toContain('value={modelConfigDraft.model}');
     expect(models).toContain('value={modelConfigDraft.baseUrl}');
     expect(models).toContain("className={['modelProviderSelect', providerDirty].filter(Boolean).join(' ')}");
@@ -45,19 +46,20 @@ describe('model settings draft state', () => {
 
     expect(main).toContain("fetch(`/api/model-presets/${encodeURIComponent(presetId)}`");
     expect(drawer).toContain('deleteModelPreset={deleteModelPreset}');
-    expect(models).toContain('handleDeleteMatchedPreset');
-    expect(models).toContain("className=\"textButton danger\"");
+    expect(models).toContain('handleDeletePreset');
+    expect(models).toContain("className: 'danger'");
+    expect(models).toContain('action: {');
   });
 
-  it('lets users edit and batch set model environment variables', () => {
+  it('lets users edit a provider environment variable without exposing batch env writes', () => {
     const source = readFileSync(join(here, 'features', 'settings', 'useSettingsController.ts'), 'utf-8');
     const models = readFileSync(join(here, 'components', 'settings', 'ModelsPage.tsx'), 'utf-8');
 
     // env var state 与保存编排已迁到 useSettingsController
     expect(source).toContain('modelEnvVarDraft');
     expect(source).toContain('modelEnvVarOptions');
-    expect(source).toContain('modelEnvBatchText');
-    expect(source).toContain('saveEnvironmentVariables(text)');
+    expect(source).not.toContain('modelEnvBatchText');
+    expect(source).not.toContain('saveEnvironmentVariables');
     expect(source).toContain('/api/keys/env-vars');
     expect(source).toContain('setModelEnvVarRemoteOptions');
     expect(source).toContain('dirtyFields.modelKeySource');
@@ -65,6 +67,8 @@ describe('model settings draft state', () => {
     expect(models).toContain('list="model-env-var-options"');
     expect(models).toContain('modelEnvVarDraft');
     expect(models).toContain("if (source === 'env' && !modelEnvVarDraft.trim())");
+    expect(models).not.toContain('批量设置环境变量');
+    expect(models).not.toContain('一次性设置环境变量');
   });
 
   it('defaults remote custom providers without an env var to saved-key mode', () => {

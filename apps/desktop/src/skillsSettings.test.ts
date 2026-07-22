@@ -152,8 +152,8 @@ describe('skills settings', () => {
 
     expect(providerOptions).toContain('label: provider.name');
     expect(providerOptions).toContain("provider.id === 'openai_compatible'");
-    expect(providerOptions).toContain("provider.id.startsWith('custom_')");
-    expect(providerOptions).toContain("t(locale, 'customProvider')");
+    expect(providerOptions).toContain("!provider.id.startsWith('custom_')");
+    expect(providerOptions).not.toContain("t(locale, 'customProvider')");
     expect(providerOptions).not.toContain('detail: provider');
     expect(providerOptions).not.toContain('apiKeyEnvVar');
     expect(providerOptions).not.toContain('baseUrl.replace');

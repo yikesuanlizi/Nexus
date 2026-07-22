@@ -5,10 +5,18 @@ import React, { useEffect, useId, useRef, useState } from 'react';
 import { Icon } from './Icon.js';
 
 export interface DropdownOption<T extends string = string> {
+  action?: {
+    ariaLabel: string;
+    className?: string;
+    disabled?: boolean;
+    label: string;
+    onClick: () => Promise<void> | void;
+  };
   current?: boolean;
   detail?: string;
   group?: string;
   label: string;
+  title?: string;
   value: T;
 }
 // 单个下拉选项：value 为值，label 为显示文本，detail 是辅助描述，group 用于分组，current 标记"当前配置"
@@ -33,6 +41,11 @@ export function DropdownSelect<T extends string>({
   const id = useId();
   const ref = useRef<HTMLDivElement>(null);
   const selected = options.find((option) => option.value === value) ?? options[0];
+
+  function selectOption(option: DropdownOption<T>) {
+    onChange(option.value);
+    setOpen(false);
+  }
 
   // 点击组件外部时关闭下拉（避免事件冒泡被截获导致无法关闭）
   // Closes the dropdown on click outside (prevents event capture from blocking close)
@@ -67,19 +80,46 @@ export function DropdownSelect<T extends string>({
             return (
               <React.Fragment key={`${option.group ?? 'group'}-${option.value}`}>
                 {showGroup ? <div className="dropdownGroup">{option.group}</div> : null}
-                <button
-                  aria-selected={option.value === value}
-                  className={['dropdownOption', option.value === value ? 'active' : '', option.current ? 'current' : ''].filter(Boolean).join(' ')}
-                  onClick={() => {
-                    onChange(option.value);
-                    setOpen(false);
-                  }}
-                  role="option"
-                  type="button"
-                >
-                  <span>{option.label}</span>
-                  {option.detail ? <small>{option.detail}</small> : null}
-                </button>
+                <div className={option.action ? 'dropdownOptionRow' : ''}>
+                  <button
+                    aria-selected={option.value === value}
+                    className={['dropdownOption', option.value === value ? 'active' : '', option.current ? 'current' : ''].filter(Boolean).join(' ')}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      selectOption(option);
+                    }}
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                    }}
+                    onPointerDown={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                    }}
+                    role="option"
+                    title={option.title}
+                    type="button"
+                  >
+                    <span>{option.label}</span>
+                    {option.detail ? <small>{option.detail}</small> : null}
+                  </button>
+                  {option.action ? (
+                    <button
+                      aria-label={option.action.ariaLabel}
+                      className={['dropdownOptionAction', option.action.className ?? ''].filter(Boolean).join(' ')}
+                      disabled={option.action.disabled}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setOpen(false);
+                        void option.action?.onClick();
+                      }}
+                      type="button"
+                    >
+                      {option.action.label}
+                    </button>
+                  ) : null}
+                </div>
               </React.Fragment>
             );
           })}

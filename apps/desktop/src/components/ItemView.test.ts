@@ -108,6 +108,16 @@ describe('message markdown rendering', () => {
     expect(html).toContain('<strong>MEL/CDL</strong>');
     expect(html).not.toContain('|---|---|---|');
   });
+
+  it('keeps assistant markdown emphasis on the base text color', () => {
+    const styles = readFileSync(join(here, '..', 'styles.css'), 'utf-8');
+    const paleMessageStrongRule = styles.indexOf('.message summary,\n  .message strong,');
+    const readableMarkdownStrongRule = styles.indexOf('.message.agent .markdownMessageText :where(strong, b)');
+
+    expect(paleMessageStrongRule).toBeGreaterThan(-1);
+    expect(readableMarkdownStrongRule).toBeGreaterThan(paleMessageStrongRule);
+    expect(styles).toMatch(/\.message\.agent \.markdownMessageText :where\(strong, b\)\s*\{\s*color: var\(--nx-text\);\s*\}/);
+  });
 });
 
 describe('message action visibility', () => {
@@ -182,6 +192,38 @@ describe('assistant turn file summary', () => {
     expect(html).toContain('E:\\langchain\\Nexus\\apps\\web\\src\\main.tsx');
     expect(html).toContain('+4');
     expect(html).toContain('-1');
+  });
+
+  it('renders involved files as preview buttons when preview is available', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AssistantTurnView, {
+        group: {
+          turnId: 'turn-1',
+          items: [
+            { id: 'a1', type: 'agent_message', turnId: 'turn-1', text: '完成', status: 'completed' },
+            { id: 'r1', type: 'tool_call', turnId: 'turn-1', toolName: 'read_file', arguments: { filePath: 'apps/web/src/main.tsx' }, result: { path: 'E:\\langchain\\Nexus\\apps\\web\\src\\main.tsx' }, status: 'completed' },
+          ],
+        },
+        locale: 'zh',
+        onPreviewFile: () => undefined,
+        workspaceRoot: 'E:\\langchain\\Nexus',
+      }),
+    );
+
+    expect(html).toContain('class="turnFileSummaryPath"');
+    expect(html).toContain('type="button"');
+    expect(html).toContain('aria-label="预览文件 E:\\langchain\\Nexus\\apps\\web\\src\\main.tsx"');
+  });
+
+  it('keeps involved file summary text on neutral readable colors', () => {
+    const styles = readFileSync(join(here, '..', 'styles.css'), 'utf-8');
+    const paleMessageStrongRule = styles.indexOf('.message summary,\n  .message strong,');
+    const readableHeaderRule = styles.indexOf('.message.agent .turnFileSummaryHeader :where(strong, span)');
+
+    expect(paleMessageStrongRule).toBeGreaterThan(-1);
+    expect(readableHeaderRule).toBeGreaterThan(paleMessageStrongRule);
+    expect(styles).toMatch(/\.message\.agent \.turnFileSummaryHeader :where\(strong, span\)\s*\{\s*color: var\(--nx-text\);\s*\}/);
+    expect(styles).toMatch(/\.message\.agent \.turnFileSummaryPath\s*\{[\s\S]*?color: var\(--nx-text\);/);
   });
 });
 

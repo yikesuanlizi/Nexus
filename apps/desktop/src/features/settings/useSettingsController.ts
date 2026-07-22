@@ -18,7 +18,6 @@ export interface UseSettingsControllerOptions {
   saveModelPreset: (name: string, presetConfig: ModelPresetConfig) => Promise<void>;
   saveProviderKey: (providerId: string, apiKey: string) => Promise<void>;
   saveProviderEnvVar: (providerId: string, envVar: string) => Promise<void>;
-  saveEnvironmentVariables: (text: string) => Promise<void>;
   saveThreadModelOverrides: (overrides: { provider: string; model: string; baseUrl: string }) => Promise<void>;
   saveGlobalModelConfig: (config: RunConfig) => void;
   setConfig: React.Dispatch<React.SetStateAction<RunConfig>>;
@@ -49,15 +48,12 @@ export interface UseSettingsControllerResult {
   modelEnvVarDraft: string;
   setModelEnvVarDraft: React.Dispatch<React.SetStateAction<string>>;
   modelEnvVarOptions: string[];
-  modelEnvBatchText: string;
-  setModelEnvBatchText: React.Dispatch<React.SetStateAction<string>>;
   customProviderName: string;
   setCustomProviderName: React.Dispatch<React.SetStateAction<string>>;
   selectModelProviderDraft: (providerId: string) => void;
   loadModelPresetIntoDraft: (presetId: string) => void;
   handleSaveModelConfig: () => Promise<void>;
   handleSetCurrentModelConfig: () => Promise<void>;
-  handleBatchSetModelEnv: () => Promise<void>;
   saveLabel: string;
 }
 
@@ -89,7 +85,6 @@ export function useSettingsController(options: UseSettingsControllerOptions): Us
     saveModelPreset,
     saveProviderKey,
     saveProviderEnvVar,
-    saveEnvironmentVariables,
     saveThreadModelOverrides: _saveThreadModelOverrides,
     saveGlobalModelConfig: _saveGlobalModelConfig,
     setConfig,
@@ -111,7 +106,6 @@ export function useSettingsController(options: UseSettingsControllerOptions): Us
   const [modelKeyNotice, setModelKeyNotice] = useState('');
   const [modelEnvVarDraft, setModelEnvVarDraft] = useState('');
   const [modelEnvVarRemoteOptions, setModelEnvVarRemoteOptions] = useState<string[]>([]);
-  const [modelEnvBatchText, setModelEnvBatchText] = useState('');
   const [customProviderName, setCustomProviderName] = useState('');
 
   const selectedProvider = useMemo(
@@ -310,6 +304,9 @@ export function useSettingsController(options: UseSettingsControllerOptions): Us
       model: defaultModelForProvider(provider, current.model),
       baseUrl: provider?.baseUrl ?? current.baseUrl,
     }));
+    if (normalizedProviderId !== 'openai_compatible') {
+      setCustomProviderName('');
+    }
     markDirty('provider', true);
     markDirty('model', true);
     markDirty('baseUrl', true);
@@ -411,17 +408,6 @@ export function useSettingsController(options: UseSettingsControllerOptions): Us
     }
   }
 
-  async function handleBatchSetModelEnv() {
-    await saveEnvironmentVariables(modelEnvBatchText);
-    const response = await fetch('/api/keys/env-vars');
-    if (response.ok) {
-      const data = (await response.json()) as { envVars?: string[] };
-      setModelEnvVarRemoteOptions(data.envVars ?? []);
-    }
-    setModelEnvBatchText('');
-    setModelKeyNotice(locale === 'zh' ? '环境变量已写入 Nexus 当前运行时。' : 'Environment variables saved to the current Nexus runtime.');
-  }
-
   useEffect(() => {
     setModelConfigDraft(modelConfigDraftFromConfig(config));
   }, [config.provider, config.model, config.baseUrl]);
@@ -480,15 +466,12 @@ export function useSettingsController(options: UseSettingsControllerOptions): Us
     modelEnvVarDraft,
     setModelEnvVarDraft,
     modelEnvVarOptions,
-    modelEnvBatchText,
-    setModelEnvBatchText,
     customProviderName,
     setCustomProviderName,
     selectModelProviderDraft,
     loadModelPresetIntoDraft,
     handleSaveModelConfig,
     handleSetCurrentModelConfig,
-    handleBatchSetModelEnv,
     saveLabel,
   };
 }

@@ -1,17 +1,17 @@
 {
   "name": "@nexus/tests",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "private": true,
   "devDependencies": {
-    "@nexus/protocol": "1.5.0",
-    "@nexus/model-gateway": "1.5.0",
-    "@nexus/tools": "1.5.0",
-    "@nexus/sandbox": "1.5.0",
-    "@nexus/storage": "1.5.0",
-    "@nexus/runtime": "1.5.0",
-    "@nexus/memory": "1.5.0",
-    "@nexus/extensions": "1.5.0",
-    "@nexus/i18n": "1.5.0",
+    "@nexus/protocol": "1.6.0",
+    "@nexus/model-gateway": "1.6.0",
+    "@nexus/tools": "1.6.0",
+    "@nexus/sandbox": "1.6.0",
+    "@nexus/storage": "1.6.0",
+    "@nexus/runtime": "1.6.0",
+    "@nexus/memory": "1.6.0",
+    "@nexus/extensions": "1.6.0",
+    "@nexus/i18n": "1.6.0",
     "vitest": "^3.0.0"
   }
 }

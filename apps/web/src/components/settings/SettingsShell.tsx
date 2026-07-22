@@ -1,10 +1,11 @@
-// 设置面板 modal 外壳：管理 open/close、Esc 关闭、tab 导航、sticky 保存栏
+// 设置面板 modal 外壳：管理 open/close、Esc 关闭、tab 导航、内部确认层
 // P2.4 a11y：role=dialog/aria-modal、焦点进入/回收、Tab 焦点陷阱、aria-live 状态广播
 // P3：saveLabel 动态按钮文案、unsavedDot 未保存指示器
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { Locale } from '../../config/config.js';
 import { t } from '../../shared/i18n.js';
 import { Icon } from '../Icon.js';
+import { ConfirmPanel } from './ConfirmPanel.js';
 
 export type SettingsScope = 'global' | 'currentThread' | 'newThread';
 
@@ -45,29 +46,27 @@ export function SettingsShell({
   activeSection,
   setActiveSection,
   saveState,
-  onSave,
   onCancel,
   children,
   pluginMode = false,
   busyLayer = true,
-  saveLabel,
 }: SettingsShellProps) {
   const drawerRef = useRef<HTMLElement>(null);
   const previousActiveElementRef = useRef<HTMLElement | null>(null);
+  const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
 
   function handleCancel() {
     if (saveState.saving) return;
-    let shouldDiscard = false;
     if (saveState.dirty) {
-      const confirmed = window.confirm(t(locale, 'discardChanges'));
-      if (!confirmed) return;
-      shouldDiscard = true;
-    }
-    if (shouldDiscard) {
-      onCancel();
+      setDiscardConfirmOpen(true);
       return;
     }
     onClose();
+  }
+
+  function confirmDiscardChanges() {
+    setDiscardConfirmOpen(false);
+    onCancel();
   }
 
   useEffect(() => {
@@ -141,8 +140,6 @@ export function SettingsShell({
         ? t(locale, 'saved')
         : '';
 
-  const saveButtonText = saveState.saving ? t(locale, 'saving') : (saveLabel ?? t(locale, 'save'));
-
   return (
     <div className="settingsLayer" role="presentation">
       <button className="scrim" aria-label={t(locale, 'cancel')} onClick={handleCancel} type="button" />
@@ -193,36 +190,18 @@ export function SettingsShell({
           </div>
         </div>
 
-        <footer className="settingsSaveBar" role="region" aria-label={t(locale, 'save')}>
-          <div className="settingsSaveStatus">
-            {saveState.saving ? (
-              <span className="settingsSaveStatusSaving">{t(locale, 'saving')}</span>
-            ) : saveState.error ? (
-              <span className="settingsSaveStatusError" role="alert">
-                {t(locale, 'failedToSave')}: {saveState.error}
-                <button className="textButton" type="button" onClick={onSave} disabled={saveState.saving}>
-                  {t(locale, 'retry')}
-                </button>
-              </span>
-            ) : saveState.dirty ? (
-              <span className="settingsSaveStatusDirty">{t(locale, 'hasUnsavedChanges')}</span>
-            ) : null}
-          </div>
-          <div className="settingsSaveActions">
-            <button className="textButton" type="button" onClick={handleCancel} disabled={saveState.saving}>
-              {t(locale, 'cancel')}
-            </button>
-            <button
-              className="solidButton"
-              type="button"
-              onClick={onSave}
-              disabled={saveState.saving || !saveState.dirty}
-              aria-busy={saveState.saving}
-            >
-              {saveButtonText}
-            </button>
-          </div>
-        </footer>
+        <ConfirmPanel
+          locale={locale}
+          open={discardConfirmOpen}
+          title={t(locale, 'discardChanges')}
+          description={locale === 'zh' ? '当前页的未保存改动会被还原。' : 'Unsaved changes on this page will be reverted.'}
+          confirmLabel={locale === 'zh' ? '放弃改动' : 'Discard'}
+          cancelLabel={locale === 'zh' ? '继续编辑' : 'Keep editing'}
+          tone="danger"
+          busy={saveState.saving}
+          onCancel={() => setDiscardConfirmOpen(false)}
+          onConfirm={confirmDiscardChanges}
+        />
       </aside>
 
       <div aria-live="polite" aria-atomic="true" className="sr-only">

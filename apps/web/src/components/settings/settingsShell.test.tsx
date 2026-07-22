@@ -64,11 +64,10 @@ describe('SettingsShell · P2.2 saving state', () => {
     expect(html).toContain('Saving');
   });
 
-  it('disables the save button when there is nothing dirty to persist', () => {
+  it('does not render shell-level save/cancel buttons', () => {
     const html = renderShell({ saveState: { dirty: false } });
-    // Save 按钮应该在 dirty=false 时 disabled
-    const saveButton = html.slice(html.lastIndexOf('Save') - 80, html.lastIndexOf('Save') + 30);
-    expect(saveButton).toContain('disabled=""');
+    expect(html).not.toContain('settingsSaveActions');
+    expect(html).not.toContain('settingsSaveBar');
   });
 });
 
@@ -78,11 +77,12 @@ describe('SettingsShell · P2.2 dirty / error / saved toast', () => {
     expect(html).toContain('You have unsaved changes');
   });
 
-  it('shows the error block with a retry button when saveState.error is set', () => {
+  it('announces errors through aria-live without rendering a footer retry block', () => {
     const html = renderShell({ saveState: { error: 'Network down', dirty: true } });
     expect(html).toContain('Failed to save');
     expect(html).toContain('Network down');
-    expect(html).toContain('Retry');
+    expect(html).not.toContain('Retry');
+    expect(html).not.toContain('settingsSaveStatusError');
   });
 
   it('renders the "Saved" toast only when savedToastAt is within 2 seconds', () => {
@@ -104,8 +104,11 @@ describe('SettingsShell · source code guards (P2.2 关键路径守卫)', () => 
     // 实现使用「不等于则跳过」的早返回模式，效果等价于「等于则进入处理」
     expect(source).toContain("event.key !== 'Escape'");
     expect(source).toContain('saveState.dirty');
-    // window.confirm 用于 Esc 与 cancel 两处确认
-    expect(source).toContain('window.confirm');
+    // dirty 确认必须走内部面板，不再使用浏览器原生 confirm
+    expect(source).toContain('ConfirmPanel');
+    expect(source).toContain('discardConfirmOpen');
+    expect(source).toContain('setDiscardConfirmOpen(true)');
+    expect(source).not.toContain('window.confirm');
     expect(source).toContain("t(locale, 'discardChanges')");
   });
 
@@ -125,19 +128,17 @@ describe('SettingsShell · source code guards (P2.2 关键路径守卫)', () => 
     expect(source).toContain('Date.now() - saveState.savedToastAt < 2000');
   });
 
-  it('renders fieldset, save bar, and toast with the dedicated CSS classes', () => {
+  it('renders fieldset, internal confirm panel, and toast without footer save bar', () => {
     const source = readFileSync(join(here, 'SettingsShell.tsx'), 'utf-8');
     expect(source).not.toContain('settingsScopeBar');
     expect(source).not.toContain('settingsScopeButtons');
     expect(source).not.toContain('scopeButton');
     expect(source).not.toContain('settingsScopeSource');
     expect(source).toContain('settingsFieldset');
-    expect(source).toContain('settingsSaveBar');
-    expect(source).toContain('settingsSaveStatus');
-    expect(source).toContain('settingsSaveStatusSaving');
-    expect(source).toContain('settingsSaveStatusError');
-    expect(source).toContain('settingsSaveStatusDirty');
-    expect(source).toContain('settingsSaveActions');
+    expect(source).toContain('ConfirmPanel');
+    expect(source).not.toContain('settingsSaveBar');
+    expect(source).not.toContain('settingsSaveStatus');
+    expect(source).not.toContain('settingsSaveActions');
     expect(source).toContain('settingsSaveToast');
   });
 });
@@ -149,10 +150,12 @@ describe('SettingsShell · P2.2 行为：Esc / 取消 / 保存', () => {
     expect(source).toMatch(/function onKey[\s\S]*?if \(event\.key !== 'Escape'\) return;[\s\S]*?if \(saveState\.saving\) return;/);
   });
 
-  it('handleCancel 在 dirty 时调用 window.confirm，未确认则不执行 onCancel', () => {
+  it('handleCancel 在 dirty 时打开内部确认面板，确认后才执行 onCancel', () => {
     const source = readFileSync(join(here, 'SettingsShell.tsx'), 'utf-8');
-    // handleCancel 必须先做 saving 早返回，然后 dirty 时 confirm
-    expect(source).toMatch(/function handleCancel\(\) \{[\s\S]*?if \(saveState\.saving\) return;[\s\S]*?if \(saveState\.dirty\) \{[\s\S]*?const confirmed = window\.confirm[\s\S]*?if \(!confirmed\) return;[\s\S]*?shouldDiscard = true;[\s\S]*?\}[\s\S]*?if \(shouldDiscard\) \{[\s\S]*?onCancel\(\);/);
+    // handleCancel 必须先做 saving 早返回，然后 dirty 时打开内部确认层
+    expect(source).toMatch(/function handleCancel\(\) \{[\s\S]*?if \(saveState\.saving\) return;[\s\S]*?if \(saveState\.dirty\) \{[\s\S]*?setDiscardConfirmOpen\(true\);[\s\S]*?return;[\s\S]*?\}/);
+    expect(source).toMatch(/function confirmDiscardChanges\(\) \{[\s\S]*?setDiscardConfirmOpen\(false\);[\s\S]*?onCancel\(\);/);
+    expect(source).not.toContain('window.confirm');
   });
 
   it('遮罩、关闭按钮、Esc 都走 handleCancel，不能绕过 dirty 确认', () => {
@@ -163,10 +166,10 @@ describe('SettingsShell · P2.2 行为：Esc / 取消 / 保存', () => {
     expect(source).toMatch(/function onKey\(event: KeyboardEvent\) \{[\s\S]*?if \(event\.key !== 'Escape'\) return;[\s\S]*?handleCancel\(\);/);
   });
 
-  it('保存按钮在 saving 或 not dirty 时均禁用', () => {
+  it('shell 不再渲染底部保存按钮，保存入口留给各设置页', () => {
     const source = readFileSync(join(here, 'SettingsShell.tsx'), 'utf-8');
-    // 保存按钮 disabled 条件必须同时考虑 saving 与 dirty
-    expect(source).toContain('disabled={saveState.saving || !saveState.dirty}');
+    expect(source).not.toContain('settingsSaveActions');
+    expect(source).not.toContain('disabled={saveState.saving || !saveState.dirty}');
   });
 
   it('设置主界面不再暴露作用域按钮，避免让普通设置流程理解内部作用域', () => {
@@ -203,8 +206,9 @@ describe('SettingsShell · P2.2 desktop 镜像守卫', () => {
     const desktopShell = readFileSync(join(here, '..', '..', '..', '..', 'desktop', 'src', 'components', 'settings', 'SettingsShell.tsx'), 'utf-8');
     // 关键路径：Esc 早返回、dirty confirm、保存按钮 disabled 条件；scope UI 不再暴露在主设置页
     expect(desktopShell).toContain("event.key !== 'Escape'");
-    expect(desktopShell).toContain('window.confirm');
-    expect(desktopShell).toContain('disabled={saveState.saving || !saveState.dirty}');
+    expect(desktopShell).toContain('ConfirmPanel');
+    expect(desktopShell).not.toContain('window.confirm');
+    expect(desktopShell).not.toContain('disabled={saveState.saving || !saveState.dirty}');
     expect(desktopShell).not.toContain('disabled={option.disabled || saveState.saving}');
     expect(desktopShell).not.toContain('role="radiogroup"');
     expect(desktopShell).toContain('Date.now() - saveState.savedToastAt < 2000');

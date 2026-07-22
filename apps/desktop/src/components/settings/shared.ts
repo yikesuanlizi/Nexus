@@ -24,6 +24,25 @@ export function modelConfigDraftFromConfig(config: RunConfig): ModelConfigDraft 
   };
 }
 
+export function normalizeModelConfigDraftForSettings(
+  draft: ModelConfigDraft,
+  providers: ProviderEntry[],
+): { customProviderName: string; draft: ModelConfigDraft; keyProviderId: string } {
+  if (!draft.provider.startsWith('custom_')) {
+    return { customProviderName: '', draft, keyProviderId: draft.provider };
+  }
+  const provider = providers.find((item) => item.id === draft.provider);
+  return {
+    customProviderName: provider?.name ?? draft.provider.replace(/^custom_/, '').replace(/_/g, '.'),
+    draft: {
+      provider: 'openai_compatible',
+      model: draft.model,
+      baseUrl: draft.baseUrl || provider?.baseUrl || '',
+    },
+    keyProviderId: draft.provider,
+  };
+}
+
 const DEFAULT_MODEL_BY_PROVIDER: Record<string, string> = {
   openai: 'gpt-4o',
   deepseek: 'deepseek-v4-pro',
@@ -54,11 +73,10 @@ export function defaultModelForProvider(provider: ProviderEntry | undefined, cur
   return DEFAULT_MODEL_BY_PROVIDER[provider.id] ?? currentModel;
 }
 
-// Provider 下拉分组：本地 / 中国 / 国际 / 通用 / 自定义
+// Provider 下拉分组：本地 / 中国 / 国际 / 通用。OpenAI-compatible 内部填写厂商名称，不再把 custom_* 展示为顶层 provider。
 export function providerDropdownOptions(providers: ProviderEntry[], locale: Locale): Array<DropdownOption<string>> {
   const local = providers.filter((provider) => provider.isLocal && provider.id !== 'openai_compatible' && !provider.id.startsWith('custom_'));
   const generic = providers.filter((provider) => provider.id === 'openai_compatible');
-  const custom = providers.filter((provider) => provider.id.startsWith('custom_'));
   const chinaIDs = new Set(['deepseek', 'zhipu', 'kimi', 'qwen', 'baidu', 'volcengine', 'siliconflow', 'minimax']);
   const china = providers.filter((provider) => chinaIDs.has(provider.id));
   const global = providers.filter((provider) => !provider.isLocal && !chinaIDs.has(provider.id) && !provider.id.startsWith('custom_'));
@@ -72,7 +90,6 @@ export function providerDropdownOptions(providers: ProviderEntry[], locale: Loca
     ...china.map((provider) => map(t(locale, 'remoteChina'), provider)),
     ...global.map((provider) => map(t(locale, 'remoteGlobal'), provider)),
     ...generic.map((provider) => map(t(locale, 'genericProvider'), provider)),
-    ...custom.map((provider) => map(t(locale, 'customProvider'), provider)),
   ];
 }
 

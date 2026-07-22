@@ -35,7 +35,7 @@ function renderShell(overrides: {
   }));
 }
 
-describe('desktop SettingsShell · P2.2 渲染与保存栏', () => {
+describe('desktop SettingsShell · P2.2 渲染与内部确认层', () => {
   it('主设置 Shell 不再暴露作用域按钮', () => {
     const html = renderShell();
     expect(html).not.toContain('Global defaults');
@@ -52,10 +52,10 @@ describe('desktop SettingsShell · P2.2 渲染与保存栏', () => {
     expect(html).toMatch(/<fieldset[^>]*disabled=""/);
   });
 
-  it('dirty=false 时保存按钮 disabled', () => {
+  it('不再渲染 shell 底部保存/取消按钮', () => {
     const html = renderShell({ saveState: { dirty: false } });
-    const saveButton = html.slice(html.lastIndexOf('Save') - 80, html.lastIndexOf('Save') + 30);
-    expect(saveButton).toContain('disabled=""');
+    expect(html).not.toContain('settingsSaveActions');
+    expect(html).not.toContain('settingsSaveBar');
   });
 
   it('dirty=true 时显示未保存改动提示', () => {
@@ -63,11 +63,12 @@ describe('desktop SettingsShell · P2.2 渲染与保存栏', () => {
     expect(html).toContain('You have unsaved changes');
   });
 
-  it('error 非空时显示错误信息与重试按钮', () => {
+  it('error 非空时通过 aria-live 暴露错误，不显示底部重试块', () => {
     const html = renderShell({ saveState: { error: 'Network down', dirty: true } });
     expect(html).toContain('Failed to save');
     expect(html).toContain('Network down');
-    expect(html).toContain('Retry');
+    expect(html).not.toContain('Retry');
+    expect(html).not.toContain('settingsSaveStatusError');
   });
 
   it('savedToastAt 在 2 秒内时显示 Saved toast', () => {
@@ -79,20 +80,24 @@ describe('desktop SettingsShell · P2.2 渲染与保存栏', () => {
 });
 
 describe('desktop SettingsShell · P2.2 源码守卫', () => {
-  it('Esc + dirty confirm + 关键 disabled 条件都存在', () => {
+  it('Esc + dirty 内部确认面板关键路径存在', () => {
     const source = readFileSync(join(here, 'SettingsShell.tsx'), 'utf-8');
     expect(source).toContain("event.key !== 'Escape'");
-    expect(source).toContain('window.confirm');
+    expect(source).toContain('ConfirmPanel');
+    expect(source).toContain('discardConfirmOpen');
+    expect(source).toContain('setDiscardConfirmOpen(true)');
+    expect(source).not.toContain('window.confirm');
     expect(source).toContain("t(locale, 'discardChanges')");
-    expect(source).toContain('disabled={saveState.saving || !saveState.dirty}');
+    expect(source).not.toContain('disabled={saveState.saving || !saveState.dirty}');
     expect(source).not.toContain('disabled={option.disabled || saveState.saving}');
     expect(source).not.toContain('role="radiogroup"');
     expect(source).toContain('Date.now() - saveState.savedToastAt < 2000');
   });
 
-  it('handleCancel 在 dirty 时调用 window.confirm', () => {
+  it('handleCancel 在 dirty 时打开内部确认面板', () => {
     const source = readFileSync(join(here, 'SettingsShell.tsx'), 'utf-8');
-    expect(source).toMatch(/function handleCancel\(\) \{[\s\S]*?if \(saveState\.saving\) return;[\s\S]*?if \(saveState\.dirty\) \{[\s\S]*?const confirmed = window\.confirm[\s\S]*?if \(!confirmed\) return;[\s\S]*?\}[\s\S]*?onCancel\(\);/);
+    expect(source).toMatch(/function handleCancel\(\) \{[\s\S]*?if \(saveState\.saving\) return;[\s\S]*?if \(saveState\.dirty\) \{[\s\S]*?setDiscardConfirmOpen\(true\);[\s\S]*?return;[\s\S]*?\}/);
+    expect(source).toMatch(/function confirmDiscardChanges\(\) \{[\s\S]*?setDiscardConfirmOpen\(false\);[\s\S]*?onCancel\(\);/);
   });
 });
 

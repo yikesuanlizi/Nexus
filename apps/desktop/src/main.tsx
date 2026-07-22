@@ -1710,13 +1710,6 @@ function App() {
       setKeyStates(data.keys ?? []);
     }
   }
-  async function saveEnvironmentVariables(text: string) {
-    const response = await fetch('/api/keys/env', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
-    if (response.ok) {
-      const data = (await response.json()) as { keys?: ApiKeyState[] };
-      setKeyStates(data.keys ?? []);
-    }
-  }
   async function saveThreadModelOverrides(overrides: ThreadConfigOverrides): Promise<void> {
     if (!threadId) return;
     await patchThreadConfigOverrides(threadId, overrides);
@@ -1942,7 +1935,7 @@ function App() {
           refreshProviders={refreshProviders} refreshKeyStates={refreshKeyStates}
           clearProviderKey={clearProviderKey}
           deleteSkill={deleteSkill}
-          requestModelPresetName={requestModelPresetName} saveModelPreset={saveModelPreset} deleteModelPreset={deleteModelPreset} saveProviderKey={saveProviderKey} saveProviderEnvVar={saveProviderEnvVar} saveEnvironmentVariables={saveEnvironmentVariables} saveBotConfig={saveBotConfig} saveSkillDraft={saveSkillDraft} logoutWeixin={logoutWeixin}
+          requestModelPresetName={requestModelPresetName} saveModelPreset={saveModelPreset} deleteModelPreset={deleteModelPreset} saveProviderKey={saveProviderKey} saveProviderEnvVar={saveProviderEnvVar} saveBotConfig={saveBotConfig} saveSkillDraft={saveSkillDraft} logoutWeixin={logoutWeixin}
           webProviderState={webProviderState} saveWebProviderKey={saveWebProviderKey} clearWebProviderKey={clearWebProviderKey}
           setConfig={setConfig} setMcps={setMcps} setOpen={setSettingsOpen}
           pendingMcpDraft={pendingMcpDraft}

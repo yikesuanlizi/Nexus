@@ -149,9 +149,10 @@ describe('workspace files route', () => {
     });
   });
 
-  it('classifies markdown, image, pdf, and spreadsheet previews', async () => {
+  it('classifies markdown, html, image, pdf, and spreadsheet previews', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'nexus-files-'));
     await writeFile(path.join(root, 'notes.md'), '# Title\n\n| A | B |\n| - | - |\n| 1 | 2 |\n');
+    await writeFile(path.join(root, 'page.html'), '<h1>Hello</h1><p>World</p>');
     await writeFile(path.join(root, 'image.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
     await writeFile(path.join(root, 'paper.pdf'), '%PDF-1.4\n');
     const workbook = XLSX.utils.book_new();
@@ -164,6 +165,15 @@ describe('workspace files route', () => {
       previewType: 'markdown',
       mimeType: 'text/markdown; charset=utf-8',
       text: expect.stringContaining('| A | B |'),
+      binary: false,
+    });
+
+    const html = await route(`/api/workspaces/preview?root=${encodeURIComponent(root)}&path=${encodeURIComponent('page.html')}`);
+    expect(html.response.body).toMatchObject({
+      name: 'page.html',
+      previewType: 'html',
+      mimeType: 'text/html; charset=utf-8',
+      text: expect.stringContaining('<h1>Hello</h1>'),
       binary: false,
     });
 

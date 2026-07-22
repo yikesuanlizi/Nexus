@@ -30,10 +30,12 @@ const MAX_SEARCH_RESULTS = 1000; // 搜索结果上限 — Chinese: max search r
 const MAX_PREVIEW_BYTES = 96 * 1024; // 预览字节上限 — Chinese: max preview bytes
 
 // 预览类型 — Chinese: preview types
-type PreviewType = 'text' | 'markdown' | 'image' | 'pdf' | 'office' | 'binary';
+type PreviewType = 'text' | 'markdown' | 'html' | 'image' | 'pdf' | 'office' | 'binary';
 
 // Markdown 扩展名集合 — Chinese: markdown extensions
 const MARKDOWN_EXTENSIONS = new Set(['md', 'markdown', 'mdx']);
+// HTML 扩展名集合 — Chinese: HTML extensions
+const HTML_EXTENSIONS = new Set(['html', 'htm']);
 // 图片 MIME 类型映射 — Chinese: image MIME type map
 const IMAGE_MIME_TYPES = new Map([
   ['apng', 'image/apng'],
@@ -431,7 +433,7 @@ export async function handleWorkspaceFilesRoute(options: {
     const buffer = await readPreviewBytes(target, stat.size);
     const text = isProbablyText(buffer) ? buffer.toString('utf8') : '';
     const previewType: PreviewType = text
-      ? (MARKDOWN_EXTENSIONS.has(extension) ? 'markdown' : 'text')
+      ? (MARKDOWN_EXTENSIONS.has(extension) ? 'markdown' : HTML_EXTENSIONS.has(extension) ? 'html' : 'text')
       : 'binary';
     sendJson(options.res, 200, {
       ...basePreview,

@@ -261,7 +261,7 @@ export function AssistantTurnView({
           }
           return <pre key={item.id}>{JSON.stringify(item, null, 2)}</pre>;
         })}
-        <TurnFileSummaryBlock items={group.items as ThreadItem[]} locale={locale} workspaceRoot={workspaceRoot} />
+        <TurnFileSummaryBlock items={group.items as ThreadItem[]} locale={locale} onPreviewFile={onPreviewFile} workspaceRoot={workspaceRoot} />
       </article>
     </MessageFrame>
   );
@@ -270,10 +270,12 @@ export function AssistantTurnView({
 function TurnFileSummaryBlock({
   items,
   locale,
+  onPreviewFile,
   workspaceRoot,
 }: {
   items: ThreadItem[];
   locale: Locale;
+  onPreviewFile?: (path: string) => void;
   workspaceRoot: string;
 }) {
   const summary = buildTurnFileSummary(items as unknown as Array<Record<string, unknown>>, workspaceRoot);
@@ -293,7 +295,7 @@ function TurnFileSummaryBlock({
       </div>
       <div className="turnFileSummaryRows">
         {visibleRows.map((row) => (
-          <TurnFileSummaryRow key={`${row.kind}:${row.entry.path}`} kind={row.kind} entry={row.entry} locale={locale} />
+          <TurnFileSummaryRow key={`${row.kind}:${row.entry.path}`} kind={row.kind} entry={row.entry} locale={locale} onPreviewFile={onPreviewFile} />
         ))}
       </div>
       {hiddenRows.length > 0 ? (
@@ -301,7 +303,7 @@ function TurnFileSummaryBlock({
           <summary>{zh ? `展开其余 ${hiddenRows.length} 个文件` : `Show ${hiddenRows.length} more files`}</summary>
           <div className="turnFileSummaryRows">
             {hiddenRows.map((row) => (
-              <TurnFileSummaryRow key={`${row.kind}:${row.entry.path}`} kind={row.kind} entry={row.entry} locale={locale} />
+              <TurnFileSummaryRow key={`${row.kind}:${row.entry.path}`} kind={row.kind} entry={row.entry} locale={locale} onPreviewFile={onPreviewFile} />
             ))}
           </div>
         </details>
@@ -314,19 +316,34 @@ function TurnFileSummaryRow({
   entry,
   kind,
   locale,
+  onPreviewFile,
 }: {
   entry: TurnFileSummaryEntry | TurnChangedFileSummaryEntry;
   kind: 'read' | 'changed';
   locale: Locale;
+  onPreviewFile?: (path: string) => void;
 }) {
   const zh = locale === 'zh';
   const changed = kind === 'changed' ? entry as TurnChangedFileSummaryEntry : null;
+  const previewLabel = `${zh ? '预览文件' : 'Preview file'} ${entry.path}`;
   return (
     <div className="turnFileSummaryRow">
       <span className={kind === 'changed' ? 'turnFileSummaryBadge changed' : 'turnFileSummaryBadge'}>
         {kind === 'changed' ? (zh ? '修改文件' : 'changed') : (zh ? '阅读文件' : 'read')}
       </span>
-      <code title={entry.path}>{entry.path}</code>
+      {onPreviewFile ? (
+        <button
+          type="button"
+          className="turnFileSummaryPath"
+          title={entry.path}
+          aria-label={previewLabel}
+          onClick={() => onPreviewFile(entry.path)}
+        >
+          <code>{entry.path}</code>
+        </button>
+      ) : (
+        <code className="turnFileSummaryPathText" title={entry.path}>{entry.path}</code>
+      )}
       {changed ? (
         <span className="turnFileSummaryStats">
           <span className="added">+{changed.addedLines}</span>

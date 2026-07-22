@@ -188,7 +188,7 @@ export interface WorkspaceFilePreview {
   name: string;
   size: number;
   updatedAt: string;
-  previewType: 'text' | 'markdown' | 'image' | 'pdf' | 'office' | 'binary';
+  previewType: 'text' | 'markdown' | 'html' | 'image' | 'pdf' | 'office' | 'binary';
   mimeType: string;
   rawUrl?: string;
   truncated: boolean;

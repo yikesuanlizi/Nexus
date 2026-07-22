@@ -19,7 +19,6 @@ export interface UseSettingsControllerOptions {
   saveModelPreset: (name: string, presetConfig: ModelPresetConfig) => Promise<void>;
   saveProviderKey: (providerId: string, apiKey: string) => Promise<void>;
   saveProviderEnvVar: (providerId: string, envVar: string) => Promise<void>;
-  saveEnvironmentVariables: (text: string) => Promise<void>;
   saveThreadModelOverrides: (overrides: { provider: string; model: string; baseUrl: string }) => Promise<void>;
   saveGlobalModelConfig: (config: RunConfig) => void;
   setConfig: React.Dispatch<React.SetStateAction<RunConfig>>;
@@ -51,14 +50,11 @@ export interface UseSettingsControllerResult {
   modelEnvVarDraft: string;
   setModelEnvVarDraft: React.Dispatch<React.SetStateAction<string>>;
   modelEnvVarOptions: string[];
-  modelEnvBatchText: string;
-  setModelEnvBatchText: React.Dispatch<React.SetStateAction<string>>;
   customProviderName: string;
   setCustomProviderName: React.Dispatch<React.SetStateAction<string>>;
   selectModelProviderDraft: (providerId: string) => void;
   loadModelPresetIntoDraft: (presetId: string) => void;
   ensureCustomProvider: () => Promise<string | null>;
-  handleBatchSetModelEnv: () => Promise<void>;
   handleSaveModelConfig: () => Promise<void>;
   handleSetCurrentModelConfig: () => Promise<void>;
 }
@@ -91,7 +87,6 @@ export function useSettingsController(options: UseSettingsControllerOptions): Us
     saveModelPreset,
     saveProviderKey,
     saveProviderEnvVar,
-    saveEnvironmentVariables,
     saveThreadModelOverrides: _saveThreadModelOverrides,
     saveGlobalModelConfig: _saveGlobalModelConfig,
     setConfig,
@@ -113,7 +108,6 @@ export function useSettingsController(options: UseSettingsControllerOptions): Us
   const [modelKeyNotice, setModelKeyNotice] = useState('');
   const [modelEnvVarDraft, setModelEnvVarDraft] = useState('');
   const [modelEnvVarRemoteOptions, setModelEnvVarRemoteOptions] = useState<string[]>([]);
-  const [modelEnvBatchText, setModelEnvBatchText] = useState('');
   const [customProviderName, setCustomProviderName] = useState('');
 
   const [_threadOverrides, setThreadOverrides] = useState<{ provider?: string; model?: string; baseUrl?: string }>({});
@@ -143,7 +137,6 @@ export function useSettingsController(options: UseSettingsControllerOptions): Us
     setSavedToastAt(null);
     setModelKeyNotice('');
     setApiKeyDraft('');
-    setModelEnvBatchText('');
 
     let draft: ModelConfigDraft;
     let keySource: SecretSource;
@@ -204,11 +197,6 @@ export function useSettingsController(options: UseSettingsControllerOptions): Us
   useEffect(() => {
     if (dirtyFields.modelKeySource || dirtyFields.modelEnvVar || dirtyFields.apiKey) return;
     const selectedProvider = providers.find((p) => p.id === modelConfigDraft.provider);
-    if (selectedProvider && !selectedProvider.apiKeyEnvVar && !selectedProvider.isLocal) {
-      setModelKeySource('config');
-      setModelEnvVarDraft('');
-      return;
-    }
     if (modelKeySource === 'env' && selectedProvider?.apiKeyEnvVar && !modelEnvVarDraft) {
       setModelEnvVarDraft(selectedProvider.apiKeyEnvVar);
     }
@@ -264,9 +252,6 @@ export function useSettingsController(options: UseSettingsControllerOptions): Us
   const selectModelProviderDraft = useCallback((providerId: string) => {
     const provider = providers.find((p) => p.id === providerId);
     setModelConfigDraft((current) => {
-      if (providerId === 'openai_compatible' && !customProviderName.trim()) {
-        return current;
-      }
       return {
         ...current,
         provider: providerId,
@@ -274,6 +259,9 @@ export function useSettingsController(options: UseSettingsControllerOptions): Us
         baseUrl: provider?.baseUrl ?? current.baseUrl,
       };
     });
+    if (providerId !== 'openai_compatible') {
+      setCustomProviderName('');
+    }
     markDirty('provider', true);
     markDirty('model', true);
     setApiKeyDraft('');
@@ -282,7 +270,7 @@ export function useSettingsController(options: UseSettingsControllerOptions): Us
     const nextSource = modelKeySourceForProvider(provider, keyState);
     setModelKeySource(nextSource);
     setModelEnvVarDraft(modelEnvVarForProvider(provider, keyState, nextSource));
-  }, [providers, keyStates, customProviderName, markDirty]);
+  }, [providers, keyStates, markDirty]);
 
   const ensureCustomProvider = useCallback(async (): Promise<string | null> => {
     if (modelConfigDraft.provider !== 'openai_compatible') {
@@ -331,24 +319,6 @@ export function useSettingsController(options: UseSettingsControllerOptions): Us
     markDirty('model', true);
     markDirty('baseUrl', true);
   }, [modelPresets, providers, keyStates, markDirty]);
-
-  const handleBatchSetModelEnv = useCallback(async () => {
-    const text = modelEnvBatchText.trim();
-    if (!text) return;
-    try {
-      await saveEnvironmentVariables(text);
-      const response = await fetch('/api/keys/env-vars');
-      if (response.ok) {
-        const data = (await response.json()) as { envVars?: string[] };
-        setModelEnvVarRemoteOptions(data.envVars ?? []);
-      }
-      setModelEnvBatchText('');
-      setModelKeyNotice(locale === 'zh' ? '环境变量已设置。' : 'Environment variables set.');
-      await refreshKeyStates();
-    } catch (error) {
-      setModelKeyNotice(error instanceof Error ? error.message : String(error));
-    }
-  }, [modelEnvBatchText, saveEnvironmentVariables, refreshKeyStates, locale]);
 
   useEffect(() => {
     fetch('/api/keys/env-vars')
@@ -474,14 +444,11 @@ export function useSettingsController(options: UseSettingsControllerOptions): Us
     modelEnvVarDraft,
     setModelEnvVarDraft,
     modelEnvVarOptions,
-    modelEnvBatchText,
-    setModelEnvBatchText,
     customProviderName,
     setCustomProviderName,
     selectModelProviderDraft,
     loadModelPresetIntoDraft,
     ensureCustomProvider,
-    handleBatchSetModelEnv,
     handleSaveModelConfig,
     handleSetCurrentModelConfig,
   };

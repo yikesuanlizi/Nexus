@@ -79,7 +79,6 @@ export function SettingsDrawer({
   saveSkillDraft,
   saveProviderKey,
   saveProviderEnvVar,
-  saveEnvironmentVariables,
   skillsList,
   refreshSkills,
   refreshMcpStatus,
@@ -126,7 +125,6 @@ export function SettingsDrawer({
   saveBotConfig: (config: BotConfig) => Promise<void>;
   saveProviderKey: (providerId: string, apiKey: string) => Promise<void>;
   saveProviderEnvVar: (providerId: string, envVar: string) => Promise<void>;
-  saveEnvironmentVariables: (text: string) => Promise<void>;
   saveWebProviderKey: (apiKey: string) => Promise<void>;
   clearWebProviderKey: () => Promise<void>;
   setConfig: React.Dispatch<React.SetStateAction<RunConfig>>;
@@ -154,7 +152,6 @@ export function SettingsDrawer({
     saveModelPreset,
     saveProviderKey,
     saveProviderEnvVar,
-    saveEnvironmentVariables,
     saveThreadModelOverrides,
     saveGlobalModelConfig,
     setConfig,
@@ -534,13 +531,10 @@ export function SettingsDrawer({
             modelEnvVarDraft={controller.modelEnvVarDraft}
             setModelEnvVarDraft={controller.setModelEnvVarDraft}
             modelEnvVarOptions={controller.modelEnvVarOptions}
-            modelEnvBatchText={controller.modelEnvBatchText}
-            setModelEnvBatchText={controller.setModelEnvBatchText}
             customProviderName={controller.customProviderName}
             setCustomProviderName={controller.setCustomProviderName}
             selectModelProviderDraft={controller.selectModelProviderDraft}
             loadModelPresetIntoDraft={controller.loadModelPresetIntoDraft}
-            handleBatchSetModelEnv={controller.handleBatchSetModelEnv}
             handleSaveModelConfig={controller.handleSaveModelConfig}
             handleSetCurrentModelConfig={controller.handleSetCurrentModelConfig}
             markDirty={controller.markDirty}
