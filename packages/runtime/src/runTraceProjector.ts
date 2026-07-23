@@ -41,6 +41,12 @@ export function projectRunTrace(input: RunTraceEnvelope[]): RunTraceSummary {
 
     switch (event.category) {
       case 'model':
+        summary.model.providerId = event.payload.providerId ?? event.payload.provider;
+        summary.model.model = event.payload.model;
+        summary.model.endpointFormat = event.payload.endpointFormat;
+        summary.model.transport = event.payload.transport;
+        summary.model.reasoningMode = event.payload.reasoningMode;
+        summary.model.toolHistoryMode = event.payload.toolHistoryMode;
         if (event.lifecycle === 'completed') {
           summary.model.calls += 1;
           summary.model.inputTokens += event.payload.inputTokens ?? 0;

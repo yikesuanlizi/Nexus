@@ -18,7 +18,23 @@ export interface RunTracePayloadMap {
   context: { phase: 'assembled' | 'compacted' | 'pressured'; sourceCounts: Record<string, number>; estimatedTokens?: number; durationMs?: number; omittedContent: true };
   memory: { phase: 'search' | 'inject' | 'write'; recordCount: number; durationMs?: number; queryHash?: string; scoreBuckets?: Record<string, number>; omittedContent: true };
   middleware: { middlewareId: string; stage: 'before' | 'after' | 'error'; attempt?: number };
-  model: { provider: string; model: string; attempt: number; streaming: boolean; ttftMs?: number; inputTokens?: number; outputTokens?: number; cacheReadTokens?: number; cacheWriteTokens?: number; finishReason?: string };
+  model: {
+    provider: string;
+    providerId?: string;
+    model: string;
+    endpointFormat?: string;
+    transport?: string;
+    reasoningMode?: string;
+    toolHistoryMode?: string;
+    attempt: number;
+    streaming: boolean;
+    ttftMs?: number;
+    inputTokens?: number;
+    outputTokens?: number;
+    cacheReadTokens?: number;
+    cacheWriteTokens?: number;
+    finishReason?: string;
+  };
   tool: { toolName: string; callId: string; decision?: 'allow' | 'deny' | 'approval_required'; approvalId?: string; argsSummary?: unknown; resultSummary?: unknown; exitCode?: number; outputBytes?: number };
   item: { itemType: ThreadItem['type']; status?: string };
   agent: { agentThreadId: ThreadId; role: string; action: 'spawn' | 'started' | 'joined' | 'failed' | 'interrupted'; childRunId?: string };
@@ -82,7 +98,20 @@ export interface RunTraceSummary {
   completedAt?: string;
   durationMs?: number;
   currentSpan?: { spanId: string; category: RunTraceCategory; name: string };
-  model: { calls: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; maxTtftMs?: number };
+  model: {
+    calls: number;
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    cacheWriteTokens: number;
+    maxTtftMs?: number;
+    providerId?: string;
+    model?: string;
+    endpointFormat?: string;
+    transport?: string;
+    reasoningMode?: string;
+    toolHistoryMode?: string;
+  };
   tools: { calls: number; failed: number; denied: number };
   items: { started: number; completed: number; failed: number; byType: Record<string, number> };
   agents: { spawned: number; running: number; failed: number };

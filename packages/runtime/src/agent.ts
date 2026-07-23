@@ -1504,6 +1504,31 @@ export class AgentLoop {
     });
   }
 
+  private modelProviderDiagnostics(): {
+    provider: string;
+    providerId: string;
+    model: string;
+    endpointFormat: string;
+    transport: string;
+    reasoningMode: string;
+    toolHistoryMode: string;
+  } {
+    const model = this.config.model as ModelGateway & {
+      getProfile?: () => ReturnType<ModelGateway['getProfile']>;
+      getModelId?: () => string;
+    };
+    const profile = typeof model.getProfile === 'function' ? model.getProfile() : null;
+    return {
+      provider: profile?.id ?? 'unknown',
+      providerId: profile?.id ?? 'unknown',
+      model: typeof model.getModelId === 'function' ? model.getModelId() : 'unknown',
+      endpointFormat: profile?.endpointFormat ?? 'unknown',
+      transport: profile?.transport ?? 'unknown',
+      reasoningMode: profile?.reasoningMode ?? 'none',
+      toolHistoryMode: profile?.toolHistoryMode ?? 'unknown',
+    };
+  }
+
   private async appendRunTraceFromMonitorEvent(
     session: {
       runId: string;
@@ -1589,7 +1614,12 @@ export class AgentLoop {
         category: 'model',
         payload: {
           provider: String(metadata.provider ?? 'unknown'),
+          providerId: String(metadata.providerId ?? metadata.provider ?? 'unknown'),
           model: event.model ?? String(metadata.model ?? 'unknown'),
+          endpointFormat: stringMetadata(metadata.endpointFormat),
+          transport: stringMetadata(metadata.transport),
+          reasoningMode: stringMetadata(metadata.reasoningMode),
+          toolHistoryMode: stringMetadata(metadata.toolHistoryMode),
           attempt: numberMetadata(metadata.attempt) ?? 1,
           streaming: metadata.streaming === undefined ? true : Boolean(metadata.streaming),
           inputTokens: usage?.inputTokens,
@@ -2252,19 +2282,22 @@ export class AgentLoop {
       // 如果没有工具调用，就是最终响应
       if (!message.tool_calls || message.tool_calls.length === 0) {
         if (isTextToolPlaceholder(message.content) && iteration < this.config.maxIterations) {
+          const providerDiagnostics = this.modelProviderDiagnostics();
           await this.appendRunMonitorEvent(turnId, {
             category: 'model',
             type: 'model.plain_text_tool_call',
             level: 'warning',
             message: 'Model emitted a plain-text tool call placeholder; requesting a structured retry',
-            metadata: { iteration },
+            model: providerDiagnostics.model,
+            metadata: { ...providerDiagnostics, iteration },
           });
           await this.appendRunMonitorEvent(turnId, {
             category: 'model',
             type: 'model.output.discarded',
             level: 'warning',
             message: 'plain-text tool placeholder was discarded before retry',
-            metadata: { iteration, reason: 'plain_text_tool_placeholder' },
+            model: providerDiagnostics.model,
+            metadata: { ...providerDiagnostics, iteration, reason: 'plain_text_tool_placeholder' },
           });
           messages.push({
             role: 'user',
@@ -2403,12 +2436,18 @@ export class AgentLoop {
       turnId,
       estimate: estimateRuntimeChatTokens(modelRequest.messages),
     });
+    const providerDiagnostics = this.modelProviderDiagnostics();
 
     await this.appendRunMonitorEvent(turnId, {
       category: 'model',
       type: 'model.started',
       message: 'Model stream started',
-      metadata: { messageCount: modelRequest.messages.length, toolCount: modelRequest.tools?.length ?? 0 },
+      model: providerDiagnostics.model,
+      metadata: {
+        ...providerDiagnostics,
+        messageCount: modelRequest.messages.length,
+        toolCount: modelRequest.tools?.length ?? 0,
+      },
     });
     let response: { message: ChatMessage; usage: Usage | null };
     try {
@@ -2602,6 +2641,8 @@ export class AgentLoop {
         type: 'model.failed',
         level: 'error',
         message: error instanceof Error ? error.message : String(error),
+        model: providerDiagnostics.model,
+        metadata: providerDiagnostics,
       });
       throw error;
     }
@@ -2617,7 +2658,8 @@ export class AgentLoop {
       category: 'model',
       type: 'model.completed',
       message: 'Model stream completed',
-      metadata: response.usage ? { usage: response.usage } : {},
+      model: providerDiagnostics.model,
+      metadata: response.usage ? { ...providerDiagnostics, usage: response.usage } : providerDiagnostics,
     });
     return response;
   }
@@ -5079,6 +5121,10 @@ function numberMetadata(value: unknown): number | undefined {
     if (Number.isFinite(parsed)) return parsed;
   }
   return undefined;
+}
+
+function stringMetadata(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value : undefined;
 }
 
 function combineCacheStrategy(

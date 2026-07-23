@@ -55,4 +55,55 @@ describe('projectRunTrace', () => {
 
     expect(projectRunTrace([duplicate, { ...duplicate, sequence: 2 }]).tools.calls).toBe(1);
   });
+
+  it('projects provider adapter diagnostics on model events', () => {
+    const summary = projectRunTrace([
+      event({
+        sequence: 1,
+        category: 'model',
+        name: 'model.started',
+        lifecycle: 'started',
+        payload: {
+          provider: 'minimax',
+          providerId: 'minimax',
+          model: 'MiniMax-M3',
+          endpointFormat: 'anthropic_messages',
+          transport: 'anthropic_messages',
+          reasoningMode: 'minimax_anthropic_thinking',
+          toolHistoryMode: 'anthropic_blocks',
+          attempt: 1,
+          streaming: true,
+        },
+      }),
+      event({
+        sequence: 2,
+        category: 'model',
+        name: 'model.completed',
+        lifecycle: 'completed',
+        payload: {
+          provider: 'minimax',
+          providerId: 'minimax',
+          model: 'MiniMax-M3',
+          endpointFormat: 'anthropic_messages',
+          transport: 'anthropic_messages',
+          reasoningMode: 'minimax_anthropic_thinking',
+          toolHistoryMode: 'anthropic_blocks',
+          attempt: 1,
+          streaming: true,
+          inputTokens: 10,
+          outputTokens: 3,
+        },
+      }),
+    ]);
+
+    expect(summary.model).toMatchObject({
+      calls: 1,
+      providerId: 'minimax',
+      model: 'MiniMax-M3',
+      endpointFormat: 'anthropic_messages',
+      transport: 'anthropic_messages',
+      reasoningMode: 'minimax_anthropic_thinking',
+      toolHistoryMode: 'anthropic_blocks',
+    });
+  });
 });

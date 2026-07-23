@@ -52,7 +52,12 @@ const middlewarePayloadSchema = z.object({
 
 const modelPayloadSchema = z.object({
   provider: z.string().min(1),
+  providerId: z.string().min(1).optional(),
   model: z.string().min(1),
+  endpointFormat: z.string().min(1).optional(),
+  transport: z.string().min(1).optional(),
+  reasoningMode: z.string().min(1).optional(),
+  toolHistoryMode: z.string().min(1).optional(),
   attempt: z.number().int().min(0),
   streaming: z.boolean(),
   ttftMs: z.number().int().min(0).optional(),
@@ -432,6 +437,12 @@ export const runTraceSummarySchema = z.object({
     cacheReadTokens: z.number().int().min(0),
     cacheWriteTokens: z.number().int().min(0),
     maxTtftMs: z.number().int().min(0).optional(),
+    providerId: z.string().min(1).optional(),
+    model: z.string().min(1).optional(),
+    endpointFormat: z.string().min(1).optional(),
+    transport: z.string().min(1).optional(),
+    reasoningMode: z.string().min(1).optional(),
+    toolHistoryMode: z.string().min(1).optional(),
   }),
   tools: z.object({
     calls: z.number().int().min(0),

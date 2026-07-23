@@ -86,6 +86,14 @@ export class ModelGateway {
     }
   }
 
+  getProfile(): ProviderProfile {
+    return this.profile;
+  }
+
+  getModelId(): string {
+    return this.config.model;
+  }
+
   /** Test connectivity. */
   // 连通性测试：探测远端是否可达，并列出可用模型
   // 健康检查：探测远端可达性并列出可用模型
