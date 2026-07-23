@@ -2631,6 +2631,35 @@ describe('AgentLoop message history', () => {
     });
   });
 
+  it('replays completed tools structurally on the next turn', async () => {
+    const threadId = 'thread-structured-tool-history';
+    const store = new FakeStore(threadId, 'previous-turn');
+    const model = new SingleToolModel('current_time');
+    const agent = new AgentLoop({
+      workspaceRoot: process.cwd(),
+      sandbox: { level: 'workspace_write', workspaceRoot: process.cwd() },
+      model: model as never,
+      store,
+    });
+
+    await agent.runTurn(threadId, { type: 'text', text: '现在几点' });
+    await agent.runTurn(threadId, { type: 'text', text: '继续' });
+
+    const secondTurnInitialMessages = model.calls[2] ?? [];
+    const serialized = JSON.stringify(secondTurnInitialMessages);
+    expect(serialized).not.toContain('[Tool');
+    expect(secondTurnInitialMessages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        role: 'assistant',
+        tool_calls: [expect.objectContaining({ id: 'call_current_time' })],
+      }),
+      expect.objectContaining({
+        role: 'tool',
+        tool_call_id: 'call_current_time',
+      }),
+    ]));
+  });
+
   it('does not replay persisted tool results as orphan OpenAI tool messages on the next turn', async () => {
     const threadId = 'thread-tool-history';
     const store = new FakeStore(threadId, 'previous-turn');
@@ -2646,18 +2675,61 @@ describe('AgentLoop message history', () => {
     await agent.runTurn(threadId, { type: 'text', text: '继续' });
 
     const secondTurnInitialMessages = model.calls[2] ?? [];
-    expect(secondTurnInitialMessages.some((msg) => msg.role === 'tool')).toBe(false);
+    const assistantToolCall = secondTurnInitialMessages.find((msg) =>
+      msg.role === 'assistant' &&
+      Array.isArray(msg.tool_calls) &&
+      msg.tool_calls.some((toolCall) =>
+        typeof toolCall === 'object' &&
+        toolCall !== null &&
+        (toolCall as { id?: string }).id === 'call_current_time'
+      )
+    );
+    const toolMessage = secondTurnInitialMessages.find((msg) =>
+      msg.role === 'tool' &&
+      msg.tool_call_id === 'call_current_time'
+    );
+    expect(assistantToolCall).toBeTruthy();
+    expect(toolMessage).toBeTruthy();
+    expect(secondTurnInitialMessages.indexOf(toolMessage!)).toBeGreaterThan(
+      secondTurnInitialMessages.indexOf(assistantToolCall!),
+    );
   });
 
   it('redacts DingTalk group send tool history before sending it back to the model', async () => {
     const threadId = 'thread-dingtalk-tool-history';
     const store = new FakeStore(threadId, 'previous-turn');
     store.items.push({
+      id: 'old-dingtalk-assistant',
+      type: 'agent_message',
+      turnId: 'previous-turn',
+      text: '',
+      providerFrame: {
+        format: 'openai_chat',
+        content: null,
+        toolCalls: [{
+          id: 'call_old_dingtalk_send',
+          type: 'function',
+          function: {
+            name: 'dingtalk_forward_to_group',
+            arguments: JSON.stringify({ message: '安博威的爸爸', targetGroupName: '打完我去打DD·', source: 'dingtalk_dm' }),
+          },
+        }],
+      },
+    });
+    store.items.push({
       id: 'old-dingtalk-send',
       type: 'tool_call',
       turnId: 'previous-turn',
       toolName: 'dingtalk_forward_to_group',
       arguments: { message: '安博威的爸爸', targetGroupName: '打完我去打DD·', source: 'dingtalk_dm' },
+      modelToolCallId: 'call_old_dingtalk_send',
+      modelToolName: 'dingtalk_forward_to_group',
+      providerToolCall: {
+        format: 'openai_chat',
+        id: 'call_old_dingtalk_send',
+        name: 'dingtalk_forward_to_group',
+        arguments: { message: '安博威的爸爸', targetGroupName: '打完我去打DD·', source: 'dingtalk_dm' },
+      },
       result: {
         output: '已发送',
         data: {
@@ -2679,7 +2751,7 @@ describe('AgentLoop message history', () => {
     await agent.runTurn(threadId, { type: 'text', text: '现在几点了？' });
 
     const modelInput = JSON.stringify(model.messages[0]);
-    expect(modelInput).toContain('[Tool dingtalk_forward_to_group completed]');
+    expect(modelInput).not.toContain('[Tool dingtalk_forward_to_group completed]');
     expect(modelInput).toContain('DingTalk group message tool result redacted');
     expect(modelInput).not.toContain('安博威的爸爸');
     expect(modelInput).not.toContain('cid_group_target');

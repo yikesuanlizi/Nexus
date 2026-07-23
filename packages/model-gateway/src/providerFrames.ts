@@ -28,7 +28,7 @@ export function buildOpenAiChatToolHistory(
 ): ChatMessage[] {
   const assistant: ChatMessage = {
     role: 'assistant',
-    content: frame.content,
+    content: frame.content ?? '',
     tool_calls: frame.toolCalls,
   };
   if (frame.reasoningContent) {

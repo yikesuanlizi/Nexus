@@ -147,7 +147,7 @@ describe('provider frames', () => {
     expect(messages).toEqual([
       {
         role: 'assistant',
-        content: null,
+        content: '',
         tool_calls: frame.toolCalls,
       },
       {

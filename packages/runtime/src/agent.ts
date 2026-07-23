@@ -4090,13 +4090,10 @@ export class AgentLoop {
     const recentItems = await this.config.store.getRecentItems(threadId, 50);
     const compactedTurnIds = new Set(parseCompactedRanges(thread.tags?.compactedRanges)
       .flatMap((range) => range.compactedTurnIds));
-    for (const item of recentItems) {
-      if (item.turnId && compactedTurnIds.has(item.turnId) && item.type !== 'context_compaction') {
-        continue;
-      }
-      const msg = itemToMessage(item);
-      if (msg) messages.push(msg);
-    }
+    const effectiveItems = recentItems.filter((item) => {
+      return !(item.turnId && compactedTurnIds.has(item.turnId) && item.type !== 'context_compaction');
+    });
+    messages.push(...threadItemsToModelMessages(effectiveItems));
 
     // Current user input - support multimodal (text + images)
     // 当前用户输入 — 支持多模态（文本 + 图像）
@@ -5702,6 +5699,162 @@ function createCollabToolDefinitions(options?: { a2aClientEnabled?: boolean; a2a
   return tools;
 }
 
+function threadItemsToModelMessages(items: ThreadItem[]): ChatMessage[] {
+  const messages: ChatMessage[] = [];
+  for (const item of items) {
+    const structuredMessages = itemToStructuredToolHistoryMessages(item);
+    if (structuredMessages) {
+      messages.push(...structuredMessages);
+      continue;
+    }
+    const msg = itemToMessage(item);
+    if (msg) messages.push(msg);
+  }
+  return sanitizeStructuredToolHistory(messages);
+}
+
+function itemToStructuredToolHistoryMessages(item: ThreadItem): ChatMessage[] | null {
+  if (item.type === 'agent_message' && item.providerFrame?.format === 'openai_chat') {
+    const toolCalls = normalizeOpenAiToolCalls(item.providerFrame.toolCalls);
+    const message: ChatMessage = {
+      role: 'assistant',
+      content: typeof item.providerFrame.content === 'string' ? item.providerFrame.content : item.text,
+    };
+    if (toolCalls.length > 0) {
+      message.tool_calls = toolCalls;
+      if (!message.content) {
+        message.content = '';
+      }
+    }
+    if (typeof item.providerFrame.reasoningContent === 'string') {
+      message.reasoning_content = item.providerFrame.reasoningContent;
+    }
+    if (Array.isArray(item.providerFrame.reasoningDetails)) {
+      message.reasoning_details = item.providerFrame.reasoningDetails;
+    }
+    if (!message.content && !message.tool_calls?.length) {
+      return [];
+    }
+    return [message];
+  }
+
+  const toolCallId = getModelToolCallId(item);
+  if (!toolCallId) {
+    return null;
+  }
+  const content = toolHistoryContent(item);
+  if (content === null) {
+    return [];
+  }
+  return [{
+    role: 'tool',
+    tool_call_id: toolCallId,
+    content,
+  }];
+}
+
+function normalizeOpenAiToolCalls(value: unknown[] | undefined): ToolCall[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(isOpenAiToolCall).map(sanitizeToolCallForHistory);
+}
+
+function isOpenAiToolCall(value: unknown): value is ToolCall {
+  if (!value || typeof value !== 'object') return false;
+  const record = value as Record<string, unknown>;
+  const fn = record.function;
+  return typeof record.id === 'string'
+    && record.type === 'function'
+    && !!fn
+    && typeof fn === 'object'
+    && typeof (fn as Record<string, unknown>).name === 'string'
+    && typeof (fn as Record<string, unknown>).arguments === 'string';
+}
+
+function sanitizeToolCallForHistory(toolCall: ToolCall): ToolCall {
+  if (!isDingtalkGroupForwardTool(toolCall.function.name)) {
+    return toolCall;
+  }
+  return {
+    ...toolCall,
+    function: {
+      ...toolCall.function,
+      arguments: JSON.stringify({ redacted: true }),
+    },
+  };
+}
+
+function getModelToolCallId(item: ThreadItem): string | null {
+  switch (item.type) {
+    case 'tool_call':
+    case 'mcp_tool_call':
+    case 'collab_tool_call':
+      return typeof item.modelToolCallId === 'string' && item.modelToolCallId.trim()
+        ? item.modelToolCallId
+        : null;
+    default:
+      return null;
+  }
+}
+
+function toolHistoryContent(item: ThreadItem): string | null {
+  switch (item.type) {
+    case 'tool_call':
+      if (isDingtalkGroupForwardTool(item.toolName)) {
+        return 'DingTalk group message tool result redacted. Do not reuse this prior tool call or reveal internal routing details.';
+      }
+      return formatToolHistoryPayload(item.result ?? item.error ?? item.arguments);
+    case 'mcp_tool_call':
+      return formatToolHistoryPayload(item.result ?? item.error ?? item.arguments);
+    case 'collab_tool_call':
+      return formatToolHistoryPayload(item.result ?? item.error ?? item.prompt);
+    default:
+      return null;
+  }
+}
+
+function sanitizeStructuredToolHistory(messages: ChatMessage[]): ChatMessage[] {
+  const availableToolResultIds = new Set(
+    messages
+      .filter((message) => message.role === 'tool' && typeof message.tool_call_id === 'string')
+      .map((message) => message.tool_call_id as string),
+  );
+  const normalized = messages
+    .map((message): ChatMessage | null => {
+      if (message.role !== 'assistant' || !message.tool_calls?.length) return message;
+      const toolCalls = message.tool_calls.filter((toolCall) => availableToolResultIds.has(toolCall.id));
+      if (toolCalls.length === 0) {
+        return typeof message.content === 'string' && message.content.trim()
+          ? { ...message, tool_calls: undefined }
+          : null;
+      }
+      return { ...message, tool_calls: toolCalls };
+    })
+    .filter((message): message is ChatMessage => message !== null);
+
+  const pendingToolCallIds = new Set<string>();
+  const sanitized: ChatMessage[] = [];
+  for (const message of normalized) {
+    if (message.role === 'assistant' && message.tool_calls?.length) {
+      for (const toolCall of message.tool_calls) {
+        pendingToolCallIds.add(toolCall.id);
+      }
+      sanitized.push(message);
+      continue;
+    }
+    if (message.role === 'tool') {
+      const toolCallId = message.tool_call_id;
+      if (!toolCallId || !pendingToolCallIds.has(toolCallId)) {
+        continue;
+      }
+      pendingToolCallIds.delete(toolCallId);
+      sanitized.push(message);
+      continue;
+    }
+    sanitized.push(message);
+  }
+  return sanitized;
+}
+
 function itemToMessage(item: ThreadItem): ChatMessage | null {
   switch (item.type) {
     case 'user_message':
@@ -5717,31 +5870,16 @@ function itemToMessage(item: ThreadItem): ChatMessage | null {
     case 'reasoning':
       return { role: 'assistant', content: `[Reasoning] ${item.text}` };
     case 'tool_call':
-      if (isDingtalkGroupForwardTool(item.toolName)) {
-        return {
-          role: 'assistant',
-          content: `[Tool ${item.toolName} ${item.status}]\nDingTalk group message tool result redacted. Do not reuse this prior tool call or reveal internal routing details.`,
-        };
-      }
-      return {
-        role: 'assistant',
-        content: `[Tool ${item.toolName} ${item.status}]\n${formatToolHistoryPayload(item.result ?? item.error ?? item.arguments)}`,
-      };
+      return null;
     case 'context_compaction':
       return {
         role: 'assistant',
         content: `[Context compaction ${item.status}]\n${item.summary?.raw ?? ''}`,
       };
     case 'collab_tool_call':
-      return {
-        role: 'assistant',
-        content: `[Collaboration ${item.tool} ${item.status}]\n${formatToolHistoryPayload(item.result ?? item.error ?? item.prompt)}`,
-      };
+      return null;
     case 'mcp_tool_call':
-      return {
-        role: 'assistant',
-        content: `[MCP ${item.server}/${item.tool} ${item.status}]\n${formatToolHistoryPayload(item.result ?? item.error ?? item.arguments)}`,
-      };
+      return null;
     case 'command_execution':
       return {
         role: 'assistant',
