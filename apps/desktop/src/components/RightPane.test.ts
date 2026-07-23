@@ -127,4 +127,19 @@ describe('RightPane', () => {
     expect(styles).toContain('.workbenchPanel');
     expect(styles).toContain('@keyframes workbenchPanelIn');
   });
+
+  it('keeps the files panel warm-mounted after first open instead of remounting the heavy tree', () => {
+    const workbenchSource = readFileSync(join(here, 'workbench', 'WorkspaceWorkbench.tsx'), 'utf-8');
+    const styles = readFileSync(join(here, '..', 'styles.css'), 'utf-8');
+
+    expect(workbenchSource).toContain('const [filesPanelMounted, setFilesPanelMounted]');
+    expect(workbenchSource).toContain("if (activeTab === 'files' || externalPreviewRequest?.path)");
+    expect(workbenchSource).toContain("const shouldRenderFilesPanel = filesPanelMounted || activeTab === 'files' || Boolean(externalPreviewRequest?.path)");
+    expect(workbenchSource).toContain("aria-hidden={activeTab !== 'files'}");
+    expect(workbenchSource).toContain("workbenchPanel${tab === activeTab ? ' active' : ' inactive'}");
+    expect(styles).toContain('.workbenchPanel.inactive');
+    expect(styles).toContain('display: none;');
+    expect(styles).toContain('.workbenchFiles.workbenchPanel');
+    expect(styles).toContain('contain: layout paint style;');
+  });
 });

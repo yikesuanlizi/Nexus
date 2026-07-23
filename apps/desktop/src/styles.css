@@ -14069,6 +14069,7 @@
 .workbenchContent {
   contain: layout paint;
   overflow: hidden auto;
+  min-height: 0;
 }
 
 .workbenchPanel {
@@ -14081,6 +14082,21 @@
 
 .workbenchPanel.active {
   opacity: 1;
+}
+
+.workbenchPanel.inactive {
+  display: none;
+  pointer-events: none;
+  animation: none;
+}
+
+.workbenchFiles.workbenchPanel {
+  contain: layout paint style;
+}
+
+.workspaceFiles {
+  backface-visibility: hidden;
+  transform: translate3d(0, 0, 0);
 }
 
 .messageBlock {

@@ -59,6 +59,7 @@ export function WorkspaceWorkbench({
 }) {
   const zh = locale === 'zh';
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const [filesPanelMounted, setFilesPanelMounted] = useState(false);
   const handledPreviewRequestKeyRef = useRef('');
   const mainAgentThreadId = activeThreadId || 'main';
 
@@ -75,6 +76,12 @@ export function WorkspaceWorkbench({
       onTabChange('files');
     }
   }, [externalPreviewRequest?.nonce, externalPreviewRequest?.path, externalPreviewRequest?.pin, activeTab, onTabChange]);
+
+  useEffect(() => {
+    if (activeTab === 'files' || externalPreviewRequest?.path) {
+      setFilesPanelMounted(true);
+    }
+  }, [activeTab, externalPreviewRequest?.path]);
 
   const workbench = useMemo(() => buildAgentWorkbench({
     mainThreadId: mainAgentThreadId,
@@ -104,6 +111,7 @@ export function WorkspaceWorkbench({
   }, [workbench.nodes, selectedAgentId]);
 
   const memoryExcluded = activeThread?.tags?.memoryExcluded === 'true';
+  const shouldRenderFilesPanel = filesPanelMounted || activeTab === 'files' || Boolean(externalPreviewRequest?.path);
 
   const handleTabChange = (tab: WorkbenchTab) => {
     onTabChange(tab);
@@ -181,8 +189,8 @@ export function WorkspaceWorkbench({
           </div>
         ) : null}
 
-        {activeTab === 'files' ? (
-          <div className={workbenchPanelClassName('files', activeTab)}>
+        {shouldRenderFilesPanel ? (
+          <div className={workbenchPanelClassName('files', activeTab)} aria-hidden={activeTab !== 'files'}>
             <WorkspaceFilesPanel
               locale={locale}
               workspaceRoot={workspaceRoot}
@@ -223,5 +231,5 @@ export function WorkspaceWorkbench({
 
 function workbenchPanelClassName(tab: WorkbenchTab, activeTab: WorkbenchTab): string {
   const base = tab === 'activity' ? 'workbenchActivity' : tab === 'agents' ? 'workbenchAgents' : 'workbenchFiles';
-  return `${base} workbenchPanel${tab === activeTab ? ' active' : ''}`;
+  return `${base} workbenchPanel${tab === activeTab ? ' active' : ' inactive'}`;
 }
