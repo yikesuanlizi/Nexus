@@ -70,7 +70,7 @@ describe('transcript item merging', () => {
     expect(merged.map((item) => item.id)).toEqual(['user-1', 'tool-1']);
   });
 
-  it('drops pending user items once persisted turn items arrive', () => {
+  it('keeps pending user items while only assistant turn items stream in', () => {
     const merged = mergeIncomingItems(
       [
         { id: 'pending_user_1', type: 'user_message', text: '几点了', status: 'in_progress' },
@@ -80,7 +80,7 @@ describe('transcript item merging', () => {
       ] as never,
     );
 
-    expect(merged.map((item) => item.id)).toEqual(['agent-1']);
+    expect(merged.map((item) => item.id)).toEqual(['pending_user_1', 'agent-1']);
   });
 
   it('removes local skill install placeholders before merging persisted install items', () => {

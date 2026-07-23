@@ -11,8 +11,7 @@ export function upsertById<T extends { id: string }>(items: T[], next: T): T[] {
 export function mergeIncomingItems(current: ThreadItem[], incoming: ThreadItem[]): ThreadItem[] {
   const normalized = incoming.filter((item) => item.type !== 'user_message' || item.text?.trim());
   const hasRealUserMessage = normalized.some((item) => item.type === 'user_message' && !item.id.startsWith('pending_user'));
-  const hasPersistedTurnItems = normalized.some((item) => typeof item.turnId === 'string' && item.turnId.trim().length > 0);
-  const base = hasRealUserMessage || hasPersistedTurnItems
+  const base = hasRealUserMessage
     ? current.filter((item) => !(item.type === 'user_message' && item.id.startsWith('pending_user')))
     : current;
   return orderTurnItems(mergeThreadItems(base, normalized) as ThreadItem[]);
