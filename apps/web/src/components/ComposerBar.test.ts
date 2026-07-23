@@ -71,6 +71,16 @@ describe('ComposerBar', () => {
     expect(html).toContain('disabled=""');
   });
 
+  it('marks the composer action button with explicit running-state classes', () => {
+    const idleHtml = renderComposer({ input: '你好' });
+    const busyHtml = renderComposer({ busy: true });
+    const planningHtml = renderComposer({ workflowMode: true, workflowPlanning: true });
+
+    expect(idleHtml).toContain('class="sendButton"');
+    expect(busyHtml).toContain('class="sendButton busy stopButton"');
+    expect(planningHtml).toContain('class="sendButton busy planningButton"');
+  });
+
   it('keeps composer history and draft as UX-only local storage', () => {
     const source = readFileSync(join(here, 'ComposerBar.tsx'), 'utf-8');
     expect(source).toContain('nexus.composer.history.v1');

@@ -179,6 +179,8 @@ export function ComposerBar({
     openRemoteAssistants(platform);
   }
 
+  const sendButtonClassName = ['sendButton', busy || workflowPlanning ? 'busy' : '', busy ? 'stopButton' : '', workflowPlanning ? 'planningButton' : ''].filter(Boolean).join(' ');
+
   return (
     <footer
       className={['composer', draggingImage ? 'dragging' : '', !rightPaneVisible ? 'compactWidth' : rightPaneTab === 'files' ? 'wideWidth' : 'balancedWidth'].filter(Boolean).join(' ')}
@@ -268,7 +270,7 @@ export function ComposerBar({
             />
           </div>
         </div>
-        <button className="sendButton" onClick={() => busy ? void stopTurn() : actionBusy ? undefined : void handleSubmitComposer()} disabled={workflowBusy || actionBusy || (!busy && (!input.trim() && images.length === 0))} title={workflowBusy ? (config.locale === 'zh' ? '生成计划中' : 'Planning workflow') : busy ? t(config.locale, 'stop') : t(config.locale, 'send')} aria-label={workflowBusy ? (config.locale === 'zh' ? '生成计划中' : 'Planning workflow') : busy ? t(config.locale, 'stop') : t(config.locale, 'send')}>
+        <button className={sendButtonClassName} onClick={() => busy ? void stopTurn() : actionBusy ? undefined : void handleSubmitComposer()} disabled={workflowBusy || actionBusy || (!busy && (!input.trim() && images.length === 0))} title={workflowBusy ? (config.locale === 'zh' ? '生成计划中' : 'Planning workflow') : busy ? t(config.locale, 'stop') : t(config.locale, 'send')} aria-label={workflowBusy ? (config.locale === 'zh' ? '生成计划中' : 'Planning workflow') : busy ? t(config.locale, 'stop') : t(config.locale, 'send')}>
           <Icon name={workflowBusy ? 'refresh' : busy ? 'stop' : 'send'} />
         </button>
       </div>

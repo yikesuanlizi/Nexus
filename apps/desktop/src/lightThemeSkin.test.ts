@@ -70,4 +70,19 @@ describe('light theme skin', () => {
     expect(utilityGuard).toContain('.modelPresetSelect .dropdownOption.current span::before');
     expect(utilityGuard).toContain('color: #15803d;');
   });
+
+  it('keeps shell and composer motion deliberate instead of hard switching', () => {
+    const styles = readFileSync(join(here, 'styles.css'), 'utf-8').replace(/\r\n/g, '\n');
+    const motionGuard = styles.slice(styles.lastIndexOf('/* Nexus motion polish guard */'));
+
+    expect(motionGuard).toContain('--nx-motion-fast: 140ms;');
+    expect(motionGuard).toContain('--nx-motion-medium: 240ms;');
+    expect(motionGuard).toContain('--nx-motion-ease: cubic-bezier(0.2, 0.8, 0.2, 1);');
+    expect(motionGuard).toContain('.appShell.sidebarCollapsed .conversationPane :where(.threadListBrand, .threadListPanel:not(.collapsed), .threadListFooter)');
+    expect(motionGuard).toContain('opacity: 0;');
+    expect(motionGuard).toContain('transform: translate3d(-8px, 0, 0);');
+    expect(motionGuard).toContain('.sendButton.busy::after');
+    expect(motionGuard).toContain('@keyframes sendButtonBusyPulse');
+    expect(motionGuard).toContain('@media (prefers-reduced-motion: reduce)');
+  });
 });
