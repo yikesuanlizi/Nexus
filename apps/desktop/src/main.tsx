@@ -8,7 +8,7 @@ import { AssistantTurnView, ItemView } from './components/ItemView.js';
 import { ApprovalDiffPreview } from './components/ApprovalDiffPreview.js';
 import { SettingsDrawer } from './components/SettingsDrawer.js';
 import { WeixinConnectDialog } from './components/WeixinConnectDialog.js';
-import { RightPane, type RightPaneTab } from './components/RightPane.js';
+import { RightPane } from './components/RightPane.js';
 import type { ExternalPreviewRequest } from './components/WorkspaceFilesPanel.js';
 import { openInSystemEditor } from './api/desktopBridge.js';
 import { WorkflowPanel } from './components/WorkflowPanel.js';
@@ -152,14 +152,7 @@ function App() {
   const [status, setStatus] = useState('Idle');
   const [transcriptFollow, setTranscriptFollow] = useState<TranscriptFollowState>({ following: true, showReturnToBottom: false });
   const [settingsOpen, setSettingsOpen] = useState(false), [settingsHelpOpen, setSettingsHelpOpen] = useState(false);
-  const [rightPaneVisible, setRightPaneVisible] = useState(true), [rightPaneTab, setRightPaneTab] = useState<RightPaneTab>(() => {
-    try {
-      const stored = localStorage.getItem('nexus.rightPane.tab');
-      if (stored === 'files' || stored === 'agents' || stored === 'activity') return stored;
-      if (stored === 'status') return 'activity';
-    } catch { /* ignore */ }
-    return 'activity';
-  });
+  const [rightPaneVisible, setRightPaneVisible] = useState(true);
   // 中文注释：外部预览请求 — 从对话条目点击"预览"时驱动右侧文件面板加载该文件
   // — Chinese: external preview request — drives right file panel to load a file when "preview" is clicked from chat
   const [previewRequest, setPreviewRequest] = useState<ExternalPreviewRequest | null>(null);
@@ -179,7 +172,7 @@ function App() {
   const sendMessageGuardRef = useRef(createLatestRequestGuard());
   const threadEventSourceGenerationRef = useRef(0);
   const isWorkflowView = workspaceView === 'workflow';
-  const { rightPaneGridTemplateColumns, startRightPaneResize } = useRightPaneSizing(rightPaneVisible, rightPaneTab, isWorkflowView ? 'workflow' : 'standard');
+  const { rightPaneGridTemplateColumns, startRightPaneResize } = useRightPaneSizing(rightPaneVisible, isWorkflowView ? 'workflow' : 'standard');
   const { toast, showToast } = useToastNotice();
   const { botConfig, botStatus, bindRemoteAssistant, refreshBotStatus, saveBotConfig, connectWeixin, logoutWeixin, startDingtalkStream, stopDingtalkStream, testDingtalkMessage } = useBotControls();
   const { applyWebProviderState, clearWebProviderKey, saveWebProviderKey, webProviderState } = useWebProviderSettings();
@@ -1561,7 +1554,6 @@ function App() {
   // — Chinese: clicking "preview" on a tool item switches the right panel to Files tab and drives preview
   function previewFileFromItem(path: string) {
     if (!path) return;
-    setRightPaneTab('files');
     setPreviewRequest({ path, pin: true, nonce: Date.now() });
   }
   // 中文注释：点击工具条目"打开"按钮 → 调用 Tauri 在系统编辑器中打开
@@ -1770,7 +1762,6 @@ function App() {
         className={[
           'workspace',
           rightPaneVisible ? '' : 'rightPaneHidden',
-          !isWorkflowView && rightPaneTab === 'files' ? 'rightPaneFiles' : '',
           isWorkflowView ? 'workflowSplit' : '',
         ].filter(Boolean).join(' ')}
         style={{
@@ -1898,7 +1889,7 @@ function App() {
                 title={config.locale === 'zh' ? '拖拽调整右侧栏宽度' : 'Drag to resize right panel'}
                 onPointerDown={startRightPaneResize}
               />
-              {workspaceView === 'workflow' ? <section className="workflowSidePane"><WorkflowPanel locale={config.locale} workflow={activeWorkflow} blueprint={workflowBlueprint} components={workflowComponents} planDraft={workflowPlanDraft} saving={workflowSaving} runtimeBusy={workflowRuntimeBusy} onSave={(workflow) => void saveWorkflow(workflow)} onCancelPlan={() => setWorkflowPlanDraft(null)} onCommitPlan={() => void commitWorkflowPlan()} onSelectionChange={setWorkflowSelectedNodeIds} onRunWorkflow={() => void controlWorkflowRuntime('run')} onTestWorkflow={() => void controlWorkflowRuntime('test_run')} onPublishWorkflow={() => void controlWorkflowRuntime('publish')} onResumeWorkflow={() => void controlWorkflowRuntime('resume')} onCancelWorkflow={() => void controlWorkflowRuntime('cancel')} onRetryWorkflowNode={(nodeId) => void controlWorkflowRuntime('retry_node', nodeId)} runEvents={runMonitor.events} /></section> : <RightPane activeTab={rightPaneTab} activeThread={activeThread} activeThreadId={threadId} activeThreadTitle={activeThread?.title ?? ''} busy={busy} threadChildren={threadChildren} externalPreviewRequest={previewRequest} locale={config.locale} runtimeItems={items} workspaceRoot={activeWorkspaceRoot} onTabChange={setRightPaneTab} onJumpToMonitor={jumpToMonitor} onToggleMemoryExcluded={(excluded) => void toggleThreadMemoryExcluded(excluded)} traceSummary={workbenchTraceSummary as Parameters<typeof RightPane>[0]['traceSummary']} currentRunId={workbenchCurrentRunId} controlCapabilities={workbenchSelectedRun?.controlCapabilities ? { interrupt: workbenchSelectedRun.controlCapabilities.interrupt, resume: workbenchSelectedRun.controlCapabilities.resume, rollback: { enabled: workbenchSelectedRun.controlCapabilities.rollback.enabled, checkpointIds: workbenchSelectedRun.controlCapabilities.rollback.checkpointIds ?? [], reason: workbenchSelectedRun.controlCapabilities.rollback.reason } } : undefined} onInterrupt={handleControlInterrupt} onResume={handleControlResume} onRollback={handleControlRollback} responsiveMode={responsiveMode === 'side' ? undefined : responsiveMode} onCloseRequest={handleCloseWorkbench} />}
+              {workspaceView === 'workflow' ? <section className="workflowSidePane"><WorkflowPanel locale={config.locale} workflow={activeWorkflow} blueprint={workflowBlueprint} components={workflowComponents} planDraft={workflowPlanDraft} saving={workflowSaving} runtimeBusy={workflowRuntimeBusy} onSave={(workflow) => void saveWorkflow(workflow)} onCancelPlan={() => setWorkflowPlanDraft(null)} onCommitPlan={() => void commitWorkflowPlan()} onSelectionChange={setWorkflowSelectedNodeIds} onRunWorkflow={() => void controlWorkflowRuntime('run')} onTestWorkflow={() => void controlWorkflowRuntime('test_run')} onPublishWorkflow={() => void controlWorkflowRuntime('publish')} onResumeWorkflow={() => void controlWorkflowRuntime('resume')} onCancelWorkflow={() => void controlWorkflowRuntime('cancel')} onRetryWorkflowNode={(nodeId) => void controlWorkflowRuntime('retry_node', nodeId)} runEvents={runMonitor.events} /></section> : <RightPane activeThread={activeThread} activeThreadId={threadId} activeThreadTitle={activeThread?.title ?? ''} busy={busy} threadChildren={threadChildren} externalPreviewRequest={previewRequest} locale={config.locale} runtimeItems={items} workspaceRoot={activeWorkspaceRoot} onJumpToMonitor={jumpToMonitor} onToggleMemoryExcluded={(excluded) => void toggleThreadMemoryExcluded(excluded)} traceSummary={workbenchTraceSummary as Parameters<typeof RightPane>[0]['traceSummary']} currentRunId={workbenchCurrentRunId} controlCapabilities={workbenchSelectedRun?.controlCapabilities ? { interrupt: workbenchSelectedRun.controlCapabilities.interrupt, resume: workbenchSelectedRun.controlCapabilities.resume, rollback: { enabled: workbenchSelectedRun.controlCapabilities.rollback.enabled, checkpointIds: workbenchSelectedRun.controlCapabilities.rollback.checkpointIds ?? [], reason: workbenchSelectedRun.controlCapabilities.rollback.reason } } : undefined} onInterrupt={handleControlInterrupt} onResume={handleControlResume} onRollback={handleControlRollback} responsiveMode={responsiveMode === 'side' ? undefined : responsiveMode} onCloseRequest={handleCloseWorkbench} />}
             </>
           ) : null}
         </div>
@@ -1925,7 +1916,7 @@ function App() {
             ))}
           </section>
         ) : null}
-        <ComposerBar activeSlashOption={activeSlashOption} activeThreadId={threadId} actionBusy={actionBusy} applyModelPreset={applyModelPreset} botConfig={botConfig} botStatus={botStatus} busy={busy} composerInputRef={composerInputRef} config={config} draggingImage={draggingImage} filteredSlashOptions={filteredSlashOptions} handleDrop={handleDrop} handleFileSelect={handleFileSelect} handlePaste={handlePaste} images={images} input={input} modelPresets={modelPresets} openRemoteAssistants={openRemoteAssistants} removeImage={removeImage} rightPaneTab={rightPaneTab} rightPaneVisible={rightPaneVisible} selectSlashOption={selectSlashOption} setActiveSlashOption={setActiveSlashOption} setConfig={setConfig} setDraggingImage={setDraggingImage} setInput={setInput} slashVisible={slashVisible} stopTurn={stopTurn} submitComposer={submitComposer} workflowMode={workspaceView === 'workflow'} workflowPlanning={workflowPlanning} />
+        <ComposerBar activeSlashOption={activeSlashOption} activeThreadId={threadId} actionBusy={actionBusy} applyModelPreset={applyModelPreset} botConfig={botConfig} botStatus={botStatus} busy={busy} composerInputRef={composerInputRef} config={config} draggingImage={draggingImage} filteredSlashOptions={filteredSlashOptions} handleDrop={handleDrop} handleFileSelect={handleFileSelect} handlePaste={handlePaste} images={images} input={input} modelPresets={modelPresets} openRemoteAssistants={openRemoteAssistants} removeImage={removeImage} rightPaneVisible={rightPaneVisible} selectSlashOption={selectSlashOption} setActiveSlashOption={setActiveSlashOption} setConfig={setConfig} setDraggingImage={setDraggingImage} setInput={setInput} slashVisible={slashVisible} stopTurn={stopTurn} submitComposer={submitComposer} workflowMode={workspaceView === 'workflow'} workflowPlanning={workflowPlanning} />
       </section>
       {settingsOpen ? (
         <SettingsDrawer
