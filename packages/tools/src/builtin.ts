@@ -71,7 +71,8 @@ export const readFileTool: ToolDefinition = {
       };
     }
     const filePath = resolvePath(ctx.workspaceRoot, rawPath);
-    const content = await fs.readFile(filePath, 'utf-8');
+    const decoded = decodeTextFile(await fs.readFile(filePath));
+    const content = decoded.text;
     const allLines = content.split('\n');
     let lines = allLines;
     const offset = typeof args.offset === 'number' ? Math.max(1, Math.floor(args.offset)) - 1 : 0;
@@ -93,11 +94,36 @@ export const readFileTool: ToolDefinition = {
         startLine,
         endLine,
         totalLines: allLines.length,
+        encoding: decoded.encoding,
         artifactRefs: [ref],
       },
     };
   },
 };
+
+function decodeTextFile(buffer: Buffer): { text: string; encoding: 'utf-8' | 'gb18030' } {
+  const utf8 = buffer.toString('utf8');
+  if (replacementCharCount(utf8) === 0) {
+    return { text: stripByteOrderMark(utf8), encoding: 'utf-8' };
+  }
+  try {
+    const gb18030 = new TextDecoder('gb18030', { fatal: false }).decode(buffer);
+    if (replacementCharCount(gb18030) < replacementCharCount(utf8)) {
+      return { text: stripByteOrderMark(gb18030), encoding: 'gb18030' };
+    }
+  } catch {
+    // Keep UTF-8 fallback when the runtime lacks gb18030.
+  }
+  return { text: stripByteOrderMark(utf8), encoding: 'utf-8' };
+}
+
+function replacementCharCount(value: string): number {
+  return [...value].filter((char) => char === '\uFFFD').length;
+}
+
+function stripByteOrderMark(value: string): string {
+  return value.charCodeAt(0) === 0xFEFF ? value.slice(1) : value;
+}
 
 // ─── list_files ─────────────────────────────────────────────────────────────
 // 中文注释：列出工作区中的文件和目录。用于在读取文件之前检查目录结构。

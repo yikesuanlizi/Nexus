@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Locale } from '../../config/config.js';
 import type { ThreadChildInfo, ThreadItem, ThreadMeta } from '../../shared/types.js';
 import type { RunControlCapabilities, RunTraceSummary } from '@nexus/protocol';
@@ -57,6 +57,7 @@ export function WorkspaceWorkbench({
 }) {
   const zh = locale === 'zh';
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const handledPreviewRequestKeyRef = useRef('');
   const mainAgentThreadId = activeThreadId || 'main';
 
   useEffect(() => {
@@ -64,10 +65,14 @@ export function WorkspaceWorkbench({
   }, [activeThreadId]);
 
   useEffect(() => {
-    if (externalPreviewRequest && activeTab !== 'files') {
+    if (!externalPreviewRequest?.path) return;
+    const previewRequestKey = `${externalPreviewRequest.path}\u0000${externalPreviewRequest.nonce ?? ''}\u0000${externalPreviewRequest.pin ? '1' : '0'}`;
+    if (handledPreviewRequestKeyRef.current === previewRequestKey) return;
+    handledPreviewRequestKeyRef.current = previewRequestKey;
+    if (activeTab !== 'files') {
       onTabChange('files');
     }
-  }, [externalPreviewRequest, activeTab, onTabChange]);
+  }, [externalPreviewRequest?.nonce, externalPreviewRequest?.path, externalPreviewRequest?.pin, activeTab, onTabChange]);
 
   const workbench = useMemo(() => buildAgentWorkbench({
     mainThreadId: mainAgentThreadId,

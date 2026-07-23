@@ -107,4 +107,12 @@ describe('RightPane', () => {
     expect(mainSource).toContain('if (itemId && !runId && !eventId && !threadId)');
     expect(workbenchSource).toContain('onJumpToMonitor?.({ itemId: opts.itemId, runId: opts.runId, threadId: activeThreadId })');
   });
+
+  it('does not keep forcing the files tab after the same external preview request was handled', () => {
+    const workbenchSource = readFileSync(join(here, 'workbench', 'WorkspaceWorkbench.tsx'), 'utf-8');
+
+    expect(workbenchSource).toContain('handledPreviewRequestKeyRef');
+    expect(workbenchSource).toContain('if (handledPreviewRequestKeyRef.current === previewRequestKey) return');
+    expect(workbenchSource).not.toContain("}, [externalPreviewRequest, activeTab, onTabChange]);");
+  });
 });

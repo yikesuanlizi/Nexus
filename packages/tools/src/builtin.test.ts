@@ -305,6 +305,24 @@ describe('readFileTool', () => {
       ],
     });
   });
+
+  it('falls back to GB18030 when reading non-UTF-8 Chinese text files', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'nexus-read-file-gbk-'));
+    await fs.writeFile(
+      path.join(root, 'gbk.txt'),
+      Buffer.from([0xd6, 0xd0, 0xce, 0xc4, 0xb2, 0xe2, 0xca, 0xd4, 0x0a]),
+    );
+
+    const result = await readFileTool.execute(
+      { filePath: 'gbk.txt' },
+      { workspaceRoot: root, threadId: 'thread', turnId: 'turn', approved: false },
+    );
+
+    expect(result.status).toBe('completed');
+    expect(result.output).toContain('1: 中文测试');
+    expect(result.output).not.toContain('�');
+    expect(result.data).toMatchObject({ encoding: 'gb18030' });
+  });
 });
 
 describe('listFilesTool', () => {

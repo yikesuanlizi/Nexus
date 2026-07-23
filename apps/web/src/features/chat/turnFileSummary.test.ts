@@ -94,4 +94,41 @@ describe('buildTurnFileSummary', () => {
       { path: 'E:\\langchain\\dexin-agent\\需求说明.docx' },
     ]);
   });
+
+  it('extracts source document paths from command output and helper script hunks', () => {
+    const summary = buildTurnFileSummary([
+      {
+        id: 'command-output-docx',
+        type: 'command_execution',
+        command: 'python _read_docx.py',
+        aggregatedOutput: 'reading E:\\langchain\\dexin-agent\\智能体运行平台详细架构设计_v1.0.docx\nok',
+        status: 'completed',
+      },
+      {
+        id: 'helper-script',
+        type: 'file_change',
+        changes: [{ path: 'E:\\langchain\\dexin-agent\\_read_docx.py', kind: 'add', addedLines: 3, removedLines: 0 }],
+        hunks: [{
+          path: 'E:\\langchain\\dexin-agent\\_read_docx.py',
+          startLine: 1,
+          endLine: 3,
+          addedLines: 3,
+          removedLines: 0,
+          addedLinesContent: [
+            'from docx import Document',
+            'source = r"E:\\langchain\\dexin-agent\\原始设计文档.docx"',
+            'print(Document(source))',
+          ],
+          removedLinesContent: [],
+        }],
+        status: 'completed',
+      },
+    ], 'E:\\langchain\\dexin-agent');
+
+    expect(summary.readFiles).toEqual([
+      { path: 'E:\\langchain\\dexin-agent\\智能体运行平台详细架构设计_v1.0.docx' },
+      { path: 'E:\\langchain\\dexin-agent\\原始设计文档.docx' },
+    ]);
+    expect(summary.changedFiles).toEqual([]);
+  });
 });

@@ -23,13 +23,17 @@ export function buildTurnFileSummary(items: Array<Record<string, unknown>>, work
       continue;
     }
     if (item.type === 'command_execution' && item.status !== 'failed') {
-      for (const candidate of extractCommandFilePaths(readString(item.command), workspaceRoot)) {
+      for (const candidate of extractCommandFilePaths(`${readString(item.command)}\n${readString(item.aggregatedOutput)}`, workspaceRoot)) {
         const path = normalizeDisplayPath(candidate, workspaceRoot);
         if (path && !isInternalPath(path, workspaceRoot)) readFiles.set(path, { path });
       }
       continue;
     }
     if (item.type === 'file_change' && item.status !== 'failed') {
+      for (const candidate of extractFilePathsFromHunks(readArray(item.hunks), workspaceRoot)) {
+        const path = normalizeDisplayPath(candidate, workspaceRoot);
+        if (path && !isInternalPath(path, workspaceRoot)) readFiles.set(path, { path });
+      }
       for (const change of readArray(item.changes)) {
         const path = normalizeDisplayPath(readString(change.path), workspaceRoot);
         if (!path || isInternalPath(path, workspaceRoot)) continue;
@@ -126,6 +130,16 @@ function extractCommandFilePaths(command: string, workspaceRoot: string): string
     .filter((token) => token && looksLikeFilePath(token, workspaceRoot));
 }
 
+function extractFilePathsFromHunks(hunks: Array<Record<string, unknown>>, workspaceRoot: string): string[] {
+  const candidates: string[] = [];
+  for (const hunk of hunks) {
+    for (const line of [...readStringArray(hunk.addedLinesContent), ...readStringArray(hunk.removedLinesContent)]) {
+      candidates.push(...extractCommandFilePaths(line, workspaceRoot));
+    }
+  }
+  return candidates;
+}
+
 function shellTokens(command: string): string[] {
   const tokens: string[] = [];
   let current = '';
@@ -154,6 +168,7 @@ function cleanCommandPathToken(token: string): string {
   return token
     .replace(/^[<>(){}[\],;]+/, '')
     .replace(/[<>(){}[\],;]+$/, '')
+    .replace(/^[rRuUbBfF]+(?=[A-Za-z]:[\\/])/, '')
     .trim();
 }
 
@@ -170,6 +185,10 @@ function readObject(value: unknown): Record<string, unknown> {
 
 function readArray(value: unknown): Array<Record<string, unknown>> {
   return Array.isArray(value) ? value.filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === 'object' && !Array.isArray(entry)) : [];
+}
+
+function readStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
 }
 
 function readString(value: unknown): string {
