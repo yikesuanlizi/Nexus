@@ -143,7 +143,7 @@ export function WorkspaceWorkbench({
 
       <div className="workbenchContent">
         {activeTab === 'activity' ? (
-          <div className="workbenchActivity">
+          <div className={workbenchPanelClassName('activity', activeTab)}>
             <LiveActivityHud
               traceSummary={traceSummary}
               currentPhase={workbench.currentPhase}
@@ -160,7 +160,7 @@ export function WorkspaceWorkbench({
         ) : null}
 
         {activeTab === 'agents' ? (
-          <div className="workbenchAgents">
+          <div className={workbenchPanelClassName('agents', activeTab)}>
             <div className="workbenchAgentTreeWrap">
               <AgentStagePanel
                 locale={locale}
@@ -182,11 +182,13 @@ export function WorkspaceWorkbench({
         ) : null}
 
         {activeTab === 'files' ? (
-          <WorkspaceFilesPanel
-            locale={locale}
-            workspaceRoot={workspaceRoot}
-            externalPreviewRequest={externalPreviewRequest}
-          />
+          <div className={workbenchPanelClassName('files', activeTab)}>
+            <WorkspaceFilesPanel
+              locale={locale}
+              workspaceRoot={workspaceRoot}
+              externalPreviewRequest={externalPreviewRequest}
+            />
+          </div>
         ) : null}
       </div>
 
@@ -217,4 +219,9 @@ export function WorkspaceWorkbench({
       ) : null}
     </aside>
   );
+}
+
+function workbenchPanelClassName(tab: WorkbenchTab, activeTab: WorkbenchTab): string {
+  const base = tab === 'activity' ? 'workbenchActivity' : tab === 'agents' ? 'workbenchAgents' : 'workbenchFiles';
+  return `${base} workbenchPanel${tab === activeTab ? ' active' : ''}`;
 }

@@ -82,7 +82,12 @@ describe('light theme skin', () => {
     expect(motionGuard).toContain('opacity: 0;');
     expect(motionGuard).toContain('transform: translate3d(-8px, 0, 0);');
     expect(motionGuard).toContain('.sendButton.busy::after');
+    expect(motionGuard).toContain('.workbenchPanel');
+    expect(motionGuard).toContain('animation: workbenchPanelIn 180ms var(--nx-motion-ease) both;');
+    expect(motionGuard).toContain('.messageBlock');
+    expect(motionGuard).toContain('animation: messageBlockIn 180ms var(--nx-motion-ease) both;');
     expect(motionGuard).toContain('@keyframes sendButtonBusyPulse');
+    expect(motionGuard).toContain('@keyframes messageBlockIn');
     expect(motionGuard).toContain('@media (prefers-reduced-motion: reduce)');
   });
 });

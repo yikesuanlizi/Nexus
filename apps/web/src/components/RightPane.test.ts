@@ -115,4 +115,16 @@ describe('RightPane', () => {
     expect(workbenchSource).toContain('if (handledPreviewRequestKeyRef.current === previewRequestKey) return');
     expect(workbenchSource).not.toContain("}, [externalPreviewRequest, activeTab, onTabChange]);");
   });
+
+  it('wraps each workbench tab body in a motion-aware panel', () => {
+    const workbenchSource = readFileSync(join(here, 'workbench', 'WorkspaceWorkbench.tsx'), 'utf-8');
+    const styles = readFileSync(join(here, '..', 'styles.css'), 'utf-8');
+
+    expect(workbenchSource).toContain('function workbenchPanelClassName');
+    expect(workbenchSource).toContain("className={workbenchPanelClassName('activity', activeTab)}");
+    expect(workbenchSource).toContain("className={workbenchPanelClassName('agents', activeTab)}");
+    expect(workbenchSource).toContain("className={workbenchPanelClassName('files', activeTab)}");
+    expect(styles).toContain('.workbenchPanel');
+    expect(styles).toContain('@keyframes workbenchPanelIn');
+  });
 });

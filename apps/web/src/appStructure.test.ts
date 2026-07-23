@@ -47,4 +47,13 @@ describe('app module structure', () => {
     expect(stopTurn).toContain('`/api/threads/${targetThreadId}/interrupt`');
     expect(stopTurn).not.toContain('if (!threadId) return;');
   });
+
+  it('uses stable transcript keys so streaming updates do not remount messages', () => {
+    const source = readFileSync(join(here, 'main.tsx'), 'utf-8');
+    const transcriptRender = source.match(/transcriptGroups\.map[\s\S]*?<\/section>/)?.[0] ?? '';
+
+    expect(transcriptRender).toContain('key={group.item.id}');
+    expect(transcriptRender).toContain('key={group.id}');
+    expect(transcriptRender).not.toContain('-${index}');
+  });
 });

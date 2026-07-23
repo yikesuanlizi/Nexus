@@ -1858,13 +1858,13 @@ function App() {
                 ? (config.locale === 'zh' ? '从下方输入工作流目标，或描述节点修改要求。' : 'Describe a workflow goal or node change below.')
                 : t(config.locale, 'empty')}</div>
             ) : (
-              transcriptGroups.map((group, index) => (
+              transcriptGroups.map((group) => (
                 group.kind === 'user' ? (
-                  <ItemView item={group.item as ThreadItem} key={`${group.item.id}-${index}`} locale={config.locale} canRollback={Boolean(group.item.turnId && group.item.turnId === latestRollbackTurnId && !busy && !actionBusy)} onBranch={branchFromTurn} onCopy={copyMessage} onRollback={rollbackToTurn} onPreviewFile={previewFileFromItem} onOpenFile={openFileFromItem} userAvatarId={config.userAvatarId} customUserAvatarDataUrl={config.customUserAvatarDataUrl} />
+                  <ItemView item={group.item as ThreadItem} key={group.item.id} locale={config.locale} canRollback={Boolean(group.item.turnId && group.item.turnId === latestRollbackTurnId && !busy && !actionBusy)} onBranch={branchFromTurn} onCopy={copyMessage} onRollback={rollbackToTurn} onPreviewFile={previewFileFromItem} onOpenFile={openFileFromItem} userAvatarId={config.userAvatarId} customUserAvatarDataUrl={config.customUserAvatarDataUrl} />
                 ) : (
                   <AssistantTurnView
                     group={{ ...group, items: group.items as ThreadItem[], status: group.turnId && runningTurnIds.has(group.turnId) ? 'running' : group.status }}
-                    key={`${group.id}-${index}`}
+                    key={group.id}
                     locale={config.locale}
                     canRegenerate={Boolean(group.turnId && group.turnId === latestRollbackTurnId && !busy && !actionBusy)}
                     childActivityByThread={childActivityByThread}
