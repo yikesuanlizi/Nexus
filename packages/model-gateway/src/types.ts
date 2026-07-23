@@ -139,6 +139,10 @@ export interface ChatCompletionRequest {
   temperature?: number;
   top_p?: number;
   reasoning_effort?: 'low' | 'medium' | 'high' | string;
+  thinking?: {
+    type: 'enabled' | 'disabled';
+    reasoning_effort?: 'high' | 'max' | string;
+  };
   stream?: boolean;
   stop?: string[];
 }

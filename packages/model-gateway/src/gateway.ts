@@ -19,6 +19,7 @@ import {
 } from './types.js';
 // 引入 provider 注册表与 API key 解析
 import { getProvider, resolveApiKey } from './providers.js';
+import { resolveProviderProfile, type ProviderProfile } from './providerProfiles.js';
 
 /** Core model gateway — unified interface over OpenAI-compatible + Anthropic APIs. */
 // 核心模型网关：在 OpenAI 兼容协议和 Anthropic API 之上统一成一个对外接口
@@ -28,6 +29,7 @@ export class ModelGateway {
   private baseUrl: string;
   private protocol: 'openai' | 'anthropic';
   private cacheStrategy: CacheStrategy;
+  private profile: ProviderProfile;
 
   // 构造时自动解析 baseURL、API key、协议、缓存策略
   constructor(config: ModelConfig) {
@@ -42,9 +44,16 @@ export class ModelGateway {
     const resolvedBaseUrl = normalizedConfig.baseUrl || providerEntry?.baseUrl || resolveBaseUrl(normalizedConfig);
     const resolvedApiKey = resolveApiKey(normalizedConfig.provider, normalizedConfig.apiKey);
 
+    this.profile = resolveProviderProfile({
+      provider: normalizedConfig.provider,
+      baseUrl: resolvedBaseUrl,
+      model: normalizedConfig.model,
+    });
     this.config = { ...normalizedConfig, baseUrl: resolvedBaseUrl, apiKey: resolvedApiKey };
     this.baseUrl = resolvedBaseUrl;
-    this.protocol = providerEntry?.protocol ?? protocolFor(normalizedConfig.provider);
+    this.protocol = this.profile.transport === 'anthropic_messages'
+      ? 'anthropic'
+      : (providerEntry?.protocol ?? protocolFor(normalizedConfig.provider));
     this.cacheStrategy = resolveCacheStrategy(this.config, this.protocol);
   }
 
@@ -108,18 +117,10 @@ export class ModelGateway {
     req: Omit<ChatCompletionRequest, 'model' | 'stream'>,
     options?: ModelRequestOptions,
   ): Promise<ChatCompletionResponse> {
-    const body: ChatCompletionRequest = {
-      ...req,
-      model: this.config.model,
-      max_tokens: req.max_tokens ?? this.config.maxTokens,
-      temperature: req.temperature ?? this.config.temperature,
-      top_p: req.top_p ?? this.config.topP,
-      reasoning_effort: req.reasoning_effort ?? this.config.reasoningEffort,
-      stream: false,
-    };
+    const body = this.buildOpenAiChatRequest(req, false);
     const resp = await this.openaiFetch(body, options);
     const json = await resp.json() as ChatCompletionResponse;
-    return { ...json, usage: normalizeUsage(json.usage, this.cacheStrategy) };
+    return normalizeOpenAIResponse(json, this.cacheStrategy);
   }
 
   // OpenAI 流式补全：把 SSE 流解析为统一 StreamEvent
@@ -127,15 +128,7 @@ export class ModelGateway {
     req: Omit<ChatCompletionRequest, 'model' | 'stream'>,
     options?: ModelRequestOptions,
   ): AsyncGenerator<StreamEvent> {
-    const body: ChatCompletionRequest = {
-      ...req,
-      model: this.config.model,
-      max_tokens: req.max_tokens ?? this.config.maxTokens,
-      temperature: req.temperature ?? this.config.temperature,
-      top_p: req.top_p ?? this.config.topP,
-      reasoning_effort: req.reasoning_effort ?? this.config.reasoningEffort,
-      stream: true,
-    };
+    const body = this.buildOpenAiChatRequest(req, true);
     const resp = await this.openaiFetch(body, options);
     const reader = resp.body?.getReader();
     if (!reader) {
@@ -159,6 +152,27 @@ export class ModelGateway {
       throw new Error(`OpenAI gateway error (${resp.status}): ${text.slice(0, 500)}`);
     }
     return resp;
+  }
+
+  private buildOpenAiChatRequest(
+    req: Omit<ChatCompletionRequest, 'model' | 'stream'>,
+    stream: boolean,
+  ): ChatCompletionRequest {
+    const reasoningEffort = req.reasoning_effort ?? this.config.reasoningEffort;
+    const body: ChatCompletionRequest = {
+      ...req,
+      model: this.config.model,
+      max_tokens: req.max_tokens ?? this.config.maxTokens,
+      temperature: req.temperature ?? this.config.temperature,
+      top_p: req.top_p ?? this.config.topP,
+      stream,
+    };
+    if (this.profile.reasoningMode === 'deepseek_reasoning_content') {
+      body.thinking = deepSeekThinkingFromEffort(reasoningEffort);
+    } else {
+      body.reasoning_effort = reasoningEffort;
+    }
+    return body;
   }
 
   // ─── Anthropic path ───────────────────────────────────────────────────────
@@ -371,6 +385,47 @@ export function normalizeUsage(raw: unknown, cacheStrategy?: CacheStrategy): Nor
     cached_tokens: cachedTokens,
     ...(inferredStrategy && inferredStrategy !== 'none' ? { cache_strategy: inferredStrategy } : {}),
   };
+}
+
+export function convertOpenAIResponseForTest(
+  raw: RawOpenAIChatCompletionResponse,
+  cacheStrategy?: CacheStrategy,
+): ChatCompletionResponse {
+  return normalizeOpenAIResponse(raw, cacheStrategy);
+}
+
+function normalizeOpenAIResponse(
+  raw: RawOpenAIChatCompletionResponse,
+  cacheStrategy?: CacheStrategy,
+): ChatCompletionResponse {
+  return {
+    ...raw,
+    choices: raw.choices.map((choice) => ({
+      ...choice,
+      message: {
+        ...choice.message,
+        content: typeof choice.message.content === 'string' ? choice.message.content : choice.message.content,
+      },
+    })),
+    usage: normalizeUsage(raw.usage, cacheStrategy),
+  };
+}
+
+type RawOpenAIChatCompletionResponse = Omit<ChatCompletionResponse, 'usage'> & {
+  usage?: unknown;
+};
+
+function deepSeekThinkingFromEffort(
+  effort: ModelConfig['reasoningEffort'] | ChatCompletionRequest['reasoning_effort'] | undefined,
+): NonNullable<ChatCompletionRequest['thinking']> {
+  const normalized = typeof effort === 'string' ? effort.trim().toLowerCase() : '';
+  if (['none', 'off', 'disabled', 'disable', 'false'].includes(normalized)) {
+    return { type: 'disabled' };
+  }
+  if (normalized === 'max' || normalized === 'xhigh' || normalized === 'x-high') {
+    return { type: 'enabled', reasoning_effort: 'max' };
+  }
+  return { type: 'enabled', reasoning_effort: 'high' };
 }
 
 // 仅基于 usage 字段推断缓存策略（未显式指定时使用）

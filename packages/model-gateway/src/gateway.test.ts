@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { estimateChatTokens, ModelGateway, normalizeUsage, resolveCacheStrategy } from './gateway.js';
+import {
+  convertOpenAIResponseForTest,
+  estimateChatTokens,
+  ModelGateway,
+  normalizeUsage,
+  resolveCacheStrategy,
+} from './gateway.js';
 import { getProviderProfile, resolveProviderProfile } from './providerProfiles.js';
 import {
   buildAnthropicToolHistory,
@@ -187,6 +193,90 @@ describe('provider frames', () => {
         }],
       },
     ]);
+  });
+});
+
+describe('MiniMax and DeepSeek provider behavior', () => {
+  it('adds MiniMax Anthropic diagnostics without switching to OpenAI placeholders', () => {
+    const gateway = new ModelGateway({
+      provider: 'minimax',
+      model: 'MiniMax-M3',
+      baseUrl: '',
+      apiKey: 'test',
+    });
+
+    expect((gateway as unknown as { profile: { endpointFormat: string; reasoningMode: string } }).profile).toMatchObject({
+      endpointFormat: 'anthropic_messages',
+      reasoningMode: 'minimax_anthropic_thinking',
+    });
+  });
+
+  it('preserves DeepSeek reasoning_content in normalized OpenAI responses', () => {
+    const response = convertOpenAIResponseForTest({
+      id: 'cmpl_1',
+      object: 'chat.completion',
+      created: 1,
+      model: 'deepseek-v4-pro',
+      choices: [{
+        index: 0,
+        message: {
+          role: 'assistant',
+          content: 'answer',
+          reasoning_content: 'private reasoning summary',
+        },
+        finish_reason: 'stop',
+      }],
+      usage: {
+        prompt_cache_hit_tokens: 10,
+        prompt_cache_miss_tokens: 30,
+        completion_tokens: 5,
+      },
+    }, 'deepseek-native');
+    expect(response.choices[0].message.reasoning_content).toBe('private reasoning summary');
+    expect(response.usage).toMatchObject({
+      prompt_tokens: 40,
+      completion_tokens: 5,
+      cached_tokens: 10,
+      cache_strategy: 'deepseek-native',
+    });
+  });
+
+  it('sends DeepSeek thinking controls in provider-native request shape', async () => {
+    let requestBody: unknown;
+    globalThis.fetch = async (_url, init) => {
+      requestBody = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({
+        id: 'cmpl_deepseek',
+        object: 'chat.completion',
+        created: 1,
+        model: 'deepseek-v4-pro',
+        choices: [{
+          index: 0,
+          message: { role: 'assistant', content: 'ok' },
+          finish_reason: 'stop',
+        }],
+        usage: { prompt_cache_hit_tokens: 1, prompt_cache_miss_tokens: 2, completion_tokens: 3 },
+      }));
+    };
+
+    const gateway = new ModelGateway({
+      provider: 'deepseek',
+      baseUrl: 'https://api.deepseek.test',
+      apiKey: 'test',
+      model: 'deepseek-v4-pro',
+      reasoningEffort: 'xhigh',
+    });
+
+    await gateway.chat({ messages: [{ role: 'user', content: 'hello' }] });
+
+    expect(requestBody).toMatchObject({
+      model: 'deepseek-v4-pro',
+      thinking: {
+        type: 'enabled',
+        reasoning_effort: 'max',
+      },
+    });
+    expect(requestBody).not.toHaveProperty('reasoning_effort');
   });
 });
 
