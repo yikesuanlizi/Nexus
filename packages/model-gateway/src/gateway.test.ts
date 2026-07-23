@@ -97,6 +97,18 @@ describe('resolveCacheStrategy', () => {
 });
 
 describe('provider profiles', () => {
+  it('maps OpenAI to Chat Completions until Responses transport is implemented', () => {
+    const profile = getProviderProfile('openai');
+    expect(profile).toMatchObject({
+      id: 'openai',
+      endpointFormat: 'chat_completions',
+      transport: 'openai_chat_completions',
+      reasoningMode: 'none',
+      toolHistoryMode: 'openai_chat',
+      cacheMode: 'openai_prompt_details',
+    });
+  });
+
   it('maps MiniMax to Anthropic Messages with MiniMax reasoning mode', () => {
     const profile = getProviderProfile('minimax');
     expect(profile).toMatchObject({
@@ -254,6 +266,51 @@ describe('MiniMax and DeepSeek provider behavior', () => {
     });
   });
 
+  it('streams MiniMax thinking blocks as reasoning deltas instead of assistant text', async () => {
+    const encoder = new TextEncoder();
+    globalThis.fetch = async () => new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode([
+          'event: message_start',
+          'data: {"type":"message_start","message":{"id":"msg_minimax_stream","type":"message","role":"assistant","model":"MiniMax-M3","content":[],"stop_reason":null,"usage":{"input_tokens":10,"output_tokens":0}}}',
+          '',
+          'event: content_block_start',
+          'data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":"sig"}}',
+          '',
+          'event: content_block_delta',
+          'data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"need a tool"}}',
+          '',
+          'event: content_block_start',
+          'data: {"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}',
+          '',
+          'event: content_block_delta',
+          'data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"final"}}',
+          '',
+          'event: message_stop',
+          'data: {"type":"message_stop"}',
+          '',
+        ].join('\n')));
+        controller.close();
+      },
+    }));
+
+    const gateway = new ModelGateway({
+      provider: 'minimax',
+      baseUrl: 'https://api.minimaxi.com/anthropic/v1',
+      apiKey: 'test',
+      model: 'MiniMax-M3',
+    });
+
+    const events = [];
+    for await (const event of gateway.chatStream({ messages: [{ role: 'user', content: 'hello' }] })) {
+      events.push(event);
+    }
+
+    expect(events).toContainEqual({ type: 'reasoning_delta', content: 'need a tool' });
+    expect(events).toContainEqual({ type: 'delta', content: 'final' });
+    expect(events).not.toContainEqual({ type: 'delta', content: 'need a tool' });
+  });
+
   it('preserves DeepSeek reasoning_content in normalized OpenAI responses', () => {
     const response = convertOpenAIResponseForTest({
       id: 'cmpl_1',
@@ -320,6 +377,41 @@ describe('MiniMax and DeepSeek provider behavior', () => {
       },
     });
     expect(requestBody).not.toHaveProperty('reasoning_effort');
+  });
+
+  it('streams DeepSeek reasoning_content as reasoning deltas instead of assistant text', async () => {
+    globalThis.fetch = async () => new Response(new ReadableStream({
+      start(controller) {
+        const encoder = new TextEncoder();
+        [
+          'data: {"choices":[{"delta":{"reasoning_content":"plan first"}}]}',
+          '',
+          'data: {"choices":[{"delta":{"content":"answer"}}]}',
+          '',
+          'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_cache_hit_tokens":2,"prompt_cache_miss_tokens":3,"completion_tokens":4}}',
+          '',
+          'data: [DONE]',
+          '',
+        ].forEach((line) => controller.enqueue(encoder.encode(`${line}\n`)));
+        controller.close();
+      },
+    }));
+
+    const gateway = new ModelGateway({
+      provider: 'deepseek',
+      baseUrl: 'https://api.deepseek.test',
+      apiKey: 'test',
+      model: 'deepseek-v4-pro',
+    });
+
+    const events = [];
+    for await (const event of gateway.chatStream({ messages: [{ role: 'user', content: 'hello' }] })) {
+      events.push(event);
+    }
+
+    expect(events).toContainEqual({ type: 'reasoning_delta', content: 'plan first' });
+    expect(events).toContainEqual({ type: 'delta', content: 'answer' });
+    expect(events).not.toContainEqual({ type: 'delta', content: 'plan first' });
   });
 });
 

@@ -357,6 +357,14 @@ class TimeoutAfterDeltaModel {
   }
 }
 
+class ReasoningThenAnswerModel {
+  async *chatStream() {
+    yield { type: 'reasoning_delta' as const, content: '先判断是否需要工具。' };
+    yield { type: 'delta' as const, content: '最终回答。' };
+    yield { type: 'done' as const };
+  }
+}
+
 class PlaceholderToolTextModel {
   calls = 0;
 
@@ -420,6 +428,86 @@ class ToolCallingModel {
     }
 
     yield { type: 'delta' as const, content: 'ok' };
+    yield { type: 'done' as const };
+  }
+}
+
+class AnthropicToolCallingModel {
+  calls: Array<Array<{ role: string; content?: unknown; providerFrame?: unknown; tool_call_id?: string }>> = [];
+
+  getModelId(): string {
+    return 'MiniMax-M3';
+  }
+
+  getProfile() {
+    return {
+      id: 'minimax',
+      displayName: 'MiniMax',
+      baseUrl: 'https://api.minimaxi.com/anthropic/v1',
+      apiKeyEnvVars: ['MINIMAX_API_KEY'],
+      endpointFormat: 'anthropic_messages',
+      transport: 'anthropic_messages',
+      toolHistoryMode: 'anthropic_blocks',
+      reasoningMode: 'minimax_anthropic_thinking',
+      cacheMode: 'anthropic_cache_control',
+    };
+  }
+
+  async *chatStream(req: { messages: Array<{ role: string; content?: unknown; providerFrame?: unknown; tool_call_id?: string }> }) {
+    this.calls.push(req.messages);
+    const toolResults = req.messages.filter((message) => message.role === 'tool');
+    if (toolResults.length === 0) {
+      yield { type: 'reasoning_delta' as const, content: '需要读取文件。' };
+      yield {
+        type: 'tool_call_end' as const,
+        id: 'toolu_read_1',
+        name: 'read_file',
+        arguments: '{"path":"README.md"}',
+      };
+      yield { type: 'done' as const };
+      return;
+    }
+    yield { type: 'delta' as const, content: '读完了。' };
+    yield { type: 'done' as const };
+  }
+}
+
+class DeepSeekReasoningToolModel {
+  calls: Array<Array<{ role: string; content?: unknown; reasoning_content?: string; tool_calls?: unknown; tool_call_id?: string }>> = [];
+
+  getModelId(): string {
+    return 'deepseek-v4-pro';
+  }
+
+  getProfile() {
+    return {
+      id: 'deepseek',
+      displayName: 'DeepSeek',
+      baseUrl: 'https://api.deepseek.com/v1',
+      apiKeyEnvVars: ['DEEPSEEK_API_KEY'],
+      endpointFormat: 'chat_completions',
+      transport: 'openai_chat_completions',
+      toolHistoryMode: 'openai_chat',
+      reasoningMode: 'deepseek_reasoning_content',
+      cacheMode: 'deepseek_native',
+    };
+  }
+
+  async *chatStream(req: { messages: Array<{ role: string; content?: unknown; reasoning_content?: string; tool_calls?: unknown; tool_call_id?: string }> }) {
+    this.calls.push(req.messages);
+    const toolResults = req.messages.filter((message) => message.role === 'tool');
+    if (toolResults.length === 0) {
+      yield { type: 'reasoning_delta' as const, content: '先决定读取时间。' };
+      yield {
+        type: 'tool_call_end' as const,
+        id: 'call_current_time',
+        name: 'current_time',
+        arguments: '{}',
+      };
+      yield { type: 'done' as const };
+      return;
+    }
+    yield { type: 'delta' as const, content: '时间读完了。' };
     yield { type: 'done' as const };
   }
 }
@@ -1252,6 +1340,36 @@ describe('AgentLoop runTurn failure handling', () => {
     const serialized = JSON.stringify(retryMessages);
     expect(serialized).not.toContain('[Tool read_file completed]');
     expect(serialized).toContain('plain-text tool placeholder was discarded');
+  });
+
+  it('persists reasoning deltas separately from assistant text', async () => {
+    const threadId = 'thread-reasoning-delta';
+    const store = new FakeStore(threadId, 'previous-turn');
+    const agent = new AgentLoop({
+      workspaceRoot: process.cwd(),
+      sandbox: { level: 'workspace_write', workspaceRoot: process.cwd() },
+      model: new ReasoningThenAnswerModel() as never,
+      store,
+      locale: 'zh',
+    });
+
+    const result = await agent.runTurn(threadId, { type: 'text', text: '继续' });
+
+    expect(result.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'reasoning',
+        text: '先判断是否需要工具。',
+      }),
+      expect.objectContaining({
+        type: 'agent_message',
+        text: '最终回答。',
+      }),
+    ]));
+    expect(result.items.some((item) => item.type === 'agent_message' && item.text.includes('先判断'))).toBe(false);
+    expect(store.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'reasoning', text: '先判断是否需要工具。' }),
+      expect.objectContaining({ type: 'agent_message', text: '最终回答。' }),
+    ]));
   });
 
   it('persists an error item when the model stream fails', async () => {
@@ -2668,6 +2786,108 @@ describe('AgentLoop message history', () => {
         }],
       },
     });
+  });
+
+  it('persists Anthropic provider frames for MiniMax tool turns and replays them on the next model call', async () => {
+    const threadId = 'thread-anthropic-provider-frame';
+    const store = new FakeStore(threadId, 'previous-turn');
+    const model = new AnthropicToolCallingModel();
+    const tools = new ToolRegistry();
+    tools.register({
+      name: 'read_file',
+      description: 'Read a file',
+      requiredPolicy: 'readonly',
+      requiresApproval: false,
+      parameters: {
+        type: 'object',
+        properties: { path: { type: 'string' } },
+        required: ['path'],
+        additionalProperties: false,
+      },
+      execute: async () => ({ output: 'file text', status: 'completed' as const }),
+    });
+    const agent = new AgentLoop({
+      workspaceRoot: process.cwd(),
+      sandbox: { level: 'readonly', workspaceRoot: process.cwd() },
+      model: model as never,
+      store,
+      tools,
+      locale: 'zh',
+    });
+
+    await agent.runTurn(threadId, { type: 'text', text: '读 README' });
+
+    const assistantFrame = store.items.find((item) => item.type === 'agent_message' && item.providerFrame?.format === 'anthropic_messages');
+    const reasoningIndex = store.items.findIndex((item) => item.type === 'reasoning' && item.text === '需要读取文件。');
+    const assistantFrameIndex = store.items.findIndex((item) => item === assistantFrame);
+    expect(assistantFrame).toMatchObject({
+      type: 'agent_message',
+      providerFrame: {
+        format: 'anthropic_messages',
+        contentBlocks: expect.arrayContaining([
+          expect.objectContaining({ type: 'thinking', thinking: '需要读取文件。' }),
+          expect.objectContaining({ type: 'tool_use', id: 'toolu_read_1', name: 'read_file' }),
+        ]),
+      },
+    });
+    expect(reasoningIndex).toBeGreaterThanOrEqual(0);
+    expect(reasoningIndex).toBeLessThan(assistantFrameIndex);
+    expect(model.calls[1]).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        role: 'assistant',
+        providerFrame: expect.objectContaining({
+          format: 'anthropic_messages',
+          contentBlocks: expect.arrayContaining([
+            expect.objectContaining({ type: 'tool_use', id: 'toolu_read_1' }),
+          ]),
+        }),
+      }),
+      expect.objectContaining({
+        role: 'tool',
+        tool_call_id: 'toolu_read_1',
+      }),
+    ]));
+  });
+
+  it('persists DeepSeek reasoning_content in OpenAI tool history and replays it on the next model call', async () => {
+    const threadId = 'thread-deepseek-reasoning-history';
+    const store = new FakeStore(threadId, 'previous-turn');
+    const model = new DeepSeekReasoningToolModel();
+    const agent = new AgentLoop({
+      workspaceRoot: process.cwd(),
+      sandbox: { level: 'workspace_write', workspaceRoot: process.cwd() },
+      model: model as never,
+      store,
+      locale: 'zh',
+    });
+
+    await agent.runTurn(threadId, { type: 'text', text: '现在几点' });
+
+    const assistantFrame = store.items.find((item) => item.type === 'agent_message' && item.providerFrame?.format === 'openai_chat');
+    const reasoningIndex = store.items.findIndex((item) => item.type === 'reasoning' && item.text === '先决定读取时间。');
+    const assistantFrameIndex = store.items.findIndex((item) => item === assistantFrame);
+    expect(assistantFrame).toMatchObject({
+      type: 'agent_message',
+      providerFrame: {
+        format: 'openai_chat',
+        content: null,
+        reasoningContent: '先决定读取时间。',
+        toolCalls: [expect.objectContaining({ id: 'call_current_time' })],
+      },
+    });
+    expect(reasoningIndex).toBeGreaterThanOrEqual(0);
+    expect(reasoningIndex).toBeLessThan(assistantFrameIndex);
+    expect(model.calls[1]).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        role: 'assistant',
+        reasoning_content: '先决定读取时间。',
+        tool_calls: [expect.objectContaining({ id: 'call_current_time' })],
+      }),
+      expect.objectContaining({
+        role: 'tool',
+        tool_call_id: 'call_current_time',
+      }),
+    ]));
   });
 
   it('replays completed tools structurally on the next turn', async () => {

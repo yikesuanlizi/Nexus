@@ -47,10 +47,10 @@ const KNOWN_PROFILES: Record<string, Omit<ProviderProfile, 'baseUrl' | 'apiKeyEn
   openai: {
     id: 'openai',
     displayName: 'OpenAI',
-    endpointFormat: 'responses',
-    transport: 'openai_responses',
-    toolHistoryMode: 'openai_responses',
-    reasoningMode: 'openai_responses_items',
+    endpointFormat: 'chat_completions',
+    transport: 'openai_chat_completions',
+    toolHistoryMode: 'openai_chat',
+    reasoningMode: 'none',
     cacheMode: 'openai_prompt_details',
   },
   deepseek: {

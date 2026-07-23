@@ -2312,11 +2312,18 @@ export class AgentLoop {
 
       // Process tool calls
       // 处理工具调用
-      messages.push({
+      const assistantToolMessage: ChatMessage = {
         role: 'assistant',
         content: message.content ?? null,
         tool_calls: message.tool_calls,
-      });
+      };
+      if (message.reasoning_content) {
+        assistantToolMessage.reasoning_content = message.reasoning_content;
+      }
+      if (message.providerFrame?.format === 'anthropic_messages') {
+        assistantToolMessage.providerFrame = message.providerFrame;
+      }
+      messages.push(assistantToolMessage);
 
       const toolResults = await this.executeToolCallBatch(
         threadId,
@@ -2453,8 +2460,10 @@ export class AgentLoop {
     try {
       response = await this.runtimeMiddleware.wrapModel(runtimeContext, modelRequest, async (request) => {
       let content = '';
+      let reasoningContent = '';
       let usage: Usage | null = null;
       let agentItem: ThreadItem | null = null;
+      let reasoningItem: ThreadItem | null = null;
       const toolCalls = new Map<string, ToolCall>();
       const requestSignal = request.signal ?? signal;
 
@@ -2502,6 +2511,22 @@ export class AgentLoop {
             delta: event.content,
           });
           this.emit({ type: 'item.updated', threadId, turnId, item: agentItem });
+        } else if (event.type === 'reasoning_delta') {
+          if (!reasoningItem) {
+            reasoningItem = {
+              id: generateItemId(turnId, collectedItems.length),
+              type: 'reasoning',
+              turnId,
+              text: '',
+              timestamp: new Date().toISOString(),
+            };
+            collectedItems.push(reasoningItem);
+            this.emit({ type: 'item.started', threadId, turnId, item: reasoningItem });
+            void this.appendItemRunMonitorEvent(threadId, turnId, reasoningItem, 'item.started');
+          }
+          reasoningContent += event.content;
+          reasoningItem.text = reasoningContent;
+          this.emit({ type: 'item.updated', threadId, turnId, item: reasoningItem });
         } else if (event.type === 'tool_call_start' || event.type === 'tool_call_delta') {
           const id = event.id || `tool_${toolCalls.size}`;
           const existing = toolCalls.get(id) ?? {
@@ -2540,6 +2565,16 @@ export class AgentLoop {
         }
       }
       } catch (error) {
+        if (reasoningItem && reasoningContent.trim() && (isRecoverableStreamError(error) || isTurnCancelledError(error))) {
+          const reasoningValidation = validateThreadItemsForPersistence([reasoningItem]);
+          if (reasoningValidation.ok) {
+            this.emit({ type: 'item.completed', threadId, turnId, item: reasoningItem });
+            void this.appendItemRunMonitorEvent(threadId, turnId, reasoningItem, 'item.completed');
+            await this.persistItems(threadId, [reasoningItem]);
+          } else {
+            this.discardTransientItem(threadId, turnId, collectedItems, reasoningItem.id);
+          }
+        }
         if (agentItem && content.trim() && (isRecoverableStreamError(error) || isTurnCancelledError(error))) {
           const partialValidation = validateThreadItemsForPersistence([agentItem]);
           if (partialValidation.ok) {
@@ -2571,13 +2606,44 @@ export class AgentLoop {
       const plainTextToolPlaceholder = agentItem && toolCalls.size === 0 && isTextToolPlaceholder(content);
       if (plainTextToolPlaceholder) {
         this.discardTransientItem(threadId, turnId, collectedItems, agentItem?.id);
-      } else if (agentItem) {
+        if (reasoningItem) {
+          this.discardTransientItem(threadId, turnId, collectedItems, reasoningItem.id);
+        }
+      } else {
+        if (reasoningItem) {
+          const reasoningValidation = validateThreadItemsForPersistence([reasoningItem]);
+          if (!reasoningValidation.ok) {
+            this.discardTransientItem(threadId, turnId, collectedItems, reasoningItem.id);
+            this.emit({
+              type: 'model.output.rejected',
+              threadId,
+              turnId,
+              message: reasoningValidation.error.message,
+              error: { message: reasoningValidation.error.message, info: reasoningValidation.error.info },
+            });
+            await this.appendRunMonitorEvent(turnId, {
+              category: 'model',
+              type: 'model.output.rejected',
+              level: 'warning',
+              message: reasoningValidation.error.message,
+              metadata: { info: reasoningValidation.error.info },
+            });
+            throw reasoningValidation.error;
+          }
+          this.emit({ type: 'item.completed', threadId, turnId, item: reasoningItem });
+          void this.appendItemRunMonitorEvent(threadId, turnId, reasoningItem, 'item.completed');
+          await this.persistItems(threadId, [reasoningItem]);
+        }
+      }
+
+      if (!plainTextToolPlaceholder && agentItem) {
         if (toolCalls.size > 0) {
-          agentItem.providerFrame = {
-            format: 'openai_chat',
-            content: content || null,
-            toolCalls: [...toolCalls.values()],
-          };
+          agentItem.providerFrame = buildProviderFrameForToolCalls(
+            providerDiagnostics.toolHistoryMode,
+            content || null,
+            reasoningContent,
+            [...toolCalls.values()],
+          );
         }
         const validation = validateThreadItemsForPersistence([agentItem]);
         if (!validation.ok) {
@@ -2607,11 +2673,12 @@ export class AgentLoop {
           type: 'agent_message',
           turnId,
           text: '',
-          providerFrame: {
-            format: 'openai_chat',
-            content: null,
-            toolCalls: [...toolCalls.values()],
-          },
+          providerFrame: buildProviderFrameForToolCalls(
+            providerDiagnostics.toolHistoryMode,
+            null,
+            reasoningContent,
+            [...toolCalls.values()],
+          ),
           timestamp: new Date().toISOString(),
         };
         collectedItems.push(assistantFrameItem);
@@ -2626,14 +2693,29 @@ export class AgentLoop {
         throw new Error(this.i18n.t('runtime.no_response'));
       }
 
-      return {
-        message: {
-          role: 'assistant',
-          content,
-          tool_calls: toolCalls.size > 0 ? [...toolCalls.values()] : undefined,
-        },
-        usage,
+      const assistantMessage: ChatMessage = {
+        role: 'assistant',
+        content,
+        tool_calls: toolCalls.size > 0 ? [...toolCalls.values()] : undefined,
       };
+      if (reasoningContent.trim()) {
+        assistantMessage.reasoning_content = reasoningContent;
+      }
+      if (toolCalls.size > 0 && providerDiagnostics.toolHistoryMode === 'anthropic_blocks') {
+        const providerFrame = buildProviderFrameForToolCalls(
+          providerDiagnostics.toolHistoryMode,
+          content || null,
+          reasoningContent,
+          [...toolCalls.values()],
+        );
+        if (providerFrame.format === 'anthropic_messages') {
+          assistantMessage.providerFrame = {
+            format: 'anthropic_messages',
+            contentBlocks: providerFrame.contentBlocks as NonNullable<ChatMessage['providerFrame']>['contentBlocks'],
+          };
+        }
+      }
+      return { message: assistantMessage, usage };
       });
     } catch (error) {
       await this.appendRunMonitorEvent(turnId, {
@@ -5763,6 +5845,17 @@ function threadItemsToModelMessages(items: ThreadItem[]): ChatMessage[] {
 }
 
 function itemToStructuredToolHistoryMessages(item: ThreadItem): ChatMessage[] | null {
+  if (item.type === 'agent_message' && item.providerFrame?.format === 'anthropic_messages') {
+    return [{
+      role: 'assistant',
+      content: item.text,
+      providerFrame: {
+        format: 'anthropic_messages',
+        contentBlocks: item.providerFrame.contentBlocks as NonNullable<ChatMessage['providerFrame']>['contentBlocks'],
+      },
+    }];
+  }
+
   if (item.type === 'agent_message' && item.providerFrame?.format === 'openai_chat') {
     const toolCalls = normalizeOpenAiToolCalls(item.providerFrame.toolCalls);
     const message: ChatMessage = {
@@ -5800,6 +5893,52 @@ function itemToStructuredToolHistoryMessages(item: ThreadItem): ChatMessage[] | 
     tool_call_id: toolCallId,
     content,
   }];
+}
+
+function buildProviderFrameForToolCalls(
+  toolHistoryMode: string,
+  content: string | null,
+  reasoningContent: string,
+  toolCalls: ToolCall[],
+): NonNullable<Extract<ThreadItem, { type: 'agent_message' }>['providerFrame']> {
+  if (toolHistoryMode === 'anthropic_blocks') {
+    const contentBlocks: unknown[] = [];
+    if (reasoningContent.trim()) {
+      contentBlocks.push({ type: 'thinking', thinking: reasoningContent });
+    }
+    if (content?.trim()) {
+      contentBlocks.push({ type: 'text', text: content });
+    }
+    for (const toolCall of toolCalls) {
+      contentBlocks.push({
+        type: 'tool_use',
+        id: toolCall.id,
+        name: toolCall.function.name,
+        input: parseToolCallArguments(toolCall.function.arguments),
+      });
+    }
+    return {
+      format: 'anthropic_messages',
+      contentBlocks,
+    };
+  }
+  return {
+    format: 'openai_chat',
+    content,
+    toolCalls,
+    ...(reasoningContent.trim() ? { reasoningContent } : {}),
+  };
+}
+
+function parseToolCallArguments(argumentsText: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(argumentsText);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : { _value: parsed };
+  } catch {
+    return { _raw: argumentsText };
+  }
 }
 
 function normalizeOpenAiToolCalls(value: unknown[] | undefined): ToolCall[] {

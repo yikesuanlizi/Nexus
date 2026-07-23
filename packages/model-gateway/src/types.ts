@@ -98,6 +98,10 @@ export interface ChatMessage {
   tool_call_id?: string;                  // tool 消息对应的工具调用 id
   reasoning_content?: string;             // DeepSeek/Moonshot 等 OpenAI-compatible 推理回放字段
   reasoning_details?: unknown[];          // MiniMax/OpenRouter 等兼容端点的结构化推理字段
+  providerFrame?: {
+    format: 'anthropic_messages';
+    contentBlocks: AnthropicContentBlock[];
+  };
 }
 
 // 多模态内容：文本或图片
@@ -200,6 +204,8 @@ export interface AnthropicMessage {
 // Anthropic 内容块：text / tool_use / tool_result 三种
 export type AnthropicContentBlock =
   | AnthropicTextBlock
+  | { type: 'thinking'; thinking: string; signature?: string }
+  | { type: 'redacted_thinking'; data: string }
   | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
   | { type: 'tool_result'; tool_use_id: string; content: string };
 
@@ -252,9 +258,11 @@ export interface AnthropicSSEEvent {
   content_block?: AnthropicContentBlock;
   index?: number;
   delta?: {
-    type: 'text_delta' | 'input_json_delta';
+    type: 'text_delta' | 'input_json_delta' | 'thinking_delta' | 'signature_delta';
     text?: string;
     partial_json?: string;
+    thinking?: string;
+    signature?: string;
   };
   usage?: {
     input_tokens?: number;
@@ -268,6 +276,7 @@ export interface AnthropicSSEEvent {
 // 统一流式事件：上层不必区分 OpenAI / Anthropic
 export type StreamEvent =
   | { type: 'delta'; content: string }                                           // 文本增量
+  | { type: 'reasoning_delta'; content: string }                                 // 推理/思考增量
   | { type: 'tool_call_start'; id: string; name: string }                        // 工具调用开始
   | { type: 'tool_call_delta'; id: string; arguments: string }                   // 工具参数增量
   | { type: 'tool_call_end'; id: string; name: string; arguments: string }       // 工具调用结束

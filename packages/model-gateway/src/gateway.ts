@@ -486,6 +486,16 @@ function convertToAnthropic(
   for (const msg of messages) {
     if (msg.role === 'system') continue;
 
+    if (msg.role === 'assistant' && msg.providerFrame?.format === 'anthropic_messages') {
+      const last = anthroMessages[anthroMessages.length - 1];
+      if (last && last.role === 'assistant') {
+        last.content.push(...msg.providerFrame.contentBlocks);
+      } else {
+        anthroMessages.push({ role: 'assistant', content: [...msg.providerFrame.contentBlocks] });
+      }
+      continue;
+    }
+
     const blocks: AnthropicContentBlock[] = [];
 
     // 文本内容
@@ -680,6 +690,9 @@ async function* parseOpenAIStream(
           const chunk = JSON.parse(data);
           for (const choice of chunk.choices ?? []) {
             const delta = choice.delta ?? {};
+            if (delta.reasoning_content) {
+              yield { type: 'reasoning_delta', content: delta.reasoning_content };
+            }
             if (delta.content) yield { type: 'delta', content: delta.content };
             if (delta.tool_calls) {
               for (const tc of delta.tool_calls) {
@@ -717,6 +730,7 @@ async function* parseAnthropicStream(
   const decoder = new TextDecoder();
   let buffer = '';
   const toolCalls: Map<number, { id: string; name: string; args: string }> = new Map();
+  const blockTypes: Map<number, AnthropicContentBlock['type']> = new Map();
   let currentToolIndex = 0;
   // 用 message_start / message_delta 累积 usage
   let usage: {
@@ -756,6 +770,9 @@ async function* parseAnthropicStream(
             case 'content_block_start': {
               // 工具调用开始
               const block = event.content_block;
+              if (block && typeof event.index === 'number') {
+                blockTypes.set(event.index, block.type);
+              }
               if (block?.type === 'tool_use') {
                 const idx = currentToolIndex++;
                 toolCalls.set(idx, { id: block.id, name: block.name, args: '' });
@@ -768,7 +785,13 @@ async function* parseAnthropicStream(
               // 文本或工具参数增量
               const delta = event.delta;
               if (!delta) break;
-              if (delta.type === 'text_delta' && delta.text) {
+              const blockType = typeof event.index === 'number' ? blockTypes.get(event.index) : undefined;
+              if (delta.type === 'thinking_delta' && delta.thinking) {
+                yield { type: 'reasoning_delta', content: delta.thinking };
+              }
+              if (delta.type === 'text_delta' && delta.text && blockType === 'thinking') {
+                yield { type: 'reasoning_delta', content: delta.text };
+              } else if (delta.type === 'text_delta' && delta.text) {
                 yield { type: 'delta', content: delta.text };
               }
               if (delta.type === 'input_json_delta' && delta.partial_json) {
