@@ -29,7 +29,7 @@ export function useToastNotice(timeoutMs = 1800) {
 
 export function useRightPaneSizing(visible: boolean, mode: 'standard' | 'workflow' = 'standard') {
   const [width, setWidth] = useState(() => {
-    if (mode !== 'workflow') return 348;
+    if (mode !== 'workflow') return defaultStandardPaneWidth();
     const stored = Number(localStorage.getItem('nexus.workflowPaneWidth') ?? 0);
     return clampRightPaneWidth(stored || defaultWorkflowPaneWidth(), WORKFLOW_RIGHT_PANE_MIN);
   });
@@ -83,6 +83,10 @@ function rightPaneAvailableMax(): number {
 
 function defaultWorkflowPaneWidth(): number {
   return Math.round(Math.max(620, window.innerWidth * 0.5));
+}
+
+function defaultStandardPaneWidth(): number {
+  return Math.round(Math.min(1080, Math.max(620, window.innerWidth * 0.5)));
 }
 
 function clampRightPaneWidth(width: number, min: number): number {
