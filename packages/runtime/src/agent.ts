@@ -2259,15 +2259,18 @@ export class AgentLoop {
             message: 'Model emitted a plain-text tool call placeholder; requesting a structured retry',
             metadata: { iteration },
           });
-          messages.push({
-            role: 'assistant',
-            content: message.content ?? '',
+          await this.appendRunMonitorEvent(turnId, {
+            category: 'model',
+            type: 'model.output.discarded',
+            level: 'warning',
+            message: 'plain-text tool placeholder was discarded before retry',
+            metadata: { iteration, reason: 'plain_text_tool_placeholder' },
           });
           messages.push({
             role: 'user',
             content: this.config.locale === 'zh'
-              ? '你刚才把工具调用写成了普通文本占位符。不要输出类似 [Tool xxx]、<|tool_calls|>、DSML 的文本工具调用。如果需要工具，请使用结构化 tool call；如果不需要工具，请直接给出完整最终回答。'
-              : 'You wrote a tool call as plain text. Do not output placeholders like [Tool xxx], <|tool_calls|>, or DSML. If you need a tool, use a structured tool call; otherwise provide the complete final answer directly.',
+              ? 'plain-text tool placeholder was discarded before retry。上一条模型输出因为把工具调用协议写成普通文本，已被系统丢弃。不要复述该文本；需要工具时只能使用结构化 tool call，不需要工具时直接给最终回答。'
+              : 'plain-text tool placeholder was discarded before retry. The previous model output was discarded because it wrote a tool-call protocol as plain text. Do not repeat that text. Use a structured tool call if a tool is needed; otherwise provide the final answer directly.',
           });
           continue;
         }

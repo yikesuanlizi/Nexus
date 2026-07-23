@@ -372,6 +372,21 @@ class PlaceholderToolTextModel {
   }
 }
 
+class PlaceholderToolTextCapturingModel {
+  calls: Array<Array<{ role: string; content?: unknown }>> = [];
+
+  async *chatStream(req: { messages: Array<{ role: string; content?: unknown }> }) {
+    this.calls.push(req.messages);
+    if (this.calls.length === 1) {
+      yield { type: 'delta' as const, content: '我来读取文件。[Tool read_file completed]\n{"output":"bad"}' };
+      yield { type: 'done' as const };
+      return;
+    }
+    yield { type: 'delta' as const, content: '已修正，直接回答。' };
+    yield { type: 'done' as const };
+  }
+}
+
 class DsmlToolTextModel {
   calls = 0;
 
@@ -1213,6 +1228,30 @@ describe('AgentLoop runTurn failure handling', () => {
     expect([...result.items].reverse().find((item) => item.type === 'agent_message')).toMatchObject({
       text: '这是整理后的正常回复。',
     });
+  });
+
+  it('does not push plain-text tool placeholder output into retry history', async () => {
+    const threadId = 'thread-placeholder-tool-text-retry-history';
+    const store = new FakeStore(threadId, 'previous-turn');
+    const model = new PlaceholderToolTextCapturingModel();
+    const agent = new AgentLoop({
+      workspaceRoot: process.cwd(),
+      sandbox: { level: 'workspace_write', workspaceRoot: process.cwd() },
+      model: model as never,
+      store,
+      locale: 'zh',
+    });
+
+    const result = await agent.runTurn(threadId, { type: 'text', text: '继续' });
+
+    expect(result.items.some((item) =>
+      item.type === 'agent_message' &&
+      item.text.includes('[Tool read_file completed]')
+    )).toBe(false);
+    const retryMessages = model.calls[1] ?? [];
+    const serialized = JSON.stringify(retryMessages);
+    expect(serialized).not.toContain('[Tool read_file completed]');
+    expect(serialized).toContain('plain-text tool placeholder was discarded');
   });
 
   it('persists an error item when the model stream fails', async () => {
