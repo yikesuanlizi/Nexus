@@ -81,6 +81,28 @@ export function WorkspaceWorkbench({
     }
   }, [activeTab, externalPreviewRequest?.path]);
 
+  useEffect(() => {
+    if (filesPanelMounted || !workspaceRoot) return;
+    const idleWindow = window as Window & {
+      cancelIdleCallback?: (id: number) => void;
+      requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+    };
+    let timeoutId: number | undefined;
+    let idleId: number | undefined;
+    const mountFilesPanel = () => setFilesPanelMounted(true);
+
+    if (idleWindow.requestIdleCallback) {
+      idleId = idleWindow.requestIdleCallback(mountFilesPanel, { timeout: 1400 });
+    } else {
+      timeoutId = window.setTimeout(mountFilesPanel, 700);
+    }
+
+    return () => {
+      if (idleId !== undefined) idleWindow.cancelIdleCallback?.(idleId);
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+    };
+  }, [filesPanelMounted, workspaceRoot]);
+
   const workbench = useMemo(() => buildAgentWorkbench({
     mainThreadId: mainAgentThreadId,
     threadChildren,

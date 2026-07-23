@@ -31,7 +31,6 @@ describe('ComposerBar', () => {
       modelPresets: [],
       openRemoteAssistants: vi.fn(),
       removeImage: vi.fn(),
-      rightPaneTab: 'activity',
       rightPaneVisible: true,
       selectSlashOption: vi.fn(),
       setActiveSlashOption: vi.fn(),
@@ -85,6 +84,15 @@ describe('ComposerBar', () => {
     expect(idleHtml).toContain('class="sendButton"');
     expect(busyHtml).toContain('class="sendButton busy stopButton"');
     expect(planningHtml).toContain('class="sendButton busy planningButton"');
+  });
+
+  it('does not resize the composer based on the selected right-pane tab', () => {
+    const source = readFileSync(join(here, 'ComposerBar.tsx'), 'utf-8');
+    const html = renderComposer({ rightPaneVisible: true });
+
+    expect(html).toContain('balancedWidth');
+    expect(source).not.toContain("rightPaneTab === 'files'");
+    expect(source).not.toContain('wideWidth');
   });
 
   it('keeps composer history and draft as UX-only local storage', () => {

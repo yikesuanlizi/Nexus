@@ -7,7 +7,6 @@ import { resizeTextareaToContent } from '../shared/composer.js';
 import { t } from '../shared/i18n.js';
 import { DropdownSelect } from './DropdownSelect.js';
 import { Icon } from './Icon.js';
-import type { RightPaneTab } from './RightPane.js';
 import type { BotConfig, BotStatus, ModelPreset } from '../shared/types.js';
 
 export type RemoteAssistantPlatform = 'weixin' | 'dingtalk';
@@ -50,7 +49,6 @@ export function ComposerBar({
   modelPresets,
   openRemoteAssistants,
   removeImage,
-  rightPaneTab,
   rightPaneVisible,
   selectSlashOption,
   setActiveSlashOption,
@@ -82,7 +80,6 @@ export function ComposerBar({
   modelPresets: ModelPreset[];
   openRemoteAssistants: (platform: RemoteAssistantPlatform) => void;
   removeImage: (index: number) => void;
-  rightPaneTab: RightPaneTab;
   rightPaneVisible: boolean;
   selectSlashOption: (option: PaletteOption) => void;
   setActiveSlashOption: (option: SlashCommandOption | null) => void;
@@ -191,7 +188,7 @@ export function ComposerBar({
 
   return (
     <footer
-      className={['composer', draggingImage ? 'dragging' : '', !rightPaneVisible ? 'compactWidth' : rightPaneTab === 'files' ? 'wideWidth' : 'balancedWidth'].filter(Boolean).join(' ')}
+      className={['composer', draggingImage ? 'dragging' : '', !rightPaneVisible ? 'compactWidth' : 'balancedWidth'].filter(Boolean).join(' ')}
       onDragEnter={(event) => { event.preventDefault(); setDraggingImage(true); }}
       onDragOver={(event) => event.preventDefault()}
       onDragLeave={() => setDraggingImage(false)}

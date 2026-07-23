@@ -133,13 +133,29 @@ describe('RightPane', () => {
     const styles = readFileSync(join(here, '..', 'styles.css'), 'utf-8');
 
     expect(workbenchSource).toContain('const [filesPanelMounted, setFilesPanelMounted]');
+    expect(workbenchSource).toContain('requestIdleCallback');
     expect(workbenchSource).toContain("if (activeTab === 'files' || externalPreviewRequest?.path)");
     expect(workbenchSource).toContain("const shouldRenderFilesPanel = filesPanelMounted || activeTab === 'files' || Boolean(externalPreviewRequest?.path)");
     expect(workbenchSource).toContain("aria-hidden={activeTab !== 'files'}");
     expect(workbenchSource).toContain("workbenchPanel${tab === activeTab ? ' active' : ' inactive'}");
     expect(styles).toContain('.workbenchPanel.inactive');
-    expect(styles).toContain('display: none;');
+    expect(styles).toContain('position: absolute;');
+    expect(styles).toContain('visibility: hidden;');
+    expect(styles).toContain('opacity: 0;');
+    expect(styles).not.toContain('.workbenchPanel.inactive {\n  display: none;');
     expect(styles).toContain('.workbenchFiles.workbenchPanel');
     expect(styles).toContain('contain: layout paint style;');
+  });
+
+  it('keeps workbench tab switching local to the right pane to avoid full app reflow', () => {
+    const mainSource = readFileSync(join(here, '..', 'main.tsx'), 'utf-8');
+    const rightPaneSource = readFileSync(join(here, 'RightPane.tsx'), 'utf-8');
+
+    expect(rightPaneSource).toContain('useState<RightPaneTab>');
+    expect(rightPaneSource).toContain("localStorage.getItem('nexus.rightPane.tab')");
+    expect(rightPaneSource).toContain("localStorage.setItem('nexus.rightPane.tab', tab)");
+    expect(mainSource).not.toContain('setRightPaneTab');
+    expect(mainSource).not.toContain("rightPaneTab === 'files'");
+    expect(mainSource).not.toContain('onTabChange={setRightPaneTab}');
   });
 });

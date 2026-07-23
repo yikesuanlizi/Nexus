@@ -1,3 +1,4 @@
+import { useCallback, useState } from 'react';
 import type { Locale } from '../config/config.js';
 import type { ThreadChildInfo, ThreadItem, ThreadMeta } from '../shared/types.js';
 import type { TaskRuntimeMonitorState } from '../features/monitor/taskRuntimeMonitor.js';
@@ -9,7 +10,7 @@ import type { WorkbenchTab } from './workbench/WorkbenchTabs.js';
 export type RightPaneTab = WorkbenchTab;
 
 export function RightPane({
-  activeTab,
+  activeTab: initialActiveTab,
   activeThreadId,
   activeThreadTitle,
   activeThread,
@@ -33,7 +34,7 @@ export function RightPane({
   responsiveMode,
   onCloseRequest,
 }: {
-  activeTab: RightPaneTab;
+  activeTab?: RightPaneTab;
   activeThreadId: string;
   activeThreadTitle: string;
   activeThread?: ThreadMeta | null;
@@ -41,7 +42,7 @@ export function RightPane({
   threadChildren: ThreadChildInfo[];
   locale: Locale;
   workspaceRoot: string;
-  onTabChange(tab: RightPaneTab): void;
+  onTabChange?(tab: RightPaneTab): void;
   onToggleMemoryExcluded?(excluded: boolean): void;
   externalPreviewRequest?: ExternalPreviewRequest | null;
   taskRuntimeState?: TaskRuntimeMonitorState;
@@ -60,6 +61,15 @@ export function RightPane({
   void activeThreadTitle;
   void taskRuntimeState;
   void recentTraces;
+  const [activeTab, setActiveTab] = useState<RightPaneTab>(() => initialActiveTab ?? readStoredRightPaneTab());
+
+  const handleTabChange = useCallback((tab: RightPaneTab) => {
+    setActiveTab(tab);
+    try {
+      localStorage.setItem('nexus.rightPane.tab', tab);
+    } catch { /* best-effort local UI preference */ }
+    onTabChange?.(tab);
+  }, [onTabChange]);
 
   return (
     <WorkspaceWorkbench
@@ -75,7 +85,7 @@ export function RightPane({
       workspaceRoot={workspaceRoot}
       externalPreviewRequest={externalPreviewRequest}
       activeTab={activeTab}
-      onTabChange={onTabChange}
+      onTabChange={handleTabChange}
       onJumpToMonitor={onJumpToMonitor}
       onInterrupt={onInterrupt}
       onResume={onResume}
@@ -85,4 +95,13 @@ export function RightPane({
       onCloseRequest={onCloseRequest}
     />
   );
+}
+
+function readStoredRightPaneTab(): RightPaneTab {
+  try {
+    const stored = localStorage.getItem('nexus.rightPane.tab');
+    if (stored === 'files' || stored === 'agents' || stored === 'activity') return stored;
+    if (stored === 'status') return 'activity';
+  } catch { /* best-effort local UI preference */ }
+  return 'activity';
 }
