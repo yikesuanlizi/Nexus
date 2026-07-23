@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { estimateChatTokens, ModelGateway, normalizeUsage, resolveCacheStrategy } from './gateway.js';
+import { getProviderProfile, resolveProviderProfile } from './providerProfiles.js';
 
 const originalFetch = globalThis.fetch;
 
@@ -81,6 +82,44 @@ describe('resolveCacheStrategy', () => {
   it('allows explicit cache strategy overrides including disabling cache accounting', () => {
     expect(resolveCacheStrategy({ provider: 'deepseek', model: 'deepseek-chat', cacheStrategy: 'openai-compatible' })).toBe('openai-compatible');
     expect(resolveCacheStrategy({ provider: 'deepseek', model: 'deepseek-chat', cacheStrategy: 'none' })).toBe('none');
+  });
+});
+
+describe('provider profiles', () => {
+  it('maps MiniMax to Anthropic Messages with MiniMax reasoning mode', () => {
+    const profile = getProviderProfile('minimax');
+    expect(profile).toMatchObject({
+      id: 'minimax',
+      endpointFormat: 'anthropic_messages',
+      transport: 'anthropic_messages',
+      reasoningMode: 'minimax_anthropic_thinking',
+      toolHistoryMode: 'anthropic_blocks',
+      cacheMode: 'anthropic_cache_control',
+    });
+  });
+
+  it('maps DeepSeek to Chat Completions with native reasoning and cache modes', () => {
+    const profile = getProviderProfile('deepseek');
+    expect(profile).toMatchObject({
+      id: 'deepseek',
+      endpointFormat: 'chat_completions',
+      transport: 'openai_chat_completions',
+      reasoningMode: 'deepseek_reasoning_content',
+      toolHistoryMode: 'openai_chat',
+      cacheMode: 'deepseek_native',
+    });
+  });
+
+  it('resolves unknown providers to generic OpenAI-compatible behavior', () => {
+    const profile = resolveProviderProfile({
+      provider: 'my_gateway',
+      baseUrl: 'https://example.test/v1',
+      model: 'custom-model',
+    });
+    expect(profile.id).toBe('my_gateway');
+    expect(profile.endpointFormat).toBe('chat_completions');
+    expect(profile.reasoningMode).toBe('none');
+    expect(profile.toolHistoryMode).toBe('openai_chat');
   });
 });
 

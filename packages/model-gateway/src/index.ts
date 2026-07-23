@@ -23,6 +23,7 @@ export {
   apiKeySummary,
 } from './providers.js';
 export type { ProviderEntry } from './providers.js';
+export * from './providerProfiles.js';
 
 // model-gateway 包协议版本；英文说明：Package protocol version
 export const MODEL_GATEWAY_VERSION = '0.1.0';
