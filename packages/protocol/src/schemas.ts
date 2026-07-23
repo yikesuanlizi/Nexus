@@ -139,6 +139,32 @@ export const todoItemEntrySchema = z.object({
   completed: z.boolean(),
 });
 
+export const providerAssistantFrameSchema = z.discriminatedUnion('format', [
+  z.object({
+    format: z.literal('openai_chat'),
+    content: z.string().nullable(),
+    toolCalls: z.array(z.unknown()).optional(),
+    reasoningContent: z.string().optional(),
+    reasoningDetails: z.array(z.unknown()).optional(),
+  }),
+  z.object({
+    format: z.literal('openai_responses'),
+    outputItems: z.array(z.unknown()),
+  }),
+  z.object({
+    format: z.literal('anthropic_messages'),
+    contentBlocks: z.array(z.unknown()),
+  }),
+]);
+
+export const providerToolCallFrameSchema = z.object({
+  format: z.enum(['openai_chat', 'openai_responses', 'anthropic_messages']),
+  id: z.string(),
+  name: z.string(),
+  arguments: z.unknown(),
+  raw: z.unknown().optional(),
+});
+
 // 智能体消息条目 schema
 export const agentMessageItemSchema = z.object({
   id: itemIdSchema,
@@ -146,6 +172,7 @@ export const agentMessageItemSchema = z.object({
   turnId: turnIdSchema,
   text: z.string(),
   structuredOutput: z.unknown().optional(),
+  providerFrame: providerAssistantFrameSchema.optional(),
   timestamp: z.string().optional(),
   // 实施点 2：harness turn 产生的普通 items 打 harnessRunId 标记
   harnessRunId: z.string().optional(),
@@ -170,6 +197,7 @@ export const reasoningItemSchema = z.object({
   type: z.literal('reasoning'),
   turnId: turnIdSchema,
   text: z.string(),
+  providerFrameRef: z.string().optional(),
   timestamp: z.string().optional(),
   harnessRunId: z.string().optional(),
   harnessIteration: z.number().int().min(0).optional(),
@@ -310,6 +338,9 @@ export const toolCallItemSchema = z.object({
   turnId: turnIdSchema,
   toolName: z.string(),
   arguments: z.record(z.string(), z.unknown()),
+  modelToolCallId: z.string().optional(),
+  modelToolName: z.string().optional(),
+  providerToolCall: providerToolCallFrameSchema.optional(),
   result: z.unknown().optional(),
   error: z.object({ message: z.string() }).optional(),
   status: commandStatusSchema,
@@ -324,6 +355,9 @@ export const collabToolCallItemSchema = z.object({
   type: z.literal('collab_tool_call'),
   turnId: turnIdSchema,
   tool: z.enum(['spawn_agent', 'send_input', 'send_message', 'followup_task', 'resume_agent', 'wait', 'wait_agent', 'list_agents', 'close_agent']),
+  modelToolCallId: z.string().optional(),
+  modelToolName: z.string().optional(),
+  providerToolCall: providerToolCallFrameSchema.optional(),
   status: commandStatusSchema,
   senderThreadId: threadIdSchema,
   receiverThreadId: threadIdSchema.optional(),
@@ -345,6 +379,9 @@ export const mcpToolCallItemSchema = z.object({
   server: z.string(),
   tool: z.string(),
   arguments: z.unknown(),
+  modelToolCallId: z.string().optional(),
+  modelToolName: z.string().optional(),
+  providerToolCall: providerToolCallFrameSchema.optional(),
   result: z
     .object({
       content: z.array(z.unknown()),

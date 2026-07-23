@@ -2574,6 +2574,63 @@ describe('AgentLoop message history', () => {
     ]));
   });
 
+  it('persists model tool call ids on tool call items', async () => {
+    const threadId = 'thread-provider-tool-id';
+    const store = new FakeStore(threadId, 'previous-turn');
+    const model = new SingleToolModel('current_time');
+    const agent = new AgentLoop({
+      workspaceRoot: process.cwd(),
+      sandbox: { level: 'workspace_write', workspaceRoot: process.cwd() },
+      model: model as never,
+      store,
+    });
+
+    await agent.runTurn(threadId, { type: 'text', text: '现在几点' });
+
+    const toolItem = store.items.find((item) => item.type === 'tool_call');
+    expect(toolItem).toMatchObject({
+      type: 'tool_call',
+      modelToolCallId: 'call_current_time',
+      modelToolName: 'current_time',
+      providerToolCall: expect.objectContaining({
+        format: 'openai_chat',
+        id: 'call_current_time',
+        name: 'current_time',
+      }),
+    });
+  });
+
+  it('persists provider assistant frames for model tool turns', async () => {
+    const threadId = 'thread-provider-assistant-frame';
+    const store = new FakeStore(threadId, 'previous-turn');
+    const model = new SingleToolModel('current_time');
+    const agent = new AgentLoop({
+      workspaceRoot: process.cwd(),
+      sandbox: { level: 'workspace_write', workspaceRoot: process.cwd() },
+      model: model as never,
+      store,
+    });
+
+    await agent.runTurn(threadId, { type: 'text', text: '现在几点' });
+
+    const assistantItem = store.items.find((item) =>
+      item.type === 'agent_message' &&
+      item.providerFrame?.format === 'openai_chat'
+    );
+    expect(assistantItem).toMatchObject({
+      type: 'agent_message',
+      providerFrame: {
+        format: 'openai_chat',
+        content: null,
+        toolCalls: [{
+          id: 'call_current_time',
+          type: 'function',
+          function: { name: 'current_time', arguments: '{}' },
+        }],
+      },
+    });
+  });
+
   it('does not replay persisted tool results as orphan OpenAI tool messages on the next turn', async () => {
     const threadId = 'thread-tool-history';
     const store = new FakeStore(threadId, 'previous-turn');

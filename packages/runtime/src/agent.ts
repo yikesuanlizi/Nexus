@@ -2530,6 +2530,13 @@ export class AgentLoop {
       if (plainTextToolPlaceholder) {
         this.discardTransientItem(threadId, turnId, collectedItems, agentItem?.id);
       } else if (agentItem) {
+        if (toolCalls.size > 0) {
+          agentItem.providerFrame = {
+            format: 'openai_chat',
+            content: content || null,
+            toolCalls: [...toolCalls.values()],
+          };
+        }
         const validation = validateThreadItemsForPersistence([agentItem]);
         if (!validation.ok) {
           this.discardTransientItem(threadId, turnId, collectedItems, agentItem.id);
@@ -2552,6 +2559,25 @@ export class AgentLoop {
         this.emit({ type: 'item.completed', threadId, turnId, item: agentItem });
         void this.appendItemRunMonitorEvent(threadId, turnId, agentItem, 'item.completed');
         await this.persistItems(threadId, [agentItem]);
+      } else if (toolCalls.size > 0) {
+        const assistantFrameItem: ThreadItem = {
+          id: generateItemId(turnId, collectedItems.length),
+          type: 'agent_message',
+          turnId,
+          text: '',
+          providerFrame: {
+            format: 'openai_chat',
+            content: null,
+            toolCalls: [...toolCalls.values()],
+          },
+          timestamp: new Date().toISOString(),
+        };
+        collectedItems.push(assistantFrameItem);
+        this.emit({ type: 'item.started', threadId, turnId, item: assistantFrameItem });
+        this.emit({ type: 'item.completed', threadId, turnId, item: assistantFrameItem });
+        void this.appendItemRunMonitorEvent(threadId, turnId, assistantFrameItem, 'item.started');
+        void this.appendItemRunMonitorEvent(threadId, turnId, assistantFrameItem, 'item.completed');
+        await this.persistItems(threadId, [assistantFrameItem]);
       }
 
       if (!agentItem && toolCalls.size === 0) {
@@ -2987,6 +3013,15 @@ export class AgentLoop {
             toolName,
             arguments: args,
           }),
+      modelToolCallId: toolCall.id,
+      modelToolName: toolCall.function.name,
+      providerToolCall: {
+        format: 'openai_chat',
+        id: toolCall.id,
+        name: toolCall.function.name,
+        arguments: args,
+        raw: toolCall,
+      },
       status: 'in_progress',
       timestamp: new Date().toISOString(),
     } as ThreadItem;

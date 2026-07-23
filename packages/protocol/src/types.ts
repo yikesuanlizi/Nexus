@@ -166,6 +166,31 @@ export interface UserMessageItem {
   runId?: string;
 }
 
+export type ProviderAssistantFrame =
+  | {
+      format: 'openai_chat';
+      content: string | null;
+      toolCalls?: unknown[];
+      reasoningContent?: string;
+      reasoningDetails?: unknown[];
+    }
+  | {
+      format: 'openai_responses';
+      outputItems: unknown[];
+    }
+  | {
+      format: 'anthropic_messages';
+      contentBlocks: unknown[];
+    };
+
+export interface ProviderToolCallFrame {
+  format: 'openai_chat' | 'openai_responses' | 'anthropic_messages';
+  id: string;
+  name: string;
+  arguments: unknown;
+  raw?: unknown;
+}
+
 // 智能体消息条目：来自模型的回复
 export interface AgentMessageItem {
   id: ItemId;
@@ -175,6 +200,9 @@ export interface AgentMessageItem {
   /** Optional structured output (JSON). */
   // 可选的结构化输出（JSON）
   structuredOutput?: unknown;
+  /** Provider-native assistant response frame used for structured history replay. */
+  // 用于结构化历史回放的 provider 原生 assistant 响应帧
+  providerFrame?: ProviderAssistantFrame;
   /** ISO-8601 timestamp used by transcript action rows. */
   // 时间戳（ISO-8601）
   timestamp?: string;
@@ -192,6 +220,9 @@ export interface ReasoningItem {
   type: 'reasoning';
   turnId: TurnId;
   text: string;
+  /** Optional provider frame id associated with this reasoning item. */
+  // 关联的 provider frame id，避免把推理文本直接回灌给模型
+  providerFrameRef?: string;
   timestamp?: string;
   harnessRunId?: string;
   harnessIteration?: number;
@@ -524,6 +555,11 @@ export interface ToolCallItem {
   turnId: TurnId;
   toolName: string;
   arguments: Record<string, unknown>;
+  /** Model-provided tool call id; distinct from Nexus item id. */
+  // 模型返回的 tool call id，不等于 Nexus item id
+  modelToolCallId?: string;
+  modelToolName?: string;
+  providerToolCall?: ProviderToolCallFrame;
   result?: unknown;
   error?: { message: string };
   status: CommandStatus;
@@ -554,6 +590,9 @@ export interface CollabToolCallItem {
   type: 'collab_tool_call';
   turnId: TurnId;
   tool: CollabToolName;
+  modelToolCallId?: string;
+  modelToolName?: string;
+  providerToolCall?: ProviderToolCallFrame;
   status: CommandStatus;
   senderThreadId: ThreadId;
   receiverThreadId?: ThreadId;
@@ -640,6 +679,9 @@ export interface McpToolCallItem {
   server: string;
   tool: string;
   arguments: unknown;
+  modelToolCallId?: string;
+  modelToolName?: string;
+  providerToolCall?: ProviderToolCallFrame;
   result?: {
     content: unknown[];
     structuredContent: unknown;
