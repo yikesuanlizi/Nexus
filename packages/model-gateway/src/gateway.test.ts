@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { estimateChatTokens, ModelGateway, normalizeUsage, resolveCacheStrategy } from './gateway.js';
 import { getProviderProfile, resolveProviderProfile } from './providerProfiles.js';
+import {
+  buildAnthropicToolHistory,
+  buildOpenAiChatToolHistory,
+  type ProviderAssistantFrame,
+} from './providerFrames.js';
 
 const originalFetch = globalThis.fetch;
 
@@ -120,6 +125,68 @@ describe('provider profiles', () => {
     expect(profile.endpointFormat).toBe('chat_completions');
     expect(profile.reasoningMode).toBe('none');
     expect(profile.toolHistoryMode).toBe('openai_chat');
+  });
+});
+
+describe('provider frames', () => {
+  it('replays OpenAI chat tool calls without text placeholders', () => {
+    const frame: ProviderAssistantFrame = {
+      format: 'openai_chat',
+      content: null,
+      toolCalls: [{
+        id: 'call_read_1',
+        type: 'function',
+        function: { name: 'read_file', arguments: '{"path":"a.txt"}' },
+      }],
+    };
+    const messages = buildOpenAiChatToolHistory(frame, [{
+      modelToolCallId: 'call_read_1',
+      output: 'file text',
+    }]);
+    expect(JSON.stringify(messages)).not.toContain('[Tool');
+    expect(messages).toEqual([
+      {
+        role: 'assistant',
+        content: null,
+        tool_calls: frame.toolCalls,
+      },
+      {
+        role: 'tool',
+        tool_call_id: 'call_read_1',
+        content: 'file text',
+      },
+    ]);
+  });
+
+  it('replays Anthropic tool_use and tool_result blocks without text placeholders', () => {
+    const frame: ProviderAssistantFrame = {
+      format: 'anthropic_messages',
+      contentBlocks: [{
+        type: 'tool_use',
+        id: 'toolu_1',
+        name: 'read_file',
+        input: { path: 'a.txt' },
+      }],
+    };
+    const messages = buildAnthropicToolHistory(frame, [{
+      modelToolCallId: 'toolu_1',
+      output: 'file text',
+    }]);
+    expect(JSON.stringify(messages)).not.toContain('[Tool');
+    expect(messages).toEqual([
+      {
+        role: 'assistant',
+        content: frame.contentBlocks,
+      },
+      {
+        role: 'user',
+        content: [{
+          type: 'tool_result',
+          tool_use_id: 'toolu_1',
+          content: 'file text',
+        }],
+      },
+    ]);
   });
 });
 

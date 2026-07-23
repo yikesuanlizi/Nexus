@@ -96,6 +96,8 @@ export interface ChatMessage {
   name?: string;                          // 工具名（部分模型需要）
   tool_calls?: ToolCall[];                // assistant 的工具调用
   tool_call_id?: string;                  // tool 消息对应的工具调用 id
+  reasoning_content?: string;             // DeepSeek/Moonshot 等 OpenAI-compatible 推理回放字段
+  reasoning_details?: unknown[];          // MiniMax/OpenRouter 等兼容端点的结构化推理字段
 }
 
 // 多模态内容：文本或图片
