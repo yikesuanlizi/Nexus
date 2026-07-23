@@ -211,6 +211,49 @@ describe('MiniMax and DeepSeek provider behavior', () => {
     });
   });
 
+  it('sends MiniMax M3 through Anthropic-compatible messages with bearer auth and adaptive thinking', async () => {
+    let requestUrl = '';
+    let requestHeaders: Headers | undefined;
+    let requestBody: unknown;
+    globalThis.fetch = async (url, init) => {
+      requestUrl = String(url);
+      requestHeaders = new Headers(init?.headers);
+      requestBody = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({
+        id: 'msg_minimax',
+        type: 'message',
+        role: 'assistant',
+        model: 'MiniMax-M3',
+        content: [{ type: 'text', text: 'ok' }],
+        stop_reason: 'end_turn',
+        usage: { input_tokens: 10, output_tokens: 2 },
+      }));
+    };
+
+    const gateway = new ModelGateway({
+      provider: 'minimax',
+      baseUrl: 'https://api.minimaxi.com/anthropic/v1',
+      apiKey: 'minimax-key',
+      model: 'MiniMax-M3',
+    });
+
+    await gateway.chat({ messages: [{ role: 'user', content: 'hello' }] });
+
+    expect(requestUrl).toBe('https://api.minimaxi.com/anthropic/v1/messages');
+    expect(requestHeaders?.get('Authorization')).toBe('Bearer minimax-key');
+    expect(requestHeaders?.has('x-api-key')).toBe(false);
+    expect(requestBody).toMatchObject({
+      model: 'MiniMax-M3',
+      thinking: { type: 'adaptive' },
+      messages: [
+        {
+          role: 'user',
+          content: [{ type: 'text', text: 'hello', cache_control: { type: 'ephemeral' } }],
+        },
+      ],
+    });
+  });
+
   it('preserves DeepSeek reasoning_content in normalized OpenAI responses', () => {
     const response = convertOpenAIResponseForTest({
       id: 'cmpl_1',

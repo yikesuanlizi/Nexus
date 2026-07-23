@@ -274,7 +274,12 @@ export class ModelGateway {
   private baseHeaders(): Record<string, string> {
     const h: Record<string, string> = { ...this.config.extraHeaders };
     if (this.protocol === 'anthropic') {
-      if (this.config.apiKey) h['x-api-key'] = this.config.apiKey;
+      if (this.config.apiKey && this.profile.id === 'minimax') {
+        h['Authorization'] = `Bearer ${this.config.apiKey}`;
+        delete h['x-api-key'];
+      } else if (this.config.apiKey) {
+        h['x-api-key'] = this.config.apiKey;
+      }
     } else {
       if (this.config.apiKey) h['Authorization'] = `Bearer ${this.config.apiKey}`;
     }
@@ -567,8 +572,22 @@ function convertToAnthropic(
     max_tokens: req.max_tokens ?? config.maxTokens ?? 8192,
     temperature: req.temperature ?? config.temperature,
     top_p: req.top_p ?? config.topP,
+    ...(isMiniMaxM3(config) ? { thinking: miniMaxThinkingFromEffort(config.reasoningEffort) } : {}),
     stop_sequences: req.stop,
   };
+}
+
+function isMiniMaxM3(config: Pick<ModelConfig, 'provider' | 'model'>): boolean {
+  return config.provider.trim().toLowerCase() === 'minimax'
+    && config.model.trim().toLowerCase() === 'minimax-m3';
+}
+
+function miniMaxThinkingFromEffort(effort: ModelConfig['reasoningEffort'] | undefined): NonNullable<AnthropicMessageRequest['thinking']> | undefined {
+  const normalized = typeof effort === 'string' ? effort.trim().toLowerCase() : '';
+  if (['none', 'off', 'disabled', 'disable', 'false'].includes(normalized)) {
+    return undefined;
+  }
+  return { type: 'adaptive' };
 }
 
 // 找到最后一条 user 消息的最后一个 text 块，标记为可缓存

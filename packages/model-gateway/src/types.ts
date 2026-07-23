@@ -183,6 +183,10 @@ export interface AnthropicMessageRequest {
   max_tokens: number;
   temperature?: number;
   top_p?: number;
+  thinking?: {
+    type: 'adaptive' | 'enabled' | 'disabled' | string;
+    budget_tokens?: number;
+  };
   stream?: boolean;
   stop_sequences?: string[];
 }
