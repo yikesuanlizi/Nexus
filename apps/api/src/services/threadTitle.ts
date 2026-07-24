@@ -13,5 +13,7 @@ export function shouldRetitleThread(title: string | undefined): boolean {
 }
 
 export function titleFromInput(input: string | undefined): string {
-  return (input ?? '').replace(/\s+/g, ' ').trim().slice(0, 60);
+  const normalized = (input ?? '').replace(/\s+/g, ' ').trim();
+  if (/^\/skills\s+(?:add|install)\b/i.test(normalized)) return '安装 Skills';
+  return normalized.slice(0, 60);
 }

@@ -1,9 +1,14 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { RunMonitorDrawer } from './RunMonitorDrawer.js';
 import type { RunTraceCategory, RunTraceEnvelope } from '@nexus/protocol';
 import type { RunEvent, RunRecord, ThreadWithRuns } from '../shared/types.js';
+
+const here = dirname(fileURLToPath(import.meta.url));
 
 const run: RunRecord = {
   runId: 'run-1',
@@ -100,6 +105,7 @@ const baseProps = {
   onToggleThread: vi.fn(),
   onSelectEvent: vi.fn(),
   onToggleCategory: vi.fn(),
+  onSetCategoryFilter: vi.fn(),
   onSetErrorsOnly: vi.fn(),
   onAutoRefreshChange: vi.fn(),
   onAutoRefreshIntervalChange: vi.fn(),
@@ -124,5 +130,66 @@ describe('RunMonitorDrawer', () => {
     const html = renderToStaticMarkup(React.createElement(RunMonitorDrawer, { ...baseProps, selectedEventId: 'trace-1', selectedTrace: traces[0] ?? null }));
     expect(html).toContain('traceRow');
     expect(html).toContain('tool.completed');
+  });
+
+  it('renders resource details for MCP and skill traces in the inspector', () => {
+    const mcpTrace = {
+      ...traces[0],
+      eventId: 'trace-mcp',
+      name: 'mcp.tool.completed',
+      payload: {
+        toolName: 'mcp_call_tool',
+        callId: 'call-mcp',
+        server: 'gitnexus',
+        tool: 'search_code',
+        argsSummary: { query: 'resource detail' },
+      },
+    } as unknown as RunTraceEnvelope;
+    const skillTrace = {
+      ...traces[0],
+      eventId: 'trace-skill',
+      name: 'skill.used',
+      payload: {
+        toolName: 'skills_add',
+        callId: 'call-skill',
+        skillName: 'frontend-design',
+      },
+    } as unknown as RunTraceEnvelope;
+
+    const mcpHtml = renderToStaticMarkup(React.createElement(RunMonitorDrawer, {
+      ...baseProps,
+      traces: [mcpTrace],
+      visibleTraces: [mcpTrace],
+      selectedEventId: 'trace-mcp',
+      selectedTrace: mcpTrace,
+    }));
+    const skillHtml = renderToStaticMarkup(React.createElement(RunMonitorDrawer, {
+      ...baseProps,
+      traces: [skillTrace],
+      visibleTraces: [skillTrace],
+      selectedEventId: 'trace-skill',
+      selectedTrace: skillTrace,
+    }));
+
+    expect(mcpHtml).toContain('resourceKind');
+    expect(mcpHtml).toContain('MCP');
+    expect(mcpHtml).toContain('server');
+    expect(mcpHtml).toContain('gitnexus');
+    expect(mcpHtml).toContain('search_code');
+    expect(skillHtml).toContain('resourceKind');
+    expect(skillHtml).toContain('Skill');
+    expect(skillHtml).toContain('frontend-design');
+  });
+
+  it('clears category filters in one action when All is clicked', () => {
+    const filtersSource = readFileSync(join(here, 'monitor', 'TraceFilters.tsx'), 'utf-8');
+    const timelineSource = readFileSync(join(here, 'monitor', 'TraceTimeline.tsx'), 'utf-8');
+    const monitorSource = readFileSync(join(here, '..', 'features', 'monitor', 'runMonitor.ts'), 'utf-8');
+
+    expect(filtersSource).toContain('onSetCategoryFilter([])');
+    expect(filtersSource).not.toContain('for (const c of selectedCategories)');
+    expect(timelineSource).toContain('onSetCategoryFilter');
+    expect(monitorSource).toContain('setCategoryFilter');
+    expect(monitorSource).not.toContain('[open, state.categoryFilter, state.errorsOnly, refresh]');
   });
 });

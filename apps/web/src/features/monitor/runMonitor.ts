@@ -345,11 +345,6 @@ export function useRunMonitor(options: {
   }, [open, refresh, threadId]);
 
   useEffect(() => {
-    if (!open) return;
-    void refresh(stateRef.current.selectedRunId || undefined);
-  }, [open, state.categoryFilter, state.errorsOnly, refresh]);
-
-  useEffect(() => {
     if (!open || !autoRefresh) {
       if (autoRefreshTimerRef.current) {
         clearInterval(autoRefreshTimerRef.current);

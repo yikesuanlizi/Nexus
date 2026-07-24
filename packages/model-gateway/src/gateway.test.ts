@@ -77,6 +77,32 @@ describe('normalizeUsage', () => {
       cache_strategy: 'anthropic-cache-control',
     });
   });
+
+  it('normalizes OpenAI-compatible usage from the first choice when top-level usage is missing', () => {
+    const response = convertOpenAIResponseForTest({
+      id: 'cmpl_choice_usage',
+      object: 'chat.completion',
+      created: 1,
+      model: 'kimi-k3',
+      choices: [{
+        index: 0,
+        message: { role: 'assistant', content: 'ok' },
+        finish_reason: 'stop',
+        usage: {
+          prompt_tokens: 11,
+          completion_tokens: 7,
+          total_tokens: 18,
+        },
+      }],
+    });
+
+    expect(response.usage).toEqual({
+      prompt_tokens: 11,
+      completion_tokens: 7,
+      total_tokens: 18,
+      cached_tokens: 0,
+    });
+  });
 });
 
 describe('resolveCacheStrategy', () => {
@@ -130,6 +156,54 @@ describe('provider profiles', () => {
       reasoningMode: 'deepseek_reasoning_content',
       toolHistoryMode: 'openai_chat',
       cacheMode: 'deepseek_native',
+    });
+  });
+
+  it('has explicit OpenAI-compatible profiles for supported remote adapters', () => {
+    const providerIds = [
+      'gemini',
+      'mistral',
+      'perplexity',
+      'xai',
+      'qwen',
+      'zhipu',
+      'kimi',
+      'volcengine',
+      'baidu',
+      'siliconflow',
+      'groq',
+      'together',
+      'openrouter',
+    ];
+
+    for (const providerId of providerIds) {
+      expect(getProviderProfile(providerId)).toMatchObject({
+        id: providerId,
+        endpointFormat: 'chat_completions',
+        transport: 'openai_chat_completions',
+        reasoningMode: 'none',
+        toolHistoryMode: 'openai_chat',
+        cacheMode: 'openai_prompt_details',
+      });
+    }
+  });
+
+  it('normalizes provider aliases before resolving profiles', () => {
+    expect(getProviderProfile('google')).toMatchObject({
+      id: 'gemini',
+      displayName: 'Google Gemini',
+    });
+    expect(getProviderProfile('grok')).toMatchObject({
+      id: 'xai',
+      displayName: 'xAI',
+    });
+    expect(getProviderProfile('moonshot')).toMatchObject({
+      id: 'kimi',
+      displayName: 'Kimi (Moonshot)',
+    });
+    expect(getProviderProfile('dashscope')).toMatchObject({
+      id: 'qwen',
+      displayName: '通义千问 (Qwen)',
     });
   });
 
@@ -266,6 +340,47 @@ describe('MiniMax and DeepSeek provider behavior', () => {
     });
   });
 
+  it('does not send Anthropic tool_result blocks after an intervening user message', async () => {
+    let requestBody: { messages?: Array<{ role: string; content: unknown[] }> } = {};
+    globalThis.fetch = async (_url, init) => {
+      requestBody = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({
+        id: 'msg_anthropic',
+        type: 'message',
+        role: 'assistant',
+        model: 'claude-test',
+        content: [{ type: 'text', text: 'ok' }],
+        stop_reason: 'end_turn',
+        usage: { input_tokens: 10, output_tokens: 2 },
+      }));
+    };
+
+    const gateway = new ModelGateway({
+      provider: 'anthropic',
+      baseUrl: 'https://api.anthropic.com/v1',
+      apiKey: 'anthropic-key',
+      model: 'claude-test',
+    });
+
+    await gateway.chat({
+      messages: [
+        {
+          role: 'assistant',
+          content: '',
+          providerFrame: {
+            format: 'anthropic_messages',
+            contentBlocks: [{ type: 'tool_use', id: 'toolu_read_1', name: 'read_file', input: { path: 'a.txt' } }],
+          },
+        },
+        { role: 'user', content: '新的用户消息插入了工具结果之前' },
+        { role: 'tool', tool_call_id: 'toolu_read_1', content: 'file text' },
+        { role: 'user', content: '继续' },
+      ],
+    });
+
+    expect(JSON.stringify(requestBody.messages)).not.toContain('tool_result');
+  });
+
   it('streams MiniMax thinking blocks as reasoning deltas instead of assistant text', async () => {
     const encoder = new TextEncoder();
     globalThis.fetch = async () => new Response(new ReadableStream({
@@ -371,6 +486,284 @@ describe('MiniMax and DeepSeek provider behavior', () => {
 
     expect(requestBody).toMatchObject({
       model: 'deepseek-v4-pro',
+      thinking: {
+        type: 'enabled',
+        reasoning_effort: 'max',
+      },
+    });
+    expect(requestBody).not.toHaveProperty('reasoning_effort');
+  });
+
+  it('adds OpenRouter app attribution headers while preserving caller overrides', async () => {
+    let requestHeaders: Headers | undefined;
+    globalThis.fetch = async (_url, init) => {
+      requestHeaders = new Headers(init?.headers);
+      return new Response(JSON.stringify({
+        id: 'cmpl_openrouter',
+        object: 'chat.completion',
+        created: 1,
+        model: 'openai/gpt-5.2',
+        choices: [{
+          index: 0,
+          message: { role: 'assistant', content: 'ok' },
+          finish_reason: 'stop',
+        }],
+      }));
+    };
+
+    const gateway = new ModelGateway({
+      provider: 'openrouter',
+      baseUrl: 'https://openrouter.ai/api/v1',
+      apiKey: 'or-key',
+      model: 'openai/gpt-5.2',
+      extraHeaders: { 'X-OpenRouter-Title': 'User Title' },
+    });
+
+    await gateway.chat({ messages: [{ role: 'user', content: 'hello' }] });
+
+    expect(requestHeaders?.get('HTTP-Referer')).toBe('https://github.com/nexus-agent/nexus');
+    expect(requestHeaders?.get('X-OpenRouter-Title')).toBe('User Title');
+    expect(requestHeaders?.get('X-OpenRouter-Categories')).toBe('productivity,developer-tools,local-first');
+  });
+
+  it('sends Mistral parallel tool call control in the official chat request shape', async () => {
+    let requestBody: unknown;
+    globalThis.fetch = async (_url, init) => {
+      requestBody = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({
+        id: 'cmpl_mistral',
+        object: 'chat.completion',
+        created: 1,
+        model: 'mistral-large-latest',
+        choices: [{
+          index: 0,
+          message: { role: 'assistant', content: 'ok' },
+          finish_reason: 'stop',
+        }],
+      }));
+    };
+
+    const gateway = new ModelGateway({
+      provider: 'mistral',
+      baseUrl: 'https://api.mistral.ai/v1',
+      apiKey: 'mistral-key',
+      model: 'mistral-large-latest',
+    });
+
+    await gateway.chat({
+      messages: [{ role: 'user', content: 'hello' }],
+      tools: [{
+        type: 'function',
+        function: {
+          name: 'lookup',
+          description: 'Look up data',
+          parameters: { type: 'object', properties: {} },
+        },
+      }],
+    });
+
+    expect(requestBody).toMatchObject({ parallel_tool_calls: true });
+  });
+
+  it('normalizes Kimi reasoning effort to official low/high/max values', async () => {
+    let requestBody: unknown;
+    globalThis.fetch = async (_url, init) => {
+      requestBody = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({
+        id: 'cmpl_kimi',
+        object: 'chat.completion',
+        created: 1,
+        model: 'kimi-k3',
+        choices: [{
+          index: 0,
+          message: { role: 'assistant', content: 'ok' },
+          finish_reason: 'stop',
+        }],
+      }));
+    };
+
+    const gateway = new ModelGateway({
+      provider: 'kimi',
+      baseUrl: 'https://api.moonshot.ai/v1',
+      apiKey: 'kimi-key',
+      model: 'kimi-k3',
+      reasoningEffort: 'xhigh',
+    });
+
+    await gateway.chat({ messages: [{ role: 'user', content: 'hello' }] });
+
+    expect(requestBody).toMatchObject({ reasoning_effort: 'max' });
+    expect(requestBody).not.toHaveProperty('thinking');
+  });
+
+  it('maps Qwen reasoning effort to DashScope enable_thinking instead of OpenAI reasoning_effort', async () => {
+    let requestBody: unknown;
+    globalThis.fetch = async (_url, init) => {
+      requestBody = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({
+        id: 'cmpl_qwen',
+        object: 'chat.completion',
+        created: 1,
+        model: 'qwen3-coder-plus',
+        choices: [{
+          index: 0,
+          message: { role: 'assistant', content: 'ok' },
+          finish_reason: 'stop',
+        }],
+      }));
+    };
+
+    const gateway = new ModelGateway({
+      provider: 'qwen',
+      baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+      apiKey: 'dashscope-key',
+      model: 'qwen3-coder-plus',
+      reasoningEffort: 'high',
+    });
+
+    await gateway.chat({ messages: [{ role: 'user', content: 'hello' }] });
+
+    expect(requestBody).toMatchObject({ enable_thinking: true });
+    expect(requestBody).not.toHaveProperty('reasoning_effort');
+    expect(requestBody).not.toHaveProperty('thinking');
+  });
+
+  it('disables Qwen thinking for explicit low or disabled reasoning effort', async () => {
+    let requestBody: unknown;
+    globalThis.fetch = async (_url, init) => {
+      requestBody = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({
+        id: 'cmpl_qwen',
+        object: 'chat.completion',
+        created: 1,
+        model: 'qwen3-coder-plus',
+        choices: [{
+          index: 0,
+          message: { role: 'assistant', content: 'ok' },
+          finish_reason: 'stop',
+        }],
+      }));
+    };
+
+    const gateway = new ModelGateway({
+      provider: 'qwen',
+      baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+      apiKey: 'dashscope-key',
+      model: 'qwen3-coder-plus',
+      reasoningEffort: 'disabled',
+    });
+
+    await gateway.chat({ messages: [{ role: 'user', content: 'hello' }] });
+
+    expect(requestBody).toMatchObject({ enable_thinking: false });
+    expect(requestBody).not.toHaveProperty('reasoning_effort');
+  });
+
+  it('uses GLM thinking controls and streaming tool-call flag for Zhipu models that support them', async () => {
+    let requestBody: unknown;
+    const encoder = new TextEncoder();
+    globalThis.fetch = async (_url, init) => {
+      requestBody = JSON.parse(String(init?.body));
+      return new Response(new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+          controller.close();
+        },
+      }));
+    };
+
+    const gateway = new ModelGateway({
+      provider: 'zhipu',
+      baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+      apiKey: 'glm-key',
+      model: 'glm-4.6',
+      reasoningEffort: 'high',
+    });
+
+    const events = [];
+    for await (const event of gateway.chatStream({
+      messages: [{ role: 'user', content: 'hello' }],
+      tools: [{
+        type: 'function',
+        function: {
+          name: 'lookup',
+          description: 'Look up data',
+          parameters: { type: 'object', properties: {} },
+        },
+      }],
+    })) {
+      events.push(event);
+    }
+
+    expect(events).toContainEqual({ type: 'done' });
+    expect(requestBody).toMatchObject({
+      thinking: { type: 'enabled', clear_thinking: true },
+      tool_stream: true,
+    });
+    expect(requestBody).not.toHaveProperty('reasoning_effort');
+  });
+
+  it('keeps GLM-5.2 reasoning_effort while using GLM thinking controls', async () => {
+    let requestBody: unknown;
+    globalThis.fetch = async (_url, init) => {
+      requestBody = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({
+        id: 'cmpl_glm',
+        object: 'chat.completion',
+        created: 1,
+        model: 'glm-5.2',
+        choices: [{
+          index: 0,
+          message: { role: 'assistant', content: 'ok' },
+          finish_reason: 'stop',
+        }],
+      }));
+    };
+
+    const gateway = new ModelGateway({
+      provider: 'zhipu',
+      baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+      apiKey: 'glm-key',
+      model: 'glm-5.2',
+      reasoningEffort: 'xhigh',
+    });
+
+    await gateway.chat({ messages: [{ role: 'user', content: 'hello' }] });
+
+    expect(requestBody).toMatchObject({
+      thinking: { type: 'enabled', clear_thinking: true },
+      reasoning_effort: 'xhigh',
+    });
+  });
+
+  it('routes DeepSeek models on Ark through DeepSeek native thinking controls', async () => {
+    let requestBody: unknown;
+    globalThis.fetch = async (_url, init) => {
+      requestBody = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({
+        id: 'cmpl_ark_deepseek',
+        object: 'chat.completion',
+        created: 1,
+        model: 'deepseek-v4-pro',
+        choices: [{
+          index: 0,
+          message: { role: 'assistant', content: 'ok' },
+          finish_reason: 'stop',
+        }],
+      }));
+    };
+
+    const gateway = new ModelGateway({
+      provider: 'volcengine',
+      baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+      apiKey: 'ark-key',
+      model: 'deepseek-v4-pro',
+      reasoningEffort: 'xhigh',
+    });
+
+    await gateway.chat({ messages: [{ role: 'user', content: 'hello' }] });
+
+    expect(requestBody).toMatchObject({
       thinking: {
         type: 'enabled',
         reasoning_effort: 'max',

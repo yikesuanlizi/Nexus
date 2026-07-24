@@ -71,6 +71,10 @@ const modelPayloadSchema = z.object({
 const toolPayloadSchema = z.object({
   toolName: z.string().min(1),
   callId: z.string().min(1),
+  resourceKind: z.enum(['tool', 'mcp', 'skill', 'shell', 'agent']).optional(),
+  server: z.string().min(1).optional(),
+  tool: z.string().min(1).optional(),
+  skillName: z.string().min(1).optional(),
   decision: z.enum(['allow', 'deny', 'approval_required']).optional(),
   approvalId: z.string().optional(),
   argsSummary: z.unknown().optional(),
@@ -99,8 +103,15 @@ const agentPayloadSchema = z.object({
 }).strict();
 
 const filePayloadSchema = z.object({
-  action: z.enum(['read', 'write', 'patch', 'delete', 'checkpoint']),
+  action: z.enum(['read', 'write', 'patch', 'delete', 'checkpoint', 'extract', 'stale', 'refresh', 'reuse']),
   path: z.string().min(1),
+  sourcePath: z.string().min(1).optional(),
+  artifactPath: z.string().min(1).optional(),
+  sha256: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  artifactSha256: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  staleReason: z.string().min(1).optional(),
+  contentType: z.string().min(1).optional(),
+  extractor: z.string().min(1).optional(),
   addedLines: z.number().int().min(0).optional(),
   removedLines: z.number().int().min(0).optional(),
 }).strict();
@@ -461,9 +472,14 @@ export const runTraceSummarySchema = z.object({
     failed: z.number().int().min(0),
   }),
   files: z.object({
+    reads: z.number().int().min(0),
     changed: z.number().int().min(0),
     addedLines: z.number().int().min(0),
     removedLines: z.number().int().min(0),
+    extracted: z.number().int().min(0),
+    reused: z.number().int().min(0),
+    stale: z.number().int().min(0),
+    refreshed: z.number().int().min(0),
   }),
   lastError: z.object({
     code: z.string().min(1),

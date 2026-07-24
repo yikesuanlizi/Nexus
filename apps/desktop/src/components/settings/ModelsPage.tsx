@@ -74,6 +74,7 @@ export function ModelsPage({
   const matchedDraftPreset = modelPresets.find((preset) => modelPresetMatchesRunConfig(preset, { ...config, ...modelConfigDraft }));
   const [deletingPresetId, setDeletingPresetId] = React.useState('');
   const [pendingDeletePreset, setPendingDeletePreset] = React.useState<ModelPreset | null>(null);
+  const [selectedPresetId, setSelectedPresetId] = React.useState('__draft__');
   const modelPresetDraftOptions: Array<DropdownOption<string>> = [
     { value: '__draft__', label: locale === 'zh' ? '当前编辑草稿' : 'Current draft' },
     ...modelPresets.map((preset) => ({
@@ -119,6 +120,28 @@ export function ModelsPage({
   const envVarDirty = dirtyFields.modelEnvVar ? 'fieldDirty' : '';
 
   const applyButtonLabel = locale === 'zh' ? '应用设置' : 'Apply settings';
+  React.useEffect(() => {
+    if (selectedPresetId === '__draft__') return;
+    const selectedPreset = modelPresets.find((preset) => preset.id === selectedPresetId);
+    if (!selectedPreset || !modelPresetMatchesRunConfig(selectedPreset, { ...config, ...modelConfigDraft })) {
+      setSelectedPresetId('__draft__');
+    }
+  }, [
+    selectedPresetId,
+    modelPresets,
+    config.provider,
+    config.model,
+    config.baseUrl,
+    modelConfigDraft.provider,
+    modelConfigDraft.model,
+    modelConfigDraft.baseUrl,
+  ]);
+
+  function handlePresetDraftChange(presetId: string) {
+    setSelectedPresetId(presetId);
+    loadModelPresetIntoDraft(presetId);
+  }
+
   async function handleDeletePreset() {
     if (!pendingDeletePreset) return;
     try {
@@ -264,8 +287,8 @@ export function ModelsPage({
           <label className="wideField">
             <DropdownSelect
               className="modelPresetSelect"
-              value={matchedDraftPreset?.id ?? '__draft__'}
-              onChange={loadModelPresetIntoDraft}
+              value={selectedPresetId}
+              onChange={handlePresetDraftChange}
               options={modelPresetDraftOptions}
             />
           </label>

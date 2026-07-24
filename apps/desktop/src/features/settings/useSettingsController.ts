@@ -73,6 +73,10 @@ export function modelEnvVarForProvider(
   return keyState?.envVar || provider?.apiKeyEnvVar || '';
 }
 
+function legacyCustomProviderName(providerId: string): string {
+  return providerId.replace(/^custom_/, '').replace(/_/g, '.');
+}
+
 export function useSettingsController(options: UseSettingsControllerOptions): UseSettingsControllerResult {
   const {
     locale,
@@ -206,10 +210,18 @@ export function useSettingsController(options: UseSettingsControllerOptions): Us
   }
 
   async function ensureCustomProvider(): Promise<string | null> {
-    if (modelConfigDraft.provider !== 'openai_compatible') return modelConfigDraft.provider;
-    const name = customProviderName.trim();
+    const existingDraftProvider = providers.find((provider) => provider.id === modelConfigDraft.provider);
+    const missingLegacyCustomProvider = modelConfigDraft.provider.startsWith('custom_') && !existingDraftProvider;
+    if (modelConfigDraft.provider !== 'openai_compatible' && !missingLegacyCustomProvider) return modelConfigDraft.provider;
+    const name = customProviderName.trim() || (missingLegacyCustomProvider ? legacyCustomProviderName(modelConfigDraft.provider) : '');
     if (!name) return modelConfigDraft.provider;
     if (name === 'OpenAI-compatible') return modelConfigDraft.provider;
+    const existing = providers.find((provider) => (
+      provider.id.startsWith('custom_')
+      && provider.name.trim().toLowerCase() === name.toLowerCase()
+      && provider.baseUrl.trim() === modelConfigDraft.baseUrl.trim()
+    ));
+    if (existing) return existing.id;
     const response = await fetch('/api/providers', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -277,7 +289,6 @@ export function useSettingsController(options: UseSettingsControllerOptions): Us
       setDirtyFields({});
       setSavedToastAt(Date.now());
       window.setTimeout(() => setSavedToastAt(null), 2000);
-      await hydrateFromServer(scope);
       await Promise.all([refreshProviders(), refreshKeyStates()]);
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : String(error));
@@ -363,6 +374,7 @@ export function useSettingsController(options: UseSettingsControllerOptions): Us
   async function handleSetCurrentModelConfig() {
     setSaving(true);
     setSaveError(null);
+    setModelKeyNotice('');
     try {
       const targetProviderId = await ensureCustomProvider();
       const resolvedProviderId = (targetProviderId ?? modelConfigDraft.provider).trim();
@@ -398,11 +410,13 @@ export function useSettingsController(options: UseSettingsControllerOptions): Us
         return next;
       });
       setSavedToastAt(Date.now());
+      setModelKeyNotice(locale === 'zh' ? '设置已应用。' : 'Settings applied.');
       window.setTimeout(() => setSavedToastAt(null), 2000);
-      await hydrateFromServer(scope);
       await Promise.all([refreshProviders(), refreshKeyStates()]);
     } catch (error) {
-      setSaveError(error instanceof Error ? error.message : String(error));
+      const message = error instanceof Error ? error.message : String(error);
+      setSaveError(message);
+      setModelKeyNotice(message);
     } finally {
       setSaving(false);
     }

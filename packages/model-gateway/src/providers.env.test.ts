@@ -43,6 +43,60 @@ describe('provider API key environment variables', () => {
     expect(providers.listApiKeyEnvVarCandidates('openai')).toContain(envName);
   });
 
+  it('resolves custom provider keys from a user-selected env var', async () => {
+    // @ts-expect-error Vitest can load TS source modules in tests.
+    const providers = await import('./providers.ts');
+
+    providers.addCustomProvider({
+      id: 'custom_minimax_proxy',
+      name: 'MiniMax proxy',
+      baseUrl: 'https://minimax.example.test/v1',
+      apiKeyEnvVar: '',
+      protocol: 'openai',
+      isLocal: false,
+    });
+    providers.saveProviderApiKeyEnvVar('custom_minimax_proxy', envName);
+    providers.saveRuntimeEnvironmentVariables({ [envName]: 'sk-custom-env' });
+
+    expect(providers.getProvider('custom_minimax_proxy')?.name).toBe('MiniMax proxy');
+    expect(providers.resolveProviderApiKeyEnvVar('custom_minimax_proxy')).toBe(envName);
+    expect(providers.resolveApiKey('custom_minimax_proxy')).toBe('sk-custom-env');
+    expect(providers.listApiKeyEnvVarCandidates('custom_minimax_proxy')).toContain(envName);
+  });
+
+  it('resolves provider keys from canonical and alias env var names', async () => {
+    // @ts-expect-error Vitest can load TS source modules in tests.
+    const providers = await import('./providers.ts');
+
+    process.env.GOOGLE_API_KEY = 'google-key';
+    process.env.DASHSCOPE_API_KEY = 'dashscope-key';
+    process.env.MOONSHOT_API_KEY = 'moonshot-key';
+    process.env.PPLX_API_KEY = 'pplx-key';
+
+    expect(providers.resolveProviderApiKeyEnvVars('gemini')).toEqual(['GEMINI_API_KEY', 'GOOGLE_API_KEY']);
+    expect(providers.resolveApiKey('gemini')).toBe('google-key');
+    expect(providers.resolveApiKey('google')).toBe('google-key');
+    expect(providers.resolveApiKey('qwen')).toBe('dashscope-key');
+    expect(providers.resolveApiKey('moonshot')).toBe('moonshot-key');
+    expect(providers.resolveApiKey('perplexity')).toBe('pplx-key');
+    expect(providers.listApiKeyEnvVarCandidates('gemini')).toEqual(expect.arrayContaining([
+      'GEMINI_API_KEY',
+      'GOOGLE_API_KEY',
+    ]));
+
+    delete process.env.GOOGLE_API_KEY;
+    delete process.env.DASHSCOPE_API_KEY;
+    delete process.env.MOONSHOT_API_KEY;
+    delete process.env.PPLX_API_KEY;
+  });
+
+  it('rejects env-var binding for unknown providers instead of silently dropping it', async () => {
+    // @ts-expect-error Vitest can load TS source modules in tests.
+    const providers = await import('./providers.ts');
+
+    expect(() => providers.saveProviderApiKeyEnvVar('custom_missing_provider', envName)).toThrow('Unknown provider');
+  });
+
   it('parses Windows user and system environment registry output', async () => {
     // @ts-expect-error Vitest can load TS source modules in tests.
     const providers = await import('./providers.ts');

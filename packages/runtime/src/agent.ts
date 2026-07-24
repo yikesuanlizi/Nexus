@@ -20,10 +20,11 @@ import type {
   EpisodeRecord,
   ThreadWorkingSetSnapshot,
   EpisodeMemoryMode,
+  KnowledgeCheckpointSummary,
 } from '@nexus/protocol';
 import { RUN_TRACE_VERSION } from '@nexus/protocol';
 import { ModelGateway, type ChatMessage, type ToolCall } from '@nexus/model-gateway';
-import { ToolRegistry, type ToolContext, type ToolDefinition, type WebProviderRouterOptions, BUILTIN_TOOLS } from '@nexus/tools';
+import { ToolRegistry, type ToolContext, type ToolDefinition, type ToolResult, type WebProviderRouterOptions, BUILTIN_TOOLS } from '@nexus/tools';
 import { Sandbox, resolveSandboxEffective, type SandboxConfig, type SandboxLevel, DenyAllApprovalHandler } from '@nexus/sandbox';
 import type { ApprovalHandler } from '@nexus/sandbox';
 import type { PermissionPreset } from '@nexus/sandbox';
@@ -66,6 +67,7 @@ import * as path from 'node:path';
 import { shouldEnableWebSearch, type WebSearchMode } from './webSearchPolicy.js';
 import { parseMcpNamespacedToolName } from './mcpClient.js';
 import { buildPromptCacheShape, comparePromptCacheShape, type PromptCacheShape } from './cacheShape.js';
+import { buildFreshnessPreflightNotice } from './fileFreshnessPreflight.js';
 import { compactionOptionsForRunProfile, contextBudgetForRunProfile, normalizeRunProfile, type RunProfile } from './runProfile.js';
 import { leaksToolProtocol, validateThreadItemsForPersistence } from './modelOutput.js';
 import { NexusRuntimeError, isRecoverableStreamError, toNexusErrorInfo } from './runtimeError.js';
@@ -1084,6 +1086,7 @@ export class AgentLoop {
     // 重新恢复已完成的条目，保持条目 id 稳定不变。
     const allItems = await this.config.store.getItems(threadId);
     const collectedItems: ThreadItem[] = allItems.slice(0, ckpt.itemIndex);
+    const recentKnowledgeItems = allItems.slice(-80);
 
     // Clear interrupts and restart
     // 清除中断并重启
@@ -1133,6 +1136,7 @@ export class AgentLoop {
         updatedCkpt,
         webSearchToolAvailable,
         runtimeContext,
+        recentKnowledgeItems,
       );
       const turns = await this.config.store.getTurns(threadId);
       const turn = turns.find((candidate) => candidate.turnId === turnId);
@@ -1637,6 +1641,10 @@ export class AgentLoop {
         payload: {
           toolName: event.toolName ?? String(metadata.toolName ?? 'unknown'),
           callId: String(metadata.callId ?? metadata.itemId ?? spanId),
+          resourceKind: traceResourceKindMetadata(metadata.resourceKind),
+          server: stringMetadata(metadata.server),
+          tool: stringMetadata(metadata.tool),
+          skillName: stringMetadata(metadata.skillName),
           decision: metadata.decision as 'allow' | 'deny' | 'approval_required' | undefined,
           approvalId: metadata.approvalId == null ? undefined : String(metadata.approvalId),
           argsSummary: metadata.argsSummary,
@@ -1670,6 +1678,27 @@ export class AgentLoop {
           childRunId: metadata.childRunId == null ? undefined : String(metadata.childRunId),
         },
       };
+    }
+
+    if (event.category === 'file') {
+      return {
+        ...base,
+        category: 'file',
+        itemId: metadata.itemId == null ? undefined : String(metadata.itemId),
+        payload: {
+          action: traceFileAction(metadata.action ?? event.type.split('.')[1]),
+          path: String(metadata.path ?? ''),
+          sourcePath: stringMetadata(metadata.sourcePath),
+          artifactPath: stringMetadata(metadata.artifactPath),
+          sha256: stringMetadata(metadata.sha256),
+          artifactSha256: stringMetadata(metadata.artifactSha256),
+          staleReason: stringMetadata(metadata.staleReason),
+          contentType: stringMetadata(metadata.contentType),
+          extractor: stringMetadata(metadata.extractor),
+          addedLines: numberMetadata(metadata.addedLines),
+          removedLines: numberMetadata(metadata.removedLines),
+        },
+      } as RunTraceObservation;
     }
 
     if (event.category === 'checkpoint') {
@@ -1712,6 +1741,159 @@ export class AgentLoop {
     }
 
     return null;
+  }
+
+  private async appendFileLifecycleRunMonitorEvents(
+    turnId: TurnId,
+    itemId: ItemId,
+    toolName: string,
+    data: unknown,
+  ): Promise<void> {
+    const object = data && typeof data === 'object' ? data as Record<string, unknown> : {};
+    if (toolName === 'read_file') {
+      const file = object.file && typeof object.file === 'object' ? object.file as Record<string, unknown> : null;
+      const freshness = object.freshness && typeof object.freshness === 'object' ? object.freshness as Record<string, unknown> : null;
+      if (file?.path) {
+        await this.appendRunMonitorEvent(turnId, {
+          category: 'file',
+          type: 'file.read',
+          message: `Read file ${String(file.path)}`,
+          metadata: {
+            itemId,
+            action: 'read',
+            path: String(file.path),
+            sha256: stringMetadata(file.sha256),
+            contentType: stringMetadata(file.contentType),
+          },
+        });
+      }
+      if (freshness?.status === 'unmanaged_warning') {
+        await this.appendRunMonitorEvent(turnId, {
+          category: 'file',
+          type: 'file.stale',
+          level: 'warning',
+          message: `Unmanaged derived artifact read: ${String(freshness.artifactPath ?? file?.path ?? '')}`,
+          metadata: {
+            itemId,
+            action: 'stale',
+            path: String(freshness.artifactPath ?? file?.path ?? ''),
+            staleReason: 'unmanaged_artifact',
+          },
+        });
+      }
+      return;
+    }
+
+    if (toolName !== 'read_document') return;
+    const source = object.source && typeof object.source === 'object' ? object.source as Record<string, unknown> : null;
+    const artifact = object.artifact && typeof object.artifact === 'object' ? object.artifact as Record<string, unknown> : null;
+    if (!source?.path || !artifact?.path) return;
+    const stale = object.stale === true;
+    const reused = object.reused === true;
+    await this.appendRunMonitorEvent(turnId, {
+      category: 'file',
+      type: reused ? 'file.reuse' : stale ? 'file.refresh' : 'file.extract',
+      level: stale ? 'warning' : 'info',
+      message: reused
+        ? `Reused document artifact for ${String(source.path)}`
+        : stale
+          ? `Refreshed document artifact for ${String(source.path)}`
+          : `Extracted document ${String(source.path)}`,
+      metadata: {
+        itemId,
+        action: reused ? 'reuse' : stale ? 'refresh' : 'extract',
+        path: String(source.path),
+        sourcePath: String(source.path),
+        artifactPath: String(artifact.path),
+        sha256: stringMetadata(source.sha256),
+        artifactSha256: stringMetadata(artifact.sha256),
+        contentType: stringMetadata(source.contentType),
+        extractor: stringMetadata(artifact.extractor),
+      },
+    });
+  }
+
+  private async executePreflightDocumentReads(
+    threadId: ThreadId,
+    turnId: TurnId,
+    collectedItems: ThreadItem[],
+    documentPaths: string[],
+  ): Promise<string[]> {
+    const outputs: string[] = [];
+    for (const documentPath of documentPaths) {
+      const itemId = generateItemId(turnId, collectedItems.length);
+      const args = { filePath: documentPath };
+      const toolItem: ThreadItem = {
+        id: itemId,
+        type: 'tool_call',
+        turnId,
+        toolName: 'read_document',
+        arguments: args,
+        modelToolName: 'read_document',
+        status: 'in_progress',
+        timestamp: new Date().toISOString(),
+      };
+      collectedItems.push(toolItem);
+      this.emit({ type: 'item.started', threadId, turnId, item: toolItem });
+      void this.appendItemRunMonitorEvent(threadId, turnId, toolItem, 'item.started');
+      await this.appendRunMonitorEvent(turnId, {
+        category: 'tool',
+        type: 'tool.started',
+        message: `Preflight read_document started for ${documentPath}`,
+        toolName: 'read_document',
+        metadata: {
+          itemId,
+          argsSummary: redactMonitorArgs(args),
+          resourceKind: 'tool',
+          tool: 'read_document',
+          preflight: true,
+        },
+      });
+
+      const ctx: ToolContext = {
+        workspaceRoot: this.config.workspaceRoot,
+        threadId,
+        turnId,
+        approved: false,
+        signal: this.stateManager.get(threadId).cancelController?.signal,
+        webProvider: this.config.webProvider,
+        systemMonitor: this._systemMonitor ?? undefined,
+      };
+      const result = await this.tools.execute('read_document', args, ctx);
+      this.completePreflightToolItem(toolItem, result);
+      this.emit({ type: 'item.completed', threadId, turnId, item: toolItem });
+      void this.appendItemRunMonitorEvent(threadId, turnId, toolItem, 'item.completed');
+      await this.persistItems(threadId, [toolItem]);
+      await this.appendRunMonitorEvent(turnId, {
+        category: 'tool',
+        type: result.status === 'failed' ? 'tool.failed' : 'tool.completed',
+        level: result.status === 'failed' ? 'warning' : 'info',
+        message: result.status === 'failed'
+          ? `Preflight read_document failed for ${documentPath}`
+          : `Preflight read_document completed for ${documentPath}`,
+        toolName: 'read_document',
+        metadata: {
+          itemId,
+          status: result.status,
+          preflight: true,
+          resultSummary: result.data ?? result.output,
+        },
+      });
+      await this.appendFileLifecycleRunMonitorEvents(turnId, itemId, 'read_document', result.data);
+      outputs.push([
+        `read_document(${documentPath}) => ${result.status}`,
+        formatToolHistoryPayload(result.data ?? result.output),
+      ].join('\n'));
+    }
+    return outputs;
+  }
+
+  private completePreflightToolItem(toolItem: ThreadItem, result: ToolResult): void {
+    (toolItem as ThreadItem & { status: ToolResult['status'] }).status = result.status;
+    if (result.error) {
+      (toolItem as ThreadItem & { error?: { message: string } }).error = result.error;
+    }
+    (toolItem as ThreadItem & { result?: unknown }).result = result.data ?? result.output;
   }
 
   // 为 item 生命周期事件追加 run monitor 审计记录
@@ -1967,6 +2149,7 @@ export class AgentLoop {
     const webSearchRecommended = shouldEnableWebSearch(this.config.webSearchMode, userInput);
     const webSearchToolAvailable = this.shouldOfferWebSearchTool();
     const messages = await this.buildMessages(threadId, userInput, refreshedThread, webSearchRecommended);
+    const recentKnowledgeItems = await this.config.store.getRecentItems(threadId, 80);
     const userItem: ThreadItem = {
       id: generateItemId(turnId, 0),
       type: 'user_message',
@@ -2009,6 +2192,7 @@ export class AgentLoop {
         checkpoint,
         webSearchToolAvailable,
         runtimeContext,
+        recentKnowledgeItems,
       );
       turn.status = 'completed';
       turn.completedAt = new Date().toISOString();
@@ -2236,10 +2420,12 @@ export class AgentLoop {
     checkpoint: Checkpoint,
     webSearchToolAvailable: boolean,
     runtimeContext: RuntimeTurnContext,
+    recentKnowledgeItems: ThreadItem[],
   ): Promise<{ items: ThreadItem[]; usage: Usage | null }> {
     let iteration = 0;
     let usage: Usage | null = null;
     let webSearchDisabled = false;
+    let freshnessPreflightApplied = false;
     const visibleToolNames = this.config.toolBindingMode === 'delayed'
       ? this.initialVisibleToolNames()
       : undefined;
@@ -2262,6 +2448,49 @@ export class AgentLoop {
           message: pendingNotice,
           metadata: { iteration },
         });
+      }
+
+      const freshnessNotice = freshnessPreflightApplied ? null : await buildFreshnessPreflightNotice({
+        workspaceRoot: this.config.workspaceRoot,
+        locale: this.config.locale,
+        userText: userInputToText(runtimeContext.userInput),
+        recentItems: [...recentKnowledgeItems, ...collectedItems].slice(-80),
+      });
+      if (freshnessNotice) {
+        freshnessPreflightApplied = true;
+        messages.push({ role: 'user', content: freshnessNotice.content });
+        const staleArtifact = freshnessNotice.staleArtifacts[0];
+        const requiredDocumentPath = freshnessNotice.requiredDocumentPaths?.[0];
+        const documentPaths = uniqueStrings([
+          ...freshnessNotice.staleArtifacts.map((entry) => entry.sourcePath),
+          ...(freshnessNotice.requiredDocumentPaths ?? []),
+        ]).slice(0, 3);
+        await this.appendRunMonitorEvent(turnId, {
+          category: 'file',
+          type: staleArtifact ? 'file.stale' : 'file.read',
+          level: 'warning',
+          message: staleArtifact
+            ? 'Stale document artifacts detected before model call'
+            : 'Document verification required before model call',
+          metadata: {
+            action: staleArtifact ? 'stale' : 'read',
+            path: staleArtifact?.artifactPath ?? requiredDocumentPath ?? '',
+            sourcePath: staleArtifact?.sourcePath ?? requiredDocumentPath,
+            staleReason: staleArtifact?.reason,
+            staleArtifacts: freshnessNotice.staleArtifacts,
+            requiredDocumentPaths: freshnessNotice.requiredDocumentPaths ?? [],
+          },
+        });
+        const preflightResults = await this.executePreflightDocumentReads(threadId, turnId, collectedItems, documentPaths);
+        if (preflightResults.length > 0) {
+          messages.push({
+            role: 'user',
+            content: [
+              '文件知识自动校验结果：runtime 已在模型回答前调用 read_document 刷新/复用以下文档内容。',
+              ...preflightResults,
+            ].join('\n\n'),
+          });
+        }
       }
 
       iteration++;
@@ -3155,12 +3384,18 @@ export class AgentLoop {
     collectedItems.push(toolItem);
     this.emit({ type: 'item.started', threadId, turnId, item: toolItem });
     void this.appendItemRunMonitorEvent(threadId, turnId, toolItem, 'item.started');
+    const toolResourceMetadata = resourceMetadataForToolCall(toolName, args, mcpIdentity);
     await this.appendRunMonitorEvent(turnId, {
       category: 'tool',
       type: 'tool.started',
       message: `Tool ${toolName} started`,
       toolName,
-      metadata: { args: redactMonitorArgs(args) },
+      metadata: {
+        itemId,
+        callId: toolCall.id,
+        argsSummary: redactMonitorArgs(args),
+        ...toolResourceMetadata,
+      },
     });
 
     const prePatchSnapshots = toolName === 'apply_patch'
@@ -3230,6 +3465,7 @@ export class AgentLoop {
           workspaceRoot: this.config.workspaceRoot,
           changes,
           beforeSnapshots: prePatchSnapshots,
+          collectedItems,
         });
         if (projectCheckpoint.files.length > 0) {
           collectedItems.push(projectCheckpoint);
@@ -3266,8 +3502,15 @@ export class AgentLoop {
       level: result.status === 'failed' ? 'error' : 'info',
       message: result.status === 'failed' ? (result.error?.message ?? result.output) : `Tool ${toolName} completed`,
       toolName,
-      metadata: { status: result.status },
+      metadata: {
+        itemId,
+        callId: toolCall.id,
+        status: result.status,
+        resultSummary: summarizeToolResultForMonitor(result.data ?? result.output),
+        ...toolResourceMetadata,
+      },
     });
+    await this.appendFileLifecycleRunMonitorEvents(turnId, itemId, toolName, result.data);
 
     return {
       output: result.output,
@@ -5209,6 +5452,92 @@ function stringMetadata(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value : undefined;
 }
 
+function traceFileAction(value: unknown): 'read' | 'write' | 'patch' | 'delete' | 'checkpoint' | 'extract' | 'stale' | 'refresh' | 'reuse' {
+  const action = typeof value === 'string' ? value : '';
+  if (['read', 'write', 'patch', 'delete', 'checkpoint', 'extract', 'stale', 'refresh', 'reuse'].includes(action)) {
+    return action as ReturnType<typeof traceFileAction>;
+  }
+  return 'read';
+}
+
+function traceResourceKindMetadata(value: unknown): 'tool' | 'mcp' | 'skill' | 'shell' | 'agent' | undefined {
+  if (value === 'tool' || value === 'mcp' || value === 'skill' || value === 'shell' || value === 'agent') {
+    return value;
+  }
+  return undefined;
+}
+
+function resourceMetadataForToolCall(
+  toolName: string,
+  args: Record<string, unknown>,
+  mcpIdentity: { serverId: string; toolName: string } | null,
+): Record<string, unknown> {
+  if (mcpIdentity) {
+    return {
+      resourceKind: 'mcp',
+      server: mcpIdentity.serverId,
+      tool: mcpIdentity.toolName,
+    };
+  }
+
+  const skillName = skillNameFromToolArgs(args);
+  if (skillName || /^(skill|skills)(?:_|$)/i.test(toolName)) {
+    return {
+      resourceKind: 'skill',
+      skillName: skillName ?? toolName,
+      tool: toolName,
+    };
+  }
+
+  if (isCollabTool(toolName)) {
+    return {
+      resourceKind: 'agent',
+      tool: toolName,
+    };
+  }
+
+  if (toolName === 'shell_command' || toolName === 'exec_command' || toolName === 'command_execution') {
+    return {
+      resourceKind: 'shell',
+      tool: toolName,
+    };
+  }
+
+  return {
+    resourceKind: 'tool',
+    tool: toolName,
+  };
+}
+
+function skillNameFromToolArgs(args: Record<string, unknown>): string | undefined {
+  const direct = ['skillName', 'skill', 'name']
+    .map((key) => args[key])
+    .find((value): value is string => typeof value === 'string' && value.trim().length > 0);
+  if (direct) return direct.trim();
+
+  const installed = args.installed;
+  if (Array.isArray(installed)) {
+    const first = installed.find((value): value is string => typeof value === 'string' && value.trim().length > 0);
+    return first?.trim();
+  }
+
+  return undefined;
+}
+
+function summarizeToolResultForMonitor(result: unknown): unknown {
+  if (typeof result === 'string') {
+    return result.length > 300 ? `${result.slice(0, 300)}…` : result;
+  }
+  if (result && typeof result === 'object') {
+    return result;
+  }
+  return result;
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
+}
+
 function combineCacheStrategy(
   left: Usage['cacheStrategy'],
   right: Usage['cacheStrategy'],
@@ -5446,6 +5775,7 @@ async function createProjectCheckpointItem({
   workspaceRoot,
   changes,
   beforeSnapshots,
+  collectedItems,
 }: {
   threadId: ThreadId;
   turnId: TurnId;
@@ -5454,6 +5784,7 @@ async function createProjectCheckpointItem({
   workspaceRoot: string;
   changes: NormalizedFileChange[];
   beforeSnapshots: Map<string, string | null>;
+  collectedItems: ThreadItem[];
 }): Promise<Extract<ThreadItem, { type: 'project_checkpoint' }>> {
   const files = [];
   for (const change of changes) {
@@ -5477,8 +5808,62 @@ async function createProjectCheckpointItem({
     turnCount,
     workspaceRoot,
     files,
+    knowledge: buildKnowledgeCheckpointSummary(collectedItems),
     timestamp: new Date().toISOString(),
   };
+}
+
+function buildKnowledgeCheckpointSummary(items: ThreadItem[]): KnowledgeCheckpointSummary | undefined {
+  const observedFiles = new Map<string, KnowledgeCheckpointSummary['observedFiles'][number]>();
+  const documentArtifacts = new Map<string, KnowledgeCheckpointSummary['documentArtifacts'][number]>();
+
+  for (const item of items) {
+    if (item.type !== 'tool_call' || item.status === 'failed') continue;
+    const result = objectRecord(item.result);
+    const file = objectRecord(result.file);
+    const source = objectRecord(result.source);
+    const artifact = objectRecord(result.artifact);
+
+    const fileSummary = fileFingerprintSummary(file);
+    if (fileSummary) observedFiles.set(fileSummary.path, fileSummary);
+
+    const sourceSummary = fileFingerprintSummary(source);
+    if (sourceSummary) observedFiles.set(sourceSummary.path, sourceSummary);
+
+    const artifactPath = stringMetadata(artifact.path);
+    const sourcePath = stringMetadata(source.path);
+    const sourceHash = stringMetadata(source.sha256);
+    const artifactHash = stringMetadata(artifact.sha256);
+    if (artifactPath && sourcePath && sourceHash && artifactHash) {
+      documentArtifacts.set(`${sourcePath}\0${artifactPath}`, {
+        artifactPath,
+        sourcePath,
+        sourceHash,
+        artifactHash,
+      });
+    }
+  }
+
+  if (observedFiles.size === 0 && documentArtifacts.size === 0) return undefined;
+  return {
+    observedFiles: [...observedFiles.values()],
+    documentArtifacts: [...documentArtifacts.values()],
+  };
+}
+
+function fileFingerprintSummary(value: Record<string, unknown>): KnowledgeCheckpointSummary['observedFiles'][number] | null {
+  const filePath = stringMetadata(value.path);
+  const sha256Value = stringMetadata(value.sha256);
+  const mtimeMs = numberMetadata(value.mtimeMs);
+  const sizeBytes = numberMetadata(value.sizeBytes);
+  if (!filePath || !sha256Value || mtimeMs === undefined || sizeBytes === undefined) return null;
+  return { path: filePath, sha256: sha256Value, mtimeMs, sizeBytes };
+}
+
+function objectRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
 }
 
 async function readWorkspaceTextFile(workspaceRoot: string, filePath: string): Promise<string | null> {
@@ -6056,7 +6441,7 @@ function itemToMessage(item: ThreadItem): ChatMessage | null {
       }
       return { role: 'assistant', content: item.text };
     case 'reasoning':
-      return { role: 'assistant', content: `[Reasoning] ${item.text}` };
+      return null;
     case 'tool_call':
       return null;
     case 'context_compaction':

@@ -1,5 +1,6 @@
 // 引入 zod：用于声明式数据校验，与 types.ts 的 TypeScript 类型一一对应
 import { z } from 'zod';
+import { knowledgeCheckpointSummarySchema } from './fileKnowledgeSchemas.js';
 
 // ─── Primitives ──────────────────────────────────────────────────────────────
 // 基础 ID schema：threadId/turnId/itemId 都要求非空字符串
@@ -261,6 +262,7 @@ export const projectCheckpointItemSchema = z.object({
   turnCount: z.number().int().min(0),
   workspaceRoot: z.string(),
   files: z.array(projectFileCheckpointSchema),
+  knowledge: knowledgeCheckpointSummarySchema.optional(),
   timestamp: z.string().optional(),
   harnessRunId: z.string().optional(),
   harnessIteration: z.number().int().min(0).optional(),

@@ -146,7 +146,11 @@ export interface ChatCompletionRequest {
   thinking?: {
     type: 'enabled' | 'disabled';
     reasoning_effort?: 'high' | 'max' | string;
+    clear_thinking?: boolean;
   };
+  enable_thinking?: boolean;
+  parallel_tool_calls?: boolean;
+  tool_stream?: boolean;
   stream?: boolean;
   stop?: string[];
 }

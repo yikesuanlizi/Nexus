@@ -36,6 +36,7 @@ export interface RunMonitorWorkbenchProps {
   onSelectRun(runId: string): void;
   onSelectEvent(eventId: string): void;
   onToggleCategory(category: RunTraceCategory): void;
+  onSetCategoryFilter(categories: RunTraceCategory[]): void;
   onSetErrorsOnly(value: boolean): void;
   onAutoRefreshChange(enabled: boolean): void;
   onAutoRefreshIntervalChange(ms: number): void;
@@ -73,6 +74,7 @@ export function RunMonitorWorkbench(props: RunMonitorWorkbenchProps) {
     onSelectRun,
     onSelectEvent,
     onToggleCategory,
+    onSetCategoryFilter,
     onSetErrorsOnly,
     onAutoRefreshChange,
     onAutoRefreshIntervalChange,
@@ -259,6 +261,7 @@ export function RunMonitorWorkbench(props: RunMonitorWorkbenchProps) {
               zh={zh}
               onSelectEvent={onSelectEvent}
               onToggleCategory={onToggleCategory}
+              onSetCategoryFilter={onSetCategoryFilter}
               onSetErrorsOnly={onSetErrorsOnly}
               onLoadOlder={onLoadOlder}
               controlCapabilities={selectedRun?.controlCapabilities}

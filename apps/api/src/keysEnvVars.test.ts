@@ -15,6 +15,7 @@ describe('model key environment variables', () => {
     expect(providerSource).toContain('parseWindowsRegistryEnvironmentOutput');
     expect(routeSource).toContain('/api/keys/env-vars');
     expect(routeSource).toContain('/api/keys/env');
-    expect(routeSource).toContain('readApiKeyEnvironmentValue(envVar)');
+    expect(routeSource).toContain('configuredEnvVar');
+    expect(routeSource).toContain('source: key ? (configuredEnvVar ? \'env\' : \'config\') : null');
   });
 });

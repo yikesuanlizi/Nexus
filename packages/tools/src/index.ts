@@ -11,6 +11,7 @@ export type {
 export {
   BUILTIN_TOOLS,
   currentTimeTool,
+  readDocumentTool,
   readFileTool,
   writeFileTool,
   shellCommandTool,
@@ -21,6 +22,18 @@ export {
   applyPatchTool,
   getSystemStatusTool,
 } from './builtin.js';
+export {
+  artifactRecordForResult,
+  assessArtifactFreshness,
+  documentArtifactPathForSource,
+  findArtifactByPath,
+  findArtifactBySource,
+  loadDocumentArtifactLedger,
+  registerExternalDocumentArtifactsFromText,
+  saveDocumentArtifactRecord,
+  updateArtifactLastUsed,
+} from './documentArtifacts.js';
+export type { DocumentArtifactLedger } from './documentArtifacts.js';
 export {
   FirecrawlWebProvider,
   NativeFetchWebProvider,

@@ -17,8 +17,8 @@ export function buildTurnFileSummary(items: Array<Record<string, unknown>>, work
   const changedFiles = new Map<string, TurnChangedFileSummaryEntry>();
 
   for (const item of items) {
-    if (item.type === 'tool_call' && item.toolName === 'read_file' && item.status !== 'failed') {
-      const path = normalizeDisplayPath(readReadFilePath(item), workspaceRoot);
+    if (item.type === 'tool_call' && item.status !== 'failed') {
+      const path = normalizeDisplayPath(readToolObservedPath(item), workspaceRoot);
       if (path && !isInternalPath(path, workspaceRoot)) readFiles.set(path, { path });
       continue;
     }
@@ -54,10 +54,26 @@ export function buildTurnFileSummary(items: Array<Record<string, unknown>>, work
 function readReadFilePath(item: Record<string, unknown>): string {
   const result = readObject(item.result);
   const args = readObject(item.arguments);
-  return readString(result.path)
+  const file = readObject(result.file);
+  return readString(file.path)
+    || readString(result.path)
     || readArtifactRefPath(result)
     || readString(args.filePath)
     || readString(args.path);
+}
+
+function readToolObservedPath(item: Record<string, unknown>): string {
+  const result = readObject(item.result);
+  const source = readObject(result.source);
+  if (item.toolName === 'read_document') {
+    return readString(source.path)
+      || readString(readObject(result.file).path)
+      || readString(readObject(result.artifact).path)
+      || readString(readObject(item.arguments).filePath)
+      || readString(readObject(item.arguments).path);
+  }
+  if (item.toolName === 'read_file') return readReadFilePath(item);
+  return '';
 }
 
 function readArtifactRefPath(value: Record<string, unknown>): string {
@@ -165,17 +181,88 @@ function shellTokens(command: string): string[] {
 }
 
 function cleanCommandPathToken(token: string): string {
-  return token
+  const cleaned = token
     .replace(/^[<>(){}[\],;]+/, '')
     .replace(/[<>(){}[\],;]+$/, '')
     .replace(/^[rRuUbBfF]+(?=[A-Za-z]:[\\/])/, '')
+    .trim();
+  return extractEmbeddedWindowsPath(cleaned) || cleaned;
+}
+
+function extractEmbeddedWindowsPath(token: string): string {
+  const matches = [...token.matchAll(/[A-Za-z]:[\\/]/g)];
+  if (matches.length === 0) return '';
+  const lastMatchIndex = matches[matches.length - 1]?.index ?? 0;
+  if (lastMatchIndex === 0) return '';
+  return token.slice(lastMatchIndex)
+    .replace(/[<>(){}[\],;]+$/, '')
     .trim();
 }
 
 function looksLikeFilePath(token: string, workspaceRoot: string): boolean {
   if (!token || token.startsWith('-') || /^[a-z][a-z0-9+.-]*:\/\//i.test(token)) return false;
-  if (!/\.[A-Za-z0-9]{1,8}$/.test(token)) return false;
+  if (!hasKnownPreviewableExtension(token)) return false;
   return isAbsolutePath(token) || token.includes('/') || token.includes('\\') || Boolean(workspaceRoot.trim());
+}
+
+const PREVIEWABLE_FILE_EXTENSIONS = new Set([
+  'bat',
+  'c',
+  'cmd',
+  'cpp',
+  'cs',
+  'css',
+  'csv',
+  'doc',
+  'docx',
+  'env',
+  'go',
+  'h',
+  'hpp',
+  'htm',
+  'html',
+  'ini',
+  'java',
+  'js',
+  'json',
+  'jsonl',
+  'jsx',
+  'kt',
+  'kts',
+  'log',
+  'markdown',
+  'md',
+  'mdx',
+  'mjs',
+  'pdf',
+  'php',
+  'ppt',
+  'pptx',
+  'ps1',
+  'py',
+  'rb',
+  'rs',
+  'scss',
+  'sh',
+  'sql',
+  'svelte',
+  'swift',
+  'toml',
+  'ts',
+  'tsv',
+  'tsx',
+  'txt',
+  'vue',
+  'xls',
+  'xlsx',
+  'xml',
+  'yaml',
+  'yml',
+]);
+
+function hasKnownPreviewableExtension(path: string): boolean {
+  const match = /\.([A-Za-z0-9]{1,16})$/.exec(path);
+  return Boolean(match && PREVIEWABLE_FILE_EXTENSIONS.has(match[1].toLowerCase()));
 }
 
 function readObject(value: unknown): Record<string, unknown> {

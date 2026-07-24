@@ -27,6 +27,7 @@ interface TraceTimelineProps {
   zh: boolean;
   onSelectEvent(eventId: string): void;
   onToggleCategory(category: RunTraceCategory): void;
+  onSetCategoryFilter(categories: RunTraceCategory[]): void;
   onSetErrorsOnly(value: boolean): void;
   onLoadOlder(): void;
   controlCapabilities?: RunControlCapabilities;
@@ -47,6 +48,7 @@ export function TraceTimeline({
   zh,
   onSelectEvent,
   onToggleCategory,
+  onSetCategoryFilter,
   onSetErrorsOnly,
   onLoadOlder,
   controlCapabilities,
@@ -96,6 +98,7 @@ export function TraceTimeline({
         errorsOnly={errorsOnly}
         zh={zh}
         onToggleCategory={onToggleCategory}
+        onSetCategoryFilter={onSetCategoryFilter}
         onToggleErrorsOnly={() => onSetErrorsOnly(!errorsOnly)}
       />
       <div className="traceTimeline__body">

@@ -114,6 +114,18 @@ function buildTokenTooltip(
   return parts.join(' ');
 }
 
+function parseProviderEnvVarSaveFailure(detail: string): string {
+  const trimmed = detail.trim();
+  if (!trimmed) return '';
+  try {
+    const parsed = JSON.parse(trimmed) as { error?: unknown };
+    if (typeof parsed.error === 'string' && parsed.error.trim()) return parsed.error.trim();
+  } catch {
+    // API may return plain text from a proxy or dev server; fall through to raw detail.
+  }
+  return trimmed;
+}
+
 function App() {
   const [hasStoredRunConfig] = useState(() => Boolean(localStorage.getItem(RUN_CONFIG_STORAGE_KEY)));
   const [config, setConfig] = useState<RunConfig>(() => ({
@@ -156,6 +168,7 @@ function App() {
   // 中文注释：外部预览请求 — 从对话条目点击"预览"时驱动右侧文件面板加载该文件
   // — Chinese: external preview request — drives right file panel to load a file when "preview" is clicked from chat
   const [previewRequest, setPreviewRequest] = useState<ExternalPreviewRequest | null>(null);
+  const [rightPaneSizingMode, setRightPaneSizingMode] = useState<'standard' | 'files'>(() => readStoredRightPaneSizingMode());
   const [pendingApprovals, setPendingApprovals] = useState<ApprovalRequest[]>([]);
   const taskRuntimeMonitor = useTaskRuntimeMonitor();
   const [providers, setProviders] = useState<ProviderEntry[]>([]);
@@ -172,7 +185,7 @@ function App() {
   const sendMessageGuardRef = useRef(createLatestRequestGuard());
   const threadEventSourceGenerationRef = useRef(0);
   const isWorkflowView = workspaceView === 'workflow';
-  const { rightPaneGridTemplateColumns, startRightPaneResize } = useRightPaneSizing(rightPaneVisible, isWorkflowView ? 'workflow' : 'standard');
+  const { rightPaneGridTemplateColumns, startRightPaneResize } = useRightPaneSizing(rightPaneVisible, isWorkflowView ? 'workflow' : rightPaneSizingMode);
   const { toast, showToast } = useToastNotice();
   const { botConfig, botStatus, bindRemoteAssistant, refreshBotStatus, saveBotConfig, connectWeixin, logoutWeixin, startDingtalkStream, stopDingtalkStream, testDingtalkMessage } = useBotControls();
   const { applyWebProviderState, clearWebProviderKey, saveWebProviderKey, webProviderState } = useWebProviderSettings();
@@ -385,7 +398,7 @@ function App() {
       tools: { calls: toolCalls || workbenchSelectedRun.toolCallCount, failed: toolFailed, denied: toolDenied },
       items: { started: 0, completed: 0, failed: 0, byType: {} },
       agents: { spawned: workbenchSelectedRun.subagentCount, running: 0, failed: 0 },
-      files: { changed: 0, addedLines: 0, removedLines: 0 },
+      files: { reads: 0, changed: 0, addedLines: 0, removedLines: 0, extracted: 0, reused: 0, stale: 0, refreshed: 0 },
       lastError: lastError && lastError.category === 'error'
         ? { code: (lastError.payload as { code?: string })?.code ?? 'ERROR', message: (lastError.payload as { message?: string })?.message ?? lastError.name }
         : (workbenchSelectedRun.error ? { code: 'RUN_ERROR', message: workbenchSelectedRun.error } : undefined),
@@ -1279,12 +1292,13 @@ function App() {
   async function sendMessage(
     modeInstruction?: string,
     forcedText?: string,
-    options: { imagesOverride?: ComposerImage[]; clearComposerImages?: boolean } = {},
+    options: { imagesOverride?: ComposerImage[]; clearComposerImages?: boolean; configOverride?: Partial<RunConfig> } = {},
   ) {
     const text = (forcedText ?? input).trim();
     const outgoingImages = options.imagesOverride ?? images;
     const hasImages = outgoingImages.length > 0;
     if (!text && !hasImages) return;
+    const requestConfig = options.configOverride ?? threadApiConfig;
     const sendReq = sendMessageGuardRef.current.begin();
     const isSendCurrent = () => sendMessageGuardRef.current.isCurrent(sendReq.generation);
     let activeThreadId = threadId;
@@ -1294,7 +1308,7 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: (text || 'Image').slice(0, 60),
-          config: { ...threadApiConfig, workspaceRoot: '' },
+          config: { ...requestConfig, workspaceRoot: '' },
           conversationKind: 'chat',
         }),
       });
@@ -1332,7 +1346,7 @@ function App() {
     }
     setItems((current) => mergeIncomingItems(current, [pendingUserItem]));
     try {
-      const body: Record<string, unknown> = { input: text || 'See attached image(s).', config: threadApiConfig };
+      const body: Record<string, unknown> = { input: text || 'See attached image(s).', config: requestConfig };
       if (modeInstruction) body.modeInstruction = modeInstruction;
       if (sentImages.length > 0) {
         body.images = sentImages.map((img) => ({ name: img.name, dataUrl: img.dataUrl }));
@@ -1461,6 +1475,7 @@ function App() {
     const userText = items.find((item) => item.type === 'user_message' && item.turnId === turnId)?.text?.trim();
     if (!userText) return;
     const count = rollbackCountForTurn(turnId, turns, items);
+    const regenerateConfig = { ...threadApiConfig };
     setActionBusy(true);
     try {
       const response = await fetch(`/api/threads/${threadId}/rollback`, {
@@ -1478,7 +1493,7 @@ function App() {
       });
       await loadThread(threadId);
       setActionBusy(false);
-      await sendMessage(undefined, userText, { imagesOverride: [], clearComposerImages: false });
+      await sendMessage(undefined, userText, { imagesOverride: [], clearComposerImages: false, configOverride: regenerateConfig });
     } catch (error) {
       addEvent({
         kind: 'error',
@@ -1554,6 +1569,7 @@ function App() {
   // — Chinese: clicking "preview" on a tool item switches the right panel to Files tab and drives preview
   function previewFileFromItem(path: string) {
     if (!path) return;
+    setRightPaneSizingMode('files');
     setPreviewRequest({ path, pin: true, nonce: Date.now() });
   }
   // 中文注释：点击工具条目"打开"按钮 → 调用 Tauri 在系统编辑器中打开
@@ -1696,7 +1712,12 @@ function App() {
     }
   }
   async function saveProviderEnvVar(providerId: string, envVar: string) {
-    const response = await fetch(`/api/keys/${providerId}/env-var`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ envVar }) });
+    const response = await fetch(`/api/keys/${encodeURIComponent(providerId)}/env-var`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ envVar }) });
+    if (!response.ok) {
+      const detail = await response.text().catch(() => '');
+      const reason = parseProviderEnvVarSaveFailure(detail);
+      throw new Error(reason ? `Provider env var save failed: ${reason}` : 'Provider env var save failed');
+    }
     if (response.ok) {
       const data = (await response.json()) as { keys?: ApiKeyState[] };
       setKeyStates(data.keys ?? []);
@@ -1889,7 +1910,7 @@ function App() {
                 title={config.locale === 'zh' ? '拖拽调整右侧栏宽度' : 'Drag to resize right panel'}
                 onPointerDown={startRightPaneResize}
               />
-              {workspaceView === 'workflow' ? <section className="workflowSidePane"><WorkflowPanel locale={config.locale} workflow={activeWorkflow} blueprint={workflowBlueprint} components={workflowComponents} planDraft={workflowPlanDraft} saving={workflowSaving} runtimeBusy={workflowRuntimeBusy} onSave={(workflow) => void saveWorkflow(workflow)} onCancelPlan={() => setWorkflowPlanDraft(null)} onCommitPlan={() => void commitWorkflowPlan()} onSelectionChange={setWorkflowSelectedNodeIds} onRunWorkflow={() => void controlWorkflowRuntime('run')} onTestWorkflow={() => void controlWorkflowRuntime('test_run')} onPublishWorkflow={() => void controlWorkflowRuntime('publish')} onResumeWorkflow={() => void controlWorkflowRuntime('resume')} onCancelWorkflow={() => void controlWorkflowRuntime('cancel')} onRetryWorkflowNode={(nodeId) => void controlWorkflowRuntime('retry_node', nodeId)} runEvents={runMonitor.events} /></section> : <RightPane activeThread={activeThread} activeThreadId={threadId} activeThreadTitle={activeThread?.title ?? ''} busy={busy} threadChildren={threadChildren} externalPreviewRequest={previewRequest} locale={config.locale} runtimeItems={items} workspaceRoot={activeWorkspaceRoot} onJumpToMonitor={jumpToMonitor} onToggleMemoryExcluded={(excluded) => void toggleThreadMemoryExcluded(excluded)} traceSummary={workbenchTraceSummary as Parameters<typeof RightPane>[0]['traceSummary']} currentRunId={workbenchCurrentRunId} controlCapabilities={workbenchSelectedRun?.controlCapabilities ? { interrupt: workbenchSelectedRun.controlCapabilities.interrupt, resume: workbenchSelectedRun.controlCapabilities.resume, rollback: { enabled: workbenchSelectedRun.controlCapabilities.rollback.enabled, checkpointIds: workbenchSelectedRun.controlCapabilities.rollback.checkpointIds ?? [], reason: workbenchSelectedRun.controlCapabilities.rollback.reason } } : undefined} onInterrupt={handleControlInterrupt} onResume={handleControlResume} onRollback={handleControlRollback} responsiveMode={responsiveMode === 'side' ? undefined : responsiveMode} onCloseRequest={handleCloseWorkbench} />}
+              {workspaceView === 'workflow' ? <section className="workflowSidePane"><WorkflowPanel locale={config.locale} workflow={activeWorkflow} blueprint={workflowBlueprint} components={workflowComponents} planDraft={workflowPlanDraft} saving={workflowSaving} runtimeBusy={workflowRuntimeBusy} onSave={(workflow) => void saveWorkflow(workflow)} onCancelPlan={() => setWorkflowPlanDraft(null)} onCommitPlan={() => void commitWorkflowPlan()} onSelectionChange={setWorkflowSelectedNodeIds} onRunWorkflow={() => void controlWorkflowRuntime('run')} onTestWorkflow={() => void controlWorkflowRuntime('test_run')} onPublishWorkflow={() => void controlWorkflowRuntime('publish')} onResumeWorkflow={() => void controlWorkflowRuntime('resume')} onCancelWorkflow={() => void controlWorkflowRuntime('cancel')} onRetryWorkflowNode={(nodeId) => void controlWorkflowRuntime('retry_node', nodeId)} runEvents={runMonitor.events} /></section> : <RightPane activeThread={activeThread} activeThreadId={threadId} activeThreadTitle={activeThread?.title ?? ''} busy={busy} threadChildren={threadChildren} externalPreviewRequest={previewRequest} locale={config.locale} runtimeItems={items} workspaceRoot={activeWorkspaceRoot} onTabChange={(tab) => setRightPaneSizingMode(rightPaneSizingModeForTab(tab))} onJumpToMonitor={jumpToMonitor} onToggleMemoryExcluded={(excluded) => void toggleThreadMemoryExcluded(excluded)} traceSummary={workbenchTraceSummary as Parameters<typeof RightPane>[0]['traceSummary']} currentRunId={workbenchCurrentRunId} controlCapabilities={workbenchSelectedRun?.controlCapabilities ? { interrupt: workbenchSelectedRun.controlCapabilities.interrupt, resume: workbenchSelectedRun.controlCapabilities.resume, rollback: { enabled: workbenchSelectedRun.controlCapabilities.rollback.enabled, checkpointIds: workbenchSelectedRun.controlCapabilities.rollback.checkpointIds ?? [], reason: workbenchSelectedRun.controlCapabilities.rollback.reason } } : undefined} onInterrupt={handleControlInterrupt} onResume={handleControlResume} onRollback={handleControlRollback} responsiveMode={responsiveMode === 'side' ? undefined : responsiveMode} onCloseRequest={handleCloseWorkbench} />}
             </>
           ) : null}
         </div>
@@ -1971,6 +1992,7 @@ function App() {
         onToggleThread={runMonitor.toggleThread}
         onSelectEvent={runMonitor.selectEvent}
         onToggleCategory={runMonitor.toggleCategory}
+        onSetCategoryFilter={runMonitor.setCategoryFilter}
         onSetErrorsOnly={runMonitor.setErrorsOnly}
         onAutoRefreshChange={runMonitor.setAutoRefresh}
         onAutoRefreshIntervalChange={runMonitor.setAutoRefreshInterval}
@@ -1991,4 +2013,17 @@ function App() {
     </main>
   );
 }
+
+function readStoredRightPaneSizingMode(): 'standard' | 'files' {
+  try {
+    return localStorage.getItem('nexus.rightPane.tab') === 'files' ? 'files' : 'standard';
+  } catch {
+    return 'standard';
+  }
+}
+
+function rightPaneSizingModeForTab(tab: string): 'standard' | 'files' {
+  return tab === 'files' ? 'files' : 'standard';
+}
+
 createRoot(document.getElementById('root')!).render(<App />);

@@ -20,6 +20,9 @@ export interface ProviderEntry {
   /** Environment variable to read the API key from. */
   // 读取 API key 的环境变量名
   apiKeyEnvVar: string;
+  /** Additional environment variable names accepted for this provider. */
+  // 该 provider 兼容识别的其他 API key 环境变量名
+  apiKeyEnvVars?: string[];
   /** API protocol. */
   // API 协议：openai 或 anthropic
   protocol: 'openai' | 'anthropic';
@@ -89,6 +92,7 @@ const KNOWN_PROVIDERS: ProviderEntry[] = [
     name: '智谱 (ZhipuAI)',
     baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
     apiKeyEnvVar: 'ZHIPU_API_KEY',
+    apiKeyEnvVars: ['ZHIPU_API_KEY', 'GLM_API_KEY', 'ZAI_API_KEY', 'Z_AI_API_KEY'],
     protocol: 'openai',
     isLocal: false,
     description: '智谱清言 API (GLM-4, etc.)',
@@ -98,6 +102,7 @@ const KNOWN_PROVIDERS: ProviderEntry[] = [
     name: 'Kimi (Moonshot)',
     baseUrl: 'https://api.moonshot.cn/v1',
     apiKeyEnvVar: 'KIMI_API_KEY',
+    apiKeyEnvVars: ['KIMI_API_KEY', 'MOONSHOT_API_KEY', 'KIMI_CODING_API_KEY'],
     protocol: 'openai',
     isLocal: false,
     description: '月之暗面 Kimi API',
@@ -107,6 +112,7 @@ const KNOWN_PROVIDERS: ProviderEntry[] = [
     name: '通义千问 (Qwen)',
     baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
     apiKeyEnvVar: 'QWEN_API_KEY',
+    apiKeyEnvVars: ['QWEN_API_KEY', 'DASHSCOPE_API_KEY', 'ALIBABA_API_KEY'],
     protocol: 'openai',
     isLocal: false,
     description: '阿里云通义千问 API (Qwen-Max, Qwen-Plus)',
@@ -116,6 +122,7 @@ const KNOWN_PROVIDERS: ProviderEntry[] = [
     name: '百度文心 (ERNIE)',
     baseUrl: 'https://qianfan.baidubce.com/v2',
     apiKeyEnvVar: 'BAIDU_API_KEY',
+    apiKeyEnvVars: ['BAIDU_API_KEY', 'QIANFAN_API_KEY'],
     protocol: 'openai',
     isLocal: false,
     description: '百度千帆 API (ERNIE-4.0, etc.)',
@@ -125,6 +132,7 @@ const KNOWN_PROVIDERS: ProviderEntry[] = [
     name: '火山引擎 Ark',
     baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
     apiKeyEnvVar: 'VOLCENGINE_API_KEY',
+    apiKeyEnvVars: ['VOLCENGINE_API_KEY', 'ARK_API_KEY', 'DOUBAO_API_KEY'],
     protocol: 'openai',
     isLocal: false,
     description: '火山引擎 Ark API，可调用豆包等模型',
@@ -170,6 +178,7 @@ const KNOWN_PROVIDERS: ProviderEntry[] = [
     name: 'Google Gemini',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
     apiKeyEnvVar: 'GEMINI_API_KEY',
+    apiKeyEnvVars: ['GEMINI_API_KEY', 'GOOGLE_API_KEY'],
     protocol: 'openai',
     isLocal: false,
     description: 'Google Gemini OpenAI-compatible API',
@@ -188,6 +197,7 @@ const KNOWN_PROVIDERS: ProviderEntry[] = [
     name: 'Perplexity',
     baseUrl: 'https://api.perplexity.ai',
     apiKeyEnvVar: 'PERPLEXITY_API_KEY',
+    apiKeyEnvVars: ['PERPLEXITY_API_KEY', 'PPLX_API_KEY'],
     protocol: 'openai',
     isLocal: false,
     description: 'Perplexity Sonar API',
@@ -197,6 +207,7 @@ const KNOWN_PROVIDERS: ProviderEntry[] = [
     name: 'xAI',
     baseUrl: 'https://api.x.ai/v1',
     apiKeyEnvVar: 'XAI_API_KEY',
+    apiKeyEnvVars: ['XAI_API_KEY', 'GROK_API_KEY'],
     protocol: 'openai',
     isLocal: false,
     description: 'xAI Grok API',
@@ -238,11 +249,37 @@ const KNOWN_PROVIDERS: ProviderEntry[] = [
   },
 ];
 
+const PROVIDER_ALIASES: Record<string, string> = {
+  alibaba: 'qwen',
+  ark: 'volcengine',
+  dashscope: 'qwen',
+  doubao: 'volcengine',
+  glm: 'zhipu',
+  google: 'gemini',
+  'google-ai-studio': 'gemini',
+  'google-gemini': 'gemini',
+  grok: 'xai',
+  kimi_coding: 'kimi',
+  'kimi-coding': 'kimi',
+  moonshot: 'kimi',
+  silicon: 'siliconflow',
+  'x-ai': 'xai',
+  'x.ai': 'xai',
+  zai: 'zhipu',
+  'z-ai': 'zhipu',
+  'z.ai': 'zhipu',
+};
+
+export function normalizeProviderId(providerId: string): string {
+  const normalized = providerId.trim().toLowerCase();
+  return PROVIDER_ALIASES[normalized] ?? normalized;
+}
+
 // ─── Registry API ───────────────────────────────────────────────────────────
-// 按 id 查 provider；自动把 doubao 归一到 volcengine
+// 按 id 查 provider；自动归一常见 provider 别名
 export function getProvider(id: string): ProviderEntry | undefined {
-  const normalizedId = id === 'doubao' ? 'volcengine' : id;
-  return KNOWN_PROVIDERS.find((p) => p.id === normalizedId);
+  const normalizedId = normalizeProviderId(id);
+  return listAllProviders().find((p) => p.id === normalizedId);
 }
 
 // 列出全部内置 provider（拷贝防修改）
@@ -272,17 +309,17 @@ export function resolveApiKey(
 ): string | undefined {
   if (explicitKey) return explicitKey;
 
-  const provider = getProvider(providerId);
+  const normalizedProviderId = normalizeProviderId(providerId);
+  const provider = getProvider(normalizedProviderId);
   if (!provider) return undefined;
-  const envVar = resolveProviderApiKeyEnvVar(providerId);
 
-  if (envVar) {
+  for (const envVar of resolveProviderApiKeyEnvVars(normalizedProviderId)) {
     const envKey = readApiKeyEnvironmentValue(envVar);
     if (envKey) return envKey;
   }
 
   const config = loadConfig();
-  const configKey = config.apiKeys?.[providerId];
+  const configKey = config.apiKeys?.[normalizedProviderId] ?? config.apiKeys?.[providerId];
   if (configKey) return configKey;
 
   return undefined;
@@ -291,10 +328,22 @@ export function resolveApiKey(
 /** Resolve the preferred API key env var name for a provider. */
 // 解析指定 provider 当前首选的 API key 环境变量名
 export function resolveProviderApiKeyEnvVar(providerId: string): string {
+  return resolveProviderApiKeyEnvVars(providerId)[0] ?? '';
+}
+
+/** Resolve all accepted API key env var names for a provider, preferred first. */
+// 解析指定 provider 所有可接受的 API key 环境变量名，首选项在前
+export function resolveProviderApiKeyEnvVars(providerId: string): string[] {
+  const normalizedProviderId = normalizeProviderId(providerId);
   const provider = getProvider(providerId);
-  if (!provider) return '';
+  if (!provider) return [];
   const config = loadConfig();
-  return config.apiKeyEnvVars?.[providerId] || provider.apiKeyEnvVar;
+  return uniqueValidEnvNames([
+    config.apiKeyEnvVars?.[normalizedProviderId],
+    config.apiKeyEnvVars?.[providerId],
+    ...(provider.apiKeyEnvVars ?? []),
+    provider.apiKeyEnvVar,
+  ]);
 }
 
 /**
@@ -306,8 +355,9 @@ export function detectAvailableProviders(): ProviderEntry[] {
   const config = loadConfig();
   return KNOWN_PROVIDERS.filter((p) => {
     if (p.isLocal) return true; // 本地 provider 始终可用
-    const envVar = config.apiKeyEnvVars?.[p.id] || p.apiKeyEnvVar;
-    if (envVar && readApiKeyEnvironmentValue(envVar)) return true;
+    for (const envVar of resolveProviderApiKeyEnvVars(p.id)) {
+      if (readApiKeyEnvironmentValue(envVar)) return true;
+    }
     if (config.apiKeys?.[p.id]) return true;
     return false;
   });
@@ -377,26 +427,29 @@ export function saveConfig(patch: Partial<NexusConfig>): void {
 /** Persist an API key to the config file. */
 // 把指定 provider 的 API key 持久化到配置文件；英文说明：Persist an API key to ~/.nexus/config.json
 export function saveApiKey(providerId: string, apiKey: string): void {
-  saveConfig({ apiKeys: { [providerId]: apiKey } });
+  saveConfig({ apiKeys: { [normalizeProviderId(providerId)]: apiKey } });
 }
 
 /** Remove an API key from the config file. */
 // 从配置文件移除指定 provider 的 API key；英文说明：Remove an API key from the config file
 export function removeApiKey(providerId: string): void {
+  const normalizedProviderId = normalizeProviderId(providerId);
   const current = loadConfig();
   const keys = { ...current.apiKeys };
   delete keys[providerId];
+  delete keys[normalizedProviderId];
   saveConfig({ apiKeys: keys });
 }
 
 /** Save a preferred env var name for a provider API key. */
 // 保存指定 provider 的首选 API key 环境变量名
 export function saveProviderApiKeyEnvVar(providerId: string, envVar: string): void {
-  const provider = getProvider(providerId);
-  if (!provider) return;
+  const normalizedProviderId = normalizeProviderId(providerId);
+  const provider = getProvider(normalizedProviderId);
+  if (!provider) throw new Error(`Unknown provider: ${providerId}`);
   const cleaned = envVar.trim();
   if (!isValidEnvVarName(cleaned)) throw new Error('Invalid environment variable name');
-  saveConfig({ apiKeyEnvVars: { [providerId]: cleaned } });
+  saveConfig({ apiKeyEnvVars: { [normalizedProviderId]: cleaned } });
 }
 
 /** Persist env vars into Nexus config and expose them to the current process. */
@@ -446,9 +499,10 @@ export function listApiKeyEnvVarCandidates(providerId?: string): string[] {
     const value = name?.trim();
     if (value && isValidEnvVarName(value)) names.add(value);
   };
+  const normalizedProviderId = providerId ? normalizeProviderId(providerId) : undefined;
   for (const provider of listAllProviders()) {
-    if (!providerId || provider.id === providerId) {
-      add(provider.apiKeyEnvVar);
+    if (!normalizedProviderId || provider.id === normalizedProviderId) {
+      for (const envVar of resolveProviderApiKeyEnvVars(provider.id)) add(envVar);
       add(config.apiKeyEnvVars?.[provider.id]);
     }
   }
@@ -482,15 +536,15 @@ export function listAllProviders(): ProviderEntry[] {
 // 生成可读的 API key 状态摘要（带遮罩显示）；英文说明：Return a human-readable summary of which API keys are set
 export function apiKeySummary(): string[] {
   const lines: string[] = [];
-  const config = loadConfig();
   for (const provider of KNOWN_PROVIDERS) {
     const key = resolveApiKey(provider.id);
     if (key) {
       const masked = key.length > 8
         ? key.slice(0, 4) + '...' + key.slice(-4)
         : '****';
-      const envVar = config.apiKeyEnvVars?.[provider.id] || provider.apiKeyEnvVar;
-      const source = readApiKeyEnvironmentValue(envVar) ? 'env' : 'config';
+      const source = resolveProviderApiKeyEnvVars(provider.id).some((envVar) => readApiKeyEnvironmentValue(envVar))
+        ? 'env'
+        : 'config';
       lines.push(`${provider.name}: ${masked} (${source})`);
     } else {
       lines.push(`${provider.name}: not set`);
@@ -539,4 +593,13 @@ function readExternalEnvironmentSnapshot(): Record<string, string> {
 
 function isValidEnvVarName(name: string): boolean {
   return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name);
+}
+
+function uniqueValidEnvNames(names: Array<string | undefined>): string[] {
+  const envNames = new Set<string>();
+  for (const name of names) {
+    const normalizedName = name?.trim();
+    if (normalizedName && isValidEnvVarName(normalizedName)) envNames.add(normalizedName);
+  }
+  return [...envNames];
 }

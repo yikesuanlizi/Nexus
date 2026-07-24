@@ -22,15 +22,20 @@ export function listApiKeyStates(): ApiKeyState[] {
     .map((provider) => {
       const key = resolveApiKey(provider.id);
       const envCandidates = listApiKeyEnvVarCandidates(provider.id);
-      const envVar = resolveProviderApiKeyEnvVar(provider.id);
-      const fromEnv = envVar ? Boolean(readApiKeyEnvironmentValue(envVar)) : false;
+      const preferredEnvVar = resolveProviderApiKeyEnvVar(provider.id);
+      const envSearchOrder = [...new Set([
+        preferredEnvVar,
+        ...envCandidates,
+      ].filter((candidate): candidate is string => Boolean(candidate?.trim())))];
+      const configuredEnvVar = envSearchOrder.find((candidate) => Boolean(readApiKeyEnvironmentValue(candidate)));
+      const envVar = configuredEnvVar ?? preferredEnvVar;
       return {
         providerId: provider.id,
         envVar,
         defaultEnvVar: provider.apiKeyEnvVar,
         envVarCandidates: envCandidates,
         configured: Boolean(key),
-        source: key ? (fromEnv ? 'env' : 'config') : null,
+        source: key ? (configuredEnvVar ? 'env' : 'config') : null,
         masked: key ? maskKey(key) : null,
       };
     });

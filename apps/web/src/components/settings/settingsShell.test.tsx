@@ -99,17 +99,17 @@ describe('SettingsShell · P2.2 dirty / error / saved toast', () => {
 
 describe('SettingsShell · source code guards (P2.2 关键路径守卫)', () => {
   // 这些守卫字符串保证 P2.2 关键交互路径没有被无意移除
-  it('listens for Escape and confirms before discarding dirty changes', () => {
+  it('listens for Escape and does not show the removed shell-level discard confirm', () => {
     const source = readFileSync(join(here, 'SettingsShell.tsx'), 'utf-8');
     // 实现使用「不等于则跳过」的早返回模式，效果等价于「等于则进入处理」
     expect(source).toContain("event.key !== 'Escape'");
-    expect(source).toContain('saveState.dirty');
-    // dirty 确认必须走内部面板，不再使用浏览器原生 confirm
-    expect(source).toContain('ConfirmPanel');
-    expect(source).toContain('discardConfirmOpen');
-    expect(source).toContain('setDiscardConfirmOpen(true)');
+    // Shell 级 dirty 确认已废除；需要确认的动作留在具体页面内处理，例如删除预设
+    expect(source).not.toContain('ConfirmPanel');
+    expect(source).not.toContain('discardConfirmOpen');
+    expect(source).not.toContain('setDiscardConfirmOpen');
+    expect(source).not.toContain('confirmDiscardChanges');
     expect(source).not.toContain('window.confirm');
-    expect(source).toContain("t(locale, 'discardChanges')");
+    expect(source).not.toContain("t(locale, 'discardChanges')");
   });
 
   it('keeps dirty + saving + error + toast state contract without exposing scope controls', () => {
@@ -128,14 +128,14 @@ describe('SettingsShell · source code guards (P2.2 关键路径守卫)', () => 
     expect(source).toContain('Date.now() - saveState.savedToastAt < 2000');
   });
 
-  it('renders fieldset, internal confirm panel, and toast without footer save bar', () => {
+  it('renders fieldset and toast without footer save bar or shell-level discard confirm', () => {
     const source = readFileSync(join(here, 'SettingsShell.tsx'), 'utf-8');
     expect(source).not.toContain('settingsScopeBar');
     expect(source).not.toContain('settingsScopeButtons');
     expect(source).not.toContain('scopeButton');
     expect(source).not.toContain('settingsScopeSource');
     expect(source).toContain('settingsFieldset');
-    expect(source).toContain('ConfirmPanel');
+    expect(source).not.toContain('ConfirmPanel');
     expect(source).not.toContain('settingsSaveBar');
     expect(source).not.toContain('settingsSaveStatus');
     expect(source).not.toContain('settingsSaveActions');
@@ -150,15 +150,17 @@ describe('SettingsShell · P2.2 行为：Esc / 取消 / 保存', () => {
     expect(source).toMatch(/function onKey[\s\S]*?if \(event\.key !== 'Escape'\) return;[\s\S]*?if \(saveState\.saving\) return;/);
   });
 
-  it('handleCancel 在 dirty 时打开内部确认面板，确认后才执行 onCancel', () => {
+  it('handleCancel 在 dirty 时也直接走页面取消逻辑，不再弹 shell 确认', () => {
     const source = readFileSync(join(here, 'SettingsShell.tsx'), 'utf-8');
-    // handleCancel 必须先做 saving 早返回，然后 dirty 时打开内部确认层
-    expect(source).toMatch(/function handleCancel\(\) \{[\s\S]*?if \(saveState\.saving\) return;[\s\S]*?if \(saveState\.dirty\) \{[\s\S]*?setDiscardConfirmOpen\(true\);[\s\S]*?return;[\s\S]*?\}/);
-    expect(source).toMatch(/function confirmDiscardChanges\(\) \{[\s\S]*?setDiscardConfirmOpen\(false\);[\s\S]*?onCancel\(\);/);
+    // handleCancel 只保留 saving 早返回；具体页面自己决定如何保存/取消
+    expect(source).toMatch(/function handleCancel\(\) \{[\s\S]*?if \(saveState\.saving\) return;[\s\S]*?onCancel\(\);[\s\S]*?\}/);
+    expect(source).not.toContain('if (saveState.dirty)');
+    expect(source).not.toContain('setDiscardConfirmOpen');
+    expect(source).not.toContain('confirmDiscardChanges');
     expect(source).not.toContain('window.confirm');
   });
 
-  it('遮罩、关闭按钮、Esc 都走 handleCancel，不能绕过 dirty 确认', () => {
+  it('遮罩、关闭按钮、Esc 都走 handleCancel，避免绕过页面级取消逻辑', () => {
     const source = readFileSync(join(here, 'SettingsShell.tsx'), 'utf-8');
     expect(source).toContain('onClick={handleCancel} type="button"');
     expect(source).not.toContain('className="scrim" aria-label={t(locale, \'cancel\')} onClick={onClose}');
@@ -196,17 +198,20 @@ describe('SettingsDrawer · P2.2 作用域切换清空 dirty 状态', () => {
 
   it('persistConfig 失败时设置 saveError 但保留 dirtyFields', () => {
     const source = readFileSync(join(here, '..', '..', 'features', 'settings', 'useSettingsController.ts'), 'utf-8');
-    // catch 分支只 setSaveError，不清 dirtyFields（让用户能重试）
-    expect(source).toMatch(/catch \(error\) \{[\s\S]*?setSaveError\(error instanceof Error \? error\.message : String\(error\)\);[\s\S]*?\}/);
+    // catch 分支设置错误但不清 dirtyFields（让用户能重试），并同步给模型卡片可见反馈
+    expect(source).toMatch(/catch \(error\) \{[\s\S]*?const message = error instanceof Error \? error\.message : String\(error\);[\s\S]*?setSaveError\(message\);[\s\S]*?setModelKeyNotice\(message\);[\s\S]*?\}/);
   });
 });
 
 describe('SettingsShell · P2.2 desktop 镜像守卫', () => {
   it('desktop SettingsShell 与 web 保持一致的关键路径', () => {
     const desktopShell = readFileSync(join(here, '..', '..', '..', '..', 'desktop', 'src', 'components', 'settings', 'SettingsShell.tsx'), 'utf-8');
-    // 关键路径：Esc 早返回、dirty confirm、保存按钮 disabled 条件；scope UI 不再暴露在主设置页
+    // 关键路径：Esc 早返回、无 shell 级 dirty confirm、保存按钮 disabled 条件；scope UI 不再暴露在主设置页
     expect(desktopShell).toContain("event.key !== 'Escape'");
-    expect(desktopShell).toContain('ConfirmPanel');
+    expect(desktopShell).not.toContain('ConfirmPanel');
+    expect(desktopShell).not.toContain('discardConfirmOpen');
+    expect(desktopShell).not.toContain('setDiscardConfirmOpen');
+    expect(desktopShell).not.toContain('confirmDiscardChanges');
     expect(desktopShell).not.toContain('window.confirm');
     expect(desktopShell).not.toContain('disabled={saveState.saving || !saveState.dirty}');
     expect(desktopShell).not.toContain('disabled={option.disabled || saveState.saving}');
@@ -219,7 +224,7 @@ describe('SettingsShell · P2.2 desktop 镜像守卫', () => {
     expect(desktopI18n).not.toContain("scopeLabel:");
     expect(desktopI18n).not.toContain("scopeGlobal:");
     expect(desktopI18n).not.toContain("applyToScope:");
-    expect(desktopI18n).toContain("discardChanges: 'Discard changes?'");
+    expect(desktopI18n).not.toContain('discardChanges');
     expect(desktopI18n).toContain("saving: 'Saving…'");
     expect(desktopI18n).toContain("saved: 'Saved'");
     expect(desktopI18n).toContain("failedToSave: 'Failed to save'");
@@ -270,7 +275,7 @@ describe('i18n · P2.2 双语 key 守卫', () => {
     expect(i18n).not.toContain('scopeNewThread');
     expect(i18n).not.toContain('scopeSource');
     expect(i18n).not.toContain('applyToScope');
-    expect(i18n).toContain("discardChanges: '放弃改动？'");
+    expect(i18n).not.toContain('discardChanges');
     expect(i18n).toContain("saving: '保存中…'");
     expect(i18n).toContain("saved: '已保存'");
     expect(i18n).toContain("failedToSave: '保存失败'");
@@ -285,7 +290,7 @@ describe('i18n · P2.2 双语 key 守卫', () => {
     expect(i18n).not.toContain('scopeNewThread');
     expect(i18n).not.toContain('Source: /api/config/defaults');
     expect(i18n).not.toContain('applyToScope');
-    expect(i18n).toContain("discardChanges: 'Discard changes?'");
+    expect(i18n).not.toContain('discardChanges');
     expect(i18n).toContain("saving: 'Saving…'");
     expect(i18n).toContain("saved: 'Saved'");
     expect(i18n).toContain("failedToSave: 'Failed to save'");

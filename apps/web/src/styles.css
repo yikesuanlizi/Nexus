@@ -13345,6 +13345,46 @@
     @apply bg-amber-100;
   }
 
+  .liveActivityResources {
+    @apply flex flex-col gap-1.5;
+  }
+
+  .liveActivityResources h4 {
+    @apply m-0 text-[11px] font-semibold uppercase tracking-wide text-slate-500;
+  }
+
+  .liveActivityResourceList {
+    @apply flex flex-col gap-1;
+  }
+
+  .liveActivityResource {
+    @apply grid min-w-0 grid-cols-[58px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs shadow-sm;
+  }
+
+  .liveActivityResourceKind {
+    @apply rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600;
+  }
+
+  .liveActivityResource.resource-mcp .liveActivityResourceKind {
+    @apply bg-sky-100 text-sky-700;
+  }
+
+  .liveActivityResource.resource-skill .liveActivityResourceKind {
+    @apply bg-emerald-100 text-emerald-700;
+  }
+
+  .liveActivityResource.resource-shell .liveActivityResourceKind {
+    @apply bg-slate-800 text-white;
+  }
+
+  .liveActivityResourceLabel {
+    @apply min-w-0 truncate font-medium text-slate-800;
+  }
+
+  .liveActivityResourceCount {
+    @apply rounded bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] text-slate-500;
+  }
+
   .liveActivityRecent {
     @apply flex flex-col gap-1.5;
   }
@@ -13382,7 +13422,35 @@
   }
 
   .liveActivityEventName {
-    @apply truncate text-xs text-slate-700;
+    @apply flex min-w-0 items-center gap-1.5 text-xs text-slate-700;
+  }
+
+  .liveActivityEventAgent {
+    @apply max-w-[104px] shrink-0 truncate rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600;
+  }
+
+  .liveActivityEventResource {
+    @apply flex min-w-0 items-center gap-1 truncate;
+  }
+
+  .liveActivityEventResourceKind {
+    @apply shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600;
+  }
+
+  .liveActivityEventResource.resource-mcp .liveActivityEventResourceKind {
+    @apply bg-sky-100 text-sky-700;
+  }
+
+  .liveActivityEventResource.resource-skill .liveActivityEventResourceKind {
+    @apply bg-emerald-100 text-emerald-700;
+  }
+
+  .liveActivityEventResource.resource-shell .liveActivityEventResourceKind {
+    @apply bg-slate-800 text-white;
+  }
+
+  .liveActivityEventResourceLabel {
+    @apply min-w-0 truncate font-medium text-slate-800;
   }
 
   .liveActivityEventTime {
@@ -15176,7 +15244,7 @@
 
 .workbenchContent {
   contain: layout paint;
-  overflow: hidden auto;
+  overflow: hidden;
   min-height: 0;
   position: relative;
 }
@@ -15190,6 +15258,8 @@
 }
 
 .workbenchPanel.active {
+  height: 100%;
+  min-height: 0;
   opacity: 1;
   position: relative;
   z-index: 1;
@@ -15210,7 +15280,16 @@
 
 .workspaceFiles {
   backface-visibility: hidden;
+  height: 100%;
+  min-height: 0;
   transform: translate3d(0, 0, 0);
+}
+
+.workspaceFileList,
+.workspacePreviewPane,
+.workspacePreviewContent {
+  min-height: 0;
+  overscroll-behavior: contain;
 }
 
 .messageBlock {

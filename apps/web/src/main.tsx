@@ -104,6 +104,18 @@ function buildTokenTooltip(
   return parts.join(' ');
 }
 
+function parseProviderEnvVarSaveFailure(detail: string): string {
+  const trimmed = detail.trim();
+  if (!trimmed) return '';
+  try {
+    const parsed = JSON.parse(trimmed) as { error?: unknown };
+    if (typeof parsed.error === 'string' && parsed.error.trim()) return parsed.error.trim();
+  } catch {
+    // API may return plain text from a proxy or dev server; fall through to raw detail.
+  }
+  return trimmed;
+}
+
 patchGlobalFetch(); function App() {
   const [hasStoredRunConfig] = useState(() => Boolean(localStorage.getItem(RUN_CONFIG_STORAGE_KEY)));
   const [config, setConfig] = useState<RunConfig>(() => ({
@@ -160,6 +172,7 @@ patchGlobalFetch(); function App() {
   // 中文注释：外部预览请求 — 从对话条目点击"预览"时驱动右侧文件面板加载该文件
   // — Chinese: external preview request — drives right file panel to load a file when "preview" is clicked from chat
   const [previewRequest, setPreviewRequest] = useState<ExternalPreviewRequest | null>(null);
+  const [rightPaneSizingMode, setRightPaneSizingMode] = useState<'standard' | 'files'>(() => readStoredRightPaneSizingMode());
   const [pendingApprovals, setPendingApprovals] = useState<ApprovalRequest[]>([]);
   const taskRuntimeMonitor = useTaskRuntimeMonitor();
   const [providers, setProviders] = useState<ProviderEntry[]>([]);
@@ -184,7 +197,7 @@ patchGlobalFetch(); function App() {
   const activeThread = threads.find((thread) => thread.threadId === threadId);
   const activeWorkflow = useMemo(() => parseThreadWorkflow(activeThread) ?? parseWorkflowCheckpointItems(items), [activeThread, items]);
   const isWorkflowProject = activeThread?.tags?.workflowProject === 'true' || Boolean(activeWorkflow);
-  const { rightPaneGridTemplateColumns, startRightPaneResize } = useRightPaneSizing(rightPaneVisible, isWorkflowProject ? 'workflow' : 'standard');
+  const { rightPaneGridTemplateColumns, startRightPaneResize } = useRightPaneSizing(rightPaneVisible, isWorkflowProject ? 'workflow' : rightPaneSizingMode);
   const { toast, showToast } = useToastNotice();
   const { botConfig, botStatus, bindRemoteAssistant, refreshBotStatus, saveBotConfig, connectWeixin, startDingtalkStream, stopDingtalkStream, testDingtalkMessage } = useBotControls();
   const { applyWebProviderState, clearWebProviderKey, saveWebProviderKey, webProviderState } = useWebProviderSettings();
@@ -394,7 +407,7 @@ patchGlobalFetch(); function App() {
       tools: { calls: toolCalls || workbenchSelectedRun.toolCallCount, failed: toolFailed, denied: toolDenied },
       items: { started: 0, completed: 0, failed: 0, byType: {} },
       agents: { spawned: workbenchSelectedRun.subagentCount, running: 0, failed: 0 },
-      files: { changed: 0, addedLines: 0, removedLines: 0 },
+      files: { reads: 0, changed: 0, addedLines: 0, removedLines: 0, extracted: 0, reused: 0, stale: 0, refreshed: 0 },
       lastError: lastError && lastError.category === 'error'
         ? { code: (lastError.payload as { code?: string })?.code ?? 'ERROR', message: (lastError.payload as { message?: string })?.message ?? lastError.name }
         : (workbenchSelectedRun.error ? { code: 'RUN_ERROR', message: workbenchSelectedRun.error } : undefined),
@@ -1378,12 +1391,13 @@ patchGlobalFetch(); function App() {
   async function sendMessage(
     modeInstruction?: string,
     forcedText?: string,
-    options: { imagesOverride?: ComposerImage[]; clearComposerImages?: boolean } = {},
+    options: { imagesOverride?: ComposerImage[]; clearComposerImages?: boolean; configOverride?: Partial<RunConfig> } = {},
   ) {
     const text = (forcedText ?? input).trim();
     const outgoingImages = options.imagesOverride ?? images;
     const hasImages = outgoingImages.length > 0;
     if (!text && !hasImages) return;
+    const requestConfig = options.configOverride ?? threadApiConfig;
     const sendReq = sendMessageGuardRef.current.begin();
     const isSendCurrent = () => sendMessageGuardRef.current.isCurrent(sendReq.generation);
     let activeThreadId = threadId;
@@ -1393,7 +1407,7 @@ patchGlobalFetch(); function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: (text || 'Image').slice(0, 60),
-          config: { ...threadApiConfig, workspaceRoot: '' },
+          config: { ...requestConfig, workspaceRoot: '' },
           conversationKind: 'chat',
         }),
       });
@@ -1431,7 +1445,7 @@ patchGlobalFetch(); function App() {
     }
     setItems((current) => mergeIncomingItems(current, [pendingUserItem]));
     try {
-      const body: Record<string, unknown> = { input: text || 'See attached image(s).', config: threadApiConfig };
+      const body: Record<string, unknown> = { input: text || 'See attached image(s).', config: requestConfig };
       if (modeInstruction) body.modeInstruction = modeInstruction;
       if (sentImages.length > 0) {
         body.images = sentImages.map((img) => ({ name: img.name, dataUrl: img.dataUrl }));
@@ -1562,6 +1576,7 @@ patchGlobalFetch(); function App() {
     const userText = items.find((item) => item.type === 'user_message' && item.turnId === turnId)?.text?.trim();
     if (!userText) return;
     const count = rollbackCountForTurn(turnId, turns, items);
+    const regenerateConfig = { ...threadApiConfig };
     setActionBusy(true);
     try {
       const response = await fetch(`/api/threads/${threadId}/rollback`, {
@@ -1579,7 +1594,7 @@ patchGlobalFetch(); function App() {
       });
       await loadThread(threadId);
       setActionBusy(false);
-      await sendMessage(undefined, userText, { imagesOverride: [], clearComposerImages: false });
+      await sendMessage(undefined, userText, { imagesOverride: [], clearComposerImages: false, configOverride: regenerateConfig });
     } catch (error) {
       addEvent({
         kind: 'error',
@@ -1655,6 +1670,7 @@ patchGlobalFetch(); function App() {
   // — Chinese: clicking "preview" on a tool item switches the right panel to Files tab and drives preview
   function previewFileFromItem(path: string) {
     if (!path) return;
+    setRightPaneSizingMode('files');
     setRightPaneVisible(true);
     setPreviewRequest({ path, pin: true, nonce: Date.now() });
   }
@@ -1788,7 +1804,12 @@ patchGlobalFetch(); function App() {
     }
   }
   async function saveProviderEnvVar(providerId: string, envVar: string) {
-    const response = await fetch(`/api/keys/${providerId}/env-var`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ envVar }) });
+    const response = await fetch(`/api/keys/${encodeURIComponent(providerId)}/env-var`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ envVar }) });
+    if (!response.ok) {
+      const detail = await response.text().catch(() => '');
+      const reason = parseProviderEnvVarSaveFailure(detail);
+      throw new Error(reason ? `Provider env var save failed: ${reason}` : 'Provider env var save failed');
+    }
     if (response.ok) {
       const data = (await response.json()) as { keys?: ApiKeyState[] };
       setKeyStates(data.keys ?? []);
@@ -1979,7 +2000,7 @@ patchGlobalFetch(); function App() {
                 />
               ) : null}
               {isWorkflowProject ? <WorkflowSidePane locale={config.locale} workflow={activeWorkflow} planDraft={workflowPlanDraft} components={workflowPlanDraft?.components ?? workflowComponents} blueprint={workflowPlanDraft?.blueprint ?? workflowBlueprint} runEvents={runMonitor.events} saving={workflowSaving} runtimeBusy={workflowRuntimeBusy} onCancelPlan={() => setWorkflowPlanDraft(null)} onCommitPlan={() => void commitWorkflowPlan()} onSave={(workflow) => void saveWorkflow(workflow)} onControl={(action, nodeId) => void controlWorkflowRuntime(action, nodeId)} onSelectionChange={setWorkflowSelectedNodeIds} /> : (
-                <RightPane activeThread={activeThread} activeThreadId={threadId} activeThreadTitle={activeThread?.title ?? ''} busy={busy} threadChildren={threadChildren} externalPreviewRequest={previewRequest} locale={config.locale} runtimeItems={items} taskRuntimeState={taskRuntimeMonitor.state} workspaceRoot={activeWorkspaceRoot} onJumpToMonitor={jumpToMonitor} onToggleMemoryExcluded={(excluded) => void toggleThreadMemoryExcluded(excluded)} traceSummary={workbenchTraceSummary as Parameters<typeof RightPane>[0]['traceSummary']} currentRunId={workbenchCurrentRunId} controlCapabilities={workbenchSelectedRun?.controlCapabilities ? { interrupt: workbenchSelectedRun.controlCapabilities.interrupt, resume: workbenchSelectedRun.controlCapabilities.resume, rollback: { enabled: workbenchSelectedRun.controlCapabilities.rollback.enabled, checkpointIds: workbenchSelectedRun.controlCapabilities.rollback.checkpointIds ?? [], reason: workbenchSelectedRun.controlCapabilities.rollback.reason } } : undefined} recentTraces={runMonitor.traces.slice(-10)} onInterrupt={handleControlInterrupt} onResume={handleControlResume} onRollback={handleControlRollback} responsiveMode={responsiveMode === 'side' ? undefined : responsiveMode} onCloseRequest={handleCloseWorkbench} />
+                <RightPane activeThread={activeThread} activeThreadId={threadId} activeThreadTitle={activeThread?.title ?? ''} busy={busy} threadChildren={threadChildren} externalPreviewRequest={previewRequest} locale={config.locale} runtimeItems={items} taskRuntimeState={taskRuntimeMonitor.state} workspaceRoot={activeWorkspaceRoot} onTabChange={(tab) => setRightPaneSizingMode(rightPaneSizingModeForTab(tab))} onJumpToMonitor={jumpToMonitor} onToggleMemoryExcluded={(excluded) => void toggleThreadMemoryExcluded(excluded)} traceSummary={workbenchTraceSummary as Parameters<typeof RightPane>[0]['traceSummary']} currentRunId={workbenchCurrentRunId} controlCapabilities={workbenchSelectedRun?.controlCapabilities ? { interrupt: workbenchSelectedRun.controlCapabilities.interrupt, resume: workbenchSelectedRun.controlCapabilities.resume, rollback: { enabled: workbenchSelectedRun.controlCapabilities.rollback.enabled, checkpointIds: workbenchSelectedRun.controlCapabilities.rollback.checkpointIds ?? [], reason: workbenchSelectedRun.controlCapabilities.rollback.reason } } : undefined} recentTraces={runMonitor.traces.slice(-10)} onInterrupt={handleControlInterrupt} onResume={handleControlResume} onRollback={handleControlRollback} responsiveMode={responsiveMode === 'side' ? undefined : responsiveMode} onCloseRequest={handleCloseWorkbench} />
               )}
             </>
           ) : null}
@@ -2064,6 +2085,7 @@ patchGlobalFetch(); function App() {
         onToggleThread={runMonitor.toggleThread}
         onSelectEvent={runMonitor.selectEvent}
         onToggleCategory={runMonitor.toggleCategory}
+        onSetCategoryFilter={runMonitor.setCategoryFilter}
         onSetErrorsOnly={runMonitor.setErrorsOnly}
         onAutoRefreshChange={runMonitor.setAutoRefresh}
         onAutoRefreshIntervalChange={runMonitor.setAutoRefreshInterval}
@@ -2084,4 +2106,17 @@ patchGlobalFetch(); function App() {
     </main>
   );
 }
+
+function readStoredRightPaneSizingMode(): 'standard' | 'files' {
+  try {
+    return localStorage.getItem('nexus.rightPane.tab') === 'files' ? 'files' : 'standard';
+  } catch {
+    return 'standard';
+  }
+}
+
+function rightPaneSizingModeForTab(tab: string): 'standard' | 'files' {
+  return tab === 'files' ? 'files' : 'standard';
+}
+
 createRoot(document.getElementById('root')!).render(<AuthGate locale={defaultConfig.locale ?? 'zh'} themeMode={defaultConfig.themeMode}><App /></AuthGate>);

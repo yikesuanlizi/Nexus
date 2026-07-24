@@ -166,7 +166,10 @@ export class ModelGateway {
     req: Omit<ChatCompletionRequest, 'model' | 'stream'>,
     stream: boolean,
   ): ChatCompletionRequest {
-    const reasoningEffort = req.reasoning_effort ?? this.config.reasoningEffort;
+    const reasoningEffort = normalizeReasoningEffortForProvider(
+      this.profile.id,
+      req.reasoning_effort ?? this.config.reasoningEffort,
+    );
     const body: ChatCompletionRequest = {
       ...req,
       model: this.config.model,
@@ -179,6 +182,10 @@ export class ModelGateway {
       body.thinking = deepSeekThinkingFromEffort(reasoningEffort);
     } else {
       body.reasoning_effort = reasoningEffort;
+    }
+    applyDomesticOpenAiCompatibleRequestShape(body, this.profile.id, this.config.model, stream);
+    if (this.profile.id === 'mistral' && body.tools?.length) {
+      body.parallel_tool_calls = true;
     }
     return body;
   }
@@ -272,7 +279,13 @@ export class ModelGateway {
 
   // 构造基础请求头：Anthropic 用 x-api-key，OpenAI 用 Bearer
   private baseHeaders(): Record<string, string> {
-    const h: Record<string, string> = { ...this.config.extraHeaders };
+    const h: Record<string, string> = {};
+    if (this.profile.id === 'openrouter') {
+      h['HTTP-Referer'] = 'https://github.com/nexus-agent/nexus';
+      h['X-OpenRouter-Title'] = 'Nexus';
+      h['X-OpenRouter-Categories'] = 'productivity,developer-tools,local-first';
+    }
+    Object.assign(h, this.config.extraHeaders);
     if (this.protocol === 'anthropic') {
       if (this.config.apiKey && this.profile.id === 'minimax') {
         h['Authorization'] = `Bearer ${this.config.apiKey}`;
@@ -411,6 +424,7 @@ function normalizeOpenAIResponse(
   raw: RawOpenAIChatCompletionResponse,
   cacheStrategy?: CacheStrategy,
 ): ChatCompletionResponse {
+  const choiceUsage = raw.choices.find((choice) => choice && typeof choice === 'object' && 'usage' in choice)?.usage;
   return {
     ...raw,
     choices: raw.choices.map((choice) => ({
@@ -420,12 +434,13 @@ function normalizeOpenAIResponse(
         content: typeof choice.message.content === 'string' ? choice.message.content : choice.message.content,
       },
     })),
-    usage: normalizeUsage(raw.usage, cacheStrategy),
+    usage: normalizeUsage(raw.usage ?? choiceUsage, cacheStrategy),
   };
 }
 
 type RawOpenAIChatCompletionResponse = Omit<ChatCompletionResponse, 'usage'> & {
   usage?: unknown;
+  choices: Array<ChatCompletionResponse['choices'][number] & { usage?: unknown }>;
 };
 
 function deepSeekThinkingFromEffort(
@@ -439,6 +454,80 @@ function deepSeekThinkingFromEffort(
     return { type: 'enabled', reasoning_effort: 'max' };
   }
   return { type: 'enabled', reasoning_effort: 'high' };
+}
+
+function normalizeReasoningEffortForProvider(
+  providerId: string,
+  effort: ModelConfig['reasoningEffort'] | ChatCompletionRequest['reasoning_effort'] | undefined,
+): ModelConfig['reasoningEffort'] | ChatCompletionRequest['reasoning_effort'] | undefined {
+  if (providerId !== 'kimi' || typeof effort !== 'string') return effort;
+  const normalized = effort.trim().toLowerCase();
+  if (normalized === 'xhigh' || normalized === 'x-high' || normalized === 'maximum') return 'max';
+  if (normalized === 'medium') return 'high';
+  if (normalized === 'none' || normalized === 'off' || normalized === 'disabled') return 'low';
+  return effort;
+}
+
+function applyDomesticOpenAiCompatibleRequestShape(
+  body: ChatCompletionRequest,
+  providerId: string,
+  model: string,
+  stream: boolean,
+): void {
+  const normalizedModel = model.trim().toLowerCase();
+  const effort = typeof body.reasoning_effort === 'string'
+    ? body.reasoning_effort.trim().toLowerCase()
+    : '';
+
+  if (providerId === 'qwen' && supportsQwenThinking(normalizedModel) && effort) {
+    body.enable_thinking = !isDisabledThinkingEffort(effort);
+    delete body.reasoning_effort;
+    delete body.thinking;
+    return;
+  }
+
+  if (providerId === 'zhipu' && supportsGlmThinking(normalizedModel)) {
+    body.thinking = {
+      type: isDisabledThinkingEffort(effort) ? 'disabled' : 'enabled',
+      clear_thinking: true,
+    };
+    if (!supportsGlmReasoningEffort(normalizedModel)) {
+      delete body.reasoning_effort;
+    }
+    if (stream && body.tools?.length && supportsGlmStreamingToolCalls(normalizedModel)) {
+      body.tool_stream = true;
+    }
+    return;
+  }
+
+  if (supportsDomesticDeepSeekThinking(providerId, normalizedModel) && effort) {
+    body.thinking = deepSeekThinkingFromEffort(effort);
+    delete body.reasoning_effort;
+  }
+}
+
+function isDisabledThinkingEffort(effort: string): boolean {
+  return ['none', 'off', 'disabled', 'disable', 'false', 'minimal', 'low'].includes(effort);
+}
+
+function supportsQwenThinking(model: string): boolean {
+  return model.includes('qwen3') || model.includes('qwq');
+}
+
+function supportsGlmThinking(model: string): boolean {
+  return /^glm-(4\.[5-9]|5)(?:\.|$|-)/.test(model);
+}
+
+function supportsGlmReasoningEffort(model: string): boolean {
+  return /^glm-5\.2(?:$|-)/.test(model);
+}
+
+function supportsGlmStreamingToolCalls(model: string): boolean {
+  return /^glm-(4\.[6-9]|5)(?:\.|$|-)/.test(model);
+}
+
+function supportsDomesticDeepSeekThinking(providerId: string, model: string): boolean {
+  return ['volcengine', 'siliconflow'].includes(providerId) && model.includes('deepseek');
 }
 
 // 仅基于 usage 字段推断缓存策略（未显式指定时使用）
@@ -496,6 +585,16 @@ function convertToAnthropic(
       continue;
     }
 
+    if (msg.role === 'tool' && msg.tool_call_id) {
+      const text = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+      appendAnthropicToolResultIfValid(anthroMessages, {
+        type: 'tool_result',
+        tool_use_id: msg.tool_call_id,
+        content: text,
+      });
+      continue;
+    }
+
     const blocks: AnthropicContentBlock[] = [];
 
     // 文本内容
@@ -534,20 +633,10 @@ function convertToAnthropic(
       }
     }
 
-    // 工具结果（tool 消息）
-    if (msg.role === 'tool' && msg.tool_call_id) {
-      const text = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
-      blocks.push({
-        type: 'tool_result',
-        tool_use_id: msg.tool_call_id,
-        content: text,
-      });
-    }
-
     if (blocks.length === 0) continue;
 
-    // 归一化角色：Anthropic 只允许 user/assistant，tool 归到 user
-    const role: 'user' | 'assistant' = msg.role === 'tool' ? 'user' : (msg.role as 'user' | 'assistant');
+    // 归一化角色：Anthropic 只允许 user/assistant
+    const role: 'user' | 'assistant' = msg.role as 'user' | 'assistant';
 
     // 合并相邻同角色消息
     const last = anthroMessages[anthroMessages.length - 1];
@@ -590,6 +679,33 @@ function convertToAnthropic(
 function isMiniMaxM3(config: Pick<ModelConfig, 'provider' | 'model'>): boolean {
   return config.provider.trim().toLowerCase() === 'minimax'
     && config.model.trim().toLowerCase() === 'minimax-m3';
+}
+
+function appendAnthropicToolResultIfValid(
+  messages: AnthropicMessageRequest['messages'],
+  block: Extract<AnthropicContentBlock, { type: 'tool_result' }>,
+): void {
+  const last = messages[messages.length - 1];
+  if (last?.role === 'assistant' && hasAnthropicToolUse(last.content, block.tool_use_id)) {
+    messages.push({ role: 'user', content: [block] });
+    return;
+  }
+
+  if (
+    last?.role === 'user'
+    && last.content.length > 0
+    && last.content.every((entry) => entry.type === 'tool_result')
+    && !last.content.some((entry) => entry.type === 'tool_result' && entry.tool_use_id === block.tool_use_id)
+  ) {
+    const previous = messages[messages.length - 2];
+    if (previous?.role === 'assistant' && hasAnthropicToolUse(previous.content, block.tool_use_id)) {
+      last.content.push(block);
+    }
+  }
+}
+
+function hasAnthropicToolUse(blocks: AnthropicContentBlock[], toolUseId: string): boolean {
+  return blocks.some((block) => block.type === 'tool_use' && block.id === toolUseId);
 }
 
 function miniMaxThinkingFromEffort(effort: ModelConfig['reasoningEffort'] | undefined): NonNullable<AnthropicMessageRequest['thinking']> | undefined {

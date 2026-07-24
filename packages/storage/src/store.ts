@@ -34,7 +34,7 @@ export function safeTenantId(value: string | null | undefined): string {
 }
 
 export type RunStatus = 'pending' | 'running' | 'completed' | 'failed' | 'interrupted' | 'blocked';
-export type RunKind = 'turn' | 'model' | 'tool' | 'workflow' | 'subagent' | 'middleware' | 'checkpoint' | 'control';
+export type RunKind = 'turn' | 'model' | 'tool' | 'workflow' | 'subagent' | 'middleware' | 'checkpoint' | 'control' | 'file';
 export type RunCaller = 'lead_agent' | 'subagent' | 'middleware' | 'tool' | 'workflow';
 export type RunEventLevel = 'debug' | 'info' | 'warning' | 'error';
 

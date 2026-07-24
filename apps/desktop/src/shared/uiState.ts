@@ -3,7 +3,10 @@ import { useCallback, useEffect, useState } from 'react';
 
 const RIGHT_PANE_MAIN_MIN = 220;
 const STANDARD_RIGHT_PANE_MIN = 220;
+const FILES_RIGHT_PANE_MIN = 300;
 const WORKFLOW_RIGHT_PANE_MIN = 300;
+
+export type RightPaneSizingMode = 'standard' | 'files' | 'workflow';
 
 export interface ToastNotice {
   id: number;
@@ -27,20 +30,32 @@ export function useToastNotice(timeoutMs = 1800) {
   return { toast, showToast };
 }
 
-export function useRightPaneSizing(visible: boolean, mode: 'standard' | 'workflow' = 'standard') {
+export function useRightPaneSizing(visible: boolean, mode: RightPaneSizingMode = 'standard') {
   const [width, setWidth] = useState(() => {
-    if (mode !== 'workflow') return defaultStandardPaneWidth();
+    if (mode === 'files') {
+      const stored = Number(localStorage.getItem('nexus.filesPaneWidth') ?? 0);
+      return clampRightPaneWidth(stored || defaultFilesPaneWidth(), FILES_RIGHT_PANE_MIN);
+    }
+    if (mode !== 'workflow') {
+      const stored = Number(localStorage.getItem('nexus.standardPaneWidth') ?? 0);
+      return clampRightPaneWidth(stored || defaultStandardPaneWidth(), STANDARD_RIGHT_PANE_MIN);
+    }
     const stored = Number(localStorage.getItem('nexus.workflowPaneWidth') ?? 0);
     return clampRightPaneWidth(stored || defaultWorkflowPaneWidth(), WORKFLOW_RIGHT_PANE_MIN);
   });
 
   useEffect(() => {
-    setWidth((current) => {
+    setWidth(() => {
       if (mode === 'workflow') {
         const stored = Number(localStorage.getItem('nexus.workflowPaneWidth') ?? 0);
-        return clampRightPaneWidth(stored || current || defaultWorkflowPaneWidth(), WORKFLOW_RIGHT_PANE_MIN);
+        return clampRightPaneWidth(stored || defaultWorkflowPaneWidth(), WORKFLOW_RIGHT_PANE_MIN);
       }
-      return clampRightPaneWidth(current, STANDARD_RIGHT_PANE_MIN);
+      if (mode === 'files') {
+        const stored = Number(localStorage.getItem('nexus.filesPaneWidth') ?? 0);
+        return clampRightPaneWidth(stored || defaultFilesPaneWidth(), FILES_RIGHT_PANE_MIN);
+      }
+      const stored = Number(localStorage.getItem('nexus.standardPaneWidth') ?? 0);
+      return clampRightPaneWidth(stored || defaultStandardPaneWidth(), STANDARD_RIGHT_PANE_MIN);
     });
   }, [mode]);
 
@@ -50,12 +65,14 @@ export function useRightPaneSizing(visible: boolean, mode: 'standard' | 'workflo
     event.currentTarget.setPointerCapture(event.pointerId);
     const startX = event.clientX;
     const startWidth = width;
-    const resizeMin = mode === 'workflow' ? WORKFLOW_RIGHT_PANE_MIN : STANDARD_RIGHT_PANE_MIN;
+    const resizeMin = rightPaneMinForMode(mode);
     const max = Math.max(resizeMin, rightPaneAvailableMax());
     function move(moveEvent: PointerEvent) {
       const next = startWidth - (moveEvent.clientX - startX);
       const nextWidth = Math.min(max, Math.max(resizeMin, next));
       if (mode === 'workflow') localStorage.setItem('nexus.workflowPaneWidth', String(Math.round(nextWidth)));
+      if (mode === 'files') localStorage.setItem('nexus.filesPaneWidth', String(Math.round(nextWidth)));
+      if (mode === 'standard') localStorage.setItem('nexus.standardPaneWidth', String(Math.round(nextWidth)));
       setWidth(nextWidth);
     }
     function up() {
@@ -66,7 +83,7 @@ export function useRightPaneSizing(visible: boolean, mode: 'standard' | 'workflo
     window.addEventListener('pointerup', up);
   }, [mode, visible, width]);
 
-  const rightPaneMin = mode === 'workflow' ? WORKFLOW_RIGHT_PANE_MIN : STANDARD_RIGHT_PANE_MIN;
+  const rightPaneMin = rightPaneMinForMode(mode);
 
   return {
     rightPaneWidth: width,
@@ -86,7 +103,17 @@ function defaultWorkflowPaneWidth(): number {
 }
 
 function defaultStandardPaneWidth(): number {
+  return 348;
+}
+
+function defaultFilesPaneWidth(): number {
   return Math.round(Math.min(1080, Math.max(620, window.innerWidth * 0.5)));
+}
+
+function rightPaneMinForMode(mode: RightPaneSizingMode): number {
+  if (mode === 'workflow') return WORKFLOW_RIGHT_PANE_MIN;
+  if (mode === 'files') return FILES_RIGHT_PANE_MIN;
+  return STANDARD_RIGHT_PANE_MIN;
 }
 
 function clampRightPaneWidth(width: number, min: number): number {

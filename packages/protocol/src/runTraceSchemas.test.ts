@@ -97,6 +97,17 @@ describe('RunTrace schema — payload strict 校验', () => {
     expect(result.success).toBe(false);
   });
 
+  it('tool payload 接受结构化资源身份字段', () => {
+    const result = runTracePayloadSchemaMap.tool.safeParse({
+      toolName: 'mcp_call_tool',
+      callId: 'call-1',
+      resourceKind: 'mcp',
+      server: 'gitnexus',
+      tool: 'search_code',
+    });
+    expect(result.success).toBe(true);
+  });
+
   it('context payload 缺 sourceCounts 会被拒绝', () => {
     const result = runTracePayloadSchemaMap.context.safeParse({
       phase: 'assembled',
@@ -171,8 +182,8 @@ describe('RunTrace schema — payload strict 校验', () => {
     expect(bad.success).toBe(false);
   });
 
-  it('file payload action 必须是 5 个合法值之一', () => {
-    for (const action of ['read', 'write', 'patch', 'delete', 'checkpoint']) {
+  it('file payload action 必须是合法值之一', () => {
+    for (const action of ['read', 'write', 'patch', 'delete', 'checkpoint', 'extract', 'stale', 'refresh', 'reuse']) {
       const result = runTracePayloadSchemaMap.file.safeParse({
         action,
         path: '/tmp/x',
@@ -181,6 +192,37 @@ describe('RunTrace schema — payload strict 校验', () => {
     }
     const bad = runTracePayloadSchemaMap.file.safeParse({ action: 'append', path: '/tmp/x' });
     expect(bad.success).toBe(false);
+  });
+
+  it('accepts document lifecycle file trace payloads', () => {
+    const parsed = runTraceEnvelopeSchema.parse({
+      version: 2,
+      eventId: 'event-1',
+      sequence: 1,
+      runId: 'run-1',
+      runKind: 'turn',
+      threadId: 'thread-1',
+      turnId: 'turn-1',
+      spanId: 'span-1',
+      category: 'file',
+      name: 'document refreshed',
+      lifecycle: 'completed',
+      level: 'info',
+      occurredAt: '2026-07-23T08:00:00.000Z',
+      payload: {
+        action: 'refresh',
+        path: 'docs/a.docx',
+        sourcePath: 'docs/a.docx',
+        artifactPath: '.nexus/artifacts/documents/abc.md',
+        sha256: 'a'.repeat(64),
+        artifactSha256: 'b'.repeat(64),
+        staleReason: 'source_hash_changed',
+        contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        extractor: 'docx-text',
+      },
+    });
+
+    expect((parsed.payload as { action: string }).action).toBe('refresh');
   });
 });
 
@@ -330,7 +372,7 @@ describe('RunTrace schema — RunTraceSummary', () => {
       tools: { calls: 2, failed: 0, denied: 0 },
       items: { started: 5, completed: 4, failed: 1, byType: { user_message: 3, tool_call: 2 } },
       agents: { spawned: 0, running: 0, failed: 0 },
-      files: { changed: 0, addedLines: 0, removedLines: 0 },
+      files: { reads: 0, changed: 0, addedLines: 0, removedLines: 0, extracted: 0, reused: 0, stale: 0, refreshed: 0 },
     };
     expect(() => runTraceSummarySchema.parse(summary)).not.toThrow();
   });
@@ -342,7 +384,7 @@ describe('RunTrace schema — RunTraceSummary', () => {
       tools: { calls: 0, failed: 0, denied: 0 },
       items: { started: 0, completed: 0, failed: 0, byType: {} },
       agents: { spawned: 0, running: 0, failed: 0 },
-      files: { changed: 0, addedLines: 0, removedLines: 0 },
+      files: { reads: 0, changed: 0, addedLines: 0, removedLines: 0, extracted: 0, reused: 0, stale: 0, refreshed: 0 },
       lastError: { code: 'INTERNAL', message: 'oops' },
     };
     expect(() => runTraceSummarySchema.parse(summary)).not.toThrow();
@@ -355,7 +397,7 @@ describe('RunTrace schema — RunTraceSummary', () => {
       tools: { calls: 0, failed: 0, denied: 0 },
       items: { started: 0, completed: 0, failed: 0, byType: {} },
       agents: { spawned: 0, running: 0, failed: 0 },
-      files: { changed: 0, addedLines: 0, removedLines: 0 },
+      files: { reads: 0, changed: 0, addedLines: 0, removedLines: 0, extracted: 0, reused: 0, stale: 0, refreshed: 0 },
       bogus: true,
     };
     expect(() => runTraceSummarySchema.parse(summary)).toThrow();

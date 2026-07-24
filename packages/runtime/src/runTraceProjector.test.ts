@@ -56,6 +56,22 @@ describe('projectRunTrace', () => {
     expect(projectRunTrace([duplicate, { ...duplicate, sequence: 2 }]).tools.calls).toBe(1);
   });
 
+  it('counts document file lifecycle events separately from changed files', () => {
+    const summary = projectRunTrace([
+      event({ sequence: 1, category: 'file', name: 'document extracted', lifecycle: 'completed', payload: { action: 'extract', path: 'a.docx' } }),
+      event({ sequence: 2, category: 'file', name: 'artifact stale', lifecycle: 'instant', payload: { action: 'stale', path: '.nexus/artifacts/documents/a.md', sourcePath: 'a.docx' } }),
+      event({ sequence: 3, category: 'file', name: 'document refreshed', lifecycle: 'completed', payload: { action: 'refresh', path: 'a.docx' } }),
+    ]);
+
+    expect(summary.files).toMatchObject({
+      reads: 0,
+      changed: 0,
+      extracted: 1,
+      stale: 1,
+      refreshed: 1,
+    });
+  });
+
   it('projects provider adapter diagnostics on model events', () => {
     const summary = projectRunTrace([
       event({

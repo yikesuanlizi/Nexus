@@ -10,6 +10,8 @@ export {
   listAllProviders,
   resolveApiKey,
   resolveProviderApiKeyEnvVar,
+  resolveProviderApiKeyEnvVars,
+  normalizeProviderId,
   detectAvailableProviders,
   listApiKeyEnvVarCandidates,
   readApiKeyEnvironmentValue,

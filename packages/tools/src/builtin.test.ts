@@ -2,12 +2,14 @@ import { afterEach, describe, expect, it } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import JSZip from 'jszip';
 import {
   BUILTIN_TOOLS,
   applyPatchTool,
   currentTimeTool,
   gitNexusAnalyzeTool,
   listFilesTool,
+  readDocumentTool,
   readFileTool,
   searchContentTool,
   shellCommandTool,
@@ -323,6 +325,132 @@ describe('readFileTool', () => {
     expect(result.output).not.toContain('�');
     expect(result.data).toMatchObject({ encoding: 'gb18030' });
   });
+
+  it('returns a full file fingerprint with read_file results', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'nexus-read-file-fingerprint-'));
+    await fs.writeFile(path.join(root, 'note.txt'), 'hello\n', 'utf-8');
+
+    const result = await readFileTool.execute(
+      { filePath: 'note.txt' },
+      { workspaceRoot: root, threadId: 'thread', turnId: 'turn', approved: false },
+    );
+
+    expect(result.status).toBe('completed');
+    expect(result.data).toMatchObject({
+      file: {
+        path: path.join(root, 'note.txt'),
+        relativePath: 'note.txt',
+        sha256: expect.any(String),
+        contentType: 'text/plain',
+        sizeBytes: 6,
+      },
+      freshness: { status: 'fresh' },
+    });
+  });
+
+  it('fails closed when reading a stale managed document artifact', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'nexus-stale-artifact-'));
+    const sourcePath = path.join(root, 'source.docx');
+    await writeMinimalDocx(sourcePath, '源文件版本一');
+    const extracted = await readDocumentTool.execute(
+      { filePath: 'source.docx' },
+      { workspaceRoot: root, threadId: 'thread', turnId: 'turn', approved: false },
+    );
+    const artifactPath = (extracted.data as { artifact: { path: string } }).artifact.path;
+
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await writeMinimalDocx(sourcePath, '源文件版本二');
+    const staleRead = await readFileTool.execute(
+      { filePath: artifactPath },
+      { workspaceRoot: root, threadId: 'thread', turnId: 'turn', approved: false },
+    );
+
+    expect(staleRead.status).toBe('failed');
+    expect(staleRead.error?.code).toBe('STALE_DOCUMENT_ARTIFACT');
+    expect(staleRead.data).toMatchObject({
+      freshness: {
+        status: 'stale',
+        sourcePath,
+        artifactPath,
+        reason: 'source_hash_changed',
+        recommendedTool: 'read_document',
+      },
+    });
+  });
+});
+
+describe('readDocumentTool', () => {
+  it('extracts docx to a managed artifact and reuses it while fresh', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'nexus-read-document-'));
+    const docxPath = path.join(root, 'brief.docx');
+    await writeMinimalDocx(docxPath, '版本一 内容');
+
+    const first = await readDocumentTool.execute(
+      { filePath: 'brief.docx' },
+      { workspaceRoot: root, threadId: 'thread', turnId: 'turn', approved: false },
+    );
+    const second = await readDocumentTool.execute(
+      { filePath: 'brief.docx' },
+      { workspaceRoot: root, threadId: 'thread', turnId: 'turn', approved: false },
+    );
+
+    expect(first.status).toBe('completed');
+    expect(first.output).toContain('版本一 内容');
+    expect(first.data).toMatchObject({
+      stale: false,
+      reused: false,
+      source: expect.objectContaining({ path: docxPath, sha256: expect.any(String) }),
+      artifact: expect.objectContaining({ kind: 'document_text', extractor: 'docx-text' }),
+    });
+    expect(second.data).toMatchObject({ reused: true, stale: false });
+  });
+
+  it('refreshes the artifact after the source document changes', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'nexus-read-document-refresh-'));
+    const docxPath = path.join(root, 'brief.docx');
+    await writeMinimalDocx(docxPath, '版本一 内容');
+    await readDocumentTool.execute(
+      { filePath: 'brief.docx' },
+      { workspaceRoot: root, threadId: 'thread', turnId: 'turn', approved: false },
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await writeMinimalDocx(docxPath, '版本二 新内容');
+    const refreshed = await readDocumentTool.execute(
+      { filePath: 'brief.docx' },
+      { workspaceRoot: root, threadId: 'thread', turnId: 'turn', approved: false },
+    );
+
+    expect(refreshed.status).toBe('completed');
+    expect(refreshed.output).toContain('版本二 新内容');
+    expect(refreshed.data).toMatchObject({ reused: false, stale: true });
+  });
+
+  it('returns structured failures for missing or unreadable source documents', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'nexus-read-document-fail-'));
+
+    const missing = await readDocumentTool.execute(
+      { filePath: 'missing.docx' },
+      { workspaceRoot: root, threadId: 'thread', turnId: 'turn', approved: false },
+    );
+    expect(missing).toMatchObject({
+      status: 'failed',
+      error: { code: 'SOURCE_MISSING' },
+    });
+
+    await fs.writeFile(path.join(root, 'broken.docx'), 'not a real docx', 'utf-8');
+    const broken = await readDocumentTool.execute(
+      { filePath: 'broken.docx' },
+      { workspaceRoot: root, threadId: 'thread', turnId: 'turn', approved: false },
+    );
+    expect(broken).toMatchObject({
+      status: 'failed',
+      error: { code: 'EXTRACTION_FAILED' },
+      data: {
+        source: expect.objectContaining({ path: expect.stringContaining('broken.docx'), sha256: expect.any(String) }),
+      },
+    });
+  });
 });
 
 describe('listFilesTool', () => {
@@ -351,6 +479,40 @@ describe('listFilesTool', () => {
     });
   });
 });
+
+async function writeMinimalDocx(filePath: string, text: string): Promise<void> {
+  const zip = new JSZip();
+  zip.file('[Content_Types].xml', [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">',
+    '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>',
+    '<Default Extension="xml" ContentType="application/xml"/>',
+    '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>',
+    '</Types>',
+  ].join(''));
+  zip.folder('_rels')!.file('.rels', [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">',
+    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>',
+    '</Relationships>',
+  ].join(''));
+  zip.folder('word')!.file('document.xml', [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">',
+    '<w:body><w:p><w:r><w:t>',
+    escapeXml(text),
+    '</w:t></w:r></w:p></w:body></w:document>',
+  ].join(''));
+  await fs.writeFile(filePath, await zip.generateAsync({ type: 'nodebuffer' }));
+}
+
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
 
 describe('searchContentTool', () => {
   it('returns matches with file segment artifact refs instead of only plain text', async () => {

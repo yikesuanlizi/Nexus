@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import JSZip from 'jszip';
 import type {
   Checkpoint,
   RunTraceDraft,
@@ -23,7 +24,7 @@ import type { RunEvent, RunFeedback, RunRecord, ThreadStore } from '@nexus/stora
 import { LocalHookRegistry, LocalSkillRegistry } from '@nexus/extensions';
 import { ToolRegistry, type ToolDefinition } from '@nexus/tools';
 import type { RuntimeMiddleware } from './middleware.js';
-import { getPreset } from '@nexus/sandbox';
+import { AutoApproveHandler, getPreset } from '@nexus/sandbox';
 import { LIGHT_MEMORY_KEY, type LightMemoryState } from '@nexus/memory';
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T | PromiseLike<T>) => void; reject: (reason?: unknown) => void } {
@@ -1272,6 +1273,204 @@ describe('AgentLoop runTurn failure handling', () => {
     });
   });
 
+  it('records file lifecycle trace events from read_document results', async () => {
+    const threadId = 'thread-document-trace';
+    const store = new FakeStore(threadId, 'previous-turn');
+    store.thread.turnCount = 0;
+    store.turns = [];
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'nexus-runtime-document-trace-'));
+    await writeRuntimeMinimalDocx(path.join(root, 'brief.docx'), 'trace 内容');
+    const model = new SequenceToolModel([{ name: 'read_document', args: { filePath: 'brief.docx' } }]);
+    const agent = new AgentLoop({
+      workspaceRoot: root,
+      sandbox: { level: 'workspace_write', workspaceRoot: root },
+      model: model as never,
+      store,
+      locale: 'zh',
+      approvalHandler: new AutoApproveHandler(),
+    });
+
+    await agent.runTurn(threadId, { type: 'text', text: '分析 brief.docx' });
+
+    expect(store.runTraceEvents).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        category: 'file',
+        name: 'file.extract',
+        payload: expect.objectContaining({
+          action: 'extract',
+          path: expect.stringContaining('brief.docx'),
+          artifactPath: expect.stringContaining('.nexus'),
+        }),
+      }),
+    ]));
+  });
+
+  it('injects a freshness warning before the next model call when a document artifact is stale', async () => {
+    const threadId = 'thread-preflight-stale';
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'nexus-agent-preflight-'));
+    await writeRuntimeMinimalDocx(path.join(root, 'brief.docx'), '版本一');
+
+    const store = new FakeStore(threadId, 'previous-turn');
+    store.thread.turnCount = 0;
+    store.turns = [];
+    const setupModel = new SequenceToolModel([{ name: 'read_document', args: { filePath: 'brief.docx' } }]);
+    const setupAgent = new AgentLoop({
+      workspaceRoot: root,
+      sandbox: { level: 'workspace_write', workspaceRoot: root },
+      model: setupModel as never,
+      store,
+      locale: 'zh',
+    });
+    await setupAgent.runTurn(threadId, { type: 'text', text: '读取 brief.docx' });
+
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await writeRuntimeMinimalDocx(path.join(root, 'brief.docx'), '版本二');
+    const model = new MessageCapturingModel();
+    const agent = new AgentLoop({
+      workspaceRoot: root,
+      sandbox: { level: 'workspace_write', workspaceRoot: root },
+      model: model as never,
+      store,
+      locale: 'zh',
+      approvalHandler: new AutoApproveHandler(),
+    });
+
+    await agent.runTurn(threadId, { type: 'text', text: '继续分析' });
+
+    const serialized = JSON.stringify(model.messages[0]);
+    expect(serialized).toContain('旧提取内容已经过期');
+    expect(serialized).toContain('read_document');
+  });
+
+  it('injects a document verification notice for follow-up questions before relying on previous document context', async () => {
+    const threadId = 'thread-preflight-followup-document';
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'nexus-agent-followup-document-'));
+    await writeRuntimeMinimalDocx(path.join(root, 'brief.docx'), '版本一');
+
+    const store = new FakeStore(threadId, 'previous-turn');
+    store.thread.turnCount = 0;
+    store.turns = [];
+    const setupModel = new SequenceToolModel([{ name: 'read_document', args: { filePath: 'brief.docx' } }]);
+    const setupAgent = new AgentLoop({
+      workspaceRoot: root,
+      sandbox: { level: 'workspace_write', workspaceRoot: root },
+      model: setupModel as never,
+      store,
+      locale: 'zh',
+    });
+    await setupAgent.runTurn(threadId, { type: 'text', text: '读取 brief.docx' });
+
+    const model = new SequenceToolModel([{ name: 'read_document', args: { filePath: 'brief.docx' } }]);
+    const agent = new AgentLoop({
+      workspaceRoot: root,
+      sandbox: { level: 'workspace_write', workspaceRoot: root },
+      model: model as never,
+      store,
+      locale: 'zh',
+    });
+
+    await agent.runTurn(threadId, { type: 'text', text: '现在呢，看看适合开发了吗？' });
+
+    const firstRequest = JSON.stringify(model.messages[0]);
+    expect(firstRequest).toContain('当前问题像是在继续讨论之前的文档');
+    expect(firstRequest).toContain('read_document');
+    expect(firstRequest).toContain('brief.docx');
+    const finalRequest = JSON.stringify(model.messages.at(-1));
+    expect(finalRequest.match(/文件知识校验提醒/g) ?? []).toHaveLength(1);
+    expect(store.runEvents).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        category: 'file',
+        type: 'file.read',
+        level: 'warning',
+        message: expect.stringContaining('Document verification required'),
+      }),
+    ]));
+  });
+
+  it('auto refreshes a recently discussed document before a follow-up answer even when the model does not call tools', async () => {
+    const threadId = 'thread-preflight-auto-document';
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'nexus-agent-auto-document-'));
+    await writeRuntimeMinimalDocx(path.join(root, 'brief.docx'), '旧版本内容');
+
+    const store = new FakeStore(threadId, 'previous-turn');
+    store.thread.turnCount = 0;
+    store.turns = [];
+    const setupModel = new SequenceToolModel([{ name: 'read_document', args: { filePath: 'brief.docx' } }]);
+    const setupAgent = new AgentLoop({
+      workspaceRoot: root,
+      sandbox: { level: 'workspace_write', workspaceRoot: root },
+      model: setupModel as never,
+      store,
+      locale: 'zh',
+    });
+    await setupAgent.runTurn(threadId, { type: 'text', text: '读取 brief.docx' });
+
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await writeRuntimeMinimalDocx(path.join(root, 'brief.docx'), '新版本内容');
+    const model = new MessageCapturingModel();
+    const agent = new AgentLoop({
+      workspaceRoot: root,
+      sandbox: { level: 'workspace_write', workspaceRoot: root },
+      model: model as never,
+      store,
+      locale: 'zh',
+    });
+
+    await agent.runTurn(threadId, { type: 'text', text: '现在呢，看看适合开发了吗？' });
+
+    const firstRequest = JSON.stringify(model.messages[0]);
+    expect(firstRequest).toContain('文件知识自动校验结果');
+    expect(firstRequest).toContain('新版本内容');
+    const currentTurnToolReads = store.items.filter((item) =>
+      item.type === 'tool_call' &&
+      item.toolName === 'read_document' &&
+      item.result &&
+      JSON.stringify(item.result).includes('新版本内容')
+    );
+    expect(currentTurnToolReads.length).toBeGreaterThan(0);
+  });
+
+  it('records observed document knowledge on project checkpoints', async () => {
+    const threadId = 'thread-checkpoint-knowledge';
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'nexus-checkpoint-knowledge-'));
+    await writeRuntimeMinimalDocx(path.join(root, 'brief.docx'), '检查点知识');
+    const model = new SequenceToolModel([
+      { name: 'read_document', args: { filePath: 'brief.docx' } },
+      { name: 'write_file', args: { filePath: 'notes.md', content: '# notes\n' } },
+    ]);
+    const store = new FakeStore(threadId, 'previous-turn');
+    store.thread.turnCount = 0;
+    store.turns = [];
+    const agent = new AgentLoop({
+      workspaceRoot: root,
+      sandbox: { level: 'workspace_write', workspaceRoot: root },
+      model: model as never,
+      store,
+      locale: 'zh',
+      approvalHandler: new AutoApproveHandler(),
+    });
+
+    await agent.runTurn(threadId, { type: 'text', text: '读取 brief.docx 后写 notes' });
+
+    const checkpoint = store.items.find((item) => item.type === 'project_checkpoint');
+    expect(checkpoint).toMatchObject({
+      type: 'project_checkpoint',
+      knowledge: {
+        observedFiles: [
+          expect.objectContaining({ path: expect.stringContaining('brief.docx'), sha256: expect.any(String) }),
+        ],
+        documentArtifacts: [
+          expect.objectContaining({
+            sourcePath: expect.stringContaining('brief.docx'),
+            artifactPath: expect.stringContaining('.nexus'),
+            sourceHash: expect.any(String),
+            artifactHash: expect.any(String),
+          }),
+        ],
+      },
+    });
+  });
+
   it('does not treat plain text tool placeholders as the final answer', async () => {
     const threadId = 'thread-placeholder-tool-text';
     const store = new FakeStore(threadId, 'previous-turn');
@@ -1370,6 +1569,49 @@ describe('AgentLoop runTurn failure handling', () => {
       expect.objectContaining({ type: 'reasoning', text: '先判断是否需要工具。' }),
       expect.objectContaining({ type: 'agent_message', text: '最终回答。' }),
     ]));
+  });
+
+  it('does not replay historical reasoning items as assistant content', async () => {
+    const threadId = 'thread-history-reasoning-redaction';
+    const store = new FakeStore(threadId, 'previous-turn');
+    store.items.push(
+      {
+        id: 'previous-user',
+        type: 'user_message',
+        turnId: 'previous-turn',
+        text: 'v1.0 现在适合开发了吗？',
+        timestamp: '2026-06-07T00:00:00.000Z',
+      },
+      {
+        id: 'previous-reasoning',
+        type: 'reasoning',
+        turnId: 'previous-turn',
+        text: '用户在问：v1.0 现在适合去开发了吗？',
+        timestamp: '2026-06-07T00:00:01.000Z',
+      },
+      {
+        id: 'previous-answer',
+        type: 'agent_message',
+        turnId: 'previous-turn',
+        text: '上一轮可见回答。',
+        timestamp: '2026-06-07T00:00:02.000Z',
+      },
+    );
+    const model = new MessageCapturingModel();
+    const agent = new AgentLoop({
+      workspaceRoot: process.cwd(),
+      sandbox: { level: 'workspace_write', workspaceRoot: process.cwd() },
+      model: model as never,
+      store,
+      locale: 'zh',
+    });
+
+    await agent.runTurn(threadId, { type: 'text', text: '现在呢？' });
+
+    const serialized = JSON.stringify(model.messages[0]);
+    expect(serialized).not.toContain('[Reasoning]');
+    expect(serialized).not.toContain('用户在问：v1.0');
+    expect(serialized).toContain('上一轮可见回答。');
   });
 
   it('persists an error item when the model stream fails', async () => {
@@ -4433,3 +4675,37 @@ describe('AgentLoop episode memory mode', () => {
     expect(store.workingSets.get(threadId)).toBeDefined();
   });
 });
+
+async function writeRuntimeMinimalDocx(filePath: string, text: string): Promise<void> {
+  const zip = new JSZip();
+  zip.file('[Content_Types].xml', [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">',
+    '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>',
+    '<Default Extension="xml" ContentType="application/xml"/>',
+    '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>',
+    '</Types>',
+  ].join(''));
+  zip.folder('_rels')!.file('.rels', [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">',
+    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>',
+    '</Relationships>',
+  ].join(''));
+  zip.folder('word')!.file('document.xml', [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">',
+    '<w:body><w:p><w:r><w:t>',
+    escapeRuntimeXml(text),
+    '</w:t></w:r></w:p></w:body></w:document>',
+  ].join(''));
+  await fs.writeFile(filePath, await zip.generateAsync({ type: 'nodebuffer' }));
+}
+
+function escapeRuntimeXml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}

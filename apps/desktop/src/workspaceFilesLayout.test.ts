@@ -60,4 +60,14 @@ describe('workspace files layout', () => {
     expect(workspaceFileRowTitle({ name: 'main.tsx', path: 'apps/web/src/main.tsx' }, 'E:\\langchain\\Nexus')).toBe('E:\\langchain\\Nexus\\apps\\web\\src\\main.tsx');
     expect(component).toContain('title={workspaceFileRowTitle(entry, workspaceRoot)}');
   });
+
+  it('keeps the file tree as the scroll owner inside the mounted workbench panel', () => {
+    const styles = readFileSync(join(here, 'styles.css'), 'utf-8');
+
+    expect(styles).toContain('.workbenchContent {\n  contain: layout paint;\n  overflow: hidden;');
+    expect(styles).toContain('.workbenchPanel.active {\n  height: 100%;\n  min-height: 0;');
+    expect(styles).toContain('.workspaceFiles {\n  backface-visibility: hidden;\n  height: 100%;\n  min-height: 0;');
+    expect(styles).toContain('.workspaceFileList,\n.workspacePreviewPane,\n.workspacePreviewContent');
+    expect(styles).toContain('overscroll-behavior: contain;');
+  });
 });

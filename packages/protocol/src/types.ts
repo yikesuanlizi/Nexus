@@ -1,3 +1,5 @@
+import type { KnowledgeCheckpointSummary } from './fileKnowledge.js';
+
 // ─── Thread ──────────────────────────────────────────────────────────────────
 // Thread（线程/会话）：代表一次完整的对话，由若干个 Turn 组成
 /** Unique identifier for a thread. */
@@ -330,6 +332,7 @@ export interface ProjectCheckpointItem {
   turnCount: number;
   workspaceRoot: string;
   files: ProjectFileCheckpoint[];
+  knowledge?: KnowledgeCheckpointSummary;
   timestamp?: string;
   harnessRunId?: string;
   harnessIteration?: number;

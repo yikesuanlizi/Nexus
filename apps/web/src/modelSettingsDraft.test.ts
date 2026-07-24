@@ -39,6 +39,15 @@ describe('model settings draft state', () => {
     expect(drawer).not.toContain("activeSection === 'presets'");
   });
 
+  it('keeps preset selection explicit so matching configs do not flip to another preset', () => {
+    const models = readFileSync(join(here, 'components', 'settings', 'ModelsPage.tsx'), 'utf-8');
+
+    expect(models).toContain('selectedPresetId');
+    expect(models).toContain('setSelectedPresetId(presetId)');
+    expect(models).toContain("value={selectedPresetId}");
+    expect(models).not.toContain("value={matchedDraftPreset?.id ?? '__draft__'}");
+  });
+
   it('keeps delete action wired for model presets', () => {
     const main = readFileSync(join(here, 'main.tsx'), 'utf-8');
     const drawer = readFileSync(join(here, 'components', 'SettingsDrawer.tsx'), 'utf-8');
@@ -69,6 +78,48 @@ describe('model settings draft state', () => {
     expect(models).toContain("if (source === 'env' && !modelEnvVarDraft.trim())");
     expect(models).not.toContain('批量设置环境变量');
     expect(models).not.toContain('一次性设置环境变量');
+  });
+
+  it('keeps model key source independent from web search key source', () => {
+    const source = readFileSync(join(here, 'features', 'settings', 'useSettingsController.ts'), 'utf-8');
+
+    expect(source).not.toContain('useState<SecretSource>(config.webProviderKeySource)');
+    expect(source).toContain("useState<SecretSource>('env')");
+  });
+
+  it('creates OpenAI-compatible custom providers before saving credentials or applying config', () => {
+    const source = readFileSync(join(here, 'features', 'settings', 'useSettingsController.ts'), 'utf-8');
+
+    expect(source).toContain("fetch('/api/providers'");
+    expect(source).toContain('Failed to create custom provider');
+    expect(source).toContain('setCustomProviderName');
+    expect(source).toContain('return newProvider.id');
+  });
+
+  it('recreates missing legacy custom providers from presets before saving env vars', () => {
+    const source = readFileSync(join(here, 'features', 'settings', 'useSettingsController.ts'), 'utf-8');
+
+    expect(source).toContain('const existingDraftProvider = providers.find((provider) => provider.id === modelConfigDraft.provider);');
+    expect(source).toContain("const missingLegacyCustomProvider = modelConfigDraft.provider.startsWith('custom_') && !existingDraftProvider;");
+    expect(source).toContain("if (modelConfigDraft.provider !== 'openai_compatible' && !missingLegacyCustomProvider)");
+    expect(source).toContain('legacyCustomProviderName(modelConfigDraft.provider)');
+  });
+
+  it('surfaces provider env-var save failures instead of pretending settings were applied', () => {
+    const source = readFileSync(join(here, 'main.tsx'), 'utf-8');
+
+    expect(source).toContain("const detail = await response.text().catch(() => '');");
+    expect(source).toContain('const reason = parseProviderEnvVarSaveFailure(detail);');
+    expect(source).toContain("throw new Error(reason ? `Provider env var save failed: ${reason}` : 'Provider env var save failed');");
+  });
+
+  it('shows apply-setting failures in the model card instead of only the hidden shell live region', () => {
+    const source = readFileSync(join(here, 'features', 'settings', 'useSettingsController.ts'), 'utf-8');
+
+    expect(source).toContain("setModelKeyNotice('');");
+    expect(source).toContain("setModelKeyNotice(locale === 'zh' ? '设置已应用。' : 'Settings applied.');");
+    expect(source).toContain('const message = error instanceof Error ? error.message : String(error);');
+    expect(source).toContain('setModelKeyNotice(message);');
   });
 
   it('defaults remote custom providers without an env var to saved-key mode', () => {
@@ -186,7 +237,22 @@ describe('model settings draft state', () => {
     const source = readFileSync(join(here, 'features', 'settings', 'useSettingsController.ts'), 'utf-8');
     // P2.3 hydrate：作用域切换时从对应源拉取
     expect(source).toContain('hydrateFromScope(scope)');
+    expect(source).toContain('void hydrateFromScope(scope);');
+    expect(source).toContain('}, [scope, activeThreadId]);');
+    expect(source).not.toContain('}, [scope, hydrateFromScope]);');
     expect(source).toContain('fetchThreadConfigOverrides(activeThreadId)');
     expect(source).toContain('localStorage.getItem(RUN_CONFIG_STORAGE_KEY)');
+  });
+
+  it('regenerates the latest answer with the model selected before rollback reloads thread config', () => {
+    const webMain = readFileSync(join(here, 'main.tsx'), 'utf-8');
+    const desktopMain = readFileSync(join(here, '..', '..', 'desktop', 'src', 'main.tsx'), 'utf-8');
+
+    for (const source of [webMain, desktopMain]) {
+      expect(source).toContain('configOverride?: Partial<RunConfig>');
+      expect(source).toContain('const requestConfig = options.configOverride ?? threadApiConfig;');
+      expect(source).toContain('const regenerateConfig = { ...threadApiConfig };');
+      expect(source).toContain("await sendMessage(undefined, userText, { imagesOverride: [], clearComposerImages: false, configOverride: regenerateConfig });");
+    }
   });
 });

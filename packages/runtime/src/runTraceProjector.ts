@@ -16,7 +16,7 @@ export function projectRunTrace(input: RunTraceEnvelope[]): RunTraceSummary {
     tools: { calls: 0, failed: 0, denied: 0 },
     items: { started: 0, completed: 0, failed: 0, byType: {} },
     agents: { spawned: 0, running: 0, failed: 0 },
-    files: { changed: 0, addedLines: 0, removedLines: 0 },
+    files: { reads: 0, changed: 0, addedLines: 0, removedLines: 0, extracted: 0, reused: 0, stale: 0, refreshed: 0 },
   };
 
   for (const event of events) {
@@ -76,9 +76,16 @@ export function projectRunTrace(input: RunTraceEnvelope[]): RunTraceSummary {
         break;
       case 'file':
         if (event.lifecycle === 'completed' || event.lifecycle === 'instant') {
-          summary.files.changed += 1;
-          summary.files.addedLines += event.payload.addedLines ?? 0;
-          summary.files.removedLines += event.payload.removedLines ?? 0;
+          if (event.payload.action === 'read') summary.files.reads += 1;
+          if (event.payload.action === 'extract') summary.files.extracted += 1;
+          if (event.payload.action === 'reuse') summary.files.reused += 1;
+          if (event.payload.action === 'stale') summary.files.stale += 1;
+          if (event.payload.action === 'refresh') summary.files.refreshed += 1;
+          if (['write', 'patch', 'delete', 'checkpoint'].includes(event.payload.action)) {
+            summary.files.changed += 1;
+            summary.files.addedLines += event.payload.addedLines ?? 0;
+            summary.files.removedLines += event.payload.removedLines ?? 0;
+          }
         }
         break;
       case 'checkpoint':

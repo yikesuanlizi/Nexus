@@ -35,10 +35,35 @@ export interface RunTracePayloadMap {
     cacheWriteTokens?: number;
     finishReason?: string;
   };
-  tool: { toolName: string; callId: string; decision?: 'allow' | 'deny' | 'approval_required'; approvalId?: string; argsSummary?: unknown; resultSummary?: unknown; exitCode?: number; outputBytes?: number };
+  tool: {
+    toolName: string;
+    callId: string;
+    resourceKind?: 'tool' | 'mcp' | 'skill' | 'shell' | 'agent';
+    server?: string;
+    tool?: string;
+    skillName?: string;
+    decision?: 'allow' | 'deny' | 'approval_required';
+    approvalId?: string;
+    argsSummary?: unknown;
+    resultSummary?: unknown;
+    exitCode?: number;
+    outputBytes?: number;
+  };
   item: { itemType: ThreadItem['type']; status?: string };
   agent: { agentThreadId: ThreadId; role: string; action: 'spawn' | 'started' | 'joined' | 'failed' | 'interrupted'; childRunId?: string };
-  file: { action: 'read' | 'write' | 'patch' | 'delete' | 'checkpoint'; path: string; addedLines?: number; removedLines?: number };
+  file: {
+    action: 'read' | 'write' | 'patch' | 'delete' | 'checkpoint' | 'extract' | 'stale' | 'refresh' | 'reuse';
+    path: string;
+    sourcePath?: string;
+    artifactPath?: string;
+    sha256?: string;
+    artifactSha256?: string;
+    staleReason?: string;
+    contentType?: string;
+    extractor?: string;
+    addedLines?: number;
+    removedLines?: number;
+  };
   checkpoint: { checkpointId: string; turnCount: number; itemIndex: number; status: CheckpointStatus };
   evidence: { kind: string; label: string; passed?: boolean };
   error: { code: string; message: string; retryable: boolean; source?: string };
@@ -115,7 +140,16 @@ export interface RunTraceSummary {
   tools: { calls: number; failed: number; denied: number };
   items: { started: number; completed: number; failed: number; byType: Record<string, number> };
   agents: { spawned: number; running: number; failed: number };
-  files: { changed: number; addedLines: number; removedLines: number };
+  files: {
+    reads: number;
+    changed: number;
+    addedLines: number;
+    removedLines: number;
+    extracted: number;
+    reused: number;
+    stale: number;
+    refreshed: number;
+  };
   lastError?: { code: string; message: string };
   lastCheckpointId?: string;
 }

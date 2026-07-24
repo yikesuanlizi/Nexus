@@ -4,6 +4,18 @@ import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 import type { ToolDefinition, ToolContext, ToolResult } from './registry.js';
 import { WebProviderRouter } from './web/provider.js';
+import {
+  artifactRecordForResult,
+  assessArtifactFreshness,
+  documentArtifactPathForSource,
+  findArtifactByPath,
+  findArtifactBySource,
+  loadDocumentArtifactLedger,
+  saveDocumentArtifactRecord,
+  updateArtifactLastUsed,
+} from './documentArtifacts.js';
+import { computeFileFingerprint, isDocumentFile, relativeToWorkspace, resolveWorkspacePath } from './fileKnowledge.js';
+import { DOCUMENT_EXTRACTOR_VERSION, extractDocumentText, extractorForDocumentPath } from './documentExtractors.js';
 
 // ─── current_time ──────────────────────────────────────────────────────────
 // 中文注释：获取当前本地日期和时间。用于简单的时间/日期查询，替代 shell 命令。
@@ -71,6 +83,23 @@ export const readFileTool: ToolDefinition = {
       };
     }
     const filePath = resolvePath(ctx.workspaceRoot, rawPath);
+    const ledger = await loadDocumentArtifactLedger(ctx.workspaceRoot);
+    const managedArtifact = findArtifactByPath(ledger, filePath);
+    if (managedArtifact) {
+      const freshness = await assessArtifactFreshness(ctx.workspaceRoot, managedArtifact);
+      if (freshness.status !== 'fresh') {
+        return {
+          output: `Stale document artifact: ${managedArtifact.artifactPath}. Use read_document on ${managedArtifact.sourcePath}.`,
+          status: 'failed',
+          error: {
+            message: 'Managed document artifact is stale; use read_document to refresh it.',
+            code: 'STALE_DOCUMENT_ARTIFACT',
+          },
+          data: { freshness },
+        };
+      }
+    }
+    const file = await computeFileFingerprint(ctx.workspaceRoot, filePath);
     const decoded = decodeTextFile(await fs.readFile(filePath));
     const content = decoded.text;
     const allLines = content.split('\n');
@@ -91,6 +120,15 @@ export const readFileTool: ToolDefinition = {
       status: 'completed',
       data: {
         path: filePath,
+        file,
+        freshness: managedArtifact
+          ? {
+              status: 'fresh',
+              sourcePath: managedArtifact.sourcePath,
+              artifactPath: managedArtifact.artifactPath,
+              recommendedTool: 'read_document',
+            }
+          : unmanagedHelperFreshness(ctx.workspaceRoot, filePath),
         startLine,
         endLine,
         totalLines: allLines.length,
@@ -98,6 +136,101 @@ export const readFileTool: ToolDefinition = {
         artifactRefs: [ref],
       },
     };
+  },
+};
+
+export const readDocumentTool: ToolDefinition = {
+  name: 'read_document',
+  description: 'Extract readable text from docx, pdf, xlsx, or pptx files. Use this instead of read_file for office/PDF documents so Nexus can detect stale extracted artifacts.',
+  parameters: {
+    type: 'object',
+    properties: {
+      filePath: { type: 'string', description: 'Document path relative to workspace root, or absolute.' },
+    },
+    required: ['filePath'],
+  },
+  requiredPolicy: 'readonly',
+  supportsParallelToolCalls: true,
+  timeoutMs: 120_000,
+  maxOutputLength: 50_000,
+  async execute(args, ctx): Promise<ToolResult> {
+    const rawPath = firstString(args.filePath, args.path, args.filename);
+    if (!rawPath) return failedToolResult('filePath is required', 'INVALID_ARGUMENTS');
+
+    const filePath = resolveWorkspacePath(ctx.workspaceRoot, rawPath);
+    if (!isDocumentFile(filePath)) {
+      return failedToolResult(`Unsupported document type: ${path.extname(filePath)}`, 'UNSUPPORTED_DOCUMENT_TYPE');
+    }
+
+    const extractor = extractorForDocumentPath(filePath);
+    let source: Awaited<ReturnType<typeof computeFileFingerprint>>;
+    try {
+      source = await computeFileFingerprint(ctx.workspaceRoot, filePath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        return failedToolResult(`Source document missing: ${rawPath}`, 'SOURCE_MISSING', {
+          sourcePath: filePath,
+          recommendedTool: 'read_document',
+        });
+      }
+      throw error;
+    }
+
+    try {
+      const ledger = await loadDocumentArtifactLedger(ctx.workspaceRoot);
+      const existing = findArtifactBySource(ledger, filePath, extractor, DOCUMENT_EXTRACTOR_VERSION);
+
+      if (existing) {
+        const freshness = await assessArtifactFreshness(ctx.workspaceRoot, existing);
+        if (freshness.status === 'fresh') {
+          await updateArtifactLastUsed(ctx.workspaceRoot, existing.artifactPath);
+          const text = await fs.readFile(existing.artifactPath, 'utf-8');
+          return completedDocumentResult({
+            source,
+            artifactPath: existing.artifactPath,
+            artifactHash: existing.artifactHash,
+            extractor,
+            createdAt: existing.createdAt,
+            reused: true,
+            stale: false,
+            text,
+            workspaceRoot: ctx.workspaceRoot,
+          });
+        }
+      }
+
+      const extracted = await extractDocumentText(filePath);
+      const artifactPath = await documentArtifactPathForSource(ctx.workspaceRoot, source, extractor, DOCUMENT_EXTRACTOR_VERSION);
+      await fs.mkdir(path.dirname(artifactPath), { recursive: true });
+      await fs.writeFile(artifactPath, extracted.text, 'utf-8');
+      const artifactHash = createHash('sha256').update(extracted.text).digest('hex');
+      const createdAt = new Date().toISOString();
+      await saveDocumentArtifactRecord(ctx.workspaceRoot, artifactRecordForResult({
+        workspaceRoot: ctx.workspaceRoot,
+        source,
+        artifactPath,
+        artifactHash,
+        extractor: extracted.extractor,
+        extractorVersion: DOCUMENT_EXTRACTOR_VERSION,
+        createdAt,
+      }));
+      return completedDocumentResult({
+        source,
+        artifactPath,
+        artifactHash,
+        extractor: extracted.extractor,
+        createdAt,
+        reused: false,
+        stale: Boolean(existing),
+        text: extracted.text,
+        workspaceRoot: ctx.workspaceRoot,
+      });
+    } catch (error) {
+      return failedToolResult(`Document extraction failed: ${errorMessage(error)}`, 'EXTRACTION_FAILED', {
+        source,
+        extractor,
+      });
+    }
   },
 };
 
@@ -667,6 +800,7 @@ export const getSystemStatusTool: ToolDefinition = {
 export const BUILTIN_TOOLS: ToolDefinition[] = [
   currentTimeTool,
   readFileTool,
+  readDocumentTool,
   listFilesTool,
   writeFileTool,
   shellCommandTool,
@@ -682,6 +816,71 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
 function resolvePath(workspaceRoot: string, filePath: string): string {
   if (path.isAbsolute(filePath)) return filePath;
   return path.resolve(workspaceRoot, filePath);
+}
+
+function completedDocumentResult(input: {
+  source: Awaited<ReturnType<typeof computeFileFingerprint>>;
+  artifactPath: string;
+  artifactHash: string;
+  extractor: ReturnType<typeof extractorForDocumentPath>;
+  createdAt: string;
+  reused: boolean;
+  stale: boolean;
+  text: string;
+  workspaceRoot: string;
+}): ToolResult {
+  const preview = input.text.slice(0, 48_000);
+  const sourceDisplay = input.source.relativePath ?? input.source.path;
+  return {
+    output: [
+      `Document extracted: ${sourceDisplay}`,
+      `Artifact: ${relativeToWorkspace(input.workspaceRoot, input.artifactPath) ?? input.artifactPath}`,
+      '',
+      preview,
+    ].join('\n'),
+    status: 'completed',
+    data: {
+      source: input.source,
+      artifact: {
+        path: input.artifactPath,
+        relativePath: relativeToWorkspace(input.workspaceRoot, input.artifactPath),
+        kind: 'document_text',
+        sha256: input.artifactHash,
+        createdAt: input.createdAt,
+        extractor: input.extractor,
+        extractorVersion: DOCUMENT_EXTRACTOR_VERSION,
+      },
+      stale: input.stale,
+      reused: input.reused,
+      textPreview: preview,
+    },
+  };
+}
+
+function failedToolResult(message: string, code: string, data?: unknown): ToolResult {
+  return { output: message, status: 'failed', error: { message, code }, ...(data === undefined ? {} : { data }) };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function unmanagedHelperFreshness(workspaceRoot: string, filePath: string) {
+  const basename = path.basename(filePath).toLowerCase();
+  const relative = path.relative(path.resolve(workspaceRoot), path.resolve(filePath));
+  const directChild = relative
+    && !relative.startsWith('..')
+    && !path.isAbsolute(relative)
+    && !relative.includes(path.sep);
+  if (directChild && /^_.*(?:decoded|extract|dump|scratch|temp|tmp).*\.(txt|md|json|xml)$/i.test(basename)) {
+    return {
+      status: 'unmanaged_warning',
+      artifactPath: filePath,
+      reason: 'unmanaged_artifact',
+      recommendedTool: 'read_document',
+    };
+  }
+  return { status: 'fresh' };
 }
 
 function firstString(...values: unknown[]): string | null {

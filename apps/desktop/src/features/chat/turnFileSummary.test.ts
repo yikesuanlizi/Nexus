@@ -80,18 +80,77 @@ describe('buildTurnFileSummary', () => {
     expect(summary.changedFiles).toEqual([]);
   });
 
+  it('uses read_document structured source metadata as the involved file', () => {
+    const summary = buildTurnFileSummary([
+      {
+        id: 'read-doc',
+        type: 'tool_call',
+        toolName: 'read_document',
+        arguments: { filePath: 'brief.docx' },
+        result: {
+          source: {
+            path: 'E:\\langchain\\dexin-agent\\brief.docx',
+            sha256: 'source-hash',
+            mtimeMs: 1,
+            sizeBytes: 10,
+          },
+          artifact: {
+            path: 'E:\\langchain\\dexin-agent\\.nexus\\documents\\brief.txt',
+            sha256: 'artifact-hash',
+          },
+        },
+        status: 'completed',
+      },
+    ], 'E:\\langchain\\dexin-agent');
+
+    expect(summary.readFiles).toEqual([
+      { path: 'E:\\langchain\\dexin-agent\\brief.docx' },
+    ]);
+  });
+
   it('extracts bare project filenames from commands without treating URLs as files', () => {
     const summary = buildTurnFileSummary([
       {
         id: 'command-docx-name',
         type: 'command_execution',
-        command: 'python _read_docx.py 需求说明.docx && curl https://example.com/report.pdf',
+        command: 'python _read_docx.py 需求说明.docx && python -c "p.text.strip()" && curl https://example.com/report.pdf',
         status: 'completed',
       },
     ], 'E:\\langchain\\dexin-agent');
 
     expect(summary.readFiles).toEqual([
       { path: 'E:\\langchain\\dexin-agent\\需求说明.docx' },
+    ]);
+  });
+
+  it('does not treat code member access as a generated workspace file', () => {
+    const summary = buildTurnFileSummary([
+      {
+        id: 'command-code-token',
+        type: 'command_execution',
+        command: 'python -c "for p in paragraphs: print(p.text.strip())"',
+        aggregatedOutput: 'parsed by p.text.strip and saved nothing',
+        status: 'completed',
+      },
+    ], 'E:\\langchain');
+
+    expect(summary.readFiles).toEqual([]);
+    expect(summary.changedFiles).toEqual([]);
+  });
+
+  it('extracts an absolute file path from a function call token without keeping the call prefix', () => {
+    const summary = buildTurnFileSummary([
+      {
+        id: 'command-open-token',
+        type: 'command_execution',
+        command: 'python -c "print(1)"',
+        aggregatedOutput: String.raw`ENOENT: no such file or directory, stat 'E:\langchain\open(E:\langchain\dexin-agent\_v1_decoded.txt'`,
+        status: 'completed',
+      },
+    ], 'E:\\langchain');
+
+    expect(summary.readFiles).toEqual([
+      { path: 'E:\\langchain\\dexin-agent\\_v1_decoded.txt' },
     ]);
   });
 

@@ -7,6 +7,7 @@ interface TraceFiltersProps {
   errorsOnly: boolean;
   zh: boolean;
   onToggleCategory(category: RunTraceCategory): void;
+  onSetCategoryFilter(categories: RunTraceCategory[]): void;
   onToggleErrorsOnly(): void;
 }
 
@@ -16,6 +17,7 @@ export function TraceFilters({
   errorsOnly,
   zh,
   onToggleCategory,
+  onSetCategoryFilter,
   onToggleErrorsOnly,
 }: TraceFiltersProps) {
   const allSelected = selectedCategories.length === 0;
@@ -27,11 +29,7 @@ export function TraceFilters({
           type="button"
           className={`traceChip ${allSelected ? 'traceChip--active' : ''}`}
           aria-pressed={allSelected}
-          onClick={() => {
-            if (!allSelected) {
-              for (const c of selectedCategories) onToggleCategory(c);
-            }
-          }}
+          onClick={() => onSetCategoryFilter([])}
         >
           {zh ? '全部' : 'All'}
         </button>

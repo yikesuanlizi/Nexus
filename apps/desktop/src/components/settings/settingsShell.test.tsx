@@ -35,7 +35,7 @@ function renderShell(overrides: {
   }));
 }
 
-describe('desktop SettingsShell · P2.2 渲染与内部确认层', () => {
+describe('desktop SettingsShell · P2.2 渲染与取消逻辑', () => {
   it('主设置 Shell 不再暴露作用域按钮', () => {
     const html = renderShell();
     expect(html).not.toContain('Global defaults');
@@ -80,24 +80,27 @@ describe('desktop SettingsShell · P2.2 渲染与内部确认层', () => {
 });
 
 describe('desktop SettingsShell · P2.2 源码守卫', () => {
-  it('Esc + dirty 内部确认面板关键路径存在', () => {
+  it('Esc + dirty 不再触发 shell 级内部确认面板', () => {
     const source = readFileSync(join(here, 'SettingsShell.tsx'), 'utf-8');
     expect(source).toContain("event.key !== 'Escape'");
-    expect(source).toContain('ConfirmPanel');
-    expect(source).toContain('discardConfirmOpen');
-    expect(source).toContain('setDiscardConfirmOpen(true)');
+    expect(source).not.toContain('ConfirmPanel');
+    expect(source).not.toContain('discardConfirmOpen');
+    expect(source).not.toContain('setDiscardConfirmOpen');
+    expect(source).not.toContain('confirmDiscardChanges');
     expect(source).not.toContain('window.confirm');
-    expect(source).toContain("t(locale, 'discardChanges')");
+    expect(source).not.toContain("t(locale, 'discardChanges')");
     expect(source).not.toContain('disabled={saveState.saving || !saveState.dirty}');
     expect(source).not.toContain('disabled={option.disabled || saveState.saving}');
     expect(source).not.toContain('role="radiogroup"');
     expect(source).toContain('Date.now() - saveState.savedToastAt < 2000');
   });
 
-  it('handleCancel 在 dirty 时打开内部确认面板', () => {
+  it('handleCancel 在 dirty 时也直接走页面取消逻辑', () => {
     const source = readFileSync(join(here, 'SettingsShell.tsx'), 'utf-8');
-    expect(source).toMatch(/function handleCancel\(\) \{[\s\S]*?if \(saveState\.saving\) return;[\s\S]*?if \(saveState\.dirty\) \{[\s\S]*?setDiscardConfirmOpen\(true\);[\s\S]*?return;[\s\S]*?\}/);
-    expect(source).toMatch(/function confirmDiscardChanges\(\) \{[\s\S]*?setDiscardConfirmOpen\(false\);[\s\S]*?onCancel\(\);/);
+    expect(source).toMatch(/function handleCancel\(\) \{[\s\S]*?if \(saveState\.saving\) return;[\s\S]*?onCancel\(\);[\s\S]*?\}/);
+    expect(source).not.toContain('if (saveState.dirty)');
+    expect(source).not.toContain('setDiscardConfirmOpen');
+    expect(source).not.toContain('confirmDiscardChanges');
   });
 });
 
@@ -120,7 +123,7 @@ describe('desktop P2.2 i18n + CSS 主题色守卫', () => {
     expect(i18n).not.toContain("scopeLabel:");
     expect(i18n).not.toContain("scopeGlobal:");
     expect(i18n).not.toContain("applyToScope:");
-    expect(i18n).toContain("discardChanges: 'Discard changes?'");
+    expect(i18n).not.toContain('discardChanges');
     expect(i18n).toContain("saving: 'Saving…'");
     expect(i18n).toContain("saved: 'Saved'");
     expect(i18n).toContain("failedToSave: 'Failed to save'");

@@ -189,7 +189,17 @@ export function LiveActivityHud({
                   >
                     <span className="liveActivityEventIcon">{traceIcon(event.category)}</span>
                     <span className="liveActivityEventText">
-                      <span className="liveActivityEventName">{event.name}</span>
+                      <span className="liveActivityEventName">
+                        <span className="liveActivityEventAgent" title={event.agent.label}>{event.agent.label}</span>
+                        {event.resource ? (
+                          <span className={`liveActivityEventResource resource-${event.resource.kind.toLowerCase()}`}>
+                            <span className="liveActivityEventResourceKind">{event.resource.kind}</span>
+                            <span className="liveActivityEventResourceLabel" title={event.resource.label}>{event.resource.label}</span>
+                          </span>
+                        ) : (
+                          <span>{event.name}</span>
+                        )}
+                      </span>
                       <span className="liveActivityEventTime">{formatRelativeTime(event.occurredAt, zh)}</span>
                     </span>
                   </button>

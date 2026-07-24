@@ -1,11 +1,10 @@
-// 设置面板 modal 外壳：管理 open/close、Esc 关闭、tab 导航、内部确认层
+// 设置面板 modal 外壳：管理 open/close、Esc 关闭、tab 导航
 // P2.4 a11y：role=dialog/aria-modal、焦点进入/回收、Tab 焦点陷阱、aria-live 状态广播
 // P3：saveLabel 动态按钮文案、unsavedDot 未保存指示器
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import type { Locale } from '../../config/config.js';
 import { t } from '../../shared/i18n.js';
 import { Icon } from '../Icon.js';
-import { ConfirmPanel } from './ConfirmPanel.js';
 
 export type SettingsScope = 'global' | 'currentThread' | 'newThread';
 
@@ -41,7 +40,6 @@ export interface SettingsShellProps {
 export function SettingsShell({
   locale,
   open,
-  onClose,
   settingsTabs,
   activeSection,
   setActiveSection,
@@ -53,19 +51,9 @@ export function SettingsShell({
 }: SettingsShellProps) {
   const drawerRef = useRef<HTMLElement>(null);
   const previousActiveElementRef = useRef<HTMLElement | null>(null);
-  const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
 
   function handleCancel() {
     if (saveState.saving) return;
-    if (saveState.dirty) {
-      setDiscardConfirmOpen(true);
-      return;
-    }
-    onClose();
-  }
-
-  function confirmDiscardChanges() {
-    setDiscardConfirmOpen(false);
     onCancel();
   }
 
@@ -78,7 +66,7 @@ export function SettingsShell({
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, saveState.dirty, saveState.saving, onClose, onCancel, locale]);
+  }, [open, saveState.saving, onCancel]);
 
   useEffect(() => {
     if (!open) return;
@@ -190,18 +178,6 @@ export function SettingsShell({
           </div>
         </div>
 
-        <ConfirmPanel
-          locale={locale}
-          open={discardConfirmOpen}
-          title={t(locale, 'discardChanges')}
-          description={locale === 'zh' ? '当前页的未保存改动会被还原。' : 'Unsaved changes on this page will be reverted.'}
-          confirmLabel={locale === 'zh' ? '放弃改动' : 'Discard'}
-          cancelLabel={locale === 'zh' ? '继续编辑' : 'Keep editing'}
-          tone="danger"
-          busy={saveState.saving}
-          onCancel={() => setDiscardConfirmOpen(false)}
-          onConfirm={confirmDiscardChanges}
-        />
       </aside>
 
       <div aria-live="polite" aria-atomic="true" className="sr-only">

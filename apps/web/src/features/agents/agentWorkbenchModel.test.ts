@@ -130,7 +130,7 @@ describe('buildAgentWorkbench', () => {
       tools: { calls: 0, failed: 0, denied: 0 },
       items: { started: 2, completed: 1, failed: 0, byType: {} },
       agents: { spawned: 0, running: 0, failed: 0 },
-      files: { changed: 0, addedLines: 0, removedLines: 0 },
+      files: { reads: 0, changed: 0, addedLines: 0, removedLines: 0, extracted: 0, reused: 0, stale: 0, refreshed: 0 },
       lastError: { code: 'ERR', message: 'Something went wrong' },
     };
 
@@ -158,7 +158,7 @@ describe('buildAgentWorkbench', () => {
       tools: { calls: 0, failed: 0, denied: 0 },
       items: { started: 1, completed: 0, failed: 0, byType: {} },
       agents: { spawned: 0, running: 0, failed: 0 },
-      files: { changed: 0, addedLines: 0, removedLines: 0 },
+      files: { reads: 0, changed: 0, addedLines: 0, removedLines: 0, extracted: 0, reused: 0, stale: 0, refreshed: 0 },
     };
 
     const result = buildAgentWorkbench({
@@ -234,7 +234,7 @@ describe('buildAgentWorkbench', () => {
       tools: { calls: 0, failed: 0, denied: 0 },
       items: { started: 0, completed: 0, failed: 0, byType: {} },
       agents: { spawned: 0, running: 0, failed: 0 },
-      files: { changed: 0, addedLines: 0, removedLines: 0 },
+      files: { reads: 0, changed: 0, addedLines: 0, removedLines: 0, extracted: 0, reused: 0, stale: 0, refreshed: 0 },
     };
 
     const result = buildAgentWorkbench({
@@ -264,5 +264,91 @@ describe('buildAgentWorkbench', () => {
 
     expect(result.currentPhase.kind).toBe('tool');
     expect(result.currentPhase.detail).toContain('read_file');
+  });
+
+  it('最近事件直接携带资源和 Agent 身份', () => {
+    const child = makeThreadChild({
+      thread: {
+        threadId: 'child-research',
+        title: '资料子任务',
+        agentRole: 'Research Agent',
+        status: 'idle',
+        turnCount: 1,
+        createdAt: '2025-01-01T00:00:00Z',
+        updatedAt: '2025-01-01T00:02:00Z',
+      },
+      edge: {
+        parentThreadId: 'main',
+        childThreadId: 'child-research',
+        status: 'open',
+        createdAt: '2025-01-01T00:00:00Z',
+        updatedAt: '2025-01-01T00:02:00Z',
+      },
+      items: [{
+        id: 'child-mcp-1',
+        type: 'mcp_tool_call',
+        server: 'gitnexus',
+        tool: 'search_code',
+        status: 'completed',
+        timestamp: '2025-01-01T00:01:00Z',
+      }],
+    });
+
+    const result = buildAgentWorkbench({
+      mainThreadId: 'main',
+      threadChildren: [child],
+      runtimeItems: [{
+        id: 'main-skill-1',
+        type: 'tool_call',
+        toolName: 'skills_add',
+        arguments: { skillName: 'frontend-polish' },
+        status: 'completed',
+        timestamp: '2025-01-01T00:02:00Z',
+      }],
+      busy: false,
+      zh: true,
+      currentRunId: 'run-main',
+    });
+
+    expect(result.recentEvents).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        itemId: 'main-skill-1',
+        agent: expect.objectContaining({ label: 'Nexus 主控 Agent' }),
+        resource: expect.objectContaining({ kind: 'Skill', label: 'frontend-polish' }),
+      }),
+      expect.objectContaining({
+        itemId: 'child-mcp-1',
+        agent: expect.objectContaining({ threadId: 'child-research', label: 'Research Agent' }),
+        resource: expect.objectContaining({ kind: 'MCP', label: 'gitnexus / search_code' }),
+      }),
+    ]));
+  });
+
+  it('最近事件把 read_document 显示为具体文档资源', () => {
+    const result = buildAgentWorkbench({
+      mainThreadId: 'main',
+      threadChildren: [],
+      runtimeItems: [{
+        id: 'read-doc-1',
+        type: 'tool_call',
+        toolName: 'read_document',
+        result: {
+          source: { path: 'E:\\langchain\\dexin-agent\\brief.docx' },
+          artifact: { path: 'E:\\langchain\\dexin-agent\\.nexus\\documents\\brief.txt' },
+        },
+        status: 'completed',
+        timestamp: '2025-01-01T00:02:00Z',
+      }],
+      busy: false,
+      zh: true,
+      currentRunId: 'run-main',
+    });
+
+    expect(result.recentEvents).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        itemId: 'read-doc-1',
+        resource: expect.objectContaining({ kind: 'Document', label: 'brief.docx' }),
+      }),
+    ]));
   });
 });

@@ -84,8 +84,18 @@ export function traceSummary(trace: RunTraceEnvelope, zh: boolean): string {
     }
     case 'tool': {
       const toolName = p.toolName as string | undefined;
+      const resourceKind = p.resourceKind as string | undefined;
+      const server = p.server as string | undefined;
+      const tool = p.tool as string | undefined;
+      const skillName = p.skillName as string | undefined;
       const decision = p.decision as string | undefined;
       const exitCode = p.exitCode as number | undefined;
+      if (resourceKind === 'mcp' || server || toolName === 'mcp_call_tool') {
+        return `MCP · ${[server || 'mcp', tool || toolName || 'tool'].join(' / ')}`;
+      }
+      if (resourceKind === 'skill' || skillName || /^(skill|skills)(?:_|$)/i.test(toolName ?? '') || trace.name.toLowerCase().includes('skill')) {
+        return `Skill · ${skillName || toolName || trace.name}`;
+      }
       const parts: string[] = [];
       if (toolName) parts.push(toolName);
       if (decision === 'deny') parts.push(zh ? '已拒绝' : 'denied');
@@ -104,12 +114,24 @@ export function traceSummary(trace: RunTraceEnvelope, zh: boolean): string {
     case 'file': {
       const action = p.action as string | undefined;
       const path = p.path as string | undefined;
+      const sourcePath = p.sourcePath as string | undefined;
+      const artifactPath = p.artifactPath as string | undefined;
+      const staleReason = p.staleReason as string | undefined;
+      const extractor = p.extractor as string | undefined;
       const added = p.addedLines as number | undefined;
       const removed = p.removedLines as number | undefined;
       const parts: string[] = [];
-      if (action) parts.push(action);
-      if (path) parts.push(truncate(path.split(/[/\\]/).pop() ?? path, 30));
+      if (action) parts.push(fileActionLabel(action, zh));
+      const sourceName = sourcePath || path ? fileBaseName(sourcePath || path || '') : '';
+      const targetName = artifactPath ? fileBaseName(artifactPath) : sourcePath && path ? fileBaseName(path) : '';
+      if (sourceName && targetName && sourceName !== targetName) {
+        parts.push(`${truncate(sourceName, 30)} → ${truncate(targetName, 30)}`);
+      } else if (sourceName) {
+        parts.push(truncate(sourceName, 30));
+      }
       if (added || removed) parts.push(`+${added ?? 0}/-${removed ?? 0}`);
+      if (staleReason) parts.push(staleReason);
+      if (extractor) parts.push(extractor);
       return parts.join(' · ') || trace.name;
     }
     case 'error': {
@@ -244,6 +266,26 @@ export function formatAbsoluteTime(iso: string): string {
   } catch {
     return iso;
   }
+}
+
+function fileActionLabel(action: string, zh: boolean): string {
+  const labels: Record<string, { zh: string; en: string }> = {
+    read: { zh: '读取', en: 'read' },
+    write: { zh: '写入', en: 'write' },
+    patch: { zh: '修改', en: 'patch' },
+    delete: { zh: '删除', en: 'delete' },
+    checkpoint: { zh: '检查点', en: 'checkpoint' },
+    extract: { zh: '提取', en: 'extract' },
+    stale: { zh: '过期', en: 'stale' },
+    refresh: { zh: '刷新', en: 'refresh' },
+    reuse: { zh: '复用', en: 'reuse' },
+  };
+  const label = labels[action];
+  return zh ? (label?.zh ?? action) : (label?.en ?? action);
+}
+
+function fileBaseName(filePath: string): string {
+  return filePath.split(/[/\\]/).pop() || filePath;
 }
 
 export function runStatusColor(status: string): string {

@@ -147,7 +147,7 @@ describe('RightPane', () => {
     expect(styles).toContain('contain: layout paint style;');
   });
 
-  it('keeps workbench tab switching local to the right pane to avoid full app reflow', () => {
+  it('keeps workbench tab state local but reports lightweight sizing mode to the app shell', () => {
     const mainSource = readFileSync(join(here, '..', 'main.tsx'), 'utf-8');
     const rightPaneSource = readFileSync(join(here, 'RightPane.tsx'), 'utf-8');
 
@@ -155,7 +155,64 @@ describe('RightPane', () => {
     expect(rightPaneSource).toContain("localStorage.getItem('nexus.rightPane.tab')");
     expect(rightPaneSource).toContain("localStorage.setItem('nexus.rightPane.tab', tab)");
     expect(mainSource).not.toContain('setRightPaneTab');
-    expect(mainSource).not.toContain("rightPaneTab === 'files'");
+    expect(mainSource).toContain("setRightPaneSizingMode(rightPaneSizingModeForTab(tab))");
+    expect(mainSource).toContain("return tab === 'files' ? 'files' : 'standard';");
     expect(mainSource).not.toContain('onTabChange={setRightPaneTab}');
+  });
+
+  it('shows resource details inside recent activity events instead of a separate resource block', () => {
+    const html = renderToStaticMarkup(React.createElement(RightPane, {
+      activeTab: 'activity',
+      activeThreadId: 'thread_1',
+      activeThreadTitle: 'Test',
+      busy: false,
+      threadChildren: [],
+      runtimeItems: [
+        {
+          id: 'mcp-1',
+          type: 'mcp_tool_call',
+          server: 'gitnexus',
+          tool: 'search_code',
+          status: 'completed',
+          timestamp: '2026-07-23T00:00:00.000Z',
+        },
+        {
+          id: 'skill-1',
+          type: 'tool_call',
+          toolName: 'skills_add',
+          arguments: { skillName: 'frontend-design' },
+          status: 'completed',
+          timestamp: '2026-07-23T00:00:01.000Z',
+        },
+        {
+          id: 'shell-1',
+          type: 'command_execution',
+          command: 'npm test',
+          status: 'completed',
+          timestamp: '2026-07-23T00:00:02.000Z',
+        },
+      ],
+      activeThread: {
+        threadId: 'thread_1',
+        title: 'Test',
+        status: 'idle',
+        turnCount: 0,
+        createdAt: '2026-07-18T00:00:00.000Z',
+        updatedAt: '2026-07-18T00:00:00.000Z',
+      },
+      locale: 'zh',
+      workspaceRoot: 'E:/langchain',
+      onTabChange: vi.fn(),
+    }));
+
+    expect(html).not.toContain('资源使用');
+    expect(html).toContain('最近事件');
+    expect(html).toContain('Nexus 主控 Agent');
+    expect(html).toContain('MCP');
+    expect(html).toContain('gitnexus / search_code');
+    expect(html).toContain('Skill');
+    expect(html).toContain('frontend-design');
+    expect(html).toContain('Shell');
+    expect(html).toContain('npm test');
   });
 });

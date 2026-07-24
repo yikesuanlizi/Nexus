@@ -164,8 +164,13 @@ function TypedFields({ trace, zh }: { trace: RunTraceEnvelope; zh: boolean }) {
     case 'tool': {
       const decision = p.decision as string | undefined;
       const decisionTone = decision === 'allow' ? 'success' : decision === 'deny' ? 'danger' : decision === 'approval_required' ? 'warning' : 'neutral';
+      const resource = traceResourceDetails(trace);
       return (
         <div className="inspectorGrid">
+          {resource ? <Field label="resourceKind" value="" badge={resource.kind} badgeTone={resource.kind === 'MCP' ? 'info' : resource.kind === 'Skill' ? 'success' : 'neutral'} /> : null}
+          {resource?.server ? <Field label="server" value={resource.server} /> : null}
+          {resource?.tool ? <Field label="tool" value={resource.tool} /> : null}
+          {resource?.skillName ? <Field label="skillName" value={resource.skillName} /> : null}
           <Field label="toolName" value={str('toolName')} />
           <Field label="callId" value={str('callId')} mono />
           {decision ? <Field label="decision" value="" badge={decision} badgeTone={decisionTone} /> : null}
@@ -361,4 +366,34 @@ function TypedFields({ trace, zh }: { trace: RunTraceEnvelope; zh: boolean }) {
         </div>
       );
   }
+}
+
+function traceResourceDetails(trace: RunTraceEnvelope): { kind: 'MCP' | 'Skill' | 'Shell' | 'Tool'; server?: string; tool?: string; skillName?: string } | null {
+  const p = trace.payload as Record<string, unknown>;
+  const toolName = typeof p.toolName === 'string' ? p.toolName : '';
+  const resourceKind = typeof p.resourceKind === 'string' ? p.resourceKind : '';
+  const server = typeof p.server === 'string' ? p.server : '';
+  const tool = typeof p.tool === 'string' ? p.tool : '';
+  const skillName = typeof p.skillName === 'string' ? p.skillName : readStringFromObject(p.argsSummary, ['skillName', 'skill', 'name']);
+  if (resourceKind === 'mcp' || server || toolName === 'mcp_call_tool') {
+    return { kind: 'MCP', server: server || undefined, tool: tool || undefined };
+  }
+  if (resourceKind === 'skill' || skillName || /^(skill|skills)(?:_|$)/i.test(toolName) || trace.name.toLowerCase().includes('skill')) {
+    return { kind: 'Skill', skillName: skillName || undefined };
+  }
+  if (resourceKind === 'shell' || toolName === 'shell_command' || toolName === 'command_execution' || toolName === 'exec_command') {
+    return { kind: 'Shell', tool: toolName };
+  }
+  if (toolName) return { kind: 'Tool', tool: toolName };
+  return null;
+}
+
+function readStringFromObject(value: unknown, keys: string[]): string {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return '';
+  const record = value as Record<string, unknown>;
+  for (const key of keys) {
+    const next = record[key];
+    if (typeof next === 'string' && next.trim()) return next.trim();
+  }
+  return '';
 }

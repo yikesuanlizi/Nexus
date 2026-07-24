@@ -1,4 +1,4 @@
-import { getProvider } from './providers.js';
+import { getProvider, normalizeProviderId, resolveProviderApiKeyEnvVars } from './providers.js';
 import type { ModelConfig } from './types.js';
 
 export type ModelEndpointFormat =
@@ -80,6 +80,123 @@ const KNOWN_PROFILES: Record<string, Omit<ProviderProfile, 'baseUrl' | 'apiKeyEn
     reasoningMode: 'minimax_anthropic_thinking',
     cacheMode: 'anthropic_cache_control',
   },
+  gemini: {
+    id: 'gemini',
+    displayName: 'Google Gemini',
+    endpointFormat: 'chat_completions',
+    transport: 'openai_chat_completions',
+    toolHistoryMode: 'openai_chat',
+    reasoningMode: 'none',
+    cacheMode: 'openai_prompt_details',
+  },
+  mistral: {
+    id: 'mistral',
+    displayName: 'Mistral AI',
+    endpointFormat: 'chat_completions',
+    transport: 'openai_chat_completions',
+    toolHistoryMode: 'openai_chat',
+    reasoningMode: 'none',
+    cacheMode: 'openai_prompt_details',
+  },
+  perplexity: {
+    id: 'perplexity',
+    displayName: 'Perplexity',
+    endpointFormat: 'chat_completions',
+    transport: 'openai_chat_completions',
+    toolHistoryMode: 'openai_chat',
+    reasoningMode: 'none',
+    cacheMode: 'openai_prompt_details',
+  },
+  xai: {
+    id: 'xai',
+    displayName: 'xAI',
+    endpointFormat: 'chat_completions',
+    transport: 'openai_chat_completions',
+    toolHistoryMode: 'openai_chat',
+    reasoningMode: 'none',
+    cacheMode: 'openai_prompt_details',
+  },
+  qwen: {
+    id: 'qwen',
+    displayName: '通义千问 (Qwen)',
+    endpointFormat: 'chat_completions',
+    transport: 'openai_chat_completions',
+    toolHistoryMode: 'openai_chat',
+    reasoningMode: 'none',
+    cacheMode: 'openai_prompt_details',
+  },
+  zhipu: {
+    id: 'zhipu',
+    displayName: '智谱 (ZhipuAI)',
+    endpointFormat: 'chat_completions',
+    transport: 'openai_chat_completions',
+    toolHistoryMode: 'openai_chat',
+    reasoningMode: 'none',
+    cacheMode: 'openai_prompt_details',
+  },
+  kimi: {
+    id: 'kimi',
+    displayName: 'Kimi (Moonshot)',
+    endpointFormat: 'chat_completions',
+    transport: 'openai_chat_completions',
+    toolHistoryMode: 'openai_chat',
+    reasoningMode: 'none',
+    cacheMode: 'openai_prompt_details',
+  },
+  volcengine: {
+    id: 'volcengine',
+    displayName: '火山引擎 Ark',
+    endpointFormat: 'chat_completions',
+    transport: 'openai_chat_completions',
+    toolHistoryMode: 'openai_chat',
+    reasoningMode: 'none',
+    cacheMode: 'openai_prompt_details',
+  },
+  baidu: {
+    id: 'baidu',
+    displayName: '百度文心 (ERNIE)',
+    endpointFormat: 'chat_completions',
+    transport: 'openai_chat_completions',
+    toolHistoryMode: 'openai_chat',
+    reasoningMode: 'none',
+    cacheMode: 'openai_prompt_details',
+  },
+  siliconflow: {
+    id: 'siliconflow',
+    displayName: '硅基流动 (SiliconFlow)',
+    endpointFormat: 'chat_completions',
+    transport: 'openai_chat_completions',
+    toolHistoryMode: 'openai_chat',
+    reasoningMode: 'none',
+    cacheMode: 'openai_prompt_details',
+  },
+  groq: {
+    id: 'groq',
+    displayName: 'Groq',
+    endpointFormat: 'chat_completions',
+    transport: 'openai_chat_completions',
+    toolHistoryMode: 'openai_chat',
+    reasoningMode: 'none',
+    cacheMode: 'openai_prompt_details',
+  },
+  together: {
+    id: 'together',
+    displayName: 'Together AI',
+    endpointFormat: 'chat_completions',
+    transport: 'openai_chat_completions',
+    toolHistoryMode: 'openai_chat',
+    reasoningMode: 'none',
+    cacheMode: 'openai_prompt_details',
+  },
+  openrouter: {
+    id: 'openrouter',
+    displayName: 'OpenRouter',
+    endpointFormat: 'chat_completions',
+    transport: 'openai_chat_completions',
+    toolHistoryMode: 'openai_chat',
+    reasoningMode: 'none',
+    cacheMode: 'openai_prompt_details',
+  },
 };
 
 export function getProviderProfile(providerId: string): ProviderProfile | undefined {
@@ -90,7 +207,7 @@ export function getProviderProfile(providerId: string): ProviderProfile | undefi
   return {
     ...base,
     baseUrl: provider?.baseUrl ?? '',
-    apiKeyEnvVars: provider?.apiKeyEnvVar ? [provider.apiKeyEnvVar] : [],
+    apiKeyEnvVars: resolveProviderApiKeyEnvVars(normalized),
   };
 }
 
@@ -110,17 +227,11 @@ export function resolveProviderProfile(config: Pick<ModelConfig, 'provider' | 'b
     id: providerName || 'openai_compatible',
     displayName: provider?.name ?? (providerName || 'OpenAI-compatible'),
     baseUrl,
-    apiKeyEnvVars: provider?.apiKeyEnvVar ? [provider.apiKeyEnvVar] : [],
+    apiKeyEnvVars: provider ? resolveProviderApiKeyEnvVars(provider.id) : [],
     endpointFormat: anthropic ? 'anthropic_messages' : 'chat_completions',
     transport: anthropic ? 'anthropic_messages' : 'openai_chat_completions',
     toolHistoryMode: anthropic ? 'anthropic_blocks' : 'openai_chat',
     reasoningMode: 'none',
     cacheMode: anthropic ? 'anthropic_cache_control' : 'openai_prompt_details',
   };
-}
-
-function normalizeProviderId(providerId: string): string {
-  const normalized = providerId.trim().toLowerCase();
-  if (normalized === 'doubao') return 'volcengine';
-  return normalized;
 }

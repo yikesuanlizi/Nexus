@@ -6,6 +6,8 @@ export * from './runConfig.js';
 export * from './runControl.js';
 export * from './runTrace.js';
 export * from './runTraceSchemas.js';
+export * from './fileKnowledge.js';
+export * from './fileKnowledgeSchemas.js';
 export * from './a2a/index.js';
 
 // 协议版本号：用于跨端兼容性与版本协商；英文说明：Protocol version for cross-runtime compatibility
