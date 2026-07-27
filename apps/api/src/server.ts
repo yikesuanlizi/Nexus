@@ -608,8 +608,11 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   }
 
   if (req.method === 'POST' && segments[0] === 'api' && segments[1] === 'approvals' && segments[2]) {
-    const body = await readJson<{ approved?: boolean; reason?: string }>(req);
-    const ok = approvalBroker.decide(segments[2], body.approved === true, body.reason);
+    const body = await readJson<{ approved?: boolean; reason?: string; temporaryScope?: 'tool_call' | 'turn' | 'session' }>(req);
+    const temporaryScope = body.temporaryScope === 'turn' || body.temporaryScope === 'session' || body.temporaryScope === 'tool_call'
+      ? body.temporaryScope
+      : undefined;
+    const ok = approvalBroker.decideWithScope(segments[2], body.approved === true, body.reason, temporaryScope);
     if (!ok) { sendError(res, 404, 'Approval request not found'); return; }
     sendJson(res, 200, { ok: true });
     return;

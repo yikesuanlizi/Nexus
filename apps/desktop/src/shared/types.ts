@@ -1,5 +1,5 @@
 import type { EventDraft } from '../features/chat/threadView.js';
-import type { ModelPresetConfig } from '@nexus/protocol';
+import type { AccessRequest, ModelPresetConfig, TemporaryAccessScope } from '@nexus/protocol';
 
 export type { ModelPresetConfig } from '@nexus/protocol';
 
@@ -309,6 +309,8 @@ export interface ApprovalRequest {
   payload: unknown;
   decision: 'prompt' | 'forbidden';
   justification?: string;
+  accessRequest?: AccessRequest;
+  temporaryGrantOptions?: Array<{ scope: TemporaryAccessScope; label: string }>;
 }
 
 export interface ProviderEntry {

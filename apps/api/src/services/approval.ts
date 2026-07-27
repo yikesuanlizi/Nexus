@@ -1,10 +1,10 @@
 import type { ApprovalHandler } from '@nexus/sandbox';
-import type { ApprovalLogEntry, ApprovalRequest } from '@nexus/protocol';
+import type { ApprovalLogEntry, ApprovalRequest, TemporaryAccessScope } from '@nexus/protocol';
 
 interface PendingApproval {
   request: ApprovalRequest;
   requestedAt: string;
-  resolve: (response: { approved: boolean; reason?: string }) => void;
+  resolve: (response: { approved: boolean; reason?: string; temporaryScope?: TemporaryAccessScope }) => void;
   timer: ReturnType<typeof setTimeout>;
 }
 
@@ -17,7 +17,7 @@ export class WebApprovalBroker implements ApprovalHandler {
     private readonly onResolved?: (entry: ApprovalLogEntry) => void,
   ) {}
 
-  requestApproval(req: ApprovalRequest): Promise<{ approved: boolean; reason?: string }> {
+  requestApproval(req: ApprovalRequest): Promise<{ approved: boolean; reason?: string; temporaryScope?: TemporaryAccessScope }> {
     return new Promise((resolve) => {
       const requestedAt = new Date().toISOString();
       const timer = setTimeout(() => {
@@ -38,12 +38,16 @@ export class WebApprovalBroker implements ApprovalHandler {
   }
 
   decide(requestId: string, approved: boolean, reason?: string): boolean {
+    return this.decideWithScope(requestId, approved, reason);
+  }
+
+  decideWithScope(requestId: string, approved: boolean, reason?: string, temporaryScope?: TemporaryAccessScope): boolean {
     const entry = this.pending.get(requestId);
     if (!entry) return false;
     clearTimeout(entry.timer);
     this.pending.delete(requestId);
     this.record(entry.request, entry.requestedAt, approved, reason, approved ? 'approved' : 'denied');
-    entry.resolve({ approved, reason });
+    entry.resolve(temporaryScope ? { approved, reason, temporaryScope } : { approved, reason });
     return true;
   }
 

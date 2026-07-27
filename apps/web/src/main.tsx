@@ -7,7 +7,7 @@ import { AppDialog, SettingsHelpDialog, SkillDraftDialog, type AppDialogState } 
 import { AuthGate } from './components/AuthGate.js';
 import { ComposerBar, type PaletteOption } from './components/ComposerBar.js';
 import { AssistantTurnView, ItemView } from './components/ItemView.js';
-import { ApprovalDiffPreview } from './components/ApprovalDiffPreview.js';
+import { ApprovalPanel } from './components/ApprovalPanel.js';
 import { SettingsDrawer } from './components/SettingsDrawer.js';
 import { WeixinConnectDialog } from './components/WeixinConnectDialog.js';
 import { RightPane } from './components/RightPane.js';
@@ -43,6 +43,7 @@ import { fetchThreadConfigOverrides, patchThreadConfigOverrides, type ThreadConf
 import { createLatestRequestGuard } from './features/chat/latestRequestGuard.js';
 import { nextTranscriptFollowState, type TranscriptFollowState } from './features/chat/transcriptFollow.js';
 import type { ApiKeyState, ApprovalRequest, EventLine, McpConfig, McpServerStatus, ModelPreset, ModelPresetConfig, ProviderEntry, SkillDraft, SkillEntry, ThreadItem, ThreadChildInfo, ThreadMeta, ThreadUsage, TurnMeta } from './shared/types.js';
+import type { TemporaryAccessScope } from '@nexus/protocol';
 import './styles.css';
 type DeploymentStatus = { deploymentMode?: 'single' | 'multi'; authMode?: 'off' | 'token' };
 type ComposerImage = { name: string; dataUrl: string };
@@ -1519,13 +1520,14 @@ patchGlobalFetch(); function App() {
       });
     }
   }
-  async function decideApproval(requestId: string, approved: boolean) {
+  async function decideApproval(requestId: string, approved: boolean, temporaryScope: TemporaryAccessScope = 'tool_call') {
     const response = await fetch(`/api/approvals/${requestId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         approved,
         reason: approved ? 'approved from web' : 'denied from web',
+        temporaryScope,
       }),
     });
     if (response.ok) {
@@ -2005,29 +2007,7 @@ patchGlobalFetch(); function App() {
             </>
           ) : null}
         </div>
-        {pendingApprovals.length > 0 ? (
-          <section className="approvalPanel" aria-label={t(config.locale, 'approvalRequired')}>
-            {pendingApprovals.map((approval) => (
-              <article className="approvalItem" key={approval.requestId}>
-                <div>
-                  <strong>{t(config.locale, 'approvalRequired')}</strong>
-                  <span>{approval.description}</span>
-                </div>
-                <button className="textButton" onClick={() => void decideApproval(approval.requestId, false)}>
-                  {t(config.locale, 'deny')}
-                </button>
-                <button className="solidButton" onClick={() => void decideApproval(approval.requestId, true)}>
-                  {t(config.locale, 'approve')}
-                </button>
-                {approval.kind === 'file_write' ? (
-                  <div className="approvalItemDiff">
-                    <ApprovalDiffPreview payload={approval.payload} locale={config.locale} />
-                  </div>
-                ) : null}
-              </article>
-            ))}
-          </section>
-        ) : null}
+        <ApprovalPanel locale={config.locale} approvals={pendingApprovals} onDecision={(requestId, approved, temporaryScope) => void decideApproval(requestId, approved, temporaryScope)} />
         <ComposerBar activeSlashOption={activeSlashOption} activeThreadId={threadId} actionBusy={actionBusy} applyModelPreset={applyModelPreset} botConfig={botConfig} botStatus={botStatus} busy={busy} composerInputRef={composerInputRef} config={config} draggingImage={draggingImage} filteredSlashOptions={filteredSlashOptions} handleDrop={handleDrop} handleFileSelect={handleFileSelect} handlePaste={handlePaste} images={images} input={input} modelPresets={modelPresets} openRemoteAssistants={openRemoteAssistants} removeImage={removeImage} rightPaneVisible={rightPaneVisible} selectSlashOption={selectSlashOption} setActiveSlashOption={setActiveSlashOption} setConfig={setConfig} setDraggingImage={setDraggingImage} setInput={setInput} slashVisible={slashVisible} stopTurn={stopTurn} submitComposer={submitComposer} workflowMode={isWorkflowProject} workflowPlanning={workflowPlanning} />
       </section>
       {settingsOpen ? (
