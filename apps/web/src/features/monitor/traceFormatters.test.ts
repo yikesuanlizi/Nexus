@@ -68,4 +68,32 @@ describe('traceSummary', () => {
       },
     } as unknown as RunTraceEnvelope, true)).toBe('过期 · brief.docx → _v1_decoded.txt · source_hash_changed');
   });
+
+  it('summarizes approval decisions with access target and agent identity', () => {
+    const summary = traceSummary({
+      version: 2,
+      eventId: 'trace-approval-1',
+      sequence: 1,
+      runId: 'run-1',
+      runKind: 'turn',
+      threadId: 'thread-1',
+      turnId: 'turn-1',
+      spanId: 'span-approval-1',
+      category: 'approval',
+      name: 'access.decision',
+      lifecycle: 'instant',
+      level: 'info',
+      occurredAt: '2026-07-23T00:00:00.000Z',
+      payload: {
+        decision: 'prompt',
+        source: 'approval_required',
+        access: 'read',
+        target: { kind: 'path', path: 'E:\\langchain\\outside.txt' },
+        toolName: 'read_file',
+        agentRole: 'Nexus 主控 Agent',
+      },
+    } as unknown as RunTraceEnvelope, true);
+
+    expect(summary).toBe('请求临时授权 · read · read_file · E:\\langchain\\outside.txt · Nexus 主控 Agent · approval_required');
+  });
 });

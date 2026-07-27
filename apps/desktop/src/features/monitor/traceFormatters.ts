@@ -14,6 +14,7 @@ export function traceIcon(category: RunTraceCategory): string {
     file: '📁',
     checkpoint: '📍',
     evidence: '✅',
+    approval: '🛂',
     error: '❌',
     control: '🎮',
   };
@@ -34,6 +35,7 @@ export function traceCategoryLabel(category: RunTraceCategory, zh: boolean): str
     file: { zh: '文件操作', en: 'File' },
     checkpoint: { zh: '检查点', en: 'Checkpoint' },
     evidence: { zh: '验证证据', en: 'Evidence' },
+    approval: { zh: '授权决策', en: 'Approval' },
     error: { zh: '错误', en: 'Error' },
     control: { zh: '控制指令', en: 'Control' },
   };
@@ -227,6 +229,24 @@ export function traceSummary(trace: RunTraceEnvelope, zh: boolean): string {
       if (typeof passed === 'boolean') parts.push(passed ? (zh ? '通过' : 'passed') : (zh ? '未通过' : 'failed'));
       return parts.join(' · ') || trace.name;
     }
+    case 'approval': {
+      const decision = p.decision as string | undefined;
+      const status = p.status as string | undefined;
+      const access = p.access as string | undefined;
+      const toolName = p.toolName as string | undefined;
+      const target = formatAccessTarget(p.target);
+      const agentRole = p.agentRole as string | undefined;
+      const source = p.source as string | undefined;
+      const parts: string[] = [];
+      const label = approvalDecisionLabel(decision, status, zh);
+      if (label) parts.push(label);
+      if (access) parts.push(access);
+      if (toolName) parts.push(toolName);
+      if (target) parts.push(truncate(target, 42));
+      if (agentRole) parts.push(agentRole);
+      if (source) parts.push(source);
+      return parts.join(' · ') || trace.name;
+    }
     default:
       return trace.name || '';
   }
@@ -286,6 +306,30 @@ function fileActionLabel(action: string, zh: boolean): string {
 
 function fileBaseName(filePath: string): string {
   return filePath.split(/[/\\]/).pop() || filePath;
+}
+
+function approvalDecisionLabel(decision: string | undefined, status: string | undefined, zh: boolean): string {
+  const key = decision ?? status ?? '';
+  const labels: Record<string, { zh: string; en: string }> = {
+    allow: { zh: '允许', en: 'allow' },
+    prompt: { zh: '请求临时授权', en: 'prompt' },
+    deny: { zh: '拒绝', en: 'deny' },
+    required: { zh: '等待授权', en: 'required' },
+    granted: { zh: '临时允许', en: 'granted' },
+    denied: { zh: '临时拒绝', en: 'denied' },
+  };
+  const label = labels[key];
+  return zh ? (label?.zh ?? key) : (label?.en ?? key);
+}
+
+function formatAccessTarget(target: unknown): string {
+  if (!target || typeof target !== 'object' || Array.isArray(target)) return '';
+  const record = target as Record<string, unknown>;
+  const path = typeof record.path === 'string' ? record.path : '';
+  const command = typeof record.command === 'string' ? record.command : '';
+  const url = typeof record.url === 'string' ? record.url : '';
+  const kind = typeof record.kind === 'string' ? record.kind : '';
+  return path || command || url || kind;
 }
 
 export function runStatusColor(status: string): string {

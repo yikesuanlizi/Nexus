@@ -73,7 +73,7 @@ const threads: ThreadWithRuns[] = [{
   lastActiveAt: '2026-06-16T00:00:01.000Z',
 }];
 
-const allCategories: RunTraceCategory[] = ['turn', 'iteration', 'context', 'memory', 'middleware', 'model', 'tool', 'item', 'agent', 'file', 'checkpoint', 'evidence', 'error', 'control'];
+const allCategories: RunTraceCategory[] = ['turn', 'iteration', 'context', 'memory', 'middleware', 'model', 'tool', 'approval', 'item', 'agent', 'file', 'checkpoint', 'evidence', 'error', 'control'];
 
 const baseProps = {
   zh: true,

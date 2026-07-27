@@ -14,6 +14,7 @@ export function projectRunTrace(input: RunTraceEnvelope[]): RunTraceSummary {
     status: 'pending',
     model: { calls: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
     tools: { calls: 0, failed: 0, denied: 0 },
+    approvals: { decisions: 0, prompts: 0, allowed: 0, denied: 0 },
     items: { started: 0, completed: 0, failed: 0, byType: {} },
     agents: { spawned: 0, running: 0, failed: 0 },
     files: { reads: 0, changed: 0, addedLines: 0, removedLines: 0, extracted: 0, reused: 0, stale: 0, refreshed: 0 },
@@ -90,6 +91,23 @@ export function projectRunTrace(input: RunTraceEnvelope[]): RunTraceSummary {
         break;
       case 'checkpoint':
         summary.lastCheckpointId = event.payload.checkpointId;
+        break;
+      case 'approval':
+        if (event.name === 'access.decision' || event.payload.decision) {
+          summary.approvals ??= { decisions: 0, prompts: 0, allowed: 0, denied: 0 };
+          summary.approvals.decisions += 1;
+          if (event.payload.decision === 'allow') summary.approvals.allowed += 1;
+          if (event.payload.decision === 'deny') summary.approvals.denied += 1;
+        } else if (event.name === 'approval.required' || event.payload.status === 'required') {
+          summary.approvals ??= { decisions: 0, prompts: 0, allowed: 0, denied: 0 };
+          summary.approvals.prompts += 1;
+        } else if (event.name === 'access.temporary_grant' || event.payload.status === 'granted') {
+          summary.approvals ??= { decisions: 0, prompts: 0, allowed: 0, denied: 0 };
+          summary.approvals.allowed += 1;
+        } else if (event.name === 'access.temporary_deny' || event.payload.status === 'denied') {
+          summary.approvals ??= { decisions: 0, prompts: 0, allowed: 0, denied: 0 };
+          summary.approvals.denied += 1;
+        }
         break;
       case 'error':
         summary.lastError = { code: event.payload.code, message: event.payload.message };

@@ -9,7 +9,7 @@ export type RunTraceLifecycle = 'instant' | 'started' | 'completed' | 'failed' |
 export type RunTraceCategory =
   | 'turn' | 'iteration' | 'context' | 'memory' | 'middleware'
   | 'model' | 'tool' | 'item' | 'agent' | 'file'
-  | 'checkpoint' | 'evidence' | 'error' | 'control';
+  | 'checkpoint' | 'evidence' | 'approval' | 'error' | 'control';
 export type RunTraceRunKind = 'turn' | 'control' | 'workflow' | 'subagent';
 
 export interface RunTracePayloadMap {
@@ -66,6 +66,21 @@ export interface RunTracePayloadMap {
   };
   checkpoint: { checkpointId: string; turnCount: number; itemIndex: number; status: CheckpointStatus };
   evidence: { kind: string; label: string; passed?: boolean };
+  approval: {
+    decision?: 'allow' | 'prompt' | 'deny';
+    source?: string;
+    matchedRuleId?: string;
+    matchedRuleScope?: string;
+    requestId?: string;
+    status?: 'required' | 'granted' | 'denied';
+    scope?: string;
+    grantId?: string;
+    access?: string;
+    target?: unknown;
+    toolName?: string;
+    agentThreadId?: ThreadId;
+    agentRole?: string | null;
+  };
   error: { code: string; message: string; retryable: boolean; source?: string };
   control: { action: 'interrupt' | 'resume' | 'rollback'; outcome: 'requested' | 'accepted' | 'rejected' | 'completed'; checkpointId?: string; reason?: string };
 }
@@ -138,6 +153,7 @@ export interface RunTraceSummary {
     toolHistoryMode?: string;
   };
   tools: { calls: number; failed: number; denied: number };
+  approvals?: { decisions: number; prompts: number; allowed: number; denied: number };
   items: { started: number; completed: number; failed: number; byType: Record<string, number> };
   agents: { spawned: number; running: number; failed: number };
   files: {

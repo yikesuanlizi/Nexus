@@ -40,12 +40,12 @@ function makeTurnEnvelope(overrides: Record<string, unknown> = {}): Record<strin
 }
 
 describe('RunTrace schema — 基础枚举', () => {
-  it('runTraceCategorySchema 包含全部 14 个 category', () => {
+  it('runTraceCategorySchema 包含全部 15 个 category', () => {
     const categories = runTraceCategorySchema.options;
     expect(categories).toEqual([
       'turn', 'iteration', 'context', 'memory', 'middleware',
       'model', 'tool', 'item', 'agent', 'file',
-      'checkpoint', 'evidence', 'error', 'control',
+      'checkpoint', 'evidence', 'approval', 'error', 'control',
     ]);
   });
 
@@ -67,11 +67,11 @@ describe('RunTrace schema — 基础枚举', () => {
 });
 
 describe('RunTrace schema — payload strict 校验', () => {
-  it('runTracePayloadSchemaMap 包含 14 个 payload schema', () => {
+  it('runTracePayloadSchemaMap 包含 15 个 payload schema', () => {
     const keys = Object.keys(runTracePayloadSchemaMap);
-    expect(keys).toHaveLength(14);
+    expect(keys).toHaveLength(15);
     expect(keys.sort()).toEqual([
-      'agent', 'checkpoint', 'context', 'control', 'error', 'evidence',
+      'agent', 'approval', 'checkpoint', 'context', 'control', 'error', 'evidence',
       'file', 'item', 'iteration', 'memory', 'middleware', 'model',
       'tool', 'turn',
     ]);
@@ -106,6 +106,27 @@ describe('RunTrace schema — payload strict 校验', () => {
       tool: 'search_code',
     });
     expect(result.success).toBe(true);
+  });
+
+  it('approval payload 接受访问策略决策字段并拒绝未知字段', () => {
+    const accepted = runTracePayloadSchemaMap.approval.safeParse({
+      decision: 'prompt',
+      source: 'approval_required',
+      requestId: 'approval-1',
+      status: 'required',
+      access: 'read',
+      target: { kind: 'path', path: 'E:\\langchain\\outside.txt' },
+      toolName: 'read_file',
+      agentThreadId: 'thread-1',
+      agentRole: 'Nexus 主控 Agent',
+    });
+    const rejected = runTracePayloadSchemaMap.approval.safeParse({
+      decision: 'prompt',
+      unknownField: true,
+    });
+
+    expect(accepted.success).toBe(true);
+    expect(rejected.success).toBe(false);
   });
 
   it('context payload 缺 sourceCounts 会被拒绝', () => {

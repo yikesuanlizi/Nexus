@@ -1897,6 +1897,28 @@ export class AgentLoop {
       };
     }
 
+    if (event.category === 'approval') {
+      return {
+        ...base,
+        category: 'approval',
+        payload: {
+          decision: traceApprovalDecision(metadata.decision),
+          source: stringMetadata(metadata.source),
+          matchedRuleId: stringMetadata(metadata.matchedRuleId),
+          matchedRuleScope: stringMetadata(metadata.matchedRuleScope),
+          requestId: stringMetadata(metadata.requestId),
+          status: traceApprovalStatus(metadata.status ?? event.type),
+          scope: stringMetadata(metadata.scope),
+          grantId: stringMetadata(metadata.grantId),
+          access: stringMetadata(metadata.access),
+          target: metadata.target,
+          toolName: event.toolName ?? stringMetadata(metadata.toolName),
+          agentThreadId: stringMetadata(metadata.agentThreadId) as ThreadId | undefined,
+          agentRole: metadata.agentRole == null ? undefined : String(metadata.agentRole),
+        },
+      };
+    }
+
     if (event.category === 'control') {
       return {
         ...base,
@@ -5617,6 +5639,20 @@ function monitorTypeToControlAction(type: string): 'interrupt' | 'resume' | 'rol
   if (type.includes('resume')) return 'resume';
   if (type.includes('rollback')) return 'rollback';
   return 'interrupt';
+}
+
+function traceApprovalDecision(value: unknown): 'allow' | 'prompt' | 'deny' | undefined {
+  if (value === 'allow' || value === 'prompt' || value === 'deny') return value;
+  if (value === 'approval_required') return 'prompt';
+  return undefined;
+}
+
+function traceApprovalStatus(value: unknown): 'required' | 'granted' | 'denied' | undefined {
+  const status = typeof value === 'string' ? value : '';
+  if (status === 'required' || status === 'approval.required' || status === 'prompt') return 'required';
+  if (status === 'granted' || status === 'access.temporary_grant' || status === 'approved') return 'granted';
+  if (status === 'denied' || status === 'access.temporary_deny' || status === 'rejected') return 'denied';
+  return undefined;
 }
 
 function monitorSpanSuffix(

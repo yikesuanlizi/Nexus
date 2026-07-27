@@ -10,7 +10,7 @@ export const runTraceLifecycleSchema = z.enum(['instant', 'started', 'completed'
 export const runTraceCategorySchema = z.enum([
   'turn', 'iteration', 'context', 'memory', 'middleware',
   'model', 'tool', 'item', 'agent', 'file',
-  'checkpoint', 'evidence', 'error', 'control',
+  'checkpoint', 'evidence', 'approval', 'error', 'control',
 ]);
 export const runTraceRunKindSchema = z.enum(['turn', 'control', 'workflow', 'subagent']);
 
@@ -129,6 +129,22 @@ const evidencePayloadSchema = z.object({
   passed: z.boolean().optional(),
 }).strict();
 
+const approvalPayloadSchema = z.object({
+  decision: z.enum(['allow', 'prompt', 'deny']).optional(),
+  source: z.string().min(1).optional(),
+  matchedRuleId: z.string().min(1).optional(),
+  matchedRuleScope: z.string().min(1).optional(),
+  requestId: z.string().min(1).optional(),
+  status: z.enum(['required', 'granted', 'denied']).optional(),
+  scope: z.string().min(1).optional(),
+  grantId: z.string().min(1).optional(),
+  access: z.string().min(1).optional(),
+  target: z.unknown().optional(),
+  toolName: z.string().min(1).optional(),
+  agentThreadId: z.string().min(1).optional(),
+  agentRole: z.string().nullable().optional(),
+}).strict();
+
 const errorPayloadSchema = z.object({
   code: z.string().min(1),
   message: z.string().min(1),
@@ -158,6 +174,7 @@ export const runTracePayloadSchemaMap = {
   file: filePayloadSchema,
   checkpoint: checkpointPayloadSchema,
   evidence: evidencePayloadSchema,
+  approval: approvalPayloadSchema,
   error: errorPayloadSchema,
   control: controlPayloadSchema,
 } as const;
@@ -257,6 +274,12 @@ const evidenceEnvelopeSchema = z.object({
   payload: evidencePayloadSchema,
 }).strict();
 
+const approvalEnvelopeSchema = z.object({
+  ...runTraceBaseFields,
+  category: z.literal('approval'),
+  payload: approvalPayloadSchema,
+}).strict();
+
 const errorEnvelopeSchema = z.object({
   ...runTraceBaseFields,
   category: z.literal('error'),
@@ -284,6 +307,7 @@ const envelopeVariants = [
   fileEnvelopeSchema,
   checkpointEnvelopeSchema,
   evidenceEnvelopeSchema,
+  approvalEnvelopeSchema,
   errorEnvelopeSchema,
   controlEnvelopeSchema,
 ] as const;
@@ -352,6 +376,7 @@ export const runTraceEnvelopeSchemasByCategory = {
   file: fileEnvelopeSchema,
   checkpoint: checkpointEnvelopeSchema,
   evidence: evidenceEnvelopeSchema,
+  approval: approvalEnvelopeSchema,
   error: errorEnvelopeSchema,
   control: controlEnvelopeSchema,
 } as const;
@@ -460,6 +485,12 @@ export const runTraceSummarySchema = z.object({
     failed: z.number().int().min(0),
     denied: z.number().int().min(0),
   }),
+  approvals: z.object({
+    decisions: z.number().int().min(0),
+    prompts: z.number().int().min(0),
+    allowed: z.number().int().min(0),
+    denied: z.number().int().min(0),
+  }).optional(),
   items: z.object({
     started: z.number().int().min(0),
     completed: z.number().int().min(0),

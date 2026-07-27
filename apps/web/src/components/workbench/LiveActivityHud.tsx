@@ -34,7 +34,7 @@ export function LiveActivityHud({
   onInterrupt?(): void;
   onResume?(): void;
   onRollback?(checkpointId?: string): void;
-  onJumpToTrace?(opts: { itemId: string; runId: string }): void;
+  onJumpToTrace?(opts: { itemId: string; runId: string; eventId?: string }): void;
   locale: Locale;
 }) {
   const zh = locale === 'zh';
@@ -182,10 +182,10 @@ export function LiveActivityHud({
               <div className="liveActivityEventList">
                 {recentEvents.slice(-8).reverse().map(event => (
                   <button
-                    key={event.itemId}
+                    key={event.eventId ?? event.itemId}
                     type="button"
                     className={`liveActivityEvent level-${event.level}`}
-                    onClick={() => onJumpToTrace?.({ itemId: event.itemId, runId: event.runId })}
+                    onClick={() => onJumpToTrace?.({ itemId: event.itemId, runId: event.runId, eventId: event.eventId })}
                   >
                     <span className="liveActivityEventIcon">{traceIcon(event.category)}</span>
                     <span className="liveActivityEventText">
@@ -200,7 +200,10 @@ export function LiveActivityHud({
                           <span>{event.name}</span>
                         )}
                       </span>
-                      <span className="liveActivityEventTime">{formatRelativeTime(event.occurredAt, zh)}</span>
+                      <span className="liveActivityEventDetail">
+                        <span className="liveActivityEventSummary" title={event.summary}>{event.summary}</span>
+                        <span className="liveActivityEventTime">{formatRelativeTime(event.occurredAt, zh)}</span>
+                      </span>
                     </span>
                   </button>
                 ))}

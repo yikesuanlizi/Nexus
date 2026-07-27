@@ -122,4 +122,60 @@ describe('projectRunTrace', () => {
       toolHistoryMode: 'anthropic_blocks',
     });
   });
+
+  it('projects access policy approvals separately from ordinary tool calls', () => {
+    const summary = projectRunTrace([
+      event({
+        sequence: 1,
+        category: 'approval',
+        name: 'access.decision',
+        lifecycle: 'instant',
+        payload: {
+          decision: 'prompt',
+          source: 'approval_required',
+          access: 'read',
+          target: { kind: 'path', path: 'E:\\langchain\\outside.txt' },
+          toolName: 'read_file',
+          agentThreadId: 'thread-a',
+          agentRole: 'Nexus 主控 Agent',
+        },
+      }),
+      event({
+        sequence: 2,
+        category: 'approval',
+        name: 'approval.required',
+        lifecycle: 'instant',
+        payload: {
+          requestId: 'approval-1',
+          status: 'required',
+          access: 'read',
+          target: { kind: 'path', path: 'E:\\langchain\\outside.txt' },
+          toolName: 'read_file',
+        },
+      }),
+      event({
+        sequence: 3,
+        category: 'approval',
+        name: 'access.temporary_grant',
+        lifecycle: 'instant',
+        payload: {
+          requestId: 'approval-1',
+          status: 'granted',
+          scope: 'turn',
+          grantId: 'temp-1',
+          access: 'read',
+          target: { kind: 'path', path: 'E:\\langchain\\outside.txt' },
+          toolName: 'read_file',
+        },
+      }),
+    ]);
+
+    expect(summary.approvals).toEqual({
+      decisions: 1,
+      prompts: 1,
+      allowed: 1,
+      denied: 0,
+    });
+    expect(summary.tools.calls).toBe(0);
+  });
 });

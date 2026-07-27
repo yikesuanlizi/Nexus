@@ -357,6 +357,37 @@ function TypedFields({ trace, zh }: { trace: RunTraceEnvelope; zh: boolean }) {
         </div>
       );
     }
+    case 'approval': {
+      const decision = p.decision as string | undefined;
+      const status = p.status as string | undefined;
+      const tone = decision === 'allow' || status === 'granted'
+        ? 'success'
+        : decision === 'deny' || status === 'denied'
+          ? 'danger'
+          : 'warning';
+      return (
+        <div className="inspectorGrid">
+          {decision ? <Field label="decision" value="" badge={decision} badgeTone={tone} /> : null}
+          {status ? <Field label="status" value="" badge={status} badgeTone={tone} /> : null}
+          {has('source') ? <Field label="source" value={str('source')} /> : null}
+          {has('access') ? <Field label="access" value={str('access')} /> : null}
+          {has('toolName') ? <Field label="toolName" value={str('toolName')} /> : null}
+          {has('requestId') ? <Field label="requestId" value={str('requestId')} mono /> : null}
+          {has('scope') ? <Field label="scope" value={str('scope')} /> : null}
+          {has('grantId') ? <Field label="grantId" value={str('grantId')} mono /> : null}
+          {has('matchedRuleId') ? <Field label="matchedRuleId" value={str('matchedRuleId')} mono /> : null}
+          {has('matchedRuleScope') ? <Field label="matchedRuleScope" value={str('matchedRuleScope')} /> : null}
+          {has('agentRole') ? <Field label="agentRole" value={str('agentRole')} /> : null}
+          {has('agentThreadId') ? <Field label="agentThreadId" value={str('agentThreadId')} mono /> : null}
+          {has('target') ? (
+            <div className="inspectorField inspectorField--full">
+              <span className="inspectorField__label">{zh ? '访问目标' : 'target'}</span>
+              <PreBlock value={p.target} />
+            </div>
+          ) : null}
+        </div>
+      );
+    }
     default:
       return (
         <div className="inspectorGrid">

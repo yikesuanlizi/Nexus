@@ -105,7 +105,7 @@ describe('RightPane', () => {
     const workbenchSource = readFileSync(join(here, 'workbench', 'WorkspaceWorkbench.tsx'), 'utf-8');
 
     expect(mainSource).toContain('if (itemId && !runId && !eventId && !threadId)');
-    expect(workbenchSource).toContain('onJumpToMonitor?.({ itemId: opts.itemId, runId: opts.runId, threadId: activeThreadId })');
+    expect(workbenchSource).toContain('onJumpToMonitor?.({ itemId: opts.itemId, eventId: opts.eventId, runId: opts.runId, threadId: activeThreadId })');
   });
 
   it('does not keep forcing the files tab after the same external preview request was handled', () => {

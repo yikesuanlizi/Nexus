@@ -60,7 +60,6 @@ export function RightPane({
 }) {
   void activeThreadTitle;
   void taskRuntimeState;
-  void recentTraces;
   const [activeTab, setActiveTab] = useState<RightPaneTab>(() => initialActiveTab ?? readStoredRightPaneTab());
 
   const handleTabChange = useCallback((tab: RightPaneTab) => {
@@ -78,6 +77,7 @@ export function RightPane({
       busy={busy}
       threadChildren={threadChildren}
       runtimeItems={runtimeItems}
+      recentTraces={recentTraces}
       traceSummary={traceSummary}
       currentRunId={currentRunId}
       controlCapabilities={controlCapabilities}

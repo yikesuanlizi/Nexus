@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Locale } from '../../config/config.js';
 import type { ThreadChildInfo, ThreadItem, ThreadMeta } from '../../shared/types.js';
-import type { RunControlCapabilities, RunTraceSummary } from '@nexus/protocol';
+import type { RunControlCapabilities, RunTraceEnvelope, RunTraceSummary } from '@nexus/protocol';
 import type { ExternalPreviewRequest } from '../WorkspaceFilesPanel.js';
 import { WorkspaceFilesPanel } from '../WorkspaceFilesPanel.js';
 import { Icon } from '../Icon.js';
@@ -18,6 +18,7 @@ export function WorkspaceWorkbench({
   busy,
   threadChildren,
   runtimeItems = [],
+  recentTraces = [],
   traceSummary,
   currentRunId,
   controlCapabilities,
@@ -39,6 +40,7 @@ export function WorkspaceWorkbench({
   busy: boolean;
   threadChildren: ThreadChildInfo[];
   runtimeItems?: ThreadItem[];
+  recentTraces?: RunTraceEnvelope[];
   traceSummary?: RunTraceSummary | null;
   currentRunId?: string;
   controlCapabilities?: RunControlCapabilities;
@@ -108,10 +110,11 @@ export function WorkspaceWorkbench({
     threadChildren,
     traceSummary,
     runtimeItems,
+    recentTraces,
     busy,
     zh,
     currentRunId,
-  }), [mainAgentThreadId, threadChildren, traceSummary, runtimeItems, busy, zh, currentRunId]);
+  }), [mainAgentThreadId, threadChildren, traceSummary, runtimeItems, recentTraces, busy, zh, currentRunId]);
 
   const agentStageRows = useMemo(() => buildAgentStageRows({
     activeThreadId: mainAgentThreadId,
@@ -145,8 +148,8 @@ export function WorkspaceWorkbench({
     onJumpToMonitor?.({ threadId });
   };
 
-  const handleJumpToTrace = (opts: { itemId: string; runId: string }) => {
-    onJumpToMonitor?.({ itemId: opts.itemId, runId: opts.runId, threadId: activeThreadId });
+  const handleJumpToTrace = (opts: { itemId: string; runId: string; eventId?: string }) => {
+    onJumpToMonitor?.({ itemId: opts.itemId, eventId: opts.eventId, runId: opts.runId, threadId: activeThreadId });
   };
 
   return (

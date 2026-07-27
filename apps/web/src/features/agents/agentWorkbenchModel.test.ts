@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildAgentWorkbench } from './agentWorkbenchModel.js';
-import type { RunTraceSummary } from '@nexus/protocol';
+import type { RunTraceEnvelope, RunTraceSummary } from '@nexus/protocol';
 import type { ThreadChildInfo, ThreadItem } from '../../shared/types.js';
 
 function makeThreadChild(overrides: Partial<ThreadChildInfo> = {}): ThreadChildInfo {
@@ -348,6 +348,72 @@ describe('buildAgentWorkbench', () => {
       expect.objectContaining({
         itemId: 'read-doc-1',
         resource: expect.objectContaining({ kind: 'Document', label: 'brief.docx' }),
+      }),
+    ]));
+  });
+
+  it('最近事件合并 trace 级授权决策并保留 Agent 和目标资源', () => {
+    const child = makeThreadChild({
+      thread: {
+        threadId: 'child-research',
+        title: '资料子任务',
+        agentRole: 'Research Agent',
+        status: 'idle',
+        turnCount: 1,
+        createdAt: '2025-01-01T00:00:00Z',
+        updatedAt: '2025-01-01T00:02:00Z',
+      },
+      edge: {
+        parentThreadId: 'main',
+        childThreadId: 'child-research',
+        status: 'open',
+        createdAt: '2025-01-01T00:00:00Z',
+        updatedAt: '2025-01-01T00:02:00Z',
+      },
+    });
+    const approvalTrace = {
+      version: 2,
+      eventId: 'trace-approval-1',
+      sequence: 1,
+      runId: 'run-child',
+      runKind: 'turn',
+      threadId: 'child-research',
+      turnId: 'turn-child',
+      spanId: 'span-approval-1',
+      category: 'approval',
+      name: 'access.decision',
+      lifecycle: 'instant',
+      level: 'info',
+      occurredAt: '2025-01-01T00:03:00Z',
+      payload: {
+        decision: 'prompt',
+        source: 'approval_required',
+        access: 'read',
+        target: { kind: 'path', path: 'E:\\langchain\\outside.txt' },
+        toolName: 'read_file',
+        agentThreadId: 'child-research',
+        agentRole: 'Research Agent',
+      },
+    } as unknown as RunTraceEnvelope;
+
+    const result = buildAgentWorkbench({
+      mainThreadId: 'main',
+      threadChildren: [child],
+      runtimeItems: [],
+      recentTraces: [approvalTrace],
+      busy: true,
+      zh: true,
+      currentRunId: 'run-main',
+    });
+
+    expect(result.recentEvents).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        itemId: 'trace-approval-1',
+        eventId: 'trace-approval-1',
+        category: 'approval',
+        agent: expect.objectContaining({ threadId: 'child-research', label: 'Research Agent' }),
+        resource: expect.objectContaining({ kind: 'Document', label: 'outside.txt' }),
+        summary: expect.stringContaining('请求临时授权'),
       }),
     ]));
   });
