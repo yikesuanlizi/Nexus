@@ -53,6 +53,7 @@ export interface ExecPolicyResult {
 
 // ─── Sandbox Configuration ──────────────────────────────────────────────────
 // 引入权限预设类型
+import * as path from 'node:path';
 import type { PermissionPreset } from './presets.js';
 
 // 沙箱配置：用户可声明预设 / 等级 / 工作区 / 额外白名单 / 执行策略 / 网络
@@ -120,8 +121,8 @@ export class Sandbox {
   // 是否允许读取指定绝对路径
   canRead(absPath: string): boolean {
     if (this.effective.level === 'full') return true;
-    if (absPath.startsWith(this.config.workspaceRoot)) return true;
-    if (this.config.allowedReadPaths?.some((p) => absPath.startsWith(p))) return true;
+    if (isPathInsideOrEqual(this.config.workspaceRoot, absPath)) return true;
+    if (this.config.allowedReadPaths?.some((p) => isPathInsideOrEqual(p, absPath))) return true;
     return false;
   }
 
@@ -130,8 +131,8 @@ export class Sandbox {
   canWrite(absPath: string): boolean {
     if (this.effective.level === 'full') return true;
     if (this.effective.level === 'readonly') return false;
-    if (absPath.startsWith(this.config.workspaceRoot)) return true;
-    if (this.config.allowedWritePaths?.some((p) => absPath.startsWith(p))) return true;
+    if (isPathInsideOrEqual(this.config.workspaceRoot, absPath)) return true;
+    if (this.config.allowedWritePaths?.some((p) => isPathInsideOrEqual(p, absPath))) return true;
     return false;
   }
 
@@ -287,6 +288,15 @@ function hostMatches(host: string, pattern: string): boolean {
     return host.endsWith(suffix) && host !== normalized.slice(2);
   }
   return host === normalized;
+}
+
+function isPathInsideOrEqual(root: string, candidate: string): boolean {
+  const resolvedRoot = path.resolve(root);
+  const resolvedCandidate = path.resolve(candidate);
+  const normalizedRoot = process.platform === 'win32' ? resolvedRoot.toLowerCase() : resolvedRoot;
+  const normalizedCandidate = process.platform === 'win32' ? resolvedCandidate.toLowerCase() : resolvedCandidate;
+  const relative = path.relative(normalizedRoot, normalizedCandidate);
+  return relative === '' || (relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative));
 }
 
 /** Naive shell split (respects quoted strings). */
