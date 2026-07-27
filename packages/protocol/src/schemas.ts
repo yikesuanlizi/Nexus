@@ -1,5 +1,11 @@
 // 引入 zod：用于声明式数据校验，与 types.ts 的 TypeScript 类型一一对应
 import { z } from 'zod';
+import {
+  accessEffectSchema,
+  accessRequestSchema,
+  accessRuleScopeSchema,
+  temporaryAccessScopeSchema,
+} from './accessPolicySchemas.js';
 import { knowledgeCheckpointSummarySchema } from './fileKnowledgeSchemas.js';
 
 // ─── Primitives ──────────────────────────────────────────────────────────────
@@ -763,6 +769,16 @@ export const approvalRequiredEventSchema = z.object({
   payload: z.unknown(),
   decision: z.enum(['prompt', 'forbidden']),
   justification: z.string().optional(),
+  accessRequest: accessRequestSchema.optional(),
+  temporaryGrantOptions: z.array(z.object({
+    scope: temporaryAccessScopeSchema,
+    label: z.string(),
+  })).optional(),
+  matchedRule: z.object({
+    id: z.string(),
+    scope: z.union([accessRuleScopeSchema, temporaryAccessScopeSchema]),
+    effect: accessEffectSchema,
+  }).optional(),
 });
 
 // 上下文压缩完成事件 schema（旧版）
@@ -979,6 +995,16 @@ export const approvalRequestSchema = z.object({
   payload: z.unknown(),
   decision: z.enum(['prompt', 'forbidden']),
   justification: z.string().optional(),
+  accessRequest: accessRequestSchema.optional(),
+  temporaryGrantOptions: z.array(z.object({
+    scope: temporaryAccessScopeSchema,
+    label: z.string(),
+  })).optional(),
+  matchedRule: z.object({
+    id: z.string(),
+    scope: z.union([accessRuleScopeSchema, temporaryAccessScopeSchema]),
+    effect: accessEffectSchema,
+  }).optional(),
 });
 
 // 检查点状态 schema
@@ -989,4 +1015,5 @@ export const approvalResponseSchema = z.object({
   requestId: z.string(),
   approved: z.boolean(),
   reason: z.string().optional(),
+  temporaryScope: temporaryAccessScopeSchema.optional(),
 });

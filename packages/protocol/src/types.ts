@@ -1,4 +1,10 @@
 import type { KnowledgeCheckpointSummary } from './fileKnowledge.js';
+import type {
+  AccessEffect,
+  AccessRequest,
+  AccessRuleScope,
+  TemporaryAccessScope,
+} from './accessPolicy.js';
 
 // ─── Thread ──────────────────────────────────────────────────────────────────
 // Thread（线程/会话）：代表一次完整的对话，由若干个 Turn 组成
@@ -1104,6 +1110,22 @@ export interface ApprovalRequiredEvent {
   /** Optional justification from the policy. */
   // 策略层的解释（可选）
   justification?: string;
+  /** Structured access request that triggered the approval. */
+  // 触发本次审批的结构化访问请求
+  accessRequest?: AccessRequest;
+  /** Runtime-only temporary grant scopes the user may choose from. */
+  // 可选择的临时授权范围；不写持久设置
+  temporaryGrantOptions?: Array<{
+    scope: TemporaryAccessScope;
+    label: string;
+  }>;
+  /** Policy rule that produced this decision, when applicable. */
+  // 命中的权限规则（如有）
+  matchedRule?: {
+    id: string;
+    scope: AccessRuleScope | TemporaryAccessScope;
+    effect: AccessEffect;
+  };
 }
 
 /** Emitted when context is compacted mid-conversation. */
@@ -1326,6 +1348,16 @@ export interface ApprovalRequest {
   payload: unknown;
   decision: 'prompt' | 'forbidden';
   justification?: string;
+  accessRequest?: AccessRequest;
+  temporaryGrantOptions?: Array<{
+    scope: TemporaryAccessScope;
+    label: string;
+  }>;
+  matchedRule?: {
+    id: string;
+    scope: AccessRuleScope | TemporaryAccessScope;
+    effect: AccessEffect;
+  };
 }
 
 // 审批响应
@@ -1333,6 +1365,7 @@ export interface ApprovalResponse {
   requestId: string;
   approved: boolean;
   reason?: string;
+  temporaryScope?: TemporaryAccessScope;
 }
 
 // ─── System Monitor ──────────────────────────────────────────────────────────

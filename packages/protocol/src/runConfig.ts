@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import type { AccessPolicyConfig } from './accessPolicy.js';
+import { accessPolicyConfigSchema } from './accessPolicySchemas.js';
 
 export type PermissionPresetId = 'read_only' | 'workspace' | 'danger_full_access';
 export type WebSearchMode = 'auto' | 'on' | 'off';
@@ -13,6 +15,7 @@ export interface ThreadRunConfigOverrides {
   model?: string;
   baseUrl?: string;
   permissions?: PermissionPresetId;
+  accessPolicy?: AccessPolicyConfig;
   webSearchMode?: WebSearchMode;
   reasoningEffort?: ReasoningEffort;
   runProfile?: RunProfile;
@@ -24,6 +27,7 @@ export const THREAD_RUN_CONFIG_KEYS = [
   'model',
   'baseUrl',
   'permissions',
+  'accessPolicy',
   'webSearchMode',
   'reasoningEffort',
   'runProfile',
@@ -42,6 +46,7 @@ const threadRunConfigOverridesSchemaLegacy = z.object({
   model: z.string().trim().min(1).optional(),
   baseUrl: z.string().optional(),
   permissions: z.enum(['read_only', 'workspace', 'danger_full_access']).optional(),
+  accessPolicy: accessPolicyConfigSchema.optional(),
   webSearchMode: z.enum(['auto', 'on', 'off']).optional(),
   reasoningEffort: z.enum(['low', 'medium', 'high']).optional(),
   runProfile: z.enum(['cache_first', 'runtime_os']).optional(),
@@ -67,6 +72,8 @@ export function threadRunConfigOverridesFrom(input: Record<string, unknown>): Th
     const value = input[key];
     if (typeof value === 'string') {
       (result as Record<string, string>)[key] = value.trim();
+    } else if (key === 'accessPolicy' && value && typeof value === 'object' && !Array.isArray(value)) {
+      result.accessPolicy = accessPolicyConfigSchema.parse(value);
     }
   }
   return result;
@@ -111,6 +118,7 @@ export const GlobalRunConfigDefaultsSchema = z.object({
   modelMaxOutputTokens: z.number().int().positive().optional(),
   customBaseUrl: z.string().default(''),
   customApiKey: z.string().default(''),
+  accessPolicy: accessPolicyConfigSchema.default({}),
 }).strip();
 
 export type GlobalRunConfigDefaults = z.infer<typeof GlobalRunConfigDefaultsSchema>;
