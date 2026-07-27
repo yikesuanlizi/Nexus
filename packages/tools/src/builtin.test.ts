@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -275,6 +275,32 @@ describe('webFetchTool', () => {
 });
 
 describe('readFileTool', () => {
+  it('asks runtime access policy before reading a file', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'nexus-read-file-access-'));
+    await fs.writeFile(path.join(root, 'note.txt'), 'hello\n', 'utf-8');
+    const requestAccess = vi.fn(async (request) => ({
+      decision: 'deny' as const,
+      request,
+      source: 'persistent_rule' as const,
+      justification: 'blocked by policy',
+      matchedRuleId: 'deny-note',
+      matchedRuleScope: 'global' as const,
+    }));
+
+    const result = await readFileTool.execute(
+      { filePath: 'note.txt' },
+      { workspaceRoot: root, threadId: 'thread', turnId: 'turn', approved: false, requestAccess },
+    );
+
+    expect(result.status).toBe('failed');
+    expect(result.error?.code).toBe('ACCESS_DENIED');
+    expect(requestAccess).toHaveBeenCalledWith(expect.objectContaining({
+      access: 'read',
+      target: { kind: 'path', path: path.join(root, 'note.txt') },
+      toolName: 'read_file',
+    }));
+  });
+
   it('returns line metadata and file segment artifact refs for large files', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'nexus-read-file-'));
     await fs.writeFile(
@@ -380,6 +406,31 @@ describe('readFileTool', () => {
 });
 
 describe('readDocumentTool', () => {
+  it('asks runtime access policy before extracting a document', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'nexus-read-document-access-'));
+    const docxPath = path.join(root, 'brief.docx');
+    await writeMinimalDocx(docxPath, '版本一 内容');
+    const requestAccess = vi.fn(async (request) => ({
+      decision: 'prompt' as const,
+      request,
+      source: 'approval_required' as const,
+      justification: 'needs temporary approval',
+    }));
+
+    const result = await readDocumentTool.execute(
+      { filePath: 'brief.docx' },
+      { workspaceRoot: root, threadId: 'thread', turnId: 'turn', approved: false, requestAccess },
+    );
+
+    expect(result.status).toBe('failed');
+    expect(result.error?.code).toBe('ACCESS_APPROVAL_REQUIRED');
+    expect(requestAccess).toHaveBeenCalledWith(expect.objectContaining({
+      access: 'read',
+      target: { kind: 'path', path: docxPath },
+      toolName: 'read_document',
+    }));
+  });
+
   it('extracts docx to a managed artifact and reuses it while fresh', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'nexus-read-document-'));
     const docxPath = path.join(root, 'brief.docx');
@@ -554,6 +605,40 @@ describe('searchContentTool', () => {
 });
 
 describe('applyPatchTool', () => {
+  it('asks runtime access policy before applying a patch', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'nexus-apply-patch-access-'));
+    await fs.writeFile(path.join(root, 'src.txt'), 'alpha\n', 'utf-8');
+    const requestAccess = vi.fn(async (request) => ({
+      decision: 'deny' as const,
+      request,
+      source: 'persistent_rule' as const,
+      justification: 'write blocked',
+    }));
+
+    const result = await applyPatchTool.execute(
+      {
+        patch: [
+          '*** Begin Patch',
+          '*** Update File: src.txt',
+          '@@',
+          '-alpha',
+          '+beta',
+          '*** End Patch',
+        ].join('\n'),
+      },
+      { workspaceRoot: root, threadId: 'thread', turnId: 'turn', approved: true, requestAccess },
+    );
+
+    expect(result.status).toBe('failed');
+    expect(result.error?.code).toBe('ACCESS_DENIED');
+    expect(requestAccess).toHaveBeenCalledWith(expect.objectContaining({
+      access: 'write',
+      target: { kind: 'path', path: path.join(root, 'src.txt') },
+      toolName: 'apply_patch',
+    }));
+    await expect(fs.readFile(path.join(root, 'src.txt'), 'utf-8')).resolves.toBe('alpha\n');
+  });
+
   it('applies Nexus multi-hunk update patches', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'nexus-apply-patch-'));
     await fs.writeFile(

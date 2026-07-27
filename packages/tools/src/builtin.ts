@@ -3,6 +3,7 @@ import { Dirent } from 'node:fs';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 import type { ToolDefinition, ToolContext, ToolResult } from './registry.js';
+import { resolveToolPath, resolveToolPathAccess, toolResultFromAccessDecision } from './accessGuard.js';
 import { WebProviderRouter } from './web/provider.js';
 import {
   artifactRecordForResult,
@@ -14,7 +15,7 @@ import {
   saveDocumentArtifactRecord,
   updateArtifactLastUsed,
 } from './documentArtifacts.js';
-import { computeFileFingerprint, isDocumentFile, relativeToWorkspace, resolveWorkspacePath } from './fileKnowledge.js';
+import { computeFileFingerprint, isDocumentFile, relativeToWorkspace } from './fileKnowledge.js';
 import { DOCUMENT_EXTRACTOR_VERSION, extractDocumentText, extractorForDocumentPath } from './documentExtractors.js';
 
 // ─── current_time ──────────────────────────────────────────────────────────
@@ -82,7 +83,14 @@ export const readFileTool: ToolDefinition = {
         error: { message: 'filePath is required', code: 'INVALID_ARGUMENTS' },
       };
     }
-    const filePath = resolvePath(ctx.workspaceRoot, rawPath);
+    const access = await guardPathAccess(ctx, {
+      path: rawPath,
+      access: 'read',
+      toolName: 'read_file',
+      description: `读取文件 ${rawPath}`,
+    });
+    if (access.denied) return access.denied;
+    const filePath = access.filePath;
     const ledger = await loadDocumentArtifactLedger(ctx.workspaceRoot);
     const managedArtifact = findArtifactByPath(ledger, filePath);
     if (managedArtifact) {
@@ -157,7 +165,14 @@ export const readDocumentTool: ToolDefinition = {
     const rawPath = firstString(args.filePath, args.path, args.filename);
     if (!rawPath) return failedToolResult('filePath is required', 'INVALID_ARGUMENTS');
 
-    const filePath = resolveWorkspacePath(ctx.workspaceRoot, rawPath);
+    const access = await guardPathAccess(ctx, {
+      path: rawPath,
+      access: 'read',
+      toolName: 'read_document',
+      description: `读取文档 ${rawPath}`,
+    });
+    if (access.denied) return access.denied;
+    const filePath = access.filePath;
     if (!isDocumentFile(filePath)) {
       return failedToolResult(`Unsupported document type: ${path.extname(filePath)}`, 'UNSUPPORTED_DOCUMENT_TYPE');
     }
@@ -286,7 +301,14 @@ export const listFilesTool: ToolDefinition = {
   maxOutputLength: 20_000,
   async execute(args, ctx): Promise<ToolResult> {
     const rawPath = firstString(args.path, args.dir, args.directory, args.filePath) ?? '.';
-    const targetPath = resolvePath(ctx.workspaceRoot, rawPath);
+    const access = await guardPathAccess(ctx, {
+      path: rawPath,
+      access: 'read',
+      toolName: 'list_files',
+      description: `列出目录 ${rawPath}`,
+    });
+    if (access.denied) return access.denied;
+    const targetPath = access.filePath;
     const recursive = args.recursive === true;
     const includeHidden = args.includeHidden === true;
     const maxEntriesRaw = Number(args.maxEntries ?? args.limit);
@@ -354,7 +376,16 @@ export const writeFileTool: ToolDefinition = {
   requiredPolicy: 'workspace_write',
   requiresApproval: true,
   async execute(args, ctx): Promise<ToolResult> {
-    const filePath = resolvePath(ctx.workspaceRoot, String(args.filePath));
+    const rawPath = firstString(args.filePath, args.path, args.filename);
+    if (!rawPath) return failedToolResult('filePath is required', 'INVALID_ARGUMENTS');
+    const access = await guardPathAccess(ctx, {
+      path: rawPath,
+      access: 'write',
+      toolName: 'write_file',
+      description: `写入文件 ${rawPath}`,
+    });
+    if (access.denied) return access.denied;
+    const filePath = access.filePath;
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.writeFile(filePath, String(args.content), 'utf-8');
     return { output: `Wrote ${Buffer.byteLength(String(args.content))} bytes to ${args.filePath}`, status: 'completed' };
@@ -387,8 +418,19 @@ export const shellCommandTool: ToolDefinition = {
   async execute(args, ctx): Promise<ToolResult> {
     const { exec } = await import('node:child_process');
     const cmd = String(args.command);
+    const accessDecision = await ctx.requestAccess?.({
+      access: 'command',
+      target: { kind: 'command', command: cmd },
+      threadId: ctx.threadId,
+      turnId: ctx.turnId,
+      toolName: 'shell_command',
+      description: `执行命令 ${cmd.slice(0, 120)}`,
+    });
+    if (accessDecision && accessDecision.decision !== 'allow') {
+      return toolResultFromAccessDecision(accessDecision);
+    }
     const cwd =
-      args.cwd ? resolvePath(ctx.workspaceRoot, String(args.cwd)) : ctx.workspaceRoot;
+      args.cwd ? resolveToolPath(ctx.workspaceRoot, String(args.cwd)) : ctx.workspaceRoot;
 
     return new Promise((resolve) => {
       exec(
@@ -451,7 +493,7 @@ export const gitNexusAnalyzeTool: ToolDefinition = {
   maxOutputLength: 30_000,
   async execute(args, ctx): Promise<ToolResult> {
     const repoPath = typeof args.repoPath === 'string' && args.repoPath.trim()
-      ? resolvePath(ctx.workspaceRoot, args.repoPath)
+      ? resolveToolPath(ctx.workspaceRoot, args.repoPath)
       : ctx.workspaceRoot;
     const forceFlag = args.force === true ? ['--force'] : [];
     const command = ['npx', '-y', 'gitnexus@latest', 'analyze', ...forceFlag];
@@ -545,9 +587,14 @@ export const searchContentTool: ToolDefinition = {
       };
     }
     const rawSearchPath = firstString(args.path, args.dir, args.directory);
-    const searchPath = rawSearchPath
-      ? resolvePath(ctx.workspaceRoot, rawSearchPath)
-      : ctx.workspaceRoot;
+    const access = await guardPathAccess(ctx, {
+      path: rawSearchPath ?? '.',
+      access: 'read',
+      toolName: 'search_content',
+      description: `搜索目录 ${rawSearchPath ?? '.'}`,
+    });
+    if (access.denied) return access.denied;
+    const searchPath = access.filePath;
 
     // Simple recursive grep using Node
     const results: SearchMatch[] = [];
@@ -730,6 +777,8 @@ export const applyPatchTool: ToolDefinition = {
     let actions: NexusPatchAction[];
     try {
       actions = parseNexusPatch(patchText);
+      const patchAccessDenied = await guardPatchActions(ctx, actions);
+      if (patchAccessDenied) return patchAccessDenied;
       const changes = await applyNexusPatchActions(ctx.workspaceRoot, actions);
       return {
         output: changes.map((change) => `${change.kind} ${change.path} (+${change.addedLines ?? 0}/-${change.removedLines ?? 0})`).join('\n') || 'No changes applied',
@@ -813,11 +862,6 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
 ];
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
-function resolvePath(workspaceRoot: string, filePath: string): string {
-  if (path.isAbsolute(filePath)) return filePath;
-  return path.resolve(workspaceRoot, filePath);
-}
-
 function completedDocumentResult(input: {
   source: Awaited<ReturnType<typeof computeFileFingerprint>>;
   artifactPath: string;
@@ -859,6 +903,49 @@ function completedDocumentResult(input: {
 
 function failedToolResult(message: string, code: string, data?: unknown): ToolResult {
   return { output: message, status: 'failed', error: { message, code }, ...(data === undefined ? {} : { data }) };
+}
+
+async function guardPathAccess(
+  ctx: ToolContext,
+  input: {
+    path: string;
+    access: 'read' | 'write';
+    toolName: string;
+    description: string;
+  },
+): Promise<{ filePath: string; denied?: ToolResult }> {
+  const request = resolveToolPathAccess({
+    workspaceRoot: ctx.workspaceRoot,
+    path: input.path,
+    access: input.access,
+    threadId: ctx.threadId,
+    turnId: ctx.turnId,
+    toolName: input.toolName,
+    description: input.description,
+  });
+  const decision = await ctx.requestAccess?.(request);
+  if (decision && decision.decision !== 'allow') {
+    return { filePath: request.target.path ?? '', denied: toolResultFromAccessDecision(decision) };
+  }
+  return { filePath: request.target.path ?? '' };
+}
+
+async function guardPatchActions(ctx: ToolContext, actions: NexusPatchAction[]): Promise<ToolResult | null> {
+  const paths = new Set<string>();
+  for (const action of actions) {
+    paths.add(action.path);
+    if (action.kind === 'update' && action.moveTo) paths.add(action.moveTo);
+  }
+  for (const filePath of paths) {
+    const access = await guardPathAccess(ctx, {
+      path: filePath,
+      access: 'write',
+      toolName: 'apply_patch',
+      description: `应用补丁 ${filePath}`,
+    });
+    if (access.denied) return access.denied;
+  }
+  return null;
 }
 
 function errorMessage(error: unknown): string {
@@ -1354,7 +1441,7 @@ async function applyNexusPatchActions(workspaceRoot: string, actions: NexusPatch
 
   for (const action of actions) {
     if (action.kind === 'add') {
-      const abs = resolvePath(workspaceRoot, action.path);
+      const abs = resolveToolPath(workspaceRoot, action.path);
       staged.set(abs, action.lines.join('\n'));
       changes.push({
         path: action.path,
@@ -1374,7 +1461,7 @@ async function applyNexusPatchActions(workspaceRoot: string, actions: NexusPatch
       continue;
     }
     if (action.kind === 'delete') {
-      const abs = resolvePath(workspaceRoot, action.path);
+      const abs = resolveToolPath(workspaceRoot, action.path);
       const content = await readStagedOrDisk(staged, abs);
       if (content === null) throw new Error(`${action.path}: file not found`);
       staged.set(abs, null);
@@ -1397,11 +1484,11 @@ async function applyNexusPatchActions(workspaceRoot: string, actions: NexusPatch
       });
       continue;
     }
-    const abs = resolvePath(workspaceRoot, action.path);
+    const abs = resolveToolPath(workspaceRoot, action.path);
     const original = await readStagedOrDisk(staged, abs);
     if (original === null) throw new Error(`${action.path}: file not found`);
     const applied = applyUpdateHunks(original, action.path, action.hunks);
-    const targetAbs = action.moveTo ? resolvePath(workspaceRoot, action.moveTo) : abs;
+    const targetAbs = action.moveTo ? resolveToolPath(workspaceRoot, action.moveTo) : abs;
     staged.set(abs, action.moveTo ? null : applied.content);
     if (action.moveTo) staged.set(targetAbs, applied.content);
     if (action.moveTo) {

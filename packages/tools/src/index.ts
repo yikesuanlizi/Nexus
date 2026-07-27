@@ -53,5 +53,10 @@ export type {
   WebSearchRequest,
   WebSearchResult,
 } from './web/provider.js';
+export {
+  resolveToolPath,
+  resolveToolPathAccess,
+  toolResultFromAccessDecision,
+} from './accessGuard.js';
 
 export const TOOLS_VERSION = '0.1.0';

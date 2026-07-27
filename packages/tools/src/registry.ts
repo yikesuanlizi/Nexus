@@ -1,6 +1,12 @@
 // ─── Tool definition ────────────────────────────────────────────────────────
 // 工具定义模块：声明所有内置工具的元信息、参数 schema、执行入口
-import type { CommandStatus, SystemMonitorInterface } from '@nexus/protocol';
+import type {
+  AccessDecision,
+  AccessPolicyConfig,
+  AccessRequest,
+  CommandStatus,
+  SystemMonitorInterface,
+} from '@nexus/protocol';
 import type { SandboxLevel } from '@nexus/sandbox';
 import type { WebProviderRouterOptions } from './web/provider.js';
 
@@ -63,6 +69,12 @@ export interface ToolContext {
   /** Whether execution is approved. */
   // 是否已经过人工审批，工具内部可据此决定是否降级返回
   approved: boolean;
+  /** Runtime access policy snapshot for this turn. */
+  // 当前 turn 的运行时权限策略快照（可选）
+  accessPolicy?: AccessPolicyConfig;
+  /** Ask runtime whether this access is allowed, needs approval, or denied. */
+  // 请求 runtime 判定一次具体访问是否允许、需要审批或拒绝
+  requestAccess?: (request: AccessRequest) => Promise<AccessDecision>;
   /** AbortSignal for cancellation. */
   // 取消信号：用户中断或超时时会触发，工具内应监听以提前退出
   signal?: AbortSignal;
