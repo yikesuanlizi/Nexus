@@ -828,8 +828,6 @@ const server = createServer((req, res) => {
 
 server.listen(port, () => {
   console.log(`Nexus API listening on http://localhost:${port}`);
-  // 启动时为 default 租户主动触发钉钉 autoStart（其他租户在首次请求时懒启动）
-  // Chinese translation: proactively trigger dingtalk auto-start for default tenant on boot
   const defaultTenantStore = tenantRuntime.storeForTenant({ tenantId: DEFAULT_TENANT_ID });
   const defaultCfgRepo = tenantRuntime.configRepoForTenant({ tenantId: DEFAULT_TENANT_ID });
   void autoStartDingtalkForTenant({
