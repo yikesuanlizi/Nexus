@@ -8,6 +8,7 @@ import type { ThreadStore } from '@nexus/storage';
 import type { AgentLoop } from '@nexus/runtime';
 import type { ModelGateway } from '@nexus/model-gateway';
 import type { ThreadEvent, ThreadId } from '@nexus/protocol';
+import { redactAccessPolicyForPublicConfig, type AccessPolicyConfig } from '@nexus/protocol';
 import type { AgentRunConfig, ThreadConfigOverrides } from '../config/config.js';
 import { readJson, sendError, sendJson } from '../shared/http.js';
 import type { TenantContext } from '../shared/tenant.js';
@@ -30,6 +31,8 @@ export interface ThreadRouteContext {
   saveThreadRunConfig: (threadId: ThreadId, config: Partial<AgentRunConfig>) => Promise<AgentRunConfig>;
   getThreadConfigOverrides: (threadId: string) => Promise<ThreadConfigOverrides>;
   updateThreadConfigOverrides: (threadId: string, input: Record<string, unknown>) => Promise<ThreadConfigOverrides>;
+  getThreadAccessPolicy: (threadId: string) => Promise<AccessPolicyConfig | null>;
+  saveThreadAccessPolicy: (threadId: string, input: unknown) => Promise<AccessPolicyConfig>;
   publicThreadRunConfig: (config: AgentRunConfig, thread: { tags?: Record<string, string> } | null) => AgentRunConfig;
   closeThreadEventClients: (threadId: ThreadId, tenantId: string) => void;
 }
@@ -126,7 +129,11 @@ export async function handleThreadRoutes(
     const thread = await store.getThread(threadId);
     if (!thread) { sendError(res, 404, 'Thread not found'); return true; }
     const overrides = await ctx.getThreadConfigOverrides(threadId);
-    sendJson(res, 200, { overrides });
+    const accessPolicy = await ctx.getThreadAccessPolicy(threadId);
+    sendJson(res, 200, {
+      overrides,
+      accessPolicy: accessPolicy ? redactAccessPolicyForPublicConfig(accessPolicy) : null,
+    });
     return true;
   }
 
@@ -134,9 +141,12 @@ export async function handleThreadRoutes(
   if (req.method === 'PATCH' && segments[3] === 'config' && segments.length === 4) {
     const thread = await store.getThread(threadId);
     if (!thread) { sendError(res, 404, 'Thread not found'); return true; }
-    const body = await readJson<{ overrides?: Record<string, unknown> }>(req);
+    const body = await readJson<{ overrides?: Record<string, unknown>; accessPolicy?: unknown }>(req);
     const overrides = await ctx.updateThreadConfigOverrides(threadId, body.overrides ?? {});
-    sendJson(res, 200, { overrides });
+    const accessPolicy = body.accessPolicy === undefined
+      ? undefined
+      : redactAccessPolicyForPublicConfig(await ctx.saveThreadAccessPolicy(threadId, body.accessPolicy));
+    sendJson(res, 200, { overrides, accessPolicy });
     return true;
   }
 

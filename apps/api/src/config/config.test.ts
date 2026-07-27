@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import type { ThreadId, ThreadMeta } from '@nexus/protocol';
 import type { ThreadStore } from '@nexus/storage';
 import { describe, expect, it } from 'vitest';
-import { createConfigRepository, defaultConfig, publicWebProviderConfig, resolveConfig, resolveWebProviderRuntimeConfig } from './config.js';
+import { createConfigRepository, defaultConfig, publicRunConfig, publicWebProviderConfig, resolveConfig, resolveWebProviderRuntimeConfig } from './config.js';
 
 class FakeThreadStore {
   settings = new Map<string, unknown>();
@@ -120,6 +120,53 @@ describe('AgentRunConfig web provider', () => {
     expect(publicConfig.firecrawl.source).toBe('config');
     expect(publicConfig.firecrawl.masked).toBe('fc-1...7890');
     expect(JSON.stringify(publicConfig)).not.toContain('fc-1234567890');
+  });
+});
+
+describe('AgentRunConfig access policy', () => {
+  it('normalizes access policy from workspace defaults', () => {
+    const config = resolveConfig({
+      workspaceRoot: 'E:\\langchain\\Nexus',
+    });
+
+    expect(config.accessPolicy).toMatchObject({
+      mode: 'workspace',
+      workspaceRoot: path.resolve('E:\\langchain\\Nexus'),
+      persistentRules: [],
+      temporaryGrants: [],
+    });
+  });
+
+  it('maps legacy read_only permissions to chat-like read policy without writing legacy permissions as source of truth', () => {
+    const config = resolveConfig({
+      permissions: 'read_only',
+      workspaceRoot: 'E:\\langchain\\Nexus',
+    });
+
+    expect(config.accessPolicy.mode).toBe('chat');
+    expect(config.permissions).toBe('read_only');
+  });
+
+  it('public config removes temporary grants', () => {
+    const config = resolveConfig({
+      accessPolicy: {
+        mode: 'workspace',
+        workspaceRoot: 'E:\\langchain\\Nexus',
+        persistentRules: [],
+        temporaryGrants: [
+          {
+            id: 'temp-1',
+            effect: 'allow',
+            access: 'read',
+            target: { kind: 'path', path: 'E:\\secret' },
+            scope: 'session',
+            createdAt: '2026-07-27T00:00:00.000Z',
+          },
+        ],
+      },
+    });
+
+    expect(publicRunConfig(config).accessPolicy.temporaryGrants).toEqual([]);
   });
 });
 

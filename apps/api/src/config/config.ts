@@ -9,7 +9,11 @@ import {
   normalizeMemorySettings,
 } from '@nexus/memory';
 import {
+  accessPolicyConfigSchema,
   modelPresetConfigFrom,
+  normalizeAccessPolicyConfig,
+  redactAccessPolicyForPublicConfig,
+  type AccessPolicyConfig,
   type ModelPresetConfig,
   type PermissionPresetId,
   type ReasoningEffort,
@@ -52,6 +56,9 @@ export interface AgentRunConfig {
   /** Permission preset id: 'read_only' | 'workspace' | 'danger_full_access'. */
   /** 中文：权限预设 id */
   permissions: PermissionPresetId;
+  /** Persistent access policy. Temporary grants are runtime-only and never persisted. */
+  /** 中文：持久访问策略。临时授权仅属于运行时，禁止持久化。 */
+  accessPolicy: AccessPolicyConfig;
   dataDir: string;
   /** Single user-level directory containing skill subdirectories with SKILL.md. */
   /** 中文：存放 SKILL.md 子目录的根目录 */
@@ -124,8 +131,10 @@ export interface ModelPreset {
 export const DEFAULT_RUN_CONFIG_KEY = 'runConfig.default';
 export const MODEL_PRESETS_KEY = 'modelPresets';
 export const WEB_PROVIDER_SECRETS_KEY = 'webProvider.secrets.v1';
+export const ACCESS_POLICY_KEY = 'accessPolicy.v1';
 export const THREAD_CONFIG_KEY_PREFIX = 'thread-config:';
 export const THREAD_CONFIG_OVERRIDES_KEY_PREFIX = 'thread-config-overrides:';
+export const THREAD_ACCESS_POLICY_KEY_PREFIX = 'thread-access-policy:';
 // A2A 协议配置存储 key — Chinese: A2A protocol config storage key
 export const A2A_CONFIG_KEY = 'nexus.a2aConfig';
 
@@ -212,6 +221,12 @@ export const defaultConfig: AgentRunConfig = {
   model: 'qwen2.5-coder:7b',
   baseUrl: '',
   permissions: 'workspace',
+  accessPolicy: {
+    mode: 'workspace',
+    workspaceRoot: '',
+    persistentRules: [],
+    temporaryGrants: [],
+  },
   dataDir: path.join(process.cwd(), '.nexus'),
   skillsRoot: path.join(os.homedir(), '.nexus', 'skills'),
   webSearchMode: 'auto',
@@ -306,12 +321,27 @@ export function resolveConfig(patch: Partial<AgentRunConfig> = {}): AgentRunConf
   merged.episodeRerankEnabled = episode.episodeRerankEnabled;
   // 系统监控开关强制为布尔值 — Chinese: coerce system monitor flag to boolean
   merged.systemMonitorEnabled = merged.systemMonitorEnabled === true;
+  const inputPolicy = normalizeAccessPolicyConfig(merged.accessPolicy);
+  const modeFromPermissions = merged.permissions === 'danger_full_access'
+    ? 'danger_full_access'
+    : merged.permissions === 'read_only'
+      ? 'chat'
+      : inputPolicy.mode;
+  merged.accessPolicy = normalizeAccessPolicyConfig({
+    ...inputPolicy,
+    mode: modeFromPermissions,
+    workspaceRoot: inputPolicy.workspaceRoot || merged.workspaceRoot,
+    temporaryGrants: [],
+  });
   return merged;
 }
 
 export function publicRunConfig(config: AgentRunConfig): AgentRunConfig {
   const { apiKey: _apiKey, ...publicConfig } = config;
-  return publicConfig;
+  return {
+    ...publicConfig,
+    accessPolicy: redactAccessPolicyForPublicConfig(config.accessPolicy),
+  };
 }
 
 export function resolveWebProviderRuntimeConfig(
@@ -380,6 +410,14 @@ export function createConfigRepository(store: ThreadStore) {
     return [config.provider, config.model].filter(Boolean).join(' / ') || 'Model preset';
   }
 
+  function normalizePersistentAccessPolicy(input: unknown): AccessPolicyConfig {
+    const parsed = accessPolicyConfigSchema.parse(input ?? {});
+    return normalizeAccessPolicyConfig({
+      ...parsed,
+      temporaryGrants: [],
+    });
+  }
+
   async function listModelPresets(): Promise<ModelPreset[]> {
     const stored = await store.getSetting<ModelPreset[]>(MODEL_PRESETS_KEY);
     return Array.isArray(stored) ? stored : [];
@@ -438,6 +476,21 @@ export function createConfigRepository(store: ThreadStore) {
     return next;
   }
 
+  async function getGlobalAccessPolicy(): Promise<AccessPolicyConfig> {
+    const stored = await store.getSetting<Partial<AccessPolicyConfig>>(ACCESS_POLICY_KEY);
+    if (stored) return normalizePersistentAccessPolicy(stored);
+    const config = await getDefaultRunConfig();
+    return normalizePersistentAccessPolicy(config.accessPolicy);
+  }
+
+  async function saveGlobalAccessPolicy(input: unknown): Promise<AccessPolicyConfig> {
+    const current = await getDefaultRunConfig();
+    const nextPolicy = normalizePersistentAccessPolicy(input);
+    const next = await saveDefaultRunConfig({ ...current, accessPolicy: nextPolicy });
+    await store.setSetting(ACCESS_POLICY_KEY, next.accessPolicy);
+    return next.accessPolicy;
+  }
+
   function readThreadRunConfig(thread: { tags?: Record<string, string> }): Partial<AgentRunConfig> | null {
     const raw = thread.tags?.runConfig;
     if (!raw) return null;
@@ -468,8 +521,20 @@ export function createConfigRepository(store: ThreadStore) {
     const threadConfig = thread ? readThreadRunConfig(thread) : null;
     const overrides = await getThreadConfigOverrides(threadId);
     const base = await getDefaultRunConfig();
+    const globalAccessPolicy = await getGlobalAccessPolicy();
+    const threadAccessPolicy = await getThreadAccessPolicy(threadId);
+    const accessPolicy = normalizePersistentAccessPolicy({
+      ...(threadAccessPolicy ?? globalAccessPolicy),
+      mode: threadAccessPolicy?.mode ?? globalAccessPolicy.mode,
+      workspaceRoot: threadAccessPolicy?.workspaceRoot || globalAccessPolicy.workspaceRoot || base.workspaceRoot,
+      persistentRules: [
+        ...globalAccessPolicy.persistentRules,
+        ...(threadAccessPolicy?.persistentRules ?? []),
+      ],
+      temporaryGrants: [],
+    });
     return applyThreadKindRuntimeWorkspace(
-      resolveConfig({ ...base, ...(threadConfig ?? {}), ...overrides }),
+      resolveConfig({ ...base, ...(threadConfig ?? {}), ...overrides, accessPolicy }),
       thread,
     );
   }
@@ -481,12 +546,15 @@ export function createConfigRepository(store: ThreadStore) {
     assertNoUiFields(configPatch as Record<string, unknown>);
     const thread = await store.getThread(threadId);
     if (!thread) throw new Error(`Thread ${threadId} not found`);
+    if (configPatch.accessPolicy) {
+      await saveThreadAccessPolicy(threadId, configPatch.accessPolicy);
+    }
     const current = { ...await getDefaultRunConfig(), ...(readThreadRunConfig(thread) ?? {}) };
     const safePatch = isPlainChatThread(thread) && configPatch.workspaceRoot === ''
       ? { ...configPatch, workspaceRoot: current.workspaceRoot }
       : configPatch;
     const next = applyThreadKindRuntimeWorkspace(resolveConfig({ ...current, ...safePatch }), thread);
-    const { skillsRoot: _skillsRoot, ...threadConfig } = publicRunConfig(next);
+    const { skillsRoot: _skillsRoot, accessPolicy: _accessPolicy, ...threadConfig } = publicRunConfig(next);
     await store.updateThreadMetadata(threadId, {
       tags: { ...thread.tags, runConfig: JSON.stringify(stripThreadOnlyGlobalAppearance(threadConfig)) },
     });
@@ -495,6 +563,10 @@ export function createConfigRepository(store: ThreadStore) {
 
   function threadConfigOverridesKey(threadId: string): string {
     return `${THREAD_CONFIG_OVERRIDES_KEY_PREFIX}${threadId}`;
+  }
+
+  function threadAccessPolicyKey(threadId: string): string {
+    return `${THREAD_ACCESS_POLICY_KEY_PREFIX}${threadId}`;
   }
 
   function threadConfigOverridesFrom(input: Record<string, unknown>): ThreadConfigOverrides {
@@ -519,15 +591,30 @@ export function createConfigRepository(store: ThreadStore) {
     return safe;
   }
 
+  async function getThreadAccessPolicy(threadId: string): Promise<AccessPolicyConfig | null> {
+    const stored = await store.getSetting<Partial<AccessPolicyConfig>>(threadAccessPolicyKey(threadId));
+    return stored ? normalizePersistentAccessPolicy(stored) : null;
+  }
+
+  async function saveThreadAccessPolicy(threadId: string, input: unknown): Promise<AccessPolicyConfig> {
+    const safe = normalizePersistentAccessPolicy(input);
+    await store.setSetting(threadAccessPolicyKey(threadId), safe);
+    return safe;
+  }
+
   return {
     deleteModelPreset,
     getDefaultRunConfig,
+    getGlobalAccessPolicy,
+    getThreadAccessPolicy,
     getThreadConfigOverrides,
     getThreadRunConfig,
     listMcpServers,
     listModelPresets,
     saveDefaultRunConfig,
+    saveGlobalAccessPolicy,
     saveMcpServers,
+    saveThreadAccessPolicy,
     saveThreadRunConfig,
     publicThreadRunConfig,
     updateThreadConfigOverrides,

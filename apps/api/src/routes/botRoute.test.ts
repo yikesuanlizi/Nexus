@@ -74,6 +74,12 @@ const runConfig: AgentRunConfig = {
   model: 'test',
   baseUrl: '',
   permissions: 'workspace',
+  accessPolicy: {
+    mode: 'workspace',
+    workspaceRoot: 'E:\\langchain',
+    persistentRules: [],
+    temporaryGrants: [],
+  },
   dataDir: 'E:\\langchain\\.nexus',
   skillsRoot: 'C:\\Users\\test\\.nexus\\skills',
   webSearchMode: 'auto',

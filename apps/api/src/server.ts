@@ -345,12 +345,15 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const {
     deleteModelPreset,
     getDefaultRunConfig,
+    getThreadAccessPolicy,
     getThreadConfigOverrides,
     getThreadRunConfig,
     listMcpServers,
     listModelPresets,
     publicThreadRunConfig,
+    saveGlobalAccessPolicy,
     saveMcpServers,
+    saveThreadAccessPolicy,
     saveThreadRunConfig,
     updateThreadConfigOverrides,
     upsertModelPreset,
@@ -398,7 +401,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     if (await handleA2ARoute({ req, res, url, segments, handler: a2aHandler })) return;
   }
 
-  if (await handleSettingsRoute({ req, res, pathname: url.pathname, store, getDefaultRunConfig, saveDefaultRunConfig: saveTenantDefaultRunConfig, resetDefaultAgent: resetTenantDefaultAgent })) return;
+  if (await handleSettingsRoute({ req, res, pathname: url.pathname, store, getDefaultRunConfig, saveDefaultRunConfig: saveTenantDefaultRunConfig, saveGlobalAccessPolicy, resetDefaultAgent: resetTenantDefaultAgent })) return;
   if (await handleMemoryRoute({ req, res, url, pathname: url.pathname, store, getDefaultRunConfig, saveDefaultRunConfig: saveTenantDefaultRunConfig })) return;
 
   if (req.method === 'POST' && url.pathname === '/api/workspaces/pick') return handlePickWorkspaceDirectory(res);
@@ -633,7 +636,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     return;
   }
 
-  if (await handleThreadRoutes(req, res, url, segments, { store, tenantContext, createTenantAgent, getTenantDefaultAgent, publishTenantEvent, getThreadRunConfig, saveThreadRunConfig, getThreadConfigOverrides, updateThreadConfigOverrides, publicThreadRunConfig, closeThreadEventClients })) return;
+  if (await handleThreadRoutes(req, res, url, segments, { store, tenantContext, createTenantAgent, getTenantDefaultAgent, publishTenantEvent, getThreadRunConfig, saveThreadRunConfig, getThreadConfigOverrides, updateThreadConfigOverrides, getThreadAccessPolicy, saveThreadAccessPolicy, publicThreadRunConfig, closeThreadEventClients })) return;
 
   if (req.method === 'GET' && segments[0] === 'api' && segments[1] === 'events' && segments[2]) {
     const threadId = segments[2];

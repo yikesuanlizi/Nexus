@@ -1,6 +1,7 @@
 import { DEFAULT_RUN_CONFIG_KEY, WEB_PROVIDER_SECRETS_KEY, A2A_CONFIG_KEY, DEFAULT_A2A_CONFIG, normalizeA2AConfig, publicA2AConfig, publicRunConfig, publicWebProviderConfig, type A2AConfig, type AgentRunConfig, type WebProviderSecrets } from '../config/config.js';
 import { readJson, sendJson } from '../shared/http.js';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { redactAccessPolicyForPublicConfig, type AccessPolicyConfig } from '@nexus/protocol';
 import type { ThreadStore } from '@nexus/storage';
 
 // 设置路由选项 — Chinese: settings route options
@@ -11,6 +12,7 @@ export interface SettingsRouteOptions {
   store: ThreadStore;
   getDefaultRunConfig(): Promise<AgentRunConfig>;
   saveDefaultRunConfig(configPatch: Partial<AgentRunConfig>): Promise<AgentRunConfig>;
+  saveGlobalAccessPolicy(input: unknown): Promise<AccessPolicyConfig>;
   resetDefaultAgent(): void;
 }
 
@@ -30,6 +32,16 @@ export async function handleSettingsRoute(options: SettingsRouteOptions): Promis
       webProvider: publicWebProviderConfig(webProviderSecrets),
       a2a: publicA2AConfig(a2aConfig),
     });
+    return true;
+  }
+
+  // PATCH /api/settings/access-policy — 保存全局持久访问规则；临时授权永远不写入设置
+  // — Chinese: save global persistent access rules; temporary grants are never persisted
+  if (req.method === 'PATCH' && pathname === '/api/settings/access-policy') {
+    const body = await readJson<{ accessPolicy?: unknown }>(req);
+    const accessPolicy = await options.saveGlobalAccessPolicy(body.accessPolicy ?? {});
+    options.resetDefaultAgent();
+    sendJson(res, 200, { accessPolicy: redactAccessPolicyForPublicConfig(accessPolicy) });
     return true;
   }
 
