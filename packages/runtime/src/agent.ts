@@ -21,6 +21,11 @@ import type {
   ThreadWorkingSetSnapshot,
   EpisodeMemoryMode,
   KnowledgeCheckpointSummary,
+  AccessDecision,
+  AccessPolicyConfig,
+  AccessRequest,
+  TemporaryAccessGrant,
+  TemporaryAccessScope,
 } from '@nexus/protocol';
 import { RUN_TRACE_VERSION } from '@nexus/protocol';
 import { ModelGateway, type ChatMessage, type ToolCall } from '@nexus/model-gateway';
@@ -121,11 +126,38 @@ import {
 import { SkillExecutor } from './skillExecutor.js';
 import { createUseSkillTool, USE_SKILL_TOOL_NAME } from './skillTool.js';
 import { RunTraceSession } from './runTraceSession.js';
+import { buildRuntimeAccessPolicy, evaluateAccessRequest } from './accessPolicy.js';
 
 const RUNNING_CHECKPOINT_TTL_MS = 30 * 60 * 1000;
 const MAX_WEB_SEARCH_CALLS_PER_TURN = 6;
 const MAX_DUPLICATE_WEB_SEARCH_QUERY_PER_TURN = 2;
 const MODEL_HISTORY_TOKEN_BUDGET = 40_000;
+
+function runtimeApprovalId(): string {
+  return `approval_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function approvalKindForAccessRequest(request: AccessRequest): 'command' | 'file_write' | 'tool_call' | 'network' {
+  if (request.access === 'command') return 'command';
+  if (request.access === 'network') return 'network';
+  if (request.access === 'write') return 'file_write';
+  return 'tool_call';
+}
+
+function temporaryGrantOptionsForLocale(locale: Locale): Array<{ scope: TemporaryAccessScope; label: string }> {
+  if (locale === 'zh') {
+    return [
+      { scope: 'tool_call', label: '仅本次工具调用' },
+      { scope: 'turn', label: '仅本轮对话' },
+      { scope: 'session', label: '仅本次应用会话' },
+    ];
+  }
+  return [
+    { scope: 'tool_call', label: 'This tool call only' },
+    { scope: 'turn', label: 'This turn only' },
+    { scope: 'session', label: 'This app session only' },
+  ];
+}
 
 export type ToolBindingMode = 'eager' | 'delayed';
 
@@ -179,6 +211,9 @@ export interface AgentConfig {
   // 中文注释：沙箱配置。
   /** Sandbox config. */
   sandbox: SandboxConfig;
+  // 中文注释：运行时访问策略；持久规则来自设置，临时授权仅在内存中追加。
+  /** Runtime access policy; persistent rules come from settings, temporary grants stay in memory. */
+  accessPolicy?: AccessPolicyConfig;
   // 中文注释：模型网关实例。
   /** Model gateway instance. */
   model: ModelGateway;
@@ -350,6 +385,7 @@ export class AgentLoop {
   private _sandbox: Sandbox | null = null;
   /** Effective sandbox level from config (resolved from preset if set). */
   private _effectiveSandbox: { level: SandboxLevel; networkAllowed: boolean };
+  private runtimeAccessPolicy: AccessPolicyConfig;
   // 中文注释：系统监控实例。仅在 config.systemMonitor.enabled=true 时启动后台采样。
   /** System monitor instance. Only starts background sampling when config.systemMonitor.enabled=true. */
   private _systemMonitor: SystemMonitor | null = null;
@@ -384,6 +420,16 @@ export class AgentLoop {
     this.config = {
       workspaceRoot: config.workspaceRoot,
       sandbox: config.sandbox,
+      accessPolicy: buildRuntimeAccessPolicy(config.accessPolicy ?? {
+        mode: config.sandbox.preset?.id === 'danger_full_access'
+          ? 'danger_full_access'
+          : config.sandbox.level === 'readonly'
+            ? 'chat'
+            : 'workspace',
+        workspaceRoot: config.workspaceRoot,
+        persistentRules: [],
+        temporaryGrants: [],
+      }),
       model: config.model,
       store: config.store,
       tenantId: safeRuntimeTenantId(config.tenantId ?? config.store.tenantId),
@@ -428,6 +474,7 @@ export class AgentLoop {
       },
       skillsDirs: config.skillsDirs ?? [],
     };
+    this.runtimeAccessPolicy = this.config.accessPolicy;
     this.tools = this.config.tools;
     registerCollabTools(this.tools, {
       a2aClientEnabled: config.a2aClientEnabled,
@@ -833,6 +880,142 @@ export class AgentLoop {
   /** Resolved preset (if any). */
   private get preset(): PermissionPreset | undefined {
     return this.config.sandbox.preset;
+  }
+
+  private async requestAccess(
+    threadId: ThreadId,
+    turnId: TurnId,
+    request: AccessRequest,
+  ): Promise<AccessDecision> {
+    const decision = evaluateAccessRequest(this.runtimeAccessPolicy, request);
+    await this.appendAccessDecisionEvent(turnId, decision);
+    if (decision.decision !== 'prompt') return decision;
+
+    const requestId = runtimeApprovalId();
+    const itemId = `approval_${turnId}_${Date.now()}`;
+    const approvalReq = {
+      requestId,
+      threadId,
+      turnId,
+      itemId,
+      kind: approvalKindForAccessRequest(request),
+      description: request.description,
+      payload: request.target,
+      decision: 'prompt' as const,
+      justification: decision.justification,
+      accessRequest: request,
+      temporaryGrantOptions: temporaryGrantOptionsForLocale(this.config.locale),
+    };
+
+    this.emit({
+      type: 'approval.required',
+      threadId,
+      turnId,
+      itemId,
+      requestId,
+      kind: approvalReq.kind,
+      description: approvalReq.description,
+      payload: approvalReq.payload,
+      decision: 'prompt',
+      justification: decision.justification,
+      accessRequest: request,
+      temporaryGrantOptions: approvalReq.temporaryGrantOptions,
+    });
+
+    await this.appendRunMonitorEvent(turnId, {
+      category: 'approval',
+      type: 'approval.required',
+      message: request.description,
+      toolName: request.toolName,
+      metadata: {
+        requestId,
+        status: 'required',
+        kind: approvalReq.kind,
+        access: request.access,
+        target: request.target,
+        toolName: request.toolName,
+      },
+    });
+
+    const approval = await this.config.approvalHandler.requestApproval(approvalReq);
+    const temporaryScope = approval.temporaryScope ?? 'tool_call';
+    const grant = this.createTemporaryGrant(request, approval.approved ? 'allow' : 'deny', temporaryScope);
+    this.runtimeAccessPolicy.temporaryGrants.push(grant);
+
+    await this.appendRunMonitorEvent(turnId, {
+      category: 'approval',
+      type: approval.approved ? 'access.temporary_grant' : 'access.temporary_deny',
+      level: approval.approved ? 'info' : 'warning',
+      message: approval.approved ? `Temporary access granted for ${request.toolName ?? request.access}` : `Temporary access denied for ${request.toolName ?? request.access}`,
+      toolName: request.toolName,
+      metadata: {
+        requestId,
+        scope: temporaryScope,
+        access: request.access,
+        target: request.target,
+        toolName: request.toolName,
+        grantId: grant.id,
+      },
+    });
+
+    if (approval.approved) {
+      return {
+        decision: 'allow',
+        request,
+        source: 'temporary_grant',
+        matchedRuleId: grant.id,
+        matchedRuleScope: grant.scope,
+        justification: approval.reason ?? '临时授权通过',
+      };
+    }
+
+    return {
+      decision: 'deny',
+      request,
+      source: 'temporary_grant',
+      matchedRuleId: grant.id,
+      matchedRuleScope: grant.scope,
+      justification: approval.reason ?? '用户拒绝临时授权',
+    };
+  }
+
+  private createTemporaryGrant(
+    request: AccessRequest,
+    effect: TemporaryAccessGrant['effect'],
+    scope: TemporaryAccessScope,
+  ): TemporaryAccessGrant {
+    return {
+      id: `temp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      effect,
+      access: request.access,
+      target: request.target,
+      scope,
+      threadId: request.threadId,
+      turnId: request.turnId,
+      toolCallId: request.toolCallId,
+      createdAt: new Date().toISOString(),
+    };
+  }
+
+  private async appendAccessDecisionEvent(turnId: TurnId, decision: AccessDecision): Promise<void> {
+    await this.appendRunMonitorEvent(turnId, {
+      category: 'approval',
+      type: 'access.decision',
+      level: decision.decision === 'deny' ? 'warning' : 'info',
+      message: decision.justification,
+      toolName: decision.request.toolName,
+      metadata: {
+        decision: decision.decision,
+        source: decision.source,
+        matchedRuleId: decision.matchedRuleId,
+        matchedRuleScope: decision.matchedRuleScope,
+        access: decision.request.access,
+        target: decision.request.target,
+        toolName: decision.request.toolName,
+        agentThreadId: decision.request.agentThreadId ?? decision.request.threadId,
+        agentRole: decision.request.agentRole ?? null,
+      },
+    });
   }
 
   /** Get the current locale. */
@@ -1857,6 +2040,8 @@ export class AgentLoop {
         approved: false,
         signal: this.stateManager.get(threadId).cancelController?.signal,
         webProvider: this.config.webProvider,
+        accessPolicy: this.runtimeAccessPolicy,
+        requestAccess: (request) => this.requestAccess(threadId, turnId, request),
         systemMonitor: this._systemMonitor ?? undefined,
       };
       const result = await this.tools.execute('read_document', args, ctx);
@@ -3171,6 +3356,11 @@ export class AgentLoop {
       approved: false,
       signal: this.stateManager.get(threadId).cancelController?.signal,
       webProvider: this.config.webProvider,
+      accessPolicy: this.runtimeAccessPolicy,
+      requestAccess: (request) => this.requestAccess(threadId, turnId, {
+        ...request,
+        toolCallId: request.toolCallId ?? toolCall.id,
+      }),
       // 中文注释：注入系统监控引用，工具内部可调用 get_system_status 查询主机状态
       // — Chinese: inject system monitor reference so tools can query host status
       systemMonitor: this._systemMonitor ?? undefined,
@@ -4404,6 +4594,7 @@ export class AgentLoop {
         locale: this.config.locale,
         webSearchMode: this.config.webSearchMode,
         runProfile: this.config.runProfile,
+        accessPolicy: this.runtimeAccessPolicy,
         maxSubagents: activeRoleProfile?.maxSubagents ?? this.config.maxSubagents,
         maxSubagentDepth: activeRoleProfile?.maxSubagentDepth ?? this.config.maxSubagentDepth,
         spawnModelFactory: this.config.spawnModelFactory,

@@ -1217,6 +1217,90 @@ describe('AgentLoop resumeRunning', () => {
 });
 
 describe('AgentLoop runTurn failure handling', () => {
+  it('uses temporary approval for external file access without mutating persistent rules', async () => {
+    const threadId = 'thread-access-policy-approval';
+    const store = new FakeStore(threadId, 'previous-turn');
+    store.thread.turnCount = 0;
+    store.turns = [];
+    const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'nexus-runtime-access-workspace-'));
+    const externalRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'nexus-runtime-access-external-'));
+    const externalFile = path.join(externalRoot, 'note.txt');
+    await fs.writeFile(externalFile, 'external note\n', 'utf-8');
+    const approvals: unknown[] = [];
+    const approvalHandler = {
+      async requestApproval(req: unknown) {
+        approvals.push(req);
+        return { approved: true, reason: 'allow once', temporaryScope: 'tool_call' as const };
+      },
+    };
+    const agent = new AgentLoop({
+      workspaceRoot,
+      sandbox: { level: 'workspace_write', workspaceRoot },
+      accessPolicy: {
+        mode: 'workspace',
+        workspaceRoot,
+        persistentRules: [],
+        temporaryGrants: [],
+      },
+      model: new SequenceToolModel([{ name: 'read_file', args: { filePath: externalFile } }]) as never,
+      store,
+      locale: 'zh',
+      approvalHandler,
+    });
+
+    await agent.runTurn(threadId, { type: 'text', text: '读取外部文件' });
+
+    expect(approvals).toHaveLength(1);
+    expect(approvals[0]).toMatchObject({
+      kind: 'tool_call',
+      accessRequest: {
+        access: 'read',
+        target: { kind: 'path', path: externalFile },
+        toolName: 'read_file',
+      },
+      temporaryGrantOptions: [
+        { scope: 'tool_call', label: '仅本次工具调用' },
+        { scope: 'turn', label: '仅本轮对话' },
+        { scope: 'session', label: '仅本次应用会话' },
+      ],
+    });
+    expect(store.items.find((item) => item.type === 'tool_call')).toMatchObject({
+      type: 'tool_call',
+      status: 'completed',
+      result: expect.objectContaining({
+        path: externalFile,
+        artifactRefs: expect.arrayContaining([
+          expect.objectContaining({
+            path: externalFile,
+            excerpt: expect.stringContaining('external note'),
+          }),
+        ]),
+      }),
+    });
+    expect((agent as unknown as { config: { accessPolicy: { persistentRules: unknown[] } } }).config.accessPolicy.persistentRules).toEqual([]);
+    expect(store.runEvents).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        category: 'approval',
+        type: 'access.decision',
+        metadata: expect.objectContaining({
+          decision: 'prompt',
+          source: 'approval_required',
+          access: 'read',
+          toolName: 'read_file',
+        }),
+      }),
+      expect.objectContaining({
+        category: 'approval',
+        type: 'access.temporary_grant',
+        metadata: expect.objectContaining({
+          scope: 'tool_call',
+          access: 'read',
+          toolName: 'read_file',
+        }),
+      }),
+    ]));
+  });
+
   it('records control-oriented run monitor events for turn, model, and tool phases', async () => {
     const threadId = 'thread-run-monitor';
     const store = new FakeStore(threadId, 'previous-turn');
