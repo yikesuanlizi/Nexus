@@ -76,6 +76,12 @@ export type { TraceRedactionOptions } from './runTraceRedaction.js';
 export { projectRunTrace } from './runTraceProjector.js';
 export { RunTraceSession } from './runTraceSession.js';
 export type { RunTraceSink } from './runTraceSession.js';
+export {
+  buildRuntimeAccessPolicy,
+  evaluateAccessRequest,
+  mergePersistentRules,
+  temporaryGrantMatches,
+} from './accessPolicy.js';
 
 // ─── Task Harness Engine（跨 turn 自主循环） ─────────────────────────────
 // — Chinese: Task Harness Engine — verifiable/pausable/resumable autonomous loop
