@@ -5,6 +5,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { SettingsShell, type SettingsSaveState } from './SettingsShell.js';
+import { AccessPolicyPage } from './AccessPolicyPage.js';
+import type { AccessPolicyConfig } from '@nexus/protocol';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -68,6 +70,64 @@ describe('SettingsShell · P2.2 saving state', () => {
     const html = renderShell({ saveState: { dirty: false } });
     expect(html).not.toContain('settingsSaveActions');
     expect(html).not.toContain('settingsSaveBar');
+  });
+});
+
+describe('AccessPolicyPage · persistent policy UI', () => {
+  const value: AccessPolicyConfig = {
+    mode: 'workspace',
+    workspaceRoot: 'E:\\langchain\\Nexus',
+    persistentRules: [
+      {
+        id: 'allow-docs',
+        effect: 'allow',
+        access: 'read',
+        target: { kind: 'path', path: 'E:\\langchain\\dexin-agent' },
+        scope: 'global',
+      },
+    ],
+    temporaryGrants: [
+      {
+        id: 'temp-hidden',
+        effect: 'allow',
+        access: 'read',
+        target: { kind: 'path', path: 'E:\\secret' },
+        scope: 'session',
+        createdAt: '2026-07-27T00:00:00.000Z',
+      },
+    ],
+  };
+
+  it('renders persistent rules and hides runtime temporary grants', () => {
+    const html = renderToStaticMarkup(React.createElement(AccessPolicyPage, {
+      locale: 'zh',
+      value,
+      scope: 'global',
+      currentThreadAvailable: true,
+      saving: false,
+      notice: '',
+      onScopeChange: vi.fn(),
+      onChange: vi.fn(),
+      onSave: vi.fn(),
+      onReload: vi.fn(),
+    }));
+
+    expect(html).toContain('权限与工作区');
+    expect(html).toContain('持久规则');
+    expect(html).toContain('allow-docs');
+    expect(html).toContain('E:\\langchain\\dexin-agent');
+    expect(html).not.toContain('temp-hidden');
+    expect(html).not.toContain('E:\\secret');
+  });
+
+  it('keeps the page wired in web and desktop drawers', () => {
+    const webDrawer = readFileSync(join(here, '..', 'SettingsDrawer.tsx'), 'utf-8');
+    const desktopDrawer = readFileSync(join(here, '..', '..', '..', '..', 'desktop', 'src', 'components', 'SettingsDrawer.tsx'), 'utf-8');
+
+    expect(webDrawer).toContain("id: 'accessPolicy'");
+    expect(webDrawer).toContain('<AccessPolicyPage');
+    expect(desktopDrawer).toContain("id: 'accessPolicy'");
+    expect(desktopDrawer).toContain('<AccessPolicyPage');
   });
 });
 

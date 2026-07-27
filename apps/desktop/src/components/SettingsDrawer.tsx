@@ -8,7 +8,7 @@ import { upsertById } from '../features/chat/threadItems.js';
 import { readDesktopCapabilities, type DesktopCapabilities } from '../api/desktopBridge.js';
 import type { RecommendedMcp, RecommendedSkill } from '../features/settings/pluginCatalog.js';
 import type { ApiKeyState, BotConfig, BotStatus, McpConfig, McpServerStatus, MemoryRecord, ModelPreset, ProviderEntry, SkillEntry, WebProviderPublicConfig } from '../shared/types.js';
-import type { ModelPresetConfig } from '@nexus/protocol';
+import type { AccessPolicyConfig, ModelPresetConfig } from '@nexus/protocol';
 import { SettingsShell } from './settings/SettingsShell.js';
 import { AppearancePage } from './settings/AppearancePage.js';
 import { ModelsPage } from './settings/ModelsPage.js';
@@ -16,9 +16,12 @@ import { AgentsPage } from './settings/AgentsPage.js';
 import { ToolsPage } from './settings/ToolsPage.js';
 import { MonitorPage } from './settings/MonitorPage.js';
 import { MemoryPage } from './settings/MemoryPage.js';
+import { AccessPolicyPage, type AccessPolicySettingsScope } from './settings/AccessPolicyPage.js';
 import { McpConfigDialog } from './settings/McpConfigDialog.js';
 import { FirecrawlKeyDialog } from './settings/FirecrawlKeyDialog.js';
 import { useSettingsController } from '../features/settings/useSettingsController.js';
+import { saveGlobalAccessPolicy } from '../features/settings/settingsClient.js';
+import { fetchThreadAccessPolicy, patchThreadAccessPolicy } from '../api/threadConfigClient.js';
 
 const defaultBotConfig: BotConfig = {
   weixin: {
@@ -59,6 +62,21 @@ const defaultBotConfig: BotConfig = {
 };
 
 const defaultWeixinBridgeUrl = 'http://127.0.0.1:18790/api/v1/admin/rpc';
+
+function accessModeFromPermissions(config: RunConfig): AccessPolicyConfig['mode'] {
+  if (config.permissions === 'read_only') return 'chat';
+  if (config.permissions === 'danger_full_access') return 'danger_full_access';
+  return 'workspace';
+}
+
+function accessPolicyFromConfig(config: RunConfig): AccessPolicyConfig {
+  return {
+    mode: config.accessPolicy?.mode ?? accessModeFromPermissions(config),
+    workspaceRoot: config.accessPolicy?.workspaceRoot || config.workspaceRoot || '',
+    persistentRules: config.accessPolicy?.persistentRules ?? [],
+    temporaryGrants: [],
+  };
+}
 
 function preferDesktopBotConfig(config: BotConfig): BotConfig {
   return {
@@ -184,6 +202,10 @@ export function SettingsDrawer({
   const [webKeyDraft, setWebKeyDraft] = useState('');
   const [firecrawlDialogOpen, setFirecrawlDialogOpen] = useState(false);
   const [activeSection, setActiveSection] = useState('agent');
+  const [accessPolicyScope, setAccessPolicyScope] = useState<AccessPolicySettingsScope>('global');
+  const [accessPolicyDraft, setAccessPolicyDraft] = useState<AccessPolicyConfig>(() => accessPolicyFromConfig(config));
+  const [accessPolicySaving, setAccessPolicySaving] = useState(false);
+  const [accessPolicyNotice, setAccessPolicyNotice] = useState('');
   const [pluginNotice, setPluginNotice] = useState('');
   const [memoryRecords, setMemoryRecords] = useState<MemoryRecord[]>([]);
   const [memoryNotice, setMemoryNotice] = useState('');
@@ -193,6 +215,7 @@ export function SettingsDrawer({
 
   const settingsTabs = [
     { id: 'agent', label: locale === 'zh' ? '模型' : 'Model' },
+    { id: 'accessPolicy', label: locale === 'zh' ? '权限与工作区' : 'Access' },
     { id: 'appearance', label: locale === 'zh' ? '外观' : 'Appearance' },
     { id: 'memory', label: locale === 'zh' ? '记忆' : 'Memory' },
     { id: 'performance', label: locale === 'zh' ? '性能' : 'Performance' },
@@ -225,7 +248,14 @@ export function SettingsDrawer({
 
   useEffect(() => {
     if (activeSection === 'memory') void refreshMemories();
+    if (activeSection === 'accessPolicy') void loadAccessPolicy(accessPolicyScope);
   }, [activeSection]);
+
+  useEffect(() => {
+    if (accessPolicyScope === 'global') {
+      setAccessPolicyDraft(accessPolicyFromConfig(config));
+    }
+  }, [config.accessPolicy, config.workspaceRoot, config.permissions, accessPolicyScope]);
 
   async function ensureSkillsRoot() {
     const response = await fetch('/api/settings');
@@ -240,6 +270,46 @@ export function SettingsDrawer({
   function saveSkillsRoot() {
     setConfig({ ...config, skillsRoot: skillsRootDraft });
     settings.markDirty('skillsRoot', false);
+  }
+
+  async function loadAccessPolicy(nextScope: AccessPolicySettingsScope) {
+    setAccessPolicyNotice('');
+    if (nextScope === 'currentThread' && activeThreadId) {
+      const threadPolicy = await fetchThreadAccessPolicy(activeThreadId);
+      setAccessPolicyDraft(threadPolicy ?? {
+        mode: accessModeFromPermissions(config),
+        workspaceRoot: config.workspaceRoot || '',
+        persistentRules: [],
+        temporaryGrants: [],
+      });
+      return;
+    }
+    setAccessPolicyDraft(accessPolicyFromConfig(config));
+  }
+
+  function handleAccessPolicyScopeChange(nextScope: AccessPolicySettingsScope) {
+    setAccessPolicyScope(nextScope);
+    void loadAccessPolicy(nextScope);
+  }
+
+  async function handleSaveAccessPolicy() {
+    setAccessPolicySaving(true);
+    setAccessPolicyNotice('');
+    try {
+      if (accessPolicyScope === 'currentThread' && activeThreadId) {
+        const saved = await patchThreadAccessPolicy(activeThreadId, accessPolicyDraft);
+        setAccessPolicyDraft(saved ?? { ...accessPolicyDraft, temporaryGrants: [] });
+      } else {
+        const saved = await saveGlobalAccessPolicy(accessPolicyDraft);
+        setAccessPolicyDraft(saved);
+        setConfig((current) => ({ ...current, accessPolicy: saved }));
+      }
+      setAccessPolicyNotice(locale === 'zh' ? '权限规则已保存。' : 'Access policy saved.');
+    } catch (error) {
+      setAccessPolicyNotice(error instanceof Error ? error.message : String(error));
+    } finally {
+      setAccessPolicySaving(false);
+    }
   }
 
   async function updateWeixinConfig(patch: Partial<BotConfig['weixin']>) {
@@ -516,6 +586,21 @@ export function SettingsDrawer({
             dirtyFields={settings.dirtyFields}
           />
         );
+      case 'accessPolicy':
+        return (
+          <AccessPolicyPage
+            locale={locale}
+            value={accessPolicyDraft}
+            scope={accessPolicyScope}
+            currentThreadAvailable={Boolean(activeThreadId)}
+            saving={accessPolicySaving}
+            notice={accessPolicyNotice}
+            onScopeChange={handleAccessPolicyScopeChange}
+            onChange={setAccessPolicyDraft}
+            onSave={handleSaveAccessPolicy}
+            onReload={() => void loadAccessPolicy(accessPolicyScope)}
+          />
+        );
       case 'memory':
         return (
           <MemoryPage
@@ -612,7 +697,9 @@ export function SettingsDrawer({
         settingsTabs={settingsTabs}
         activeSection={activeSection}
         setActiveSection={setActiveSection}
-        saveState={settings.saveState}
+        saveState={activeSection === 'accessPolicy'
+          ? { dirty: false, saving: accessPolicySaving, error: null, savedToastAt: null }
+          : settings.saveState}
         onSave={settings.handleSave}
         onCancel={settings.handleCancel}
         saveLabel={settings.saveLabel}

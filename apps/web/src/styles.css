@@ -15482,3 +15482,163 @@
     animation: none;
   }
 }
+
+.settingsAccessPolicyPage {
+  display: grid;
+  gap: 14px;
+}
+
+.settingsDrawer .accessPolicyHeader {
+  align-items: flex-start;
+}
+
+.settingsDrawer .accessPolicyActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.settingsDrawer .whiteButton {
+  min-height: 34px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 650;
+  box-shadow: none;
+}
+
+.settingsDrawer .whiteButton:hover:not(:disabled) {
+  border-color: #94a3b8;
+  background: #f8fafc;
+}
+
+.settingsDrawer .settingsCardCompact {
+  padding: 16px;
+}
+
+.settingsDrawer .settingsFieldRow {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  min-height: 36px;
+}
+
+.settingsDrawer .settingsFieldRow + .settingsFieldRow {
+  margin-top: 10px;
+}
+
+.settingsDrawer .settingsFieldRow label,
+.settingsDrawer .settingsMuted {
+  color: #475569;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.settingsDrawer .settingsFieldRow input,
+.settingsDrawer .settingsFieldRow select,
+.settingsDrawer .accessRuleRow input,
+.settingsDrawer .accessRuleRow select {
+  min-height: 34px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 13px;
+}
+
+.settingsDrawer .accessPolicyScopeTabs {
+  display: inline-flex;
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid #dbe4f0;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.settingsDrawer .accessPolicyScopeTabs button {
+  min-height: 30px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 650;
+  padding: 0 12px;
+}
+
+.settingsDrawer .accessPolicyScopeTabs button.active {
+  background: #ffffff;
+  color: #0f172a;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.12);
+}
+
+.settingsDrawer .settingsSectionTitleRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.settingsDrawer .settingsSectionTitleRow h3 {
+  color: #0f172a;
+  font-size: 15px;
+  line-height: 1.25;
+  margin: 0 0 4px;
+}
+
+.settingsDrawer .accessPolicyEmpty {
+  border: 1px dashed #cbd5e1;
+  border-radius: 12px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 13px;
+  margin: 0;
+  padding: 14px;
+}
+
+.settingsDrawer .accessRuleList {
+  display: grid;
+  gap: 10px;
+}
+
+.settingsDrawer .accessRuleRow {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.7fr) 92px 92px minmax(180px, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.settingsDrawer .accessRuleId {
+  overflow: hidden;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settingsDrawer .accessRuleDelete {
+  padding-inline: 12px;
+}
+
+.settingsDrawer .settingsNotice {
+  color: #0f172a;
+  font-size: 13px;
+  margin: 0;
+}
+
+@media (max-width: 980px) {
+  .settingsDrawer .accessRuleRow {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .settingsDrawer .accessRuleId,
+  .settingsDrawer .accessRuleRow input {
+    grid-column: 1 / -1;
+  }
+}

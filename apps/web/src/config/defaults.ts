@@ -7,6 +7,12 @@ export const defaultConfig: RunConfig = {
   baseUrl: '',
   workspaceRoot: '',
   permissions: 'workspace',
+  accessPolicy: {
+    mode: 'workspace',
+    workspaceRoot: '',
+    persistentRules: [],
+    temporaryGrants: [],
+  },
   dataDir: '',
   skillsRoot: '',
   webSearchMode: 'auto',

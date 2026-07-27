@@ -1,4 +1,5 @@
 import type {
+  AccessPolicyConfig,
   PermissionPresetId as ProtocolPermissionPresetId,
   ReasoningEffort as ProtocolReasoningEffort,
   RunProfile as ProtocolRunProfile,
@@ -23,6 +24,7 @@ export interface RunConfig {
   model: string;
   baseUrl: string;
   permissions: PermissionPresetId;
+  accessPolicy: AccessPolicyConfig;
   dataDir: string;
   skillsRoot: string;
   webSearchMode: WebSearchMode;

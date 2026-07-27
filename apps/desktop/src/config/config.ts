@@ -1,3 +1,5 @@
+import type { AccessPolicyConfig } from '@nexus/protocol';
+
 // 权限预设标识：只读 / 工作区默认 / 自主全访问
 // Chinese translation: Permission preset IDs: read-only / workspace default / full-access mode.
 export type PermissionPresetId = 'read_only' | 'workspace' | 'danger_full_access';
@@ -33,6 +35,7 @@ export interface RunConfig {
   model: string;
   baseUrl: string;
   permissions: PermissionPresetId;
+  accessPolicy: AccessPolicyConfig;
   dataDir: string;
   skillsRoot: string;
   webSearchMode: WebSearchMode;
