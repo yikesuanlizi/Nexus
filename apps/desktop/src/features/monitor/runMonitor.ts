@@ -3,7 +3,7 @@ import type { RunTraceCategory, RunTraceEnvelope } from '@nexus/protocol';
 import type { Locale } from '../../config/config.js';
 import type { RunRecord, ThreadWithRuns } from '../../shared/types.js';
 import type { EventDraft } from '../chat/threadView.js';
-import { initialRunMonitorState, runMonitorReducer, selectSelectedTrace, type TracePageInfo } from './runMonitorState.js';
+import { initialRunMonitorState, runMonitorReducer, selectSelectedTrace, type PendingTraceTarget, type TracePageInfo } from './runMonitorState.js';
 
 const AUTO_REFRESH_KEY = 'nexus.runMonitor.autoRefresh';
 const AUTO_REFRESH_INTERVAL_KEY = 'nexus.runMonitor.autoRefreshInterval';
@@ -81,6 +81,7 @@ export function useRunMonitor(options: {
   const abortControllerRef = useRef<AbortController | null>(null);
   const requestIdRef = useRef(0);
   const stateRef = useRef(state);
+  const skipNextOpenRefreshRef = useRef(false);
   stateRef.current = state;
 
   const filtersRef = useRef({ categoryFilter: state.categoryFilter, errorsOnly: state.errorsOnly });
@@ -301,9 +302,21 @@ export function useRunMonitor(options: {
   }, [adminMode, adminToken, fetchRunsData]);
 
   const openDrawer = useCallback(() => {
+    if (open) {
+      void refresh(undefined, { autoExpandThread: true });
+      return;
+    }
     setOpen(true);
-    void refresh(undefined, { autoExpandThread: true });
-  }, [refresh]);
+  }, [open, refresh]);
+
+  const focusTraceTarget = useCallback((target: PendingTraceTarget) => {
+    dispatch({ type: 'queue-trace-target', target });
+    if (!open) {
+      skipNextOpenRefreshRef.current = true;
+      setOpen(true);
+    }
+    void refresh(target.runId || stateRef.current.selectedRunId || undefined, { autoExpandThread: true });
+  }, [open, refresh]);
 
   const closeDrawer = useCallback(() => {
     setOpen(false);
@@ -337,6 +350,10 @@ export function useRunMonitor(options: {
 
   useEffect(() => {
     if (open) {
+      if (skipNextOpenRefreshRef.current) {
+        skipNextOpenRefreshRef.current = false;
+        return;
+      }
       void refresh(undefined, { autoExpandThread: true });
     } else {
       abortControllerRef.current?.abort();
@@ -389,6 +406,7 @@ export function useRunMonitor(options: {
     selectedRunId: state.selectedRunId,
     selectedRun,
     selectedEventId: state.selectedEventId,
+    traceFocusVersion: state.traceFocusVersion,
     selectedTrace,
     categoryFilter: state.categoryFilter,
     errorsOnly: state.errorsOnly,
@@ -405,6 +423,7 @@ export function useRunMonitor(options: {
     setAutoRefreshInterval,
     setOpen,
     openDrawer,
+    focusTraceTarget,
     closeDrawer,
     refresh,
     controlRun,

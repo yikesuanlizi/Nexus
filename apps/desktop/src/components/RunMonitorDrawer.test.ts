@@ -88,6 +88,7 @@ const baseProps = {
   selectedRunId: 'run-1',
   selectedRun: run,
   selectedEventId: '',
+  traceFocusVersion: 0,
   selectedTrace: null,
   categoryFilter: [] as RunTraceCategory[],
   errorsOnly: false,
@@ -130,6 +131,20 @@ describe('RunMonitorDrawer', () => {
     const html = renderToStaticMarkup(React.createElement(RunMonitorDrawer, { ...baseProps, selectedEventId: 'trace-1', selectedTrace: traces[0] ?? null }));
     expect(html).toContain('traceRow');
     expect(html).toContain('tool.completed');
+  });
+
+  it('renders newest trace records first in the timeline', () => {
+    const older = { ...traces[0], eventId: 'trace-old', sequence: 1, name: 'older.trace' } as RunTraceEnvelope;
+    const newer = { ...traces[0], eventId: 'trace-new', sequence: 2, name: 'newer.trace' } as RunTraceEnvelope;
+    const html = renderToStaticMarkup(React.createElement(RunMonitorDrawer, {
+      ...baseProps,
+      traces: [older, newer],
+      visibleTraces: [older, newer],
+    }));
+
+    expect(html.indexOf('newer.trace')).toBeGreaterThan(-1);
+    expect(html.indexOf('older.trace')).toBeGreaterThan(-1);
+    expect(html.indexOf('newer.trace')).toBeLessThan(html.indexOf('older.trace'));
   });
 
   it('renders resource details for MCP and skill traces in the inspector', () => {
@@ -191,5 +206,84 @@ describe('RunMonitorDrawer', () => {
     expect(timelineSource).toContain('onSetCategoryFilter');
     expect(monitorSource).toContain('setCategoryFilter');
     expect(monitorSource).not.toContain('[open, state.categoryFilter, state.errorsOnly, refresh]');
+  });
+
+  it('queues activity trace jumps until trace data is available', () => {
+    const monitorSource = readFileSync(join(here, '..', 'features', 'monitor', 'runMonitor.ts'), 'utf-8');
+    const stateSource = readFileSync(join(here, '..', 'features', 'monitor', 'runMonitorState.ts'), 'utf-8');
+    const appSource = readFileSync(join(here, '..', 'main.tsx'), 'utf-8');
+
+    expect(monitorSource).toContain('focusTraceTarget');
+    expect(monitorSource).toContain("dispatch({ type: 'queue-trace-target'");
+    expect(stateSource).toContain('pendingTraceTarget');
+    expect(stateSource).toContain('resolveTraceTarget');
+    expect(appSource).toContain('runMonitor.focusTraceTarget');
+    expect(appSource).not.toContain('setTimeout(() => runMonitor.selectByItemId');
+  });
+
+  it('scrolls the selected trace row into view after selection', () => {
+    const timelineSource = readFileSync(join(here, 'monitor', 'TraceTimeline.tsx'), 'utf-8');
+    const styles = readFileSync(join(here, '..', 'styles.css'), 'utf-8');
+
+    expect(timelineSource).toContain('selectedRowRef');
+    expect(timelineSource).toContain("scrollIntoView({ block: 'center', behavior: 'smooth' })");
+    expect(timelineSource).toContain('[selectedEventId, focusVersion]');
+    expect(timelineSource).not.toContain('[selectedEventId, traces]');
+    expect(timelineSource).toContain('data-event-id={trace.eventId}');
+    expect(styles).toContain('.traceRow--jumped');
+    expect(styles).toContain('@keyframes traceRowJumpPulse');
+  });
+
+  it('uses compact monitor typography and spacing', () => {
+    const styles = readFileSync(join(here, '..', 'styles.css'), 'utf-8');
+
+    expect(styles).toContain('/* Run monitor compact density + jump target affordance. */');
+    expect(styles).toContain('.runMonitorPanel {\n  font-size: 12px;');
+    expect(styles).toContain('.runMonitorHeader__title {\n  font-size: 14px;');
+    expect(styles).toContain('.traceChip {\n  min-height: 23px;');
+    expect(styles).toContain('.traceRow {\n  grid-template-columns: 22px auto auto minmax(0, 1fr) auto;');
+    expect(styles).toContain('padding: 7px 8px;');
+  });
+
+  it('ships desktop V2 monitor layout styles instead of falling back to raw DOM flow', () => {
+    const styles = readFileSync(join(here, '..', 'styles.css'), 'utf-8').replace(/\r\n/g, '\n');
+    const guardStart = styles.lastIndexOf('/* Desktop shell regression guard */');
+    const guard = styles.slice(guardStart);
+
+    expect(guardStart).toBeGreaterThan(-1);
+    expect(guard).toContain('.runMonitorWorkbench');
+    expect(guard).toContain('.runMonitorBackdrop');
+    expect(guard).toContain('.runMonitorPanel');
+    expect(guard).toContain('.runMonitorHeader__left');
+    expect(guard).toContain('.runMonitorBody');
+    expect(guard).toContain('.runExplorer');
+    expect(guard).toContain('.traceTimeline');
+    expect(guard).toContain('.traceInspector');
+    expect(guard).toContain('.traceFilterChips');
+  });
+
+  it('keeps the desktop monitor responsive at reduced window widths', () => {
+    const styles = readFileSync(join(here, '..', 'styles.css'), 'utf-8').replace(/\r\n/g, '\n');
+    const guard = styles.slice(styles.lastIndexOf('/* Desktop shell regression guard */'));
+
+    expect(guard).toContain('max-width: calc(100vw - 24px);');
+    expect(guard).toContain('grid-template-columns: minmax(220px, 0.82fr) minmax(0, 1.2fr) minmax(260px, 0.95fr);');
+    expect(guard).toContain('@media (max-width: 1180px)');
+    expect(guard).toContain('.runMonitorBody--medium');
+    expect(guard).toContain('@media (max-width: 760px)');
+    expect(guard).toContain('.runMonitorBody--narrow');
+  });
+
+  it('covers monitor V2 internals in desktop dark mode', () => {
+    const styles = readFileSync(join(here, '..', 'styles.css'), 'utf-8').replace(/\r\n/g, '\n');
+    const guard = styles.slice(styles.lastIndexOf('/* Desktop shell regression guard */'));
+
+    expect(guard).toContain('.appShell.theme-dark .runMonitorPanel');
+    expect(guard).toContain('.appShell.theme-dark .runExplorer');
+    expect(guard).toContain('.appShell.theme-dark .traceTimeline');
+    expect(guard).toContain('.appShell.theme-dark .traceInspector');
+    expect(guard).toContain('.appShell.theme-dark .traceFilters');
+    expect(guard).toContain('.appShell.theme-dark .traceTimeline__empty');
+    expect(guard).not.toContain('background: #ffffff;');
   });
 });

@@ -16,6 +16,7 @@ export interface RunMonitorWorkbenchProps {
   selectedRunId: string;
   selectedRun: RunRecord | null;
   selectedEventId: string;
+  traceFocusVersion: number;
   selectedTrace: RunTraceEnvelope | null;
   categoryFilter: RunTraceCategory[];
   errorsOnly: boolean;
@@ -54,6 +55,7 @@ export function RunMonitorWorkbench(props: RunMonitorWorkbenchProps) {
     selectedRunId,
     selectedRun,
     selectedEventId,
+    traceFocusVersion,
     selectedTrace,
     categoryFilter,
     errorsOnly,
@@ -255,6 +257,7 @@ export function RunMonitorWorkbench(props: RunMonitorWorkbenchProps) {
               errorsOnly={errorsOnly}
               allCategories={allCategories}
               selectedEventId={selectedEventId}
+              focusVersion={traceFocusVersion}
               selectedRun={selectedRun}
               hasMoreBefore={tracePage?.hasMoreBefore ?? false}
               loading={loading}

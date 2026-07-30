@@ -75,6 +75,12 @@ export interface AgentRunConfig {
   /** Simplified reasoning effort selector shown in the composer. */
   /** 中文：在 composer 中展示的简化推理力度选项 */
   reasoningEffort: ReasoningEffort;
+  /** Optional explicit context window override for the selected model. */
+  /** 中文：当前模型上下文窗口的显式覆盖；为空时按 provider/model 自动推导 */
+  modelContextTokens?: number;
+  /** Optional explicit max output token override for the selected model. */
+  /** 中文：当前模型最大输出 token 的显式覆盖；为空时按 provider/model 自动推导 */
+  modelMaxOutputTokens?: number;
   /** Runtime trade-off profile: cache hit stability or long-running traceability. */
   /** 中文：运行时折中方案 — 缓存命中稳定性或长期可追溯 */
   runProfile: RunProfile;
@@ -276,6 +282,8 @@ export function resolveConfig(patch: Partial<AgentRunConfig> = {}): AgentRunConf
   if (!['low', 'medium', 'high'].includes(merged.reasoningEffort)) {
     merged.reasoningEffort = defaultConfig.reasoningEffort;
   }
+  normalizeOptionalPositiveIntegerField(merged, 'modelContextTokens');
+  normalizeOptionalPositiveIntegerField(merged, 'modelMaxOutputTokens');
   // harness 不再是有效 RunProfile，旧值自动降级为 runtime_os
   if ((merged.runProfile as string) === 'harness') {
     merged.runProfile = 'runtime_os';
@@ -334,6 +342,18 @@ export function resolveConfig(patch: Partial<AgentRunConfig> = {}): AgentRunConf
     temporaryGrants: [],
   });
   return merged;
+}
+
+function normalizeOptionalPositiveIntegerField(
+  config: Partial<Record<'modelContextTokens' | 'modelMaxOutputTokens', number>>,
+  field: 'modelContextTokens' | 'modelMaxOutputTokens',
+): void {
+  const value = Number(config[field]);
+  if (!Number.isFinite(value) || value <= 0) {
+    delete config[field];
+    return;
+  }
+  config[field] = Math.floor(value);
 }
 
 export function publicRunConfig(config: AgentRunConfig): AgentRunConfig {

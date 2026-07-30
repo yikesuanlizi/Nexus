@@ -2,9 +2,9 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { SkillDefinition, SkillRegistry } from './extensions.js';
-
+// 技能类型：prompt 或 executable
 export type SkillKind = 'prompt' | 'executable';
-
+// 技能参数接口：定义技能的输入参数
 export interface SkillParameter {
   name: string;
   type: 'string' | 'number' | 'boolean' | 'object' | 'array';
@@ -13,7 +13,7 @@ export interface SkillParameter {
   default?: unknown;
   enum?: unknown[];
 }
-
+// 技能清单接口：定义技能的元数据
 export interface SkillManifest {
   name: string;
   description: string;

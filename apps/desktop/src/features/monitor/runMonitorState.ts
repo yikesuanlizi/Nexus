@@ -8,6 +8,12 @@ export interface TracePageInfo {
   nextAfter?: number;
 }
 
+export interface PendingTraceTarget {
+  runId?: string;
+  eventId?: string;
+  itemId?: string;
+}
+
 export interface RunMonitorState {
   runs: RunRecord[];
   events: RunEvent[];
@@ -24,9 +30,11 @@ export interface RunMonitorState {
   turns: TurnMeta[];
   turnFilter: string;
   selectedEventId: string;
+  traceFocusVersion: number;
   categoryFilter: RunTraceCategory[];
   errorsOnly: boolean;
   tracePage: TracePageInfo | null;
+  pendingTraceTarget: PendingTraceTarget | null;
 }
 
 export const initialRunMonitorState: RunMonitorState = {
@@ -45,9 +53,11 @@ export const initialRunMonitorState: RunMonitorState = {
   turns: [],
   turnFilter: '',
   selectedEventId: '',
+  traceFocusVersion: 0,
   categoryFilter: [],
   errorsOnly: false,
   tracePage: null,
+  pendingTraceTarget: null,
 };
 
 export type RunMonitorAction =
@@ -66,6 +76,7 @@ export type RunMonitorAction =
   | { type: 'select-item'; itemId: string }
   | { type: 'select-trace'; eventId: string }
   | { type: 'select-by-itemId'; itemId: string }
+  | { type: 'queue-trace-target'; target: PendingTraceTarget }
   | { type: 'set-item-filter'; filter: string }
   | { type: 'set-turn-filter'; filter: string }
   | { type: 'set-category-filter'; categories: RunTraceCategory[] }
@@ -88,6 +99,42 @@ function mergeTraces(existing: RunTraceEnvelope[], incoming: RunTraceEnvelope[],
     }
   }
   return result.sort((a, b) => a.sequence - b.sequence);
+}
+
+function targetMatchesRun(target: PendingTraceTarget | null, runId: string): boolean {
+  if (!target) return false;
+  return !target.runId || target.runId === runId;
+}
+
+function resolveTraceTarget(traces: RunTraceEnvelope[], target: PendingTraceTarget | null, runId: string): string {
+  if (!targetMatchesRun(target, runId)) return '';
+  if (target?.eventId && traces.some((t) => t.eventId === target.eventId)) {
+    return target.eventId;
+  }
+  if (target?.itemId) {
+    return traces.find((t) => t.itemId === target.itemId)?.eventId ?? '';
+  }
+  return '';
+}
+
+function applyTraceSelection(
+  state: RunMonitorState,
+  runId: string,
+  traces: RunTraceEnvelope[],
+): Pick<RunMonitorState, 'selectedEventId' | 'pendingTraceTarget' | 'traceFocusVersion'> {
+  const queuedEventId = resolveTraceTarget(traces, state.pendingTraceTarget, runId);
+  if (queuedEventId) {
+    return {
+      selectedEventId: queuedEventId,
+      pendingTraceTarget: null,
+      traceFocusVersion: state.traceFocusVersion + 1,
+    };
+  }
+  return {
+    selectedEventId: traces.some((t) => t.eventId === state.selectedEventId) ? state.selectedEventId : '',
+    pendingTraceTarget: state.pendingTraceTarget,
+    traceFocusVersion: state.traceFocusVersion,
+  };
 }
 
 export function runMonitorReducer(state: RunMonitorState, action: RunMonitorAction): RunMonitorState {
@@ -115,10 +162,14 @@ export function runMonitorReducer(state: RunMonitorState, action: RunMonitorActi
     case 'runs.loaded': {
       if (action.requestId !== state.activeRequestId) return state;
       const runIds = new Set(action.runs.map((r) => r.runId));
+      const pendingRunId = state.pendingTraceTarget?.runId;
+      const pendingRunExists = pendingRunId ? runIds.has(pendingRunId) : false;
       const selectedStillExists = state.selectedRunId !== '' && runIds.has(state.selectedRunId);
-      const nextSelectedRunId = selectedStillExists
-        ? state.selectedRunId
-        : (action.runs[0]?.runId ?? '');
+      const nextSelectedRunId = pendingRunExists && pendingRunId
+        ? pendingRunId
+        : selectedStillExists
+          ? state.selectedRunId
+          : (action.runs[0]?.runId ?? '');
       const selectedChanged = state.selectedRunId !== nextSelectedRunId;
       return {
         ...state,
@@ -132,7 +183,9 @@ export function runMonitorReducer(state: RunMonitorState, action: RunMonitorActi
         turns: selectedChanged ? [] : state.turns,
         turnFilter: selectedChanged ? '' : state.turnFilter,
         selectedEventId: selectedChanged ? '' : state.selectedEventId,
+        traceFocusVersion: state.traceFocusVersion,
         tracePage: selectedChanged ? null : state.tracePage,
+        pendingTraceTarget: state.pendingTraceTarget,
       };
     }
     case 'events.loaded': {
@@ -146,29 +199,37 @@ export function runMonitorReducer(state: RunMonitorState, action: RunMonitorActi
     case 'traces.loaded': {
       if (action.requestId !== state.activeRequestId) return state;
       if (action.runId !== state.selectedRunId) return state;
+      const traces = mergeTraces(state.traces, action.traces, 'replace');
+      const selection = applyTraceSelection(state, action.runId, traces);
       return {
         ...state,
-        traces: mergeTraces(state.traces, action.traces, 'replace'),
+        traces,
         tracePage: action.page ?? null,
-        selectedEventId: action.traces.some((t) => t.eventId === state.selectedEventId) ? state.selectedEventId : '',
+        ...selection,
       };
     }
     case 'traces.append': {
       if (action.requestId !== state.activeRequestId) return state;
       if (action.runId !== state.selectedRunId) return state;
+      const traces = mergeTraces(state.traces, action.traces, 'append');
+      const selection = applyTraceSelection(state, action.runId, traces);
       return {
         ...state,
-        traces: mergeTraces(state.traces, action.traces, 'append'),
+        traces,
         tracePage: action.page ? { ...state.tracePage, ...action.page, hasMoreBefore: state.tracePage?.hasMoreBefore ?? false } : state.tracePage,
+        ...selection,
       };
     }
     case 'traces.prepend': {
       if (action.requestId !== state.activeRequestId) return state;
       if (action.runId !== state.selectedRunId) return state;
+      const traces = mergeTraces(state.traces, action.traces, 'prepend');
+      const selection = applyTraceSelection(state, action.runId, traces);
       return {
         ...state,
-        traces: mergeTraces(state.traces, action.traces, 'prepend'),
+        traces,
         tracePage: action.page ? { ...state.tracePage, ...action.page, hasMoreAfter: state.tracePage?.hasMoreAfter ?? false } : state.tracePage,
+        ...selection,
       };
     }
     case 'trace-page.loaded': {
@@ -214,9 +275,11 @@ export function runMonitorReducer(state: RunMonitorState, action: RunMonitorActi
         turns: [],
         turnFilter: '',
         selectedEventId: '',
+        traceFocusVersion: state.traceFocusVersion,
         categoryFilter: [],
         errorsOnly: false,
         tracePage: null,
+        pendingTraceTarget: targetMatchesRun(state.pendingTraceTarget, action.runId) ? state.pendingTraceTarget : null,
       };
     }
     case 'select-item': {
@@ -233,15 +296,56 @@ export function runMonitorReducer(state: RunMonitorState, action: RunMonitorActi
       return {
         ...state,
         selectedEventId: action.eventId,
+        traceFocusVersion: state.traceFocusVersion + 1,
+        pendingTraceTarget: null,
       };
     }
     case 'select-by-itemId': {
       const found = state.traces.find((t) => t.itemId === action.itemId);
-      const nextEventId = found?.eventId ?? '';
-      if (nextEventId === state.selectedEventId) return state;
+      if (found) {
+        return {
+          ...state,
+          selectedEventId: found.eventId,
+          traceFocusVersion: state.traceFocusVersion + 1,
+          pendingTraceTarget: null,
+        };
+      }
+      const nextTarget = { runId: state.selectedRunId || undefined, itemId: action.itemId };
+      if (
+        state.selectedEventId === ''
+        && state.pendingTraceTarget?.itemId === nextTarget.itemId
+        && state.pendingTraceTarget?.runId === nextTarget.runId
+      ) {
+        return state;
+      }
       return {
         ...state,
+        selectedEventId: '',
+        pendingTraceTarget: nextTarget,
+      };
+    }
+    case 'queue-trace-target': {
+      const nextRunId = action.target.runId ?? state.selectedRunId;
+      const runChanged = Boolean(action.target.runId && action.target.runId !== state.selectedRunId);
+      const nextTraces = runChanged ? [] : state.traces;
+      const nextEventId = resolveTraceTarget(nextTraces, action.target, nextRunId);
+      const shouldFocus = Boolean(nextEventId);
+      return {
+        ...state,
+        selectedRunId: nextRunId,
+        events: runChanged ? [] : state.events,
+        traces: nextTraces,
+        items: runChanged ? [] : state.items,
+        selectedItemId: runChanged ? '' : state.selectedItemId,
+        inspectorItem: runChanged ? null : state.inspectorItem,
+        turns: runChanged ? [] : state.turns,
+        turnFilter: runChanged ? '' : state.turnFilter,
         selectedEventId: nextEventId,
+        traceFocusVersion: shouldFocus ? state.traceFocusVersion + 1 : state.traceFocusVersion,
+        categoryFilter: [],
+        errorsOnly: false,
+        tracePage: runChanged ? null : state.tracePage,
+        pendingTraceTarget: nextEventId ? null : action.target,
       };
     }
     case 'set-item-filter': {

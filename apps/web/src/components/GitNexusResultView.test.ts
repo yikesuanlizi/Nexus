@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { computeGitNexusFlowLayout, getGitNexusNodeRelations } from './gitNexusFlowLayout.js';
 import type { GitNexusGraphData } from './gitNexusResult.js';
@@ -24,6 +25,15 @@ function sampleContextGraph(): GitNexusGraphData {
 }
 
 describe('GitNexusResultView layout helpers', () => {
+  it('uses the shared full-page graph modal instead of a side-pane ReactFlow preview', () => {
+    const source = readFileSync('apps/web/src/components/GitNexusResultView.tsx', 'utf8');
+
+    expect(source).toContain("import { GitNexusGraphModal } from './GitNexusGraphModal.js'");
+    expect(source).toContain("import { GitNexusForceGraph } from './GitNexusForceGraph.js'");
+    expect(source).not.toContain('@xyflow/react');
+    expect(source).not.toContain('gitNexusFlowPreviewBackdrop');
+  });
+
   it('spreads context graph nodes by semantic lanes without overlapping positions', () => {
     const layout = computeGitNexusFlowLayout(sampleContextGraph());
 

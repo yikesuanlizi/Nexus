@@ -4,7 +4,7 @@ import { ModelGateway, type ModelConfig } from '@nexus/model-gateway';
 import { AutoApproveHandler, DEFAULT_PRESET, getPreset, type ApprovalHandler, type SandboxConfig } from '@nexus/sandbox';
 import { LocalHookRegistry, LocalSkillRegistryCache } from '@nexus/extensions';
 import { createI18n, systemPromptKey } from '@nexus/i18n';
-import type { ThreadEvent } from '@nexus/protocol';
+import { resolveModelCapabilities, type ThreadEvent } from '@nexus/protocol';
 import type { ThreadStore } from '@nexus/storage';
 import { BUILTIN_TOOLS, ToolRegistry } from '@nexus/tools';
 import { createDynamicContextProvider } from '../services/dynamicContext.js';
@@ -153,12 +153,19 @@ export function createTenantRuntime(options: {
     if (config.workspaceRoot === hiddenChatWorkspaceRoot(config.dataDir)) {
       fs.mkdirSync(config.workspaceRoot, { recursive: true });
     }
+    const modelCapabilities = resolveModelCapabilities({
+      provider: config.provider,
+      model: config.model,
+      baseUrl: config.baseUrl,
+      modelContextTokens: config.modelContextTokens,
+      modelMaxOutputTokens: config.modelMaxOutputTokens,
+    });
     const modelConfig: ModelConfig = {
       provider: config.provider,
       model: config.model,
       baseUrl: config.baseUrl ?? '',
       apiKey: config.apiKey,
-      maxTokens: 8192,
+      maxTokens: config.modelMaxOutputTokens ?? 8192,
       temperature: 0.2,
       timeoutMs: 120_000,
       reasoningEffort: config.reasoningEffort,
@@ -200,6 +207,7 @@ export function createTenantRuntime(options: {
       webSearchMode: config.webSearchMode,
       webProvider,
       runProfile: config.runProfile,
+      modelContextTokens: modelCapabilities.contextTokens,
       agentRoles: config.agentRoles,
       systemPrompt: runtimeSystemPrompt,
       tools: configPatch.tools ?? createTenantToolRegistry(tenantStore),

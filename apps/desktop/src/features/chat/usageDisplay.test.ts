@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatCacheDiagnostics, formatCompactionPressure, formatThreadTokenSummary, formatTokenSummary } from './usageDisplay.js';
+import { buildTokenTooltip, cacheContextPercent, contextUsagePercent, formatCacheDiagnostics, formatCompactionPressure, formatThreadTokenSummary, formatTokenSummary, resolveDisplayContextPressure } from './usageDisplay.js';
 
 describe('formatTokenSummary', () => {
   it('shows cached input tokens and hit rate in Chinese', () => {
@@ -82,5 +82,33 @@ describe('formatTokenSummary', () => {
       estimatedTokens: 600,
       hardThreshold: 800,
     }, 'zh')).toBe('上下文接近压缩阈值：600/800');
+  });
+
+  it('uses model capabilities to correct stale runtime context window display', () => {
+    const pressure = resolveDisplayContextPressure({
+      estimatedTokens: 40_000,
+      maxTokens: 40_000,
+      softThreshold: 20_000,
+      hardThreshold: 32_000,
+    }, {
+      provider: 'minimax',
+      model: 'MiniMax-M3',
+      baseUrl: '',
+      contextTokens: 1_000_000,
+      contextSource: 'known-model',
+      outputSource: 'unknown',
+      displayName: 'MiniMax M3',
+    });
+
+    expect(pressure).toMatchObject({
+      estimatedTokens: 40_000,
+      maxTokens: 1_000_000,
+      softThreshold: 500_000,
+      hardThreshold: 800_000,
+      windowSource: 'known-model',
+    });
+    expect(contextUsagePercent(pressure)).toBe(4);
+    expect(cacheContextPercent({ totalCached: 120_000 }, pressure)).toBe(12);
+    expect(buildTokenTooltip(null, pressure, 'zh')).toContain('窗口来源: MiniMax M3');
   });
 });

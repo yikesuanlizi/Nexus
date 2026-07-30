@@ -73,7 +73,7 @@ import { shouldEnableWebSearch, type WebSearchMode } from './webSearchPolicy.js'
 import { parseMcpNamespacedToolName } from './mcpClient.js';
 import { buildPromptCacheShape, comparePromptCacheShape, type PromptCacheShape } from './cacheShape.js';
 import { buildFreshnessPreflightNotice } from './fileFreshnessPreflight.js';
-import { compactionOptionsForRunProfile, contextBudgetForRunProfile, normalizeRunProfile, type RunProfile } from './runProfile.js';
+import { compactionOptionsForModelContext, contextBudgetForRunProfile, normalizeRunProfile, type RunProfile } from './runProfile.js';
 import { leaksToolProtocol, validateThreadItemsForPersistence } from './modelOutput.js';
 import { NexusRuntimeError, isRecoverableStreamError, toNexusErrorInfo } from './runtimeError.js';
 import type { RunTurnOptions, HarnessItemFields, HarnessResult } from './harness/types.js';
@@ -256,6 +256,8 @@ export interface AgentConfig {
   // 中文注释：运行时权衡配置（缓存命中稳定性或长期追踪可追溯性）。
   /** Runtime trade-off profile: cache hit stability or long-running traceability. */
   runProfile?: RunProfile;
+  /** Current model context window in tokens. Used for compaction pressure and UI pressure events. */
+  modelContextTokens?: number;
   // 中文注释：父线程下允许打开的已生成子 agent 最大数量。
   /** Maximum open spawned subagents below a parent thread. */
   maxSubagents?: number;
@@ -333,7 +335,8 @@ export interface AgentConfig {
   skillsDirs?: string[];
 }
 
-type ResolvedAgentConfig = Required<Omit<AgentConfig, 'memory' | 'a2aClientEnabled' | 'a2aRemotes' | 'systemMonitor' | 'experiences' | 'skillsDirs'>> & {
+type ResolvedAgentConfig = Required<Omit<AgentConfig, 'memory' | 'a2aClientEnabled' | 'a2aRemotes' | 'systemMonitor' | 'experiences' | 'skillsDirs' | 'modelContextTokens'>> & {
+  modelContextTokens?: number;
   memory: MemorySettings;
   a2aClientEnabled?: boolean;
   a2aRemotes?: string[];
@@ -444,6 +447,7 @@ export class AgentLoop {
       webSearchMode: config.webSearchMode ?? 'auto',
       webProvider: config.webProvider ?? { provider: 'native_fetch' },
       runProfile: normalizeRunProfile(config.runProfile),
+      modelContextTokens: positiveInteger(config.modelContextTokens),
       maxSubagents: config.maxSubagents ?? 4,
       runtimeMiddleware: config.runtimeMiddleware ?? [],
       dynamicContextProvider: config.dynamicContextProvider ?? (async () => []),
@@ -1112,7 +1116,7 @@ export class AgentLoop {
     const recentItems = await this.config.store.getRecentItems(threadId, 200);
     const thread = await this.config.store.getThread(threadId);
     const effectiveRecentItems = filterEffectiveCompactionItems(recentItems, thread?.tags?.compactedRanges);
-    const compactionOptions = compactionOptionsForRunProfile(this.config.runProfile);
+    const compactionOptions = compactionOptionsForModelContext(this.config.runProfile, this.config.modelContextTokens);
     const rolloutPressure = getCompactionPressure(effectiveRecentItems, compactionOptions);
     const estimatedTokens = rolloutPressure.estimatedTokens;
     const ratio = rolloutPressure.maxTokens > 0 ? estimatedTokens / rolloutPressure.maxTokens : 1;
@@ -5259,13 +5263,13 @@ export class AgentLoop {
       ratio: number;
       status: 'ok' | 'soft' | 'hard';
     };
-    compactionOptions: ReturnType<typeof compactionOptionsForRunProfile>;
+    compactionOptions: ReturnType<typeof compactionOptionsForModelContext>;
     autoCompactWindow: ThreadState['autoCompactWindow'];
   }> {
     const recentItems = await this.config.store.getRecentItems(threadId, 200);
     const thread = await this.config.store.getThread(threadId);
     const effectiveRecentItems = filterEffectiveCompactionItems(recentItems, thread?.tags?.compactedRanges);
-    const compactionOptions = compactionOptionsForRunProfile(this.config.runProfile);
+    const compactionOptions = compactionOptionsForModelContext(this.config.runProfile, this.config.modelContextTokens);
     const rolloutPressure = getCompactionPressure(effectiveRecentItems, compactionOptions);
     const visibleInputTokens = visibleMessages ? estimateRuntimeChatTokens(visibleMessages).inputTokens : 0;
     const estimatedTokens = Math.max(rolloutPressure.estimatedTokens, visibleInputTokens);
@@ -6799,6 +6803,11 @@ function safeRuntimeTenantId(value: string | null | undefined): string {
     throw new Error(`Invalid tenant id: ${value ?? ''}`);
   }
   return tenantId;
+}
+
+function positiveInteger(value: number | undefined): number | undefined {
+  if (!Number.isFinite(value) || !value || value <= 0) return undefined;
+  return Math.floor(value);
 }
 
 function isCollabTool(name: string): name is CollabToolName {

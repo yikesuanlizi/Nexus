@@ -1,66 +1,49 @@
 import React, { useMemo, useState } from 'react';
-import {
-  Background,
-  Controls,
-  MiniMap,
-  ReactFlow,
-  type Node,
-  type Edge,
-} from '@xyflow/react';
-import '@xyflow/react/dist/style.css';
 import type { Locale } from '../config/config.js';
 import { Icon } from './Icon.js';
+import { GitNexusForceGraph } from './GitNexusForceGraph.js';
+import type { ForceGraphData, ForceGraphLevel } from './GitNexusForceGraph.js';
+import { GitNexusGraphModal } from './GitNexusGraphModal.js';
 import type { GitNexusGraphData } from './gitNexusResult.js';
 import {
-  computeGitNexusFlowLayout,
   getGitNexusNodeRelations,
-  nodeSummary,
   type NodeRelation,
 } from './gitNexusFlowLayout.js';
 
 export function GitNexusResultView({ data, locale }: { data: GitNexusGraphData; locale: Locale }): React.ReactElement {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const layout = useMemo(() => computeGitNexusFlowLayout(data), [data]);
   const selectedNode = selectedNodeId ? data.nodes.find((node) => node.id === selectedNodeId) ?? null : null;
   const selectedRelations = selectedNode ? getGitNexusNodeRelations(data, selectedNode.id) : null;
 
-  const nodes: Node[] = useMemo(() => {
-    const laneNodes: Node[] = layout.groupLabels.map((lane) => ({
-      id: lane.id,
-      data: { label: <div className="gitNexusLaneLabel">{lane.label}: {lane.count}</div> },
-      position: lane.position,
-      className: 'gitNexusLaneNode',
-      selectable: false,
-      draggable: false,
+  const forceGraphData: ForceGraphData = useMemo(() => {
+    const nodes = data.nodes.map((node) => {
+      const graphNode = {
+        id: node.id,
+        label: node.label,
+        group: node.group ?? node.kind ?? 'default',
+      };
+      return {
+        ...graphNode,
+        ...(node.file ? { file: node.file } : {}),
+        ...(node.kind ? { kind: node.kind } : {}),
+      };
+    });
+    const edges = data.edges.map((edge) => ({
+      id: edge.id,
+      source: edge.source,
+      target: edge.target,
+      ...(edge.label ? { label: edge.label } : {}),
     }));
+    return { nodes, edges };
+  }, [data.edges, data.nodes]);
 
-    const graphNodes: Node[] = layout.nodes.map((n) => ({
-      id: n.id,
-      data: {
-        label: (
-          <div className="gitNexusNodeLabel">
-            <span className="gitNexusNodeTitle">{n.label}</span>
-            {nodeSummary(n) ? <span className="gitNexusNodeSubtitle">{nodeSummary(n)}</span> : null}
-          </div>
-        ),
-      },
-      position: n.position,
-      className: `gitNexusNode gitNexusNode-${n.group ?? 'default'}`,
-      draggable: false,
-    }));
-
-    return [...laneNodes, ...graphNodes];
-  }, [layout]);
-
-  const edges: Edge[] = useMemo(() => data.edges.map((e) => ({
-    id: e.id,
-    source: e.source,
-    target: e.target,
-    type: 'smoothstep',
-    animated: false,
-    className: 'gitNexusFlowEdge',
-  })), [data.edges]);
+  const graphLevel: ForceGraphLevel = useMemo(() => (
+    data.nodes.some((node) => {
+      const kind = (node.kind ?? node.group ?? '').toLowerCase();
+      return kind === 'file' || Boolean(node.file);
+    }) ? 'file' : 'symbol'
+  ), [data.nodes]);
 
   const relationList = (items: NodeRelation[], title: string) => (
     <div className="gitNexusDetailRelationGroup">
@@ -76,38 +59,24 @@ export function GitNexusResultView({ data, locale }: { data: GitNexusGraphData; 
     </div>
   );
 
-  const renderGraph = (preview = false) => (
-    <div className={preview ? 'gitNexusGraph gitNexusGraphPreviewCanvas' : 'gitNexusGraph'}>
-      {!preview ? (
-        <button
-          type="button"
-          className="gitNexusGraphPreviewButton"
-          onClick={() => setPreviewOpen(true)}
-          title={locale === 'zh' ? '放大预览' : 'Open preview'}
-          aria-label={locale === 'zh' ? '放大预览' : 'Open preview'}
-        >
-          <Icon name="monitor" />
-          <span>{locale === 'zh' ? '预览' : 'Preview'}</span>
-        </button>
-      ) : null}
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        fitView
-        fitViewOptions={{ padding: preview ? 0.28 : 0.22 }}
-        nodesDraggable={false}
-        nodesConnectable={false}
-        elementsSelectable
-        onNodeClick={(_, node) => {
-          if (!String(node.id).startsWith('lane-')) setSelectedNodeId(node.id);
-        }}
-        onPaneClick={() => setSelectedNodeId(null)}
-        proOptions={{ hideAttribution: true }}
+  const renderGraph = () => (
+    <div className="gitNexusGraph gitNexusGraph--force">
+      <button
+        type="button"
+        className="gitNexusGraphPreviewButton"
+        onClick={() => setPreviewOpen(true)}
+        title={locale === 'zh' ? '放大预览' : 'Open preview'}
+        aria-label={locale === 'zh' ? '放大预览' : 'Open preview'}
       >
-        <Background />
-        <Controls showInteractive={false} showFitView={false} />
-        <MiniMap pannable zoomable />
-      </ReactFlow>
+        <Icon name="monitor" />
+        <span>{locale === 'zh' ? '预览' : 'Preview'}</span>
+      </button>
+      <GitNexusForceGraph
+        data={forceGraphData}
+        height={360}
+        level={graphLevel}
+        onNodeClick={(node) => setSelectedNodeId(node.id)}
+      />
       {selectedNode && selectedRelations ? (
         <div className="gitNexusGraphDetailPanel">
           <button
@@ -141,26 +110,15 @@ export function GitNexusResultView({ data, locale }: { data: GitNexusGraphData; 
       ) : null}
       {data.kind === 'graph' ? (
         <>
-          {renderGraph(false)}
-          {previewOpen ? (
-            <div className="gitNexusFlowPreviewBackdrop" onClick={() => setPreviewOpen(false)}>
-              <div className="gitNexusFlowPreviewPanel" onClick={(e) => e.stopPropagation()}>
-                <div className="gitNexusFlowPreviewHeader">
-                  <div className="gitNexusFlowPreviewTitle">{data.title}</div>
-                  <button
-                    type="button"
-                    className="gitNexusFlowPreviewClose"
-                    onClick={() => setPreviewOpen(false)}
-                    aria-label={locale === 'zh' ? '关闭预览' : 'Close preview'}
-                    title={locale === 'zh' ? '关闭预览' : 'Close preview'}
-                  >
-                    <Icon name="x" />
-                  </button>
-                </div>
-                {renderGraph(true)}
-              </div>
-            </div>
-          ) : null}
+          {renderGraph()}
+          <GitNexusGraphModal
+            isOpen={previewOpen}
+            onClose={() => setPreviewOpen(false)}
+            data={forceGraphData}
+            level={graphLevel}
+            title={data.title}
+            onNodeClick={(node) => setSelectedNodeId(node.id)}
+          />
         </>
       ) : (
         <div className="gitNexusList">

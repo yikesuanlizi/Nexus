@@ -11607,97 +11607,13 @@
   stroke-width: 2;
 }
 
-.gitNexusGraph:not(.gitNexusGraphPreviewCanvas) .gitNexusGraphDetailPanel {
+.gitNexusGraph .gitNexusGraphDetailPanel {
   top: 50px;
-}
-
-.gitNexusFlowPreviewBackdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 28px;
-  background: rgba(15, 23, 42, 0.48);
-  backdrop-filter: blur(4px);
-}
-
-.gitNexusFlowPreviewPanel {
-  width: min(1180px, 96vw);
-  max-height: 92vh;
-  overflow: hidden;
-  border: 1px solid rgba(148, 163, 184, 0.35);
-  border-radius: 10px;
-  background: #ffffff;
-  box-shadow: 0 28px 80px rgba(15, 23, 42, 0.3);
-}
-
-.gitNexusFlowPreviewHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  height: 44px;
-  padding: 0 12px 0 16px;
-  border-bottom: 1px solid rgba(226, 232, 240, 0.9);
-}
-
-.gitNexusFlowPreviewTitle {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 13px;
-  font-weight: 700;
-  color: #0f172a;
-}
-
-.gitNexusFlowPreviewClose {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: #475569;
-  cursor: pointer;
-}
-
-.gitNexusFlowPreviewClose:hover {
-  background: rgba(148, 163, 184, 0.16);
-}
-
-.gitNexusFlowPreviewClose svg {
-  width: 17px;
-  height: 17px;
-  stroke: currentColor;
-  fill: none;
-  stroke-width: 2;
-}
-
-.gitNexusGraphPreviewCanvas {
-  height: min(760px, calc(92vh - 44px));
 }
 
 @media (max-width: 640px) {
   .gitNexusGraph {
     height: 280px;
-  }
-
-  .gitNexusFlowPreviewBackdrop {
-    padding: 10px;
-  }
-
-  .gitNexusFlowPreviewPanel {
-    width: 100%;
-    max-height: 94vh;
-  }
-
-  .gitNexusGraphPreviewCanvas {
-    height: calc(94vh - 44px);
   }
 }
 
@@ -12266,6 +12182,10 @@
   cursor: not-allowed;
 }
 
+.gitNexusGraphShell {
+  position: relative;
+}
+
 .gitNexusForceGraph {
   width: 100%;
 }
@@ -12274,14 +12194,34 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
 }
 
 .gitNexusForceGraphStat {
   font-size: 11px;
   color: var(--nx-muted, #64748b);
+  letter-spacing: 0.01em;
+}
+
+.gitNexusGraphModePill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 9px;
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  border-radius: 999px;
+  background: rgba(14, 165, 233, 0.08);
+  color: #0369a1;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+[data-theme='dark'] .gitNexusGraphModePill {
+  color: #bae6fd;
+  background: rgba(14, 165, 233, 0.13);
+  border-color: rgba(125, 211, 252, 0.26);
 }
 
 .gitNexusForceGraphGroups {
@@ -12306,12 +12246,20 @@
 }
 
 .gitNexusForceGraphCanvasWrap {
+  position: relative;
   width: 100%;
-  border: 1px solid var(--nx-border, rgba(255, 255, 255, 0.08));
-  border-radius: 8px;
+  border: 1px solid rgba(203, 213, 225, 0.68);
+  border-radius: 14px;
   overflow: hidden;
-  background: var(--nx-card-bg, rgba(255, 255, 255, 0.02));
+  background: #f8fafc;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.68), 0 10px 28px rgba(15, 23, 42, 0.06);
   cursor: grab;
+}
+
+[data-theme='dark'] .gitNexusForceGraphCanvasWrap {
+  border-color: rgba(203, 213, 225, 0.64);
+  background: #f8fafc;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.64), 0 18px 42px rgba(0, 0, 0, 0.2);
 }
 
 .gitNexusForceGraphCanvasWrap:active {
@@ -12322,6 +12270,73 @@
   display: block;
   width: 100%;
   height: 100%;
+}
+
+.gitNexusGraphInspector {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+  width: min(300px, calc(100% - 24px));
+  padding: 12px 14px;
+  border: 1px solid rgba(125, 211, 252, 0.22);
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.86);
+  color: #e5f0ff;
+  box-shadow: 0 20px 48px rgba(2, 6, 23, 0.26);
+  backdrop-filter: blur(14px);
+  pointer-events: none;
+}
+
+.gitNexusGraphInspectorEyebrow {
+  margin-bottom: 5px;
+  color: #93c5fd;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.gitNexusGraphInspector strong {
+  display: block;
+  color: #f8fafc;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.gitNexusGraphInspector span {
+  display: block;
+  margin-top: 4px;
+  color: #bfdbfe;
+  font-size: 11px;
+  line-height: 1.45;
+  word-break: break-all;
+}
+
+.gitNexusGraphInspector dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 10px 0 0;
+}
+
+.gitNexusGraphInspector div {
+  min-width: 0;
+}
+
+.gitNexusGraphInspector dt {
+  color: #93a4bd;
+  font-size: 10px;
+}
+
+.gitNexusGraphInspector dd {
+  margin: 2px 0 0;
+  overflow: hidden;
+  color: #eff6ff;
+  font-size: 12px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .gitNexusOverviewStats {
@@ -12530,25 +12545,46 @@
   border-color: var(--nx-blue, #2563eb);
 }
 
+.gitNexusGraphExpandBtn--floating {
+  position: absolute;
+  top: 44px;
+  right: 12px;
+  z-index: 4;
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.78);
+  color: #e5f0ff;
+  border-color: rgba(125, 211, 252, 0.24);
+  box-shadow: 0 14px 32px rgba(2, 6, 23, 0.26);
+  backdrop-filter: blur(12px);
+}
+
+.gitNexusGraphExpandBtn--floating:hover:not(:disabled) {
+  background: rgba(37, 99, 235, 0.9);
+  border-color: rgba(191, 219, 254, 0.46);
+}
+
 .gitNexusGraphModalBackdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(15, 23, 42, 0.38);
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 12px;
   z-index: 1000;
 }
 
 .gitNexusGraphModal {
   position: relative;
-  width: 85vw;
-  height: 85vh;
-  background: rgba(15, 23, 42, 0.95);
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  width: min(96vw, 1680px);
+  height: min(94vh, 1040px);
+  background: #f8fafc;
+  border-radius: 20px;
+  border: 1px solid rgba(203, 213, 225, 0.78);
   overflow: hidden;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 26px 72px rgba(15, 23, 42, 0.24);
 }
 
 .gitNexusGraphModalClose {
@@ -12558,9 +12594,9 @@
   width: 32px;
   height: 32px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.1);
-  border: none;
-  color: #fff;
+  background: #ffffff;
+  border: 1px solid #dbe4f0;
+  color: #0f172a;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -12569,14 +12605,14 @@
 }
 
 .gitNexusGraphModalClose:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: #eef4fb;
 }
 
 .gitNexusGraphModalTitle {
   position: absolute;
   top: 12px;
   left: 20px;
-  color: #f1f5f9;
+  color: #0f172a;
   font-size: 14px;
   font-weight: 600;
   z-index: 10;
@@ -12586,13 +12622,14 @@
   position: absolute;
   inset: 0;
   z-index: 0;
+  display: none;
 }
 
 .gitNexusGraphContent {
   position: relative;
   z-index: 1;
   height: 100%;
-  padding: 40px 20px 20px 20px;
+  padding: 44px 16px 16px;
   display: flex;
   flex-direction: column;
 }
@@ -12605,8 +12642,9 @@
 
 .gitNexusGraphContent .gitNexusForceGraphCanvasWrap {
   flex: 1;
-  background: transparent;
-  border: none;
+  background: #f8fafc;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.75);
 }
 
 .gitNexusHelpModalBackdrop {
@@ -15716,4 +15754,198 @@
   display: flex;
   justify-content: flex-end;
   gap: 10px;
+}
+
+/* Run monitor compact density + jump target affordance. */
+.runMonitorPanel {
+  font-size: 12px;
+}
+
+.runMonitorHeader {
+  min-height: 56px;
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+.runMonitorHeader__title {
+  font-size: 14px;
+  line-height: 18px;
+}
+
+.runMonitorHeader__left {
+  gap: 5px;
+}
+
+.runMonitorStat {
+  min-height: 22px;
+  gap: 5px;
+  padding: 0 8px;
+  font-size: 10.5px;
+}
+
+.runMonitorStat__dot {
+  width: 6px;
+  height: 6px;
+}
+
+.runMonitorToggle,
+.traceErrorsOnly {
+  min-height: 26px;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.runMonitorInterval,
+.runMonitorAdminToken {
+  min-height: 28px;
+  border-radius: 9px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+
+.runMonitorCloseBtn,
+.runExplorer__refresh,
+.traceControlBtn,
+.traceLoadMore,
+.traceInspector__back,
+.traceInspector__copyBtn {
+  min-height: 27px;
+  border-radius: 9px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+
+.runExplorer__header,
+.traceTimeline__header,
+.traceInspector__header,
+.traceTimeline__footer {
+  gap: 8px;
+  padding: 10px 12px;
+}
+
+.runExplorer__body,
+.traceTimeline__body,
+.traceInspector__body {
+  padding: 10px;
+}
+
+.runExplorer__threads,
+.runExplorer__flat,
+.traceList,
+.inspectorGrid {
+  gap: 6px;
+}
+
+.runExplorer__title,
+.traceTimeline__runTitle,
+.traceInspector__name {
+  font-size: 12px;
+}
+
+.traceTimeline__footer,
+.runEntry__time,
+.traceRow__summary,
+.traceRow__time,
+.traceTimeline__runTime,
+.traceInspector__category,
+.inspectorField__label {
+  font-size: 10px;
+}
+
+.runThreadGroup__header {
+  min-height: 34px;
+  gap: 7px;
+  padding: 0 8px;
+}
+
+.runEntry {
+  gap: 7px;
+  padding: 8px;
+}
+
+.traceFilters {
+  max-height: 96px !important;
+  gap: 8px;
+  padding: 7px 12px !important;
+}
+
+.traceFilterChips {
+  gap: 5px;
+}
+
+.traceChip {
+  min-height: 23px;
+  gap: 3px;
+  padding: 0 7px;
+  font-size: 10.5px;
+}
+
+.traceRow {
+  grid-template-columns: 22px auto auto minmax(0, 1fr) auto;
+  gap: 6px;
+  padding: 7px 8px;
+  border-radius: 10px;
+}
+
+.traceRow__icon,
+.traceInspector__icon {
+  width: 22px;
+  height: 22px;
+  font-size: 13px;
+}
+
+.traceRow__name {
+  font-size: 11.5px;
+}
+
+.runEntry__kind,
+.runEntry__step,
+.traceRow__category,
+.traceRow__lifecycle,
+.traceRow__duration,
+.traceTimeline__runStatusLabel,
+.inspectorBadge {
+  padding: 1px 6px;
+  font-size: 9.5px;
+}
+
+.traceInspector__section {
+  gap: 8px;
+}
+
+.traceInspector__sectionTitle,
+.traceInspector__jsonSummary,
+.inspectorField__value {
+  font-size: 11px;
+}
+
+.inspectorField {
+  gap: 2px;
+  border-radius: 9px;
+  padding: 7px;
+}
+
+.inspectorPre,
+.traceInspector__jsonPre {
+  padding: 8px;
+  font-size: 10.5px;
+  line-height: 1.5;
+}
+
+.traceRow--jumped {
+  animation: traceRowJumpPulse 1.55s ease-out;
+}
+
+@keyframes traceRowJumpPulse {
+  0% {
+    border-color: rgba(37, 99, 235, 0.92);
+    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.32);
+  }
+  45% {
+    border-color: rgba(37, 99, 235, 0.72);
+    box-shadow: 0 0 0 5px rgba(37, 99, 235, 0.14);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0);
+  }
 }

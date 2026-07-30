@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useRef, type Ref } from 'react';
 import type { RunTraceCategory, RunTraceEnvelope } from '@nexus/protocol';
 import type { RunControlCapabilities, RunRecord } from '../../shared/types.js';
 import { TraceFilters } from './TraceFilters.js';
@@ -21,6 +22,7 @@ interface TraceTimelineProps {
   errorsOnly: boolean;
   allCategories: RunTraceCategory[];
   selectedEventId: string;
+  focusVersion: number;
   selectedRun: RunRecord | null;
   hasMoreBefore: boolean;
   loading: boolean;
@@ -42,6 +44,7 @@ export function TraceTimeline({
   errorsOnly,
   allCategories,
   selectedEventId,
+  focusVersion,
   selectedRun,
   hasMoreBefore,
   loading,
@@ -54,6 +57,31 @@ export function TraceTimeline({
   controlCapabilities,
   onControlRun,
 }: TraceTimelineProps) {
+  const selectedRowRef = useRef<HTMLButtonElement | null>(null);
+  const displayTraces = useMemo(
+    () => [...traces].sort((a, b) => b.sequence - a.sequence),
+    [traces],
+  );
+
+  useEffect(() => {
+    if (!selectedEventId) return;
+    const row = selectedRowRef.current;
+    if (!row) return;
+    const frame = window.requestAnimationFrame(() => {
+      row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      row.classList.remove('traceRow--jumped');
+      void row.offsetWidth;
+      row.classList.add('traceRow--jumped');
+    });
+    const timer = window.setTimeout(() => {
+      row.classList.remove('traceRow--jumped');
+    }, 1600);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
+  }, [selectedEventId, focusVersion]);
+
   return (
     <div className="traceTimeline">
       <div className="traceTimeline__header">
@@ -102,6 +130,27 @@ export function TraceTimeline({
         onToggleErrorsOnly={() => onSetErrorsOnly(!errorsOnly)}
       />
       <div className="traceTimeline__body">
+        {displayTraces.length === 0 ? (
+          <div className="traceTimeline__empty">
+            {zh ? '暂无 trace 数据' : 'No trace data'}
+          </div>
+        ) : (
+          <div className="traceList">
+            {displayTraces.map((trace) => {
+              const selected = trace.eventId === selectedEventId;
+              return (
+                <TraceRow
+                  key={trace.eventId}
+                  rowRef={selected ? selectedRowRef : undefined}
+                  trace={trace}
+                  selected={selected}
+                  zh={zh}
+                  onSelect={() => onSelectEvent(trace.eventId)}
+                />
+              );
+            })}
+          </div>
+        )}
         {hasMoreBefore && (
           <button
             type="button"
@@ -112,23 +161,6 @@ export function TraceTimeline({
             {loading ? (zh ? '加载中…' : 'Loading…') : (zh ? '加载更早' : 'Load older')}
           </button>
         )}
-        {traces.length === 0 ? (
-          <div className="traceTimeline__empty">
-            {zh ? '暂无 trace 数据' : 'No trace data'}
-          </div>
-        ) : (
-          <div className="traceList">
-            {traces.map((trace) => (
-              <TraceRow
-                key={trace.eventId}
-                trace={trace}
-                selected={trace.eventId === selectedEventId}
-                zh={zh}
-                onSelect={() => onSelectEvent(trace.eventId)}
-              />
-            ))}
-          </div>
-        )}
       </div>
       <div className="traceTimeline__footer">
         {zh ? `显示 ${visibleCount} 条 / 共 ${totalCount} 条` : `Showing ${visibleCount} / ${totalCount}`}
@@ -138,11 +170,13 @@ export function TraceTimeline({
 }
 
 function TraceRow({
+  rowRef,
   trace,
   selected,
   zh,
   onSelect,
 }: {
+  rowRef?: Ref<HTMLButtonElement>;
   trace: RunTraceEnvelope;
   selected: boolean;
   zh: boolean;
@@ -151,8 +185,10 @@ function TraceRow({
   const dot = traceLifecycleDot(trace.lifecycle);
   return (
     <button
+      ref={rowRef}
       type="button"
       className={`traceRow ${selected ? 'traceRow--selected' : ''}`}
+      data-event-id={trace.eventId}
       onClick={onSelect}
       aria-selected={selected}
     >

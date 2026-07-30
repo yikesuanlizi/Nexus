@@ -42,9 +42,23 @@ export function compactionOptionsForRunProfile(profile: RunProfile): Pick<Compac
   };
 }
 
+export function compactionOptionsForModelContext(
+  profile: RunProfile,
+  modelContextTokens: number | undefined,
+): Pick<CompactOptions, 'maxTokens' | 'softCompactRatio' | 'hardCompactRatio' | 'strategy'> | Pick<CompactOptions, 'softCompactRatio' | 'hardCompactRatio' | 'strategy'> {
+  const base = compactionOptionsForRunProfile(profile);
+  const maxTokens = positiveInteger(modelContextTokens);
+  return maxTokens ? { ...base, maxTokens } : base;
+}
+
 export function contextBudgetForRunProfile(profile: RunProfile): number {
   if (profile === 'cache_first') return 6000;
   // runtime_os：长运行任务需要更大上下文预算
   // harness 原本的 10000 预算已并入 runtime_os
   return 8000;
+}
+
+function positiveInteger(value: number | undefined): number | undefined {
+  if (!Number.isFinite(value) || !value || value <= 0) return undefined;
+  return Math.floor(value);
 }

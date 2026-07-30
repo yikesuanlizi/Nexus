@@ -8,6 +8,7 @@ export * from './runTrace.js';
 export * from './runTraceSchemas.js';
 export * from './fileKnowledge.js';
 export * from './fileKnowledgeSchemas.js';
+export * from './modelCapabilities.js';
 export * from './accessPolicy.js';
 export * from './accessPolicySchemas.js';
 export * from './a2a/index.js';

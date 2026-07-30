@@ -5,6 +5,14 @@ import { describe, expect, it } from 'vitest';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
+function readLightGuard(): string {
+  const styles = readFileSync(join(here, 'styles.css'), 'utf-8').replace(/\r\n/g, '\n');
+  const lightGuardStart = styles.lastIndexOf('@layer utilities {');
+  const desktopRegressionGuardStart = styles.lastIndexOf('/* Desktop shell regression guard */');
+  expect(lightGuardStart).toBeGreaterThan(-1);
+  return styles.slice(lightGuardStart, desktopRegressionGuardStart > lightGuardStart ? desktopRegressionGuardStart : undefined);
+}
+
 describe('light theme skin', () => {
   it('keeps the final light-theme guard after dark settings rules', () => {
     const styles = readFileSync(join(here, 'styles.css'), 'utf-8').replace(/\r\n/g, '\n');
@@ -19,8 +27,7 @@ describe('light theme skin', () => {
   });
 
   it('uses light surfaces and dark text for light-theme content areas', () => {
-    const styles = readFileSync(join(here, 'styles.css'), 'utf-8').replace(/\r\n/g, '\n');
-    const lightGuard = styles.slice(styles.lastIndexOf('@layer utilities {'));
+    const lightGuard = readLightGuard();
 
     expect(lightGuard).toContain('.appShell.theme-light .workflowSidePane');
     expect(lightGuard).toContain('background: #ffffff;');
@@ -32,8 +39,7 @@ describe('light theme skin', () => {
   });
 
   it('keeps slash menus, settings dropdowns, and panel toggles readable in light mode', () => {
-    const styles = readFileSync(join(here, 'styles.css'), 'utf-8').replace(/\r\n/g, '\n');
-    const lightGuard = styles.slice(styles.lastIndexOf('@layer utilities {'));
+    const lightGuard = readLightGuard();
 
     expect(lightGuard).toContain('.appShell.theme-light .slashPalette');
     expect(lightGuard).toContain('.appShell.theme-light .settingsDrawer .dropdownMenu');
@@ -43,8 +49,7 @@ describe('light theme skin', () => {
   });
 
   it('keeps composer controls and preset rows high contrast in light mode', () => {
-    const styles = readFileSync(join(here, 'styles.css'), 'utf-8').replace(/\r\n/g, '\n');
-    const lightGuard = styles.slice(styles.lastIndexOf('@layer utilities {'));
+    const lightGuard = readLightGuard();
 
     expect(lightGuard).toContain('.appShell.theme-light .composer');
     expect(lightGuard).toContain('.appShell.theme-light .commandInputRow');
@@ -58,8 +63,7 @@ describe('light theme skin', () => {
   });
 
   it('keeps the bottom model preset dropdown visible above the composer', () => {
-    const styles = readFileSync(join(here, 'styles.css'), 'utf-8').replace(/\r\n/g, '\n');
-    const utilityGuard = styles.slice(styles.lastIndexOf('@layer utilities {'));
+    const utilityGuard = readLightGuard();
 
     expect(utilityGuard).toContain('.composerMeta');
     expect(utilityGuard).toContain('overflow: visible;');

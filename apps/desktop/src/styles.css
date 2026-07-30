@@ -10288,97 +10288,13 @@
   stroke-width: 2;
 }
 
-.gitNexusGraph:not(.gitNexusGraphPreviewCanvas) .gitNexusGraphDetailPanel {
+.gitNexusGraph .gitNexusGraphDetailPanel {
   top: 50px;
-}
-
-.gitNexusFlowPreviewBackdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 28px;
-  background: rgba(15, 23, 42, 0.48);
-  backdrop-filter: blur(4px);
-}
-
-.gitNexusFlowPreviewPanel {
-  width: min(1180px, 96vw);
-  max-height: 92vh;
-  overflow: hidden;
-  border: 1px solid rgba(148, 163, 184, 0.35);
-  border-radius: 10px;
-  background: #ffffff;
-  box-shadow: 0 28px 80px rgba(15, 23, 42, 0.3);
-}
-
-.gitNexusFlowPreviewHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  height: 44px;
-  padding: 0 12px 0 16px;
-  border-bottom: 1px solid rgba(226, 232, 240, 0.9);
-}
-
-.gitNexusFlowPreviewTitle {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 13px;
-  font-weight: 700;
-  color: #0f172a;
-}
-
-.gitNexusFlowPreviewClose {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: #475569;
-  cursor: pointer;
-}
-
-.gitNexusFlowPreviewClose:hover {
-  background: rgba(148, 163, 184, 0.16);
-}
-
-.gitNexusFlowPreviewClose svg {
-  width: 17px;
-  height: 17px;
-  stroke: currentColor;
-  fill: none;
-  stroke-width: 2;
-}
-
-.gitNexusGraphPreviewCanvas {
-  height: min(760px, calc(92vh - 44px));
 }
 
 @media (max-width: 640px) {
   .gitNexusGraph {
     height: 280px;
-  }
-
-  .gitNexusFlowPreviewBackdrop {
-    padding: 10px;
-  }
-
-  .gitNexusFlowPreviewPanel {
-    width: 100%;
-    max-height: 94vh;
-  }
-
-  .gitNexusGraphPreviewCanvas {
-    height: calc(94vh - 44px);
   }
 }
 
@@ -10947,6 +10863,10 @@
   cursor: not-allowed;
 }
 
+.gitNexusGraphShell {
+  position: relative;
+}
+
 .gitNexusForceGraph {
   width: 100%;
 }
@@ -10955,14 +10875,34 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
 }
 
 .gitNexusForceGraphStat {
   font-size: 11px;
   color: var(--nx-muted, #64748b);
+  letter-spacing: 0.01em;
+}
+
+.gitNexusGraphModePill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 9px;
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  border-radius: 999px;
+  background: rgba(14, 165, 233, 0.08);
+  color: #0369a1;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+[data-theme='dark'] .gitNexusGraphModePill {
+  color: #bae6fd;
+  background: rgba(14, 165, 233, 0.13);
+  border-color: rgba(125, 211, 252, 0.26);
 }
 
 .gitNexusForceGraphGroups {
@@ -10987,12 +10927,20 @@
 }
 
 .gitNexusForceGraphCanvasWrap {
+  position: relative;
   width: 100%;
-  border: 1px solid var(--nx-border, rgba(255, 255, 255, 0.08));
-  border-radius: 8px;
+  border: 1px solid rgba(203, 213, 225, 0.68);
+  border-radius: 14px;
   overflow: hidden;
-  background: var(--nx-card-bg, rgba(255, 255, 255, 0.02));
+  background: #f8fafc;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.68), 0 10px 28px rgba(15, 23, 42, 0.06);
   cursor: grab;
+}
+
+[data-theme='dark'] .gitNexusForceGraphCanvasWrap {
+  border-color: rgba(203, 213, 225, 0.64);
+  background: #f8fafc;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.64), 0 18px 42px rgba(0, 0, 0, 0.2);
 }
 
 .gitNexusForceGraphCanvasWrap:active {
@@ -11003,6 +10951,73 @@
   display: block;
   width: 100%;
   height: 100%;
+}
+
+.gitNexusGraphInspector {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+  width: min(300px, calc(100% - 24px));
+  padding: 12px 14px;
+  border: 1px solid rgba(125, 211, 252, 0.22);
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.86);
+  color: #e5f0ff;
+  box-shadow: 0 20px 48px rgba(2, 6, 23, 0.26);
+  backdrop-filter: blur(14px);
+  pointer-events: none;
+}
+
+.gitNexusGraphInspectorEyebrow {
+  margin-bottom: 5px;
+  color: #93c5fd;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.gitNexusGraphInspector strong {
+  display: block;
+  color: #f8fafc;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.gitNexusGraphInspector span {
+  display: block;
+  margin-top: 4px;
+  color: #bfdbfe;
+  font-size: 11px;
+  line-height: 1.45;
+  word-break: break-all;
+}
+
+.gitNexusGraphInspector dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 10px 0 0;
+}
+
+.gitNexusGraphInspector div {
+  min-width: 0;
+}
+
+.gitNexusGraphInspector dt {
+  color: #93a4bd;
+  font-size: 10px;
+}
+
+.gitNexusGraphInspector dd {
+  margin: 2px 0 0;
+  overflow: hidden;
+  color: #eff6ff;
+  font-size: 12px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .gitNexusOverviewStats {
@@ -11211,26 +11226,46 @@
   border-color: var(--nx-blue, #2563eb);
 }
 
+.gitNexusGraphExpandBtn--floating {
+  position: absolute;
+  top: 44px;
+  right: 12px;
+  z-index: 4;
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.78);
+  color: #e5f0ff;
+  border-color: rgba(125, 211, 252, 0.24);
+  box-shadow: 0 14px 32px rgba(2, 6, 23, 0.26);
+  backdrop-filter: blur(12px);
+}
+
+.gitNexusGraphExpandBtn--floating:hover:not(:disabled) {
+  background: rgba(37, 99, 235, 0.9);
+  border-color: rgba(191, 219, 254, 0.46);
+}
+
 .gitNexusGraphModalBackdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(15, 23, 42, 0.38);
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 12px;
   z-index: 1000;
 }
 
 .gitNexusGraphModal {
   position: relative;
-  width: 85vw;
-  height: 85vh;
-  background: var(--nx-surface, #ffffff);
-  color: var(--nx-text, #1e293b);
-  border-radius: 12px;
-  border: 1px solid var(--nx-border, #e2e8f0);
+  width: min(96vw, 1680px);
+  height: min(94vh, 1040px);
+  background: #f8fafc;
+  border-radius: 20px;
+  border: 1px solid rgba(203, 213, 225, 0.78);
   overflow: hidden;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 26px 72px rgba(15, 23, 42, 0.24);
 }
 
 .gitNexusGraphModalClose {
@@ -11240,9 +11275,9 @@
   width: 32px;
   height: 32px;
   border-radius: 999px;
-  background: var(--nx-hover, rgba(0, 0, 0, 0.05));
-  border: none;
-  color: var(--nx-text, #1e293b);
+  background: #ffffff;
+  border: 1px solid #dbe4f0;
+  color: #0f172a;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -11251,14 +11286,14 @@
 }
 
 .gitNexusGraphModalClose:hover {
-  background: var(--nx-active, rgba(0, 0, 0, 0.1));
+  background: #eef4fb;
 }
 
 .gitNexusGraphModalTitle {
   position: absolute;
   top: 12px;
   left: 20px;
-  color: var(--nx-text, #1e293b);
+  color: #0f172a;
   font-size: 14px;
   font-weight: 600;
   z-index: 10;
@@ -11268,13 +11303,14 @@
   position: absolute;
   inset: 0;
   z-index: 0;
+  display: none;
 }
 
 .gitNexusGraphContent {
   position: relative;
   z-index: 1;
   height: 100%;
-  padding: 40px 20px 20px 20px;
+  padding: 44px 16px 16px;
   display: flex;
   flex-direction: column;
 }
@@ -11287,8 +11323,9 @@
 
 .gitNexusGraphContent .gitNexusForceGraphCanvasWrap {
   flex: 1;
-  background: transparent;
-  border: none;
+  background: #f8fafc;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.75);
 }
 
 .gitNexusHelpModalBackdrop {
@@ -14608,4 +14645,1957 @@
   display: flex;
   justify-content: flex-end;
   gap: 10px;
+}
+
+/* Desktop shell regression guard */
+.runMonitorWorkbench {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  pointer-events: none;
+}
+
+.runMonitorBackdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.34);
+  pointer-events: auto;
+}
+
+.runMonitorPanel {
+  position: relative;
+  z-index: 1;
+  display: flex !important;
+  flex-direction: column !important;
+  width: min(1240px, calc(100vw - 24px)) !important;
+  max-width: calc(100vw - 24px);
+  height: min(760px, calc(100vh - 24px)) !important;
+  max-height: calc(100vh - 24px);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden !important;
+  border: 1px solid rgba(148, 163, 184, 0.36);
+  border-radius: 18px;
+  background: var(--nx-card, rgb(248 250 252));
+  color: var(--nx-text, #0f172a);
+  box-shadow: 0 24px 72px rgba(15, 23, 42, 0.22);
+  pointer-events: auto;
+}
+
+.runMonitorHeader {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 64px;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.28);
+  background: color-mix(in srgb, var(--nx-card, rgb(248 250 252)) 92%, transparent);
+}
+
+.runMonitorHeader__left {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.runMonitorHeader__title {
+  margin: 0;
+  color: inherit;
+  font-size: 16px;
+  font-weight: 720;
+  letter-spacing: -0.02em;
+}
+
+.runMonitorStats {
+  display: flex !important;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 !important;
+  border: 0 !important;
+}
+
+.runMonitorStat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 999px;
+  padding: 0 10px;
+  background: rgba(148, 163, 184, 0.10);
+  color: var(--nx-muted, #64748b);
+  font-size: 12px;
+  font-weight: 640;
+}
+
+.runMonitorStat__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+}
+
+.runMonitorStat--running {
+  color: #047857;
+}
+
+.runMonitorStat--failed {
+  color: #b91c1c;
+}
+
+.runMonitorHeader__center,
+.runMonitorHeader__right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.runMonitorToggle,
+.traceErrorsOnly {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 30px;
+  color: var(--nx-muted, #64748b);
+  font-size: 12px;
+  font-weight: 640;
+  white-space: nowrap;
+}
+
+.runMonitorInterval,
+.runMonitorAdminToken {
+  min-height: 32px;
+  min-width: 0;
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: 10px;
+  background: rgba(148, 163, 184, 0.10);
+  color: inherit;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.runMonitorCloseBtn,
+.runExplorer__refresh,
+.traceControlBtn,
+.traceLoadMore,
+.traceInspector__back,
+.traceInspector__copyBtn {
+  min-height: 30px;
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: 10px;
+  background: rgba(248, 250, 252, 0.92);
+  color: #334155;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 680;
+  box-shadow: none;
+}
+
+.runMonitorBody {
+  flex: 1 1 auto;
+  display: grid !important;
+  grid-template-columns: minmax(220px, 0.82fr) minmax(0, 1.2fr) minmax(260px, 0.95fr);
+  min-height: 0 !important;
+  min-width: 0;
+  height: auto !important;
+  overflow: hidden !important;
+  border-top: 0;
+}
+
+.runExplorer,
+.traceTimeline,
+.traceInspector {
+  display: grid;
+  min-width: 0;
+  min-height: 0 !important;
+  height: 100% !important;
+  overflow: hidden !important;
+  border-right: 1px solid rgba(148, 163, 184, 0.24);
+  background: rgba(248, 250, 252, 0.76);
+}
+
+.traceInspector {
+  border-right: 0;
+}
+
+.traceTimeline {
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+
+.runExplorer,
+.traceInspector {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.runExplorer__header,
+.traceTimeline__header,
+.traceInspector__header,
+.traceTimeline__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.traceTimeline__footer {
+  border-top: 1px solid rgba(148, 163, 184, 0.22);
+  border-bottom: 0;
+  color: var(--nx-muted, #64748b);
+  font-size: 12px;
+}
+
+.runExplorer__title {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  color: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 720;
+}
+
+.runExplorer__body,
+.traceTimeline__body,
+.traceInspector__body {
+  min-width: 0;
+  min-height: 0 !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  padding: 12px;
+}
+
+.runExplorer__threads,
+.runExplorer__flat,
+.traceList,
+.inspectorGrid {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.runThreadGroup {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.runThreadGroup__header,
+.runEntry,
+.traceRow {
+  display: grid;
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
+  color: inherit;
+  box-shadow: none;
+}
+
+.runThreadGroup__header {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 10px;
+  text-align: left;
+}
+
+.runThreadGroup__title,
+.runEntry__title,
+.traceRow__name,
+.traceTimeline__runTitle,
+.traceInspector__name {
+  min-width: 0;
+  overflow: hidden;
+  color: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+.runThreadGroup__count {
+  color: var(--nx-muted, #64748b);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.runThreadGroup__runs {
+  display: grid;
+  gap: 6px;
+  padding-left: 12px;
+}
+
+.runEntry {
+  grid-template-columns: 8px minmax(0, 1fr);
+  gap: 9px;
+  padding: 10px;
+  text-align: left;
+}
+
+.runEntry__status {
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  border-radius: 999px;
+}
+
+.runEntry__content,
+.traceRow__content,
+.traceInspector__titleWrap {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.runEntry__meta,
+.traceTimeline__runInfo,
+.traceTimeline__controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.runEntry__kind,
+.runEntry__step,
+.traceRow__category,
+.traceRow__lifecycle,
+.traceRow__duration,
+.traceTimeline__runStatusLabel,
+.inspectorBadge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.14);
+  color: var(--nx-muted, #64748b);
+  padding: 2px 7px;
+  font-size: 10px;
+  font-weight: 760;
+}
+
+.runEntry__time,
+.traceRow__summary,
+.traceRow__time,
+.traceTimeline__runTime,
+.traceInspector__category,
+.inspectorField__label {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--nx-muted, #64748b);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.runEntry--selected,
+.traceRow--selected {
+  border-color: rgba(59, 130, 246, 0.42);
+  background: rgba(59, 130, 246, 0.10);
+}
+
+.traceFilters {
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: space-between;
+  gap: 10px;
+  max-height: 112px !important;
+  min-width: 0;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  padding: 8px 14px !important;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.traceFilterChips {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap !important;
+  gap: 6px;
+  min-width: 0;
+  overflow: visible;
+}
+
+.traceChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  min-height: 28px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.68);
+  color: #475569;
+  padding: 0 9px;
+  font-size: 12px;
+  font-weight: 650;
+  box-shadow: none;
+}
+
+.traceChip--active {
+  border-color: rgba(59, 130, 246, 0.44);
+  background: rgba(59, 130, 246, 0.12);
+  color: #1d4ed8;
+}
+
+.traceRow {
+  grid-template-columns: 24px auto auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  text-align: left;
+}
+
+.traceRow__icon,
+.traceInspector__icon {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+}
+
+.traceRow__meta {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+  min-width: 72px;
+}
+
+.traceTimeline__empty,
+.runExplorer__empty,
+.traceInspector__empty {
+  display: grid;
+  min-height: 220px;
+  place-items: center;
+  margin: 0;
+  border: 1px dashed rgba(148, 163, 184, 0.36);
+  border-radius: 14px;
+  background: rgba(148, 163, 184, 0.08);
+  color: var(--nx-muted, #64748b);
+  text-align: center;
+  font-size: 13px;
+}
+
+.traceInspector__section {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.traceInspector__sectionTitle {
+  margin: 0;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.inspectorField {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 10px;
+  background: rgba(148, 163, 184, 0.08);
+  padding: 8px;
+}
+
+.inspectorField--full {
+  grid-column: 1 / -1;
+}
+
+.inspectorField__value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 620;
+}
+
+.inspectorField__value--mono,
+.inspectorPre,
+.traceInspector__jsonPre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.inspectorPre,
+.traceInspector__jsonPre {
+  max-height: 260px;
+  margin: 0;
+  overflow: auto;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.06);
+  padding: 10px;
+  color: inherit;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.traceInspector__json {
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 12px;
+  padding: 10px;
+}
+
+.traceInspector__jsonSummary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.appShell.theme-dark .eventPane,
+.appShell.theme-dark .workbenchPane,
+.appShell.theme-dark .workbenchContent,
+.appShell.theme-dark .workbenchActivity,
+.appShell.theme-dark .workbenchAgents,
+.appShell.theme-dark .workbenchFiles,
+.appShell.theme-dark .workspaceFiles,
+.appShell.theme-dark .workspaceFileBody {
+  background: #0f172a;
+  color: #e5e7eb;
+}
+
+.appShell.theme-dark .agentInspector,
+.appShell.theme-dark .workspaceFileTreePane,
+.appShell.theme-dark .workspacePreviewPane,
+.appShell.theme-dark .workspacePreview,
+.appShell.theme-dark .runMonitorPanel,
+.appShell.theme-dark .runExplorer,
+.appShell.theme-dark .traceTimeline,
+.appShell.theme-dark .traceInspector {
+  border-color: rgba(148, 163, 184, 0.22);
+  background: #111827;
+  color: #e5e7eb;
+  box-shadow: none;
+}
+
+.appShell.theme-dark .runMonitorBackdrop {
+  background: rgba(2, 6, 23, 0.64);
+}
+
+.appShell.theme-dark .runMonitorHeader,
+.appShell.theme-dark .runExplorer__header,
+.appShell.theme-dark .traceTimeline__header,
+.appShell.theme-dark .traceInspector__header,
+.appShell.theme-dark .traceTimeline__footer,
+.appShell.theme-dark .traceFilters,
+.appShell.theme-dark .workspaceFilesHeader,
+.appShell.theme-dark .workspacePreviewHeader,
+.appShell.theme-dark .workbenchTabs,
+.appShell.theme-dark .workbenchFooter {
+  border-color: rgba(148, 163, 184, 0.18);
+  background: rgba(15, 23, 42, 0.72);
+  color: #e5e7eb;
+}
+
+.appShell.theme-dark .runMonitorStat,
+.appShell.theme-dark .runMonitorInterval,
+.appShell.theme-dark .runMonitorAdminToken,
+.appShell.theme-dark .traceChip,
+.appShell.theme-dark .traceErrorsOnly,
+.appShell.theme-dark .runThreadGroup__header,
+.appShell.theme-dark .runEntry,
+.appShell.theme-dark .traceRow,
+.appShell.theme-dark .inspectorField,
+.appShell.theme-dark .traceInspector__json,
+.appShell.theme-dark .liveActivityIdle,
+.appShell.theme-dark .liveActivityPhase,
+.appShell.theme-dark .liveActivityMetric,
+.appShell.theme-dark .liveActivityResource,
+.appShell.theme-dark .liveActivityEventAgent,
+.appShell.theme-dark .liveActivityEventResourceKind,
+.appShell.theme-dark .liveActivityResourceKind,
+.appShell.theme-dark .liveActivityResourceCount {
+  border-color: rgba(148, 163, 184, 0.18);
+  background: rgba(15, 23, 42, 0.70);
+  color: #cbd5e1;
+}
+
+.appShell.theme-dark .traceChip--active,
+.appShell.theme-dark .runEntry--selected,
+.appShell.theme-dark .traceRow--selected {
+  border-color: rgba(96, 165, 250, 0.52);
+  background: rgba(30, 64, 175, 0.32);
+  color: #dbeafe;
+}
+
+.appShell.theme-dark .runMonitorCloseBtn,
+.appShell.theme-dark .runExplorer__refresh,
+.appShell.theme-dark .traceControlBtn,
+.appShell.theme-dark .traceLoadMore,
+.appShell.theme-dark .traceInspector__back,
+.appShell.theme-dark .traceInspector__copyBtn,
+.appShell.theme-dark .controlButton,
+.appShell.theme-dark .workspacePreviewModeSwitch button,
+.appShell.theme-dark .workspacePreviewPathButton {
+  border-color: rgba(148, 163, 184, 0.20);
+  background: rgba(30, 41, 59, 0.82);
+  color: #e2e8f0;
+}
+
+.appShell.theme-dark .runMonitorHeader__title,
+.appShell.theme-dark .runExplorer__title,
+.appShell.theme-dark .runThreadGroup__title,
+.appShell.theme-dark .runEntry__title,
+.appShell.theme-dark .traceTimeline__runTitle,
+.appShell.theme-dark .traceRow__name,
+.appShell.theme-dark .traceInspector__name,
+.appShell.theme-dark .traceInspector__sectionTitle,
+.appShell.theme-dark .liveActivityStatus,
+.appShell.theme-dark .liveActivityPhaseText strong,
+.appShell.theme-dark .liveActivityMetric strong,
+.appShell.theme-dark .liveActivityResourceLabel,
+.appShell.theme-dark .liveActivityEventName,
+.appShell.theme-dark .liveActivityEventResourceLabel,
+.appShell.theme-dark .agentInspector strong,
+.appShell.theme-dark .workspacePreviewHeader strong,
+.appShell.theme-dark .workspacePreviewPathButton strong,
+.appShell.theme-dark .workspaceFileRow.active {
+  color: #f8fafc;
+}
+
+.appShell.theme-dark .runEntry__time,
+.appShell.theme-dark .traceRow__summary,
+.appShell.theme-dark .traceRow__time,
+.appShell.theme-dark .traceTimeline__runTime,
+.appShell.theme-dark .traceInspector__category,
+.appShell.theme-dark .inspectorField__label,
+.appShell.theme-dark .traceTimeline__footer,
+.appShell.theme-dark .liveActivityMeta,
+.appShell.theme-dark .liveActivityIdle span,
+.appShell.theme-dark .liveActivityMetricLabel,
+.appShell.theme-dark .liveActivityEventSummary,
+.appShell.theme-dark .liveActivityEventTime,
+.appShell.theme-dark .workspaceFilesHeader p,
+.appShell.theme-dark .workspacePreviewHeader span,
+.appShell.theme-dark .workspacePreviewSubline,
+.appShell.theme-dark .workspacePreviewPathButton span,
+.appShell.theme-dark .workspaceFileRow small {
+  color: #94a3b8;
+}
+
+.appShell.theme-dark .workspaceFileRow {
+  color: #cbd5e1;
+}
+
+.appShell.theme-dark .workspaceFileRow:hover,
+.appShell.theme-dark .workspaceFileRow.active {
+  border-color: rgba(148, 163, 184, 0.24);
+  background: rgba(30, 41, 59, 0.72);
+}
+
+.appShell.theme-dark .workspacePreview pre,
+.appShell.theme-dark .workspacePreview .workspaceSourcePreview,
+.appShell.theme-dark .workspacePreview .workspaceMarkdownPreview,
+.appShell.theme-dark .workspacePreview .workspaceRenderedPreview,
+.appShell.theme-dark .workspacePreview .workspaceOfficePreview,
+.appShell.theme-dark .workspacePreview .workspaceHtmlPreview,
+.appShell.theme-dark .inspectorPre,
+.appShell.theme-dark .traceInspector__jsonPre {
+  background: #0f172a;
+  color: #e5e7eb;
+}
+
+.appShell.theme-dark .traceTimeline__empty,
+.appShell.theme-dark .runExplorer__empty,
+.appShell.theme-dark .traceInspector__empty {
+  border-color: rgba(148, 163, 184, 0.24);
+  background: rgba(15, 23, 42, 0.72);
+  color: #94a3b8;
+}
+
+.appShell.theme-dark .settingsDrawer,
+.appShell.theme-dark .settingsBody,
+.appShell.theme-dark .settingsNav,
+.appShell.theme-dark .settingsContent {
+  border-color: rgba(148, 163, 184, 0.20);
+  background: #0f172a;
+  color: #e5e7eb;
+}
+
+.appShell.theme-dark .settingsCard,
+.appShell.theme-dark .settingsDrawer .settingsCardCompact,
+.appShell.theme-dark .settingsSection,
+.appShell.theme-dark .settingsHero,
+.appShell.theme-dark .providerCard,
+.appShell.theme-dark .providerKeyCard,
+.appShell.theme-dark .presetPanel,
+.appShell.theme-dark .settingsDrawer .scopeApplyCard,
+.appShell.theme-dark .settingsDrawer .modelPresetManagementCard,
+.appShell.theme-dark .settingsDrawer .modelKeyLayout,
+.appShell.theme-dark .settingsDrawer .modelKeyEnvGroup,
+.appShell.theme-dark .settingsDrawer .modelKeyStatusLine,
+.appShell.theme-dark .settingsDrawer .modelPresetActionRow,
+.appShell.theme-dark .settingsDrawer .settingsFieldRow,
+.appShell.theme-dark .settingsDrawer .accessPolicyScopeTabs,
+.appShell.theme-dark .settingsDrawer .accessRuleRow,
+.appShell.theme-dark .settingsDrawer .accessPolicyEmpty,
+.appShell.theme-dark .settingsDrawer .botNotice,
+.appShell.theme-dark .settingsDrawer .dropdownMenu,
+.appShell.theme-dark .settingsDrawer .dropdownOption,
+.appShell.theme-dark .settingsDrawer .presetItem {
+  border-color: rgba(148, 163, 184, 0.20);
+  background: #111827;
+  color: #e5e7eb;
+}
+
+.appShell.theme-dark .settingsHeader,
+.appShell.theme-dark .settingsFooter,
+.appShell.theme-dark .settingsSaveBar,
+.appShell.theme-dark .settingsDrawer .scopeApplyActions {
+  border-color: rgba(148, 163, 184, 0.18);
+  background: rgba(15, 23, 42, 0.86);
+  color: #e5e7eb;
+}
+
+.appShell.theme-dark .settingsDrawer input,
+.appShell.theme-dark .settingsDrawer textarea,
+.appShell.theme-dark .settingsDrawer select,
+.appShell.theme-dark .settingsDrawer .dropdownButton,
+.appShell.theme-dark .composerInner,
+.appShell.theme-dark .commandInputRow,
+.appShell.theme-dark .composer textarea {
+  border-color: rgba(148, 163, 184, 0.24);
+  background: rgba(15, 23, 42, 0.82);
+  color: #f8fafc;
+}
+
+.appShell.theme-dark .composer textarea::placeholder,
+.appShell.theme-dark .commandInputRow textarea::placeholder {
+  color: #94a3b8;
+}
+
+.appShell.theme-dark .settingsDrawer .settingsCardHeader h3,
+.appShell.theme-dark .settingsDrawer .settingsSection h3,
+.appShell.theme-dark .settingsDrawer .settingsHeaderTitle,
+.appShell.theme-dark .settingsDrawer .settingLabel,
+.appShell.theme-dark .settingsDrawer .settingsSectionTitleRow h3,
+.appShell.theme-dark .settingsDrawer .settingsFieldRow label,
+.appShell.theme-dark .settingsDrawer .accessRuleId,
+.appShell.theme-dark .settingsDrawer .dropdownOption strong,
+.appShell.theme-dark .settingsDrawer .presetItem strong {
+  color: #e5e7eb;
+}
+
+.appShell.theme-dark .settingsDrawer .settingsCardHint,
+.appShell.theme-dark .settingsDrawer .settingsCard label,
+.appShell.theme-dark .settingsDrawer .settingsHelp,
+.appShell.theme-dark .settingsDrawer .settingsSubtle,
+.appShell.theme-dark .settingsDrawer .settingsMuted,
+.appShell.theme-dark .settingsDrawer .settingsNotice,
+.appShell.theme-dark .settingsDrawer .dropdownOption span,
+.appShell.theme-dark .settingsDrawer .presetItem span {
+  color: #94a3b8;
+}
+
+.appShell.theme-dark .settingsDrawer .whiteButton,
+.appShell.theme-dark .settingsDrawer .textButton,
+.appShell.theme-dark .settingsDrawer .iconButton {
+  border-color: rgba(148, 163, 184, 0.24);
+  background: rgba(30, 41, 59, 0.82);
+  color: #e2e8f0;
+}
+
+.appShell.theme-dark .settingsDrawer .solidButton {
+  border-color: rgba(96, 165, 250, 0.42);
+  background: #2563eb;
+  color: #ffffff;
+}
+
+/* Settings dark final guard: the settings modal owns its theme instead of relying on appShell ancestry. */
+.settingsLayer.theme-dark {
+  background: rgba(2, 6, 23, 0.72) !important;
+  backdrop-filter: blur(12px);
+}
+
+.settingsLayer.theme-dark .settingsDrawer,
+.settingsDrawer.theme-dark {
+  --settings-bg: #0f172a;
+  --settings-panel: #111827;
+  --settings-panel-muted: #1e293b;
+  --settings-panel-soft: #263449;
+  --settings-border: rgba(148, 163, 184, 0.22);
+  --settings-border-strong: rgba(148, 163, 184, 0.34);
+  --settings-text: #f8fafc;
+  --settings-text-sub: #cbd5e1;
+  --settings-accent: #60a5fa;
+  --settings-accent-strong: #3b82f6;
+  --settings-accent-soft: rgba(96, 165, 250, 0.14);
+  --settings-danger: #f87171;
+  --settings-warning: #fbbf24;
+  --settings-success: #34d399;
+  --settings-panel-line: rgba(148, 163, 184, 0.20);
+  --settings-panel-text: #f8fafc;
+  --settings-panel-bg: #0f172a;
+  border-color: rgba(148, 163, 184, 0.28) !important;
+  background: #0f172a !important;
+  color: #e5e7eb !important;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.48) !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsHeader {
+  border-bottom-color: rgba(148, 163, 184, 0.18) !important;
+  background: #0f172a !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsBody,
+.settingsLayer.theme-dark .settingsDrawer .settingsContent,
+.settingsLayer.theme-dark .settingsDrawer .settingsFieldset {
+  background: #0f172a !important;
+  color: #e5e7eb !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsNav {
+  border-right-color: rgba(148, 163, 184, 0.18) !important;
+  background: #111827 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsNav button,
+.settingsLayer.theme-dark .settingsDrawer .settingsNav a {
+  background: transparent !important;
+  color: #94a3b8 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsNav button:hover:not(:disabled),
+.settingsLayer.theme-dark .settingsDrawer .settingsNav a:hover,
+.settingsLayer.theme-dark .settingsDrawer .settingsNav button.active,
+.settingsLayer.theme-dark .settingsDrawer .settingsNav a.active {
+  border-color: rgba(96, 165, 250, 0.36) !important;
+  background: rgba(30, 41, 59, 0.92) !important;
+  color: #f8fafc !important;
+  box-shadow: inset 3px 0 0 #60a5fa, 0 8px 22px rgba(2, 6, 23, 0.24) !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsSection:not(.pluginCatalogShell),
+.settingsLayer.theme-dark .settingsDrawer .settingsCard,
+.settingsLayer.theme-dark .settingsDrawer .settingsCardCompact,
+.settingsLayer.theme-dark .settingsDrawer .settingsInfoBlock,
+.settingsLayer.theme-dark .settingsDrawer .avatarSettingsPanel,
+.settingsLayer.theme-dark .settingsDrawer .avatarSettingsPreview,
+.settingsLayer.theme-dark .settingsDrawer .weixinBotPanel,
+.settingsLayer.theme-dark .settingsDrawer .dingtalkBotPanel,
+.settingsLayer.theme-dark .settingsDrawer .memoryAdvancedPanel,
+.settingsLayer.theme-dark .settingsDrawer .remoteBotCard,
+.settingsLayer.theme-dark .settingsDrawer .providerCard,
+.settingsLayer.theme-dark .settingsDrawer .skillItem,
+.settingsLayer.theme-dark .settingsDrawer .presetItem,
+.settingsLayer.theme-dark .settingsDrawer .presetPanel,
+.settingsLayer.theme-dark .settingsDrawer .crudItem,
+.settingsLayer.theme-dark .settingsDrawer .emptyHint,
+.settingsLayer.theme-dark .settingsDrawer .accessPolicyEmpty,
+.settingsLayer.theme-dark .settingsDrawer .accessRuleRow,
+.settingsLayer.theme-dark .settingsDrawer .botReadonlyField,
+.settingsLayer.theme-dark .settingsDrawer .pluginCard,
+.settingsLayer.theme-dark .settingsDrawer .pluginCatalogItem,
+.settingsLayer.theme-dark .settingsDrawer .pluginNotice,
+.settingsLayer.theme-dark .settingsDrawer .mcpItem {
+  border-color: rgba(148, 163, 184, 0.20) !important;
+  background: #111827 !important;
+  color: #e5e7eb !important;
+  box-shadow: none !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsSection:not(.pluginCatalogShell) {
+  background: transparent !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsCard,
+.settingsLayer.theme-dark .settingsDrawer .presetHeader {
+  border-top-color: rgba(148, 163, 184, 0.20) !important;
+  background: transparent !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsHeaderTitle h2,
+.settingsLayer.theme-dark .settingsDrawer .settingsPageHeader h2,
+.settingsLayer.theme-dark .settingsDrawer .settingsSection:not(.pluginCatalogShell) > h3,
+.settingsLayer.theme-dark .settingsDrawer .settingsSection h3,
+.settingsLayer.theme-dark .settingsDrawer .settingsCardHeader h3,
+.settingsLayer.theme-dark .settingsDrawer .settingsSectionTitleRow h3,
+.settingsLayer.theme-dark .settingsDrawer .presetHeader h3,
+.settingsLayer.theme-dark .settingsDrawer .presetHeader h4,
+.settingsLayer.theme-dark .settingsDrawer .providerCard strong,
+.settingsLayer.theme-dark .settingsDrawer .presetItem strong,
+.settingsLayer.theme-dark .settingsDrawer .remoteBotCard strong,
+.settingsLayer.theme-dark .settingsDrawer .skillItem strong,
+.settingsLayer.theme-dark .settingsDrawer .weixinBotHeader strong,
+.settingsLayer.theme-dark .settingsDrawer .avatarSettingsHeader strong,
+.settingsLayer.theme-dark .settingsDrawer .accessRuleId,
+.settingsLayer.theme-dark .settingsDrawer .dropdownOption strong {
+  color: #f8fafc !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsPageHeader p,
+.settingsLayer.theme-dark .settingsDrawer .settingsCard label,
+.settingsLayer.theme-dark .settingsDrawer .settingLabel,
+.settingsLayer.theme-dark .settingsDrawer .settingsMuted,
+.settingsLayer.theme-dark .settingsDrawer .settingsSubtle,
+.settingsLayer.theme-dark .settingsDrawer .settingsHelp,
+.settingsLayer.theme-dark .settingsDrawer .settingsNotice,
+.settingsLayer.theme-dark .settingsDrawer .settingsCardHint,
+.settingsLayer.theme-dark .settingsDrawer .presetHeader span,
+.settingsLayer.theme-dark .settingsDrawer .settingsInfoBlock,
+.settingsLayer.theme-dark .settingsDrawer .emptyHint,
+.settingsLayer.theme-dark .settingsDrawer .botNotice,
+.settingsLayer.theme-dark .settingsDrawer .providerCard span,
+.settingsLayer.theme-dark .settingsDrawer .presetItem span,
+.settingsLayer.theme-dark .settingsDrawer .remoteBotCard span,
+.settingsLayer.theme-dark .settingsDrawer .remoteBotCard small,
+.settingsLayer.theme-dark .settingsDrawer .skillItem span,
+.settingsLayer.theme-dark .settingsDrawer .weixinBotHeader span,
+.settingsLayer.theme-dark .settingsDrawer .dropdownOption span,
+.settingsLayer.theme-dark .settingsDrawer label {
+  color: #cbd5e1 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer input,
+.settingsLayer.theme-dark .settingsDrawer textarea,
+.settingsLayer.theme-dark .settingsDrawer select,
+.settingsLayer.theme-dark .settingsDrawer select option,
+.settingsLayer.theme-dark .settingsDrawer .dropdownButton,
+.settingsLayer.theme-dark .settingsDrawer .dingtalkTestInput,
+.settingsLayer.theme-dark .settingsDrawer .dingtalkTestSelect,
+.settingsLayer.theme-dark .settingsDrawer .pluginSearchBox input,
+.settingsLayer.theme-dark .settingsDrawer .pluginModalField input {
+  border-color: rgba(148, 163, 184, 0.28) !important;
+  background: #0b1220 !important;
+  color: #f8fafc !important;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer input::placeholder,
+.settingsLayer.theme-dark .settingsDrawer textarea::placeholder {
+  color: #64748b !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer input:focus,
+.settingsLayer.theme-dark .settingsDrawer textarea:focus,
+.settingsLayer.theme-dark .settingsDrawer select:focus,
+.settingsLayer.theme-dark .settingsDrawer .dropdownSelect:focus-within .dropdownButton {
+  border-color: rgba(96, 165, 250, 0.62) !important;
+  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.16) !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .modelKeyStatusLine,
+.settingsLayer.theme-dark .settingsDrawer .providerKeyCard .modelKeyStatusLine,
+.settingsLayer.theme-dark .settingsDrawer .botStatusBadge,
+.settingsLayer.theme-dark .settingsDrawer .statusPill,
+.settingsLayer.theme-dark .settingsDrawer .presetAppliedBadge,
+.settingsLayer.theme-dark .settingsDrawer .accessPolicyScopeTabs,
+.settingsLayer.theme-dark .settingsDrawer .mcpToggle,
+.settingsLayer.theme-dark .settingsDrawer .mcpRuntimeStatus,
+.settingsLayer.theme-dark .settingsDrawer .providerCard code {
+  border-color: rgba(148, 163, 184, 0.22) !important;
+  background: rgba(15, 23, 42, 0.78) !important;
+  color: #cbd5e1 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .accessPolicyScopeTabs button {
+  background: transparent !important;
+  color: #94a3b8 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .accessPolicyScopeTabs button.active {
+  background: #1e293b !important;
+  color: #f8fafc !important;
+  box-shadow: 0 1px 5px rgba(2, 6, 23, 0.35) !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .dropdownMenu,
+.settingsLayer.theme-dark .settingsDrawer .dropdownOption {
+  border-color: rgba(148, 163, 184, 0.22) !important;
+  background: #111827 !important;
+  color: #e5e7eb !important;
+  box-shadow: 0 22px 48px rgba(2, 6, 23, 0.42) !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .dropdownOption:hover:not(:disabled),
+.settingsLayer.theme-dark .settingsDrawer .dropdownOption.active {
+  background: rgba(30, 64, 175, 0.30) !important;
+  color: #f8fafc !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .whiteButton,
+.settingsLayer.theme-dark .settingsDrawer .textButton,
+.settingsLayer.theme-dark .settingsDrawer .outlineButton,
+.settingsLayer.theme-dark .settingsDrawer .btn,
+.settingsLayer.theme-dark .settingsDrawer .miniIconButton,
+.settingsLayer.theme-dark .settingsDrawer .dropdownOptionAction,
+.settingsLayer.theme-dark .settingsDrawer .settingsHeader .iconButton {
+  border-color: rgba(148, 163, 184, 0.26) !important;
+  background: #1e293b !important;
+  color: #e2e8f0 !important;
+  box-shadow: none !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .whiteButton:hover:not(:disabled),
+.settingsLayer.theme-dark .settingsDrawer .textButton:hover:not(:disabled),
+.settingsLayer.theme-dark .settingsDrawer .outlineButton:hover:not(:disabled),
+.settingsLayer.theme-dark .settingsDrawer .btn:hover:not(:disabled),
+.settingsLayer.theme-dark .settingsDrawer .miniIconButton:hover:not(:disabled),
+.settingsLayer.theme-dark .settingsDrawer .dropdownOptionAction:hover:not(:disabled),
+.settingsLayer.theme-dark .settingsDrawer .settingsHeader .iconButton:hover:not(:disabled) {
+  border-color: rgba(96, 165, 250, 0.40) !important;
+  background: rgba(30, 64, 175, 0.34) !important;
+  color: #ffffff !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .solidButton {
+  border-color: rgba(96, 165, 250, 0.72) !important;
+  background: #2563eb !important;
+  color: #ffffff !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer button:disabled:not(.solidButton):not(.dangerButton) {
+  border-color: rgba(148, 163, 184, 0.18) !important;
+  background: rgba(15, 23, 42, 0.52) !important;
+  color: #64748b !important;
+  opacity: 1 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .dropdownOptionAction.danger {
+  border-color: rgba(248, 113, 113, 0.30) !important;
+  background: rgba(127, 29, 29, 0.20) !important;
+  color: #fca5a5 !important;
+}
+
+.settingsLayer.theme-dark .settingsConfirmScrim {
+  background: rgba(2, 6, 23, 0.58) !important;
+}
+
+.settingsLayer.theme-dark .settingsConfirmPanel {
+  border-color: rgba(148, 163, 184, 0.26) !important;
+  background: #111827 !important;
+  color: #e5e7eb !important;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.48) !important;
+}
+
+.settingsLayer.theme-dark .settingsConfirmPanel h3 {
+  color: #f8fafc !important;
+}
+
+.settingsLayer.theme-dark .settingsConfirmPanel p {
+  color: #cbd5e1 !important;
+}
+
+.workbenchFiles.active .workspaceFiles,
+.workbenchFiles.active .workspaceFileBody {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.workbenchFiles.active .workspaceFileTreePane {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.workbenchFiles.active .workspaceFileList {
+  min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+@media (max-width: 1180px) {
+  .runMonitorPanel {
+    width: min(980px, calc(100vw - 24px)) !important;
+  }
+
+  .runMonitorBody--medium {
+    grid-template-columns: minmax(210px, 0.72fr) minmax(0, 1fr) !important;
+  }
+
+  .runMonitorInspectorOverlay {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    display: grid;
+    justify-items: end;
+    pointer-events: none;
+  }
+
+  .runMonitorInspectorBackdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.24);
+    pointer-events: auto;
+  }
+
+  .runMonitorInspectorPanel {
+    position: relative;
+    z-index: 1;
+    width: min(360px, calc(100vw - 48px));
+    height: 100%;
+    min-height: 0;
+    border-left: 1px solid rgba(148, 163, 184, 0.24);
+    background: var(--nx-card, rgb(248 250 252));
+    pointer-events: auto;
+  }
+
+  .appShell.theme-dark .runMonitorInspectorPanel {
+    background: #111827;
+  }
+}
+
+@media (max-width: 900px), (max-height: 720px) {
+  .composer {
+    max-height: min(46vh, 260px);
+    width: min(100% - 24px, 960px);
+    margin-bottom: 10px;
+    padding: 10px 12px;
+  }
+
+  .composerBottom {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .composerActions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 760px) {
+  .runMonitorWorkbench {
+    padding: 8px;
+  }
+
+  .runMonitorPanel {
+    width: calc(100vw - 16px) !important;
+    height: calc(100vh - 16px) !important;
+    max-width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+    border-radius: 14px;
+  }
+
+  .runMonitorHeader {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .runMonitorHeader__center {
+    display: none;
+  }
+
+  .runMonitorMobileTabs {
+    display: flex;
+    gap: 6px;
+    padding: 8px;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+    overflow-x: auto;
+  }
+
+  .runMonitorTab {
+    flex: 1 0 auto;
+    min-height: 32px;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.10);
+    color: inherit;
+    padding: 0 12px;
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .runMonitorTab--active {
+    border-color: rgba(59, 130, 246, 0.44);
+    background: rgba(59, 130, 246, 0.14);
+    color: #2563eb;
+  }
+
+  .runMonitorBody--narrow {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .runMonitorMobileInspector {
+    position: absolute;
+    inset: 116px 0 0;
+    display: grid;
+    min-height: 0;
+    background: var(--nx-card, rgb(248 250 252));
+  }
+
+  .appShell.theme-dark .runMonitorMobileInspector {
+    background: #111827;
+  }
+
+  .traceRow {
+    grid-template-columns: 24px auto minmax(0, 1fr);
+  }
+
+  .traceRow__lifecycle,
+  .traceRow__meta {
+    display: none;
+  }
+}
+
+/* Dark theme EOF guard: handles stale/light settingsLayer classes and chat file summaries. */
+.appShell.theme-dark .settingsLayer {
+  background: rgba(2, 6, 23, 0.72) !important;
+  backdrop-filter: blur(12px);
+}
+
+.appShell.theme-dark .settingsLayer .settingsDrawer {
+  --settings-bg: #0f172a;
+  --settings-panel: #111827;
+  --settings-panel-muted: #1e293b;
+  --settings-panel-soft: #263449;
+  --settings-border: rgba(148, 163, 184, 0.22);
+  --settings-border-strong: rgba(148, 163, 184, 0.34);
+  --settings-text: #f8fafc;
+  --settings-text-sub: #cbd5e1;
+  --settings-accent: #60a5fa;
+  --settings-accent-strong: #3b82f6;
+  --settings-accent-soft: rgba(96, 165, 250, 0.14);
+  --settings-danger: #f87171;
+  --settings-warning: #fbbf24;
+  --settings-success: #34d399;
+  --settings-panel-line: rgba(148, 163, 184, 0.20);
+  --settings-panel-text: #f8fafc;
+  --settings-panel-bg: #0f172a;
+  border-color: rgba(148, 163, 184, 0.28) !important;
+  background: #0f172a !important;
+  color: #e5e7eb !important;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.48) !important;
+}
+
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingsHeader,
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingsBody,
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingsContent,
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingsFieldset {
+  border-color: rgba(148, 163, 184, 0.18) !important;
+  background: #0f172a !important;
+  color: #e5e7eb !important;
+}
+
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingsNav {
+  border-right-color: rgba(148, 163, 184, 0.18) !important;
+  background: #111827 !important;
+}
+
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingsNav button,
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingsNav a {
+  background: transparent !important;
+  color: #94a3b8 !important;
+}
+
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingsNav button:hover:not(:disabled),
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingsNav a:hover,
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingsNav button.active,
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingsNav a.active {
+  border-color: rgba(96, 165, 250, 0.36) !important;
+  background: rgba(30, 41, 59, 0.92) !important;
+  color: #f8fafc !important;
+  box-shadow: inset 3px 0 0 #60a5fa, 0 8px 22px rgba(2, 6, 23, 0.24) !important;
+}
+
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingsCard,
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingsCardCompact,
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingsInfoBlock,
+.appShell.theme-dark .settingsLayer .settingsDrawer .avatarSettingsPanel,
+.appShell.theme-dark .settingsLayer .settingsDrawer .avatarSettingsPreview,
+.appShell.theme-dark .settingsLayer .settingsDrawer .weixinBotPanel,
+.appShell.theme-dark .settingsLayer .settingsDrawer .dingtalkBotPanel,
+.appShell.theme-dark .settingsLayer .settingsDrawer .memoryAdvancedPanel,
+.appShell.theme-dark .settingsLayer .settingsDrawer .remoteBotCard,
+.appShell.theme-dark .settingsLayer .settingsDrawer .providerCard,
+.appShell.theme-dark .settingsLayer .settingsDrawer .skillItem,
+.appShell.theme-dark .settingsLayer .settingsDrawer .presetItem,
+.appShell.theme-dark .settingsLayer .settingsDrawer .presetPanel,
+.appShell.theme-dark .settingsLayer .settingsDrawer .crudItem,
+.appShell.theme-dark .settingsLayer .settingsDrawer .emptyHint,
+.appShell.theme-dark .settingsLayer .settingsDrawer .accessPolicyEmpty,
+.appShell.theme-dark .settingsLayer .settingsDrawer .accessRuleRow,
+.appShell.theme-dark .settingsLayer .settingsDrawer .botReadonlyField,
+.appShell.theme-dark .settingsLayer .settingsDrawer .pluginCard,
+.appShell.theme-dark .settingsLayer .settingsDrawer .pluginCatalogItem,
+.appShell.theme-dark .settingsLayer .settingsDrawer .pluginNotice,
+.appShell.theme-dark .settingsLayer .settingsDrawer .mcpItem {
+  border-color: rgba(148, 163, 184, 0.20) !important;
+  background: #111827 !important;
+  color: #e5e7eb !important;
+  box-shadow: none !important;
+}
+
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingsSection:not(.pluginCatalogShell),
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingsCard,
+.appShell.theme-dark .settingsLayer .settingsDrawer .presetHeader {
+  border-top-color: rgba(148, 163, 184, 0.20) !important;
+  background: transparent !important;
+}
+
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingsHeaderTitle h2,
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingsPageHeader h2,
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingsSection:not(.pluginCatalogShell) > h3,
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingsSection h3,
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingsCardHeader h3,
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingsSectionTitleRow h3,
+.appShell.theme-dark .settingsLayer .settingsDrawer .presetHeader h3,
+.appShell.theme-dark .settingsLayer .settingsDrawer .presetHeader h4,
+.appShell.theme-dark .settingsLayer .settingsDrawer .providerCard strong,
+.appShell.theme-dark .settingsLayer .settingsDrawer .presetItem strong,
+.appShell.theme-dark .settingsLayer .settingsDrawer .remoteBotCard strong,
+.appShell.theme-dark .settingsLayer .settingsDrawer .skillItem strong,
+.appShell.theme-dark .settingsLayer .settingsDrawer .weixinBotHeader strong,
+.appShell.theme-dark .settingsLayer .settingsDrawer .avatarSettingsHeader strong,
+.appShell.theme-dark .settingsLayer .settingsDrawer .accessRuleId,
+.appShell.theme-dark .settingsLayer .settingsDrawer .dropdownOption strong {
+  color: #f8fafc !important;
+}
+
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingsPageHeader p,
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingsCard label,
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingLabel,
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingsMuted,
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingsSubtle,
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingsHelp,
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingsNotice,
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingsCardHint,
+.appShell.theme-dark .settingsLayer .settingsDrawer .presetHeader span,
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingsInfoBlock,
+.appShell.theme-dark .settingsLayer .settingsDrawer .emptyHint,
+.appShell.theme-dark .settingsLayer .settingsDrawer .botNotice,
+.appShell.theme-dark .settingsLayer .settingsDrawer .providerCard span,
+.appShell.theme-dark .settingsLayer .settingsDrawer .presetItem span,
+.appShell.theme-dark .settingsLayer .settingsDrawer .remoteBotCard span,
+.appShell.theme-dark .settingsLayer .settingsDrawer .remoteBotCard small,
+.appShell.theme-dark .settingsLayer .settingsDrawer .skillItem span,
+.appShell.theme-dark .settingsLayer .settingsDrawer .weixinBotHeader span,
+.appShell.theme-dark .settingsLayer .settingsDrawer .dropdownOption span,
+.appShell.theme-dark .settingsLayer .settingsDrawer label {
+  color: #cbd5e1 !important;
+}
+
+.appShell.theme-dark .settingsLayer .settingsDrawer input,
+.appShell.theme-dark .settingsLayer .settingsDrawer textarea,
+.appShell.theme-dark .settingsLayer .settingsDrawer select,
+.appShell.theme-dark .settingsLayer .settingsDrawer select option,
+.appShell.theme-dark .settingsLayer .settingsDrawer .dropdownButton,
+.appShell.theme-dark .settingsLayer .settingsDrawer .dingtalkTestInput,
+.appShell.theme-dark .settingsLayer .settingsDrawer .dingtalkTestSelect,
+.appShell.theme-dark .settingsLayer .settingsDrawer .pluginSearchBox input,
+.appShell.theme-dark .settingsLayer .settingsDrawer .pluginModalField input {
+  border-color: rgba(148, 163, 184, 0.28) !important;
+  background: #0b1220 !important;
+  color: #f8fafc !important;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset !important;
+}
+
+.appShell.theme-dark .settingsLayer .settingsDrawer .modelKeyStatusLine,
+.appShell.theme-dark .settingsLayer .settingsDrawer .providerKeyCard .modelKeyStatusLine,
+.appShell.theme-dark .settingsLayer .settingsDrawer .botStatusBadge,
+.appShell.theme-dark .settingsLayer .settingsDrawer .statusPill,
+.appShell.theme-dark .settingsLayer .settingsDrawer .presetAppliedBadge,
+.appShell.theme-dark .settingsLayer .settingsDrawer .accessPolicyScopeTabs,
+.appShell.theme-dark .settingsLayer .settingsDrawer .mcpToggle,
+.appShell.theme-dark .settingsLayer .settingsDrawer .mcpRuntimeStatus,
+.appShell.theme-dark .settingsLayer .settingsDrawer .providerCard code {
+  border-color: rgba(148, 163, 184, 0.22) !important;
+  background: rgba(15, 23, 42, 0.78) !important;
+  color: #cbd5e1 !important;
+}
+
+.appShell.theme-dark .settingsLayer .settingsDrawer .accessPolicyScopeTabs button {
+  background: transparent !important;
+  color: #94a3b8 !important;
+}
+
+.appShell.theme-dark .settingsLayer .settingsDrawer .accessPolicyScopeTabs button.active {
+  background: #1e293b !important;
+  color: #f8fafc !important;
+  box-shadow: 0 1px 5px rgba(2, 6, 23, 0.35) !important;
+}
+
+.appShell.theme-dark .settingsLayer .settingsDrawer .dropdownMenu,
+.appShell.theme-dark .settingsLayer .settingsDrawer .dropdownOption {
+  border-color: rgba(148, 163, 184, 0.22) !important;
+  background: #111827 !important;
+  color: #e5e7eb !important;
+  box-shadow: 0 22px 48px rgba(2, 6, 23, 0.42) !important;
+}
+
+.appShell.theme-dark .settingsLayer .settingsDrawer .whiteButton,
+.appShell.theme-dark .settingsLayer .settingsDrawer .textButton,
+.appShell.theme-dark .settingsLayer .settingsDrawer .outlineButton,
+.appShell.theme-dark .settingsLayer .settingsDrawer .btn,
+.appShell.theme-dark .settingsLayer .settingsDrawer .miniIconButton,
+.appShell.theme-dark .settingsLayer .settingsDrawer .dropdownOptionAction,
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingsHeader .iconButton {
+  border-color: rgba(148, 163, 184, 0.26) !important;
+  background: #1e293b !important;
+  color: #e2e8f0 !important;
+  box-shadow: none !important;
+}
+
+.appShell.theme-dark .settingsLayer .settingsDrawer .whiteButton:hover:not(:disabled),
+.appShell.theme-dark .settingsLayer .settingsDrawer .textButton:hover:not(:disabled),
+.appShell.theme-dark .settingsLayer .settingsDrawer .outlineButton:hover:not(:disabled),
+.appShell.theme-dark .settingsLayer .settingsDrawer .btn:hover:not(:disabled),
+.appShell.theme-dark .settingsLayer .settingsDrawer .miniIconButton:hover:not(:disabled),
+.appShell.theme-dark .settingsLayer .settingsDrawer .dropdownOptionAction:hover:not(:disabled),
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingsHeader .iconButton:hover:not(:disabled) {
+  border-color: rgba(96, 165, 250, 0.40) !important;
+  background: rgba(30, 64, 175, 0.34) !important;
+  color: #ffffff !important;
+}
+
+.appShell.theme-dark .turnFileSummary {
+  border-color: rgba(148, 163, 184, 0.22) !important;
+  background: rgba(15, 23, 42, 0.70) !important;
+  color: #e5e7eb !important;
+}
+
+.appShell.theme-dark .turnFileSummaryRow {
+  border: 1px solid rgba(148, 163, 184, 0.18) !important;
+  background: rgba(30, 41, 59, 0.82) !important;
+  color: #e5e7eb !important;
+}
+
+.appShell.theme-dark .turnFileSummaryHeader :where(strong, span),
+.appShell.theme-dark .turnFileSummaryPath,
+.appShell.theme-dark .turnFileSummaryPathText,
+.appShell.theme-dark .turnFileSummaryPath code,
+.appShell.theme-dark .turnFileSummaryRow code,
+.appShell.theme-dark .turnFileSummaryMore summary {
+  color: #e5e7eb !important;
+}
+
+.appShell.theme-dark .turnFileSummaryBadge {
+  border: 1px solid rgba(96, 165, 250, 0.30) !important;
+  background: rgba(30, 64, 175, 0.30) !important;
+  color: #dbeafe !important;
+}
+
+.appShell.theme-dark .turnFileSummaryBadge.changed {
+  border-color: rgba(52, 211, 153, 0.30) !important;
+  background: rgba(6, 78, 59, 0.34) !important;
+  color: #bbf7d0 !important;
+}
+
+/* Desktop dark layered override guard: important rules inside Tailwind layers beat unlayered important rules. */
+@layer components {
+  .settingsLayer.theme-dark .settingsDrawer,
+  .settingsDrawer.theme-dark,
+  .appShell.theme-dark .settingsLayer .settingsDrawer {
+    border-color: rgba(148, 163, 184, 0.28) !important;
+    background: #0f172a !important;
+    color: #e5e7eb !important;
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.48) !important;
+  }
+
+  .settingsLayer.theme-dark .settingsDrawer .settingsHeader,
+  .settingsLayer.theme-dark .settingsDrawer .settingsBody,
+  .settingsLayer.theme-dark .settingsDrawer .settingsContent,
+  .settingsLayer.theme-dark .settingsDrawer .settingsFieldset,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .settingsHeader,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .settingsBody,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .settingsContent,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .settingsFieldset {
+    border-color: rgba(148, 163, 184, 0.18) !important;
+    background: #0f172a !important;
+    color: #e5e7eb !important;
+  }
+
+  .settingsLayer.theme-dark .settingsDrawer .settingsNav,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .settingsNav {
+    border-right-color: rgba(148, 163, 184, 0.18) !important;
+    background: #111827 !important;
+  }
+
+  .settingsLayer.theme-dark .settingsDrawer .settingsNav button,
+  .settingsLayer.theme-dark .settingsDrawer .settingsNav a,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .settingsNav button,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .settingsNav a {
+    background: transparent !important;
+    color: #94a3b8 !important;
+  }
+
+  .settingsLayer.theme-dark .settingsDrawer .settingsNav button:hover:not(:disabled),
+  .settingsLayer.theme-dark .settingsDrawer .settingsNav a:hover,
+  .settingsLayer.theme-dark .settingsDrawer .settingsNav button.active,
+  .settingsLayer.theme-dark .settingsDrawer .settingsNav a.active,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .settingsNav button:hover:not(:disabled),
+  .appShell.theme-dark .settingsLayer .settingsDrawer .settingsNav a:hover,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .settingsNav button.active,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .settingsNav a.active {
+    border-color: rgba(96, 165, 250, 0.36) !important;
+    background: rgba(30, 41, 59, 0.92) !important;
+    color: #f8fafc !important;
+    box-shadow: inset 3px 0 0 #60a5fa, 0 8px 22px rgba(2, 6, 23, 0.24) !important;
+  }
+
+  .settingsLayer.theme-dark .settingsDrawer .settingsCard,
+  .settingsLayer.theme-dark .settingsDrawer .settingsCardCompact,
+  .settingsLayer.theme-dark .settingsDrawer .settingsInfoBlock,
+  .settingsLayer.theme-dark .settingsDrawer .memoryAdvancedToggle,
+  .settingsLayer.theme-dark .settingsDrawer .avatarSettingsPanel,
+  .settingsLayer.theme-dark .settingsDrawer .avatarSettingsPreview,
+  .settingsLayer.theme-dark .settingsDrawer .weixinBotPanel,
+  .settingsLayer.theme-dark .settingsDrawer .dingtalkBotPanel,
+  .settingsLayer.theme-dark .settingsDrawer .memoryAdvancedPanel,
+  .settingsLayer.theme-dark .settingsDrawer .remoteBotCard,
+  .settingsLayer.theme-dark .settingsDrawer .providerCard,
+  .settingsLayer.theme-dark .settingsDrawer .skillItem,
+  .settingsLayer.theme-dark .settingsDrawer .presetItem,
+  .settingsLayer.theme-dark .settingsDrawer .presetPanel,
+  .settingsLayer.theme-dark .settingsDrawer .crudItem,
+  .settingsLayer.theme-dark .settingsDrawer .emptyHint,
+  .settingsLayer.theme-dark .settingsDrawer .accessPolicyEmpty,
+  .settingsLayer.theme-dark .settingsDrawer .accessRuleRow,
+  .settingsLayer.theme-dark .settingsDrawer .botReadonlyField,
+  .settingsLayer.theme-dark .settingsDrawer .pluginCard,
+  .settingsLayer.theme-dark .settingsDrawer .pluginCatalogItem,
+  .settingsLayer.theme-dark .settingsDrawer .pluginNotice,
+  .settingsLayer.theme-dark .settingsDrawer .mcpItem,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .settingsCard,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .settingsCardCompact,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .settingsInfoBlock,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .memoryAdvancedToggle,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .avatarSettingsPanel,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .avatarSettingsPreview,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .weixinBotPanel,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .dingtalkBotPanel,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .memoryAdvancedPanel,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .remoteBotCard,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .providerCard,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .skillItem,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .presetItem,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .presetPanel,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .crudItem,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .emptyHint,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .accessPolicyEmpty,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .accessRuleRow,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .botReadonlyField,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .pluginCard,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .pluginCatalogItem,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .pluginNotice,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .mcpItem {
+    border-color: rgba(148, 163, 184, 0.20) !important;
+    background: #111827 !important;
+    color: #e5e7eb !important;
+    box-shadow: none !important;
+  }
+
+  .settingsLayer.theme-dark .settingsDrawer .settingsSection:not(.pluginCatalogShell),
+  .settingsLayer.theme-dark .settingsDrawer .settingsCard,
+  .settingsLayer.theme-dark .settingsDrawer .presetHeader,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .settingsSection:not(.pluginCatalogShell),
+  .appShell.theme-dark .settingsLayer .settingsDrawer .settingsCard,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .presetHeader {
+    border-top-color: rgba(148, 163, 184, 0.20) !important;
+    background: transparent !important;
+  }
+
+  .settingsLayer.theme-dark .settingsDrawer .settingsHeaderTitle h2,
+  .settingsLayer.theme-dark .settingsDrawer .settingsPageHeader h2,
+  .settingsLayer.theme-dark .settingsDrawer .settingsSection:not(.pluginCatalogShell) > h3,
+  .settingsLayer.theme-dark .settingsDrawer .settingsSection h3,
+  .settingsLayer.theme-dark .settingsDrawer .settingsCardHeader h3,
+  .settingsLayer.theme-dark .settingsDrawer .settingsSectionTitleRow h3,
+  .settingsLayer.theme-dark .settingsDrawer .presetHeader h3,
+  .settingsLayer.theme-dark .settingsDrawer .presetHeader h4,
+  .settingsLayer.theme-dark .settingsDrawer .providerCard strong,
+  .settingsLayer.theme-dark .settingsDrawer .presetItem strong,
+  .settingsLayer.theme-dark .settingsDrawer .remoteBotCard strong,
+  .settingsLayer.theme-dark .settingsDrawer .skillItem strong,
+  .settingsLayer.theme-dark .settingsDrawer .weixinBotHeader strong,
+  .settingsLayer.theme-dark .settingsDrawer .avatarSettingsHeader strong,
+  .settingsLayer.theme-dark .settingsDrawer .accessRuleId,
+  .settingsLayer.theme-dark .settingsDrawer .dropdownOption strong,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .settingsHeaderTitle h2,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .settingsPageHeader h2,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .settingsSection:not(.pluginCatalogShell) > h3,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .settingsSection h3,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .settingsCardHeader h3,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .settingsSectionTitleRow h3,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .presetHeader h3,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .presetHeader h4,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .providerCard strong,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .presetItem strong,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .remoteBotCard strong,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .skillItem strong,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .weixinBotHeader strong,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .avatarSettingsHeader strong,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .accessRuleId,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .dropdownOption strong {
+    color: #f8fafc !important;
+  }
+
+  .settingsLayer.theme-dark .settingsDrawer .settingsPageHeader p,
+  .settingsLayer.theme-dark .settingsDrawer .settingsCard label,
+  .settingsLayer.theme-dark .settingsDrawer .settingLabel,
+  .settingsLayer.theme-dark .settingsDrawer .settingsMuted,
+  .settingsLayer.theme-dark .settingsDrawer .settingsSubtle,
+  .settingsLayer.theme-dark .settingsDrawer .settingsHelp,
+  .settingsLayer.theme-dark .settingsDrawer .settingsNotice,
+  .settingsLayer.theme-dark .settingsDrawer .settingsCardHint,
+  .settingsLayer.theme-dark .settingsDrawer .presetHeader span,
+  .settingsLayer.theme-dark .settingsDrawer .settingsInfoBlock,
+  .settingsLayer.theme-dark .settingsDrawer .emptyHint,
+  .settingsLayer.theme-dark .settingsDrawer .botNotice,
+  .settingsLayer.theme-dark .settingsDrawer .providerCard span,
+  .settingsLayer.theme-dark .settingsDrawer .presetItem span,
+  .settingsLayer.theme-dark .settingsDrawer .remoteBotCard span,
+  .settingsLayer.theme-dark .settingsDrawer .remoteBotCard small,
+  .settingsLayer.theme-dark .settingsDrawer .skillItem span,
+  .settingsLayer.theme-dark .settingsDrawer .weixinBotHeader span,
+  .settingsLayer.theme-dark .settingsDrawer .dropdownOption span,
+  .settingsLayer.theme-dark .settingsDrawer label,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .settingsPageHeader p,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .settingsCard label,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .settingLabel,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .settingsMuted,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .settingsSubtle,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .settingsHelp,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .settingsNotice,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .settingsCardHint,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .presetHeader span,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .settingsInfoBlock,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .emptyHint,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .botNotice,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .providerCard span,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .presetItem span,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .remoteBotCard span,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .remoteBotCard small,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .skillItem span,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .weixinBotHeader span,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .dropdownOption span,
+  .appShell.theme-dark .settingsLayer .settingsDrawer label {
+    color: #cbd5e1 !important;
+  }
+
+  .settingsLayer.theme-dark .settingsDrawer input,
+  .settingsLayer.theme-dark .settingsDrawer textarea,
+  .settingsLayer.theme-dark .settingsDrawer select,
+  .settingsLayer.theme-dark .settingsDrawer select option,
+  .settingsLayer.theme-dark .settingsDrawer .dropdownButton,
+  .settingsLayer.theme-dark .settingsDrawer .dingtalkTestInput,
+  .settingsLayer.theme-dark .settingsDrawer .dingtalkTestSelect,
+  .settingsLayer.theme-dark .settingsDrawer .pluginSearchBox input,
+  .settingsLayer.theme-dark .settingsDrawer .pluginModalField input,
+  .appShell.theme-dark .settingsLayer .settingsDrawer input,
+  .appShell.theme-dark .settingsLayer .settingsDrawer textarea,
+  .appShell.theme-dark .settingsLayer .settingsDrawer select,
+  .appShell.theme-dark .settingsLayer .settingsDrawer select option,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .dropdownButton,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .dingtalkTestInput,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .dingtalkTestSelect,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .pluginSearchBox input,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .pluginModalField input {
+    border-color: rgba(148, 163, 184, 0.28) !important;
+    background: #0b1220 !important;
+    color: #f8fafc !important;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset !important;
+  }
+
+  .settingsLayer.theme-dark .settingsDrawer .dropdownMenu,
+  .settingsLayer.theme-dark .settingsDrawer .dropdownOption,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .dropdownMenu,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .dropdownOption {
+    border-color: rgba(148, 163, 184, 0.22) !important;
+    background: #111827 !important;
+    color: #e5e7eb !important;
+    box-shadow: 0 22px 48px rgba(2, 6, 23, 0.42) !important;
+  }
+
+  .settingsLayer.theme-dark .settingsDrawer .modelKeyStatusLine,
+  .settingsLayer.theme-dark .settingsDrawer .providerKeyCard .modelKeyStatusLine,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .modelKeyStatusLine,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .providerKeyCard .modelKeyStatusLine {
+    border-color: rgba(148, 163, 184, 0.22) !important;
+    background: rgba(15, 23, 42, 0.78) !important;
+    color: #cbd5e1 !important;
+    box-shadow: none !important;
+  }
+
+  .settingsLayer.theme-dark .settingsDrawer .whiteButton,
+  .settingsLayer.theme-dark .settingsDrawer .textButton,
+  .settingsLayer.theme-dark .settingsDrawer .outlineButton,
+  .settingsLayer.theme-dark .settingsDrawer .btn,
+  .settingsLayer.theme-dark .settingsDrawer .miniIconButton,
+  .settingsLayer.theme-dark .settingsDrawer .dropdownOptionAction,
+  .settingsLayer.theme-dark .settingsDrawer .settingsHeader .iconButton,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .whiteButton,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .textButton,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .outlineButton,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .btn,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .miniIconButton,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .dropdownOptionAction,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .settingsHeader .iconButton {
+    border-color: rgba(148, 163, 184, 0.26) !important;
+    background: #1e293b !important;
+    color: #e2e8f0 !important;
+    box-shadow: none !important;
+  }
+
+  .settingsLayer.theme-dark .settingsDrawer button:disabled:not(.solidButton):not(.dangerButton),
+  .appShell.theme-dark .settingsLayer .settingsDrawer button:disabled:not(.solidButton):not(.dangerButton) {
+    border-color: rgba(148, 163, 184, 0.18) !important;
+    background: rgba(15, 23, 42, 0.52) !important;
+    color: #94a3b8 !important;
+    opacity: 1 !important;
+    box-shadow: none !important;
+  }
+
+  .settingsLayer.theme-dark .settingsDrawer .whiteButton:hover:not(:disabled),
+  .settingsLayer.theme-dark .settingsDrawer .textButton:hover:not(:disabled),
+  .settingsLayer.theme-dark .settingsDrawer .outlineButton:hover:not(:disabled),
+  .settingsLayer.theme-dark .settingsDrawer .btn:hover:not(:disabled),
+  .settingsLayer.theme-dark .settingsDrawer .miniIconButton:hover:not(:disabled),
+  .settingsLayer.theme-dark .settingsDrawer .dropdownOptionAction:hover:not(:disabled),
+  .settingsLayer.theme-dark .settingsDrawer .settingsHeader .iconButton:hover:not(:disabled),
+  .appShell.theme-dark .settingsLayer .settingsDrawer .whiteButton:hover:not(:disabled),
+  .appShell.theme-dark .settingsLayer .settingsDrawer .textButton:hover:not(:disabled),
+  .appShell.theme-dark .settingsLayer .settingsDrawer .outlineButton:hover:not(:disabled),
+  .appShell.theme-dark .settingsLayer .settingsDrawer .btn:hover:not(:disabled),
+  .appShell.theme-dark .settingsLayer .settingsDrawer .miniIconButton:hover:not(:disabled),
+  .appShell.theme-dark .settingsLayer .settingsDrawer .dropdownOptionAction:hover:not(:disabled),
+  .appShell.theme-dark .settingsLayer .settingsDrawer .settingsHeader .iconButton:hover:not(:disabled) {
+    border-color: rgba(96, 165, 250, 0.40) !important;
+    background: rgba(30, 64, 175, 0.34) !important;
+    color: #ffffff !important;
+  }
+
+  .appShell.theme-dark .turnFileSummary {
+    border-color: rgba(148, 163, 184, 0.22) !important;
+    background: rgba(15, 23, 42, 0.70) !important;
+    color: #e5e7eb !important;
+  }
+
+  .appShell.theme-dark .turnFileSummaryRow {
+    border: 1px solid rgba(148, 163, 184, 0.18) !important;
+    background: rgba(30, 41, 59, 0.82) !important;
+    color: #e5e7eb !important;
+  }
+
+  .appShell.theme-dark .turnFileSummaryHeader :where(strong, span),
+  .appShell.theme-dark .turnFileSummaryPath,
+  .appShell.theme-dark .turnFileSummaryPathText,
+  .appShell.theme-dark .turnFileSummaryPath code,
+  .appShell.theme-dark .turnFileSummaryRow code,
+  .appShell.theme-dark .turnFileSummaryMore summary {
+    color: #e5e7eb !important;
+  }
+
+  .appShell.theme-dark .turnFileSummaryBadge {
+    border: 1px solid rgba(96, 165, 250, 0.30) !important;
+    background: rgba(30, 64, 175, 0.30) !important;
+    color: #dbeafe !important;
+  }
+
+  .appShell.theme-dark .turnFileSummaryBadge.changed {
+    border-color: rgba(52, 211, 153, 0.30) !important;
+    background: rgba(6, 78, 59, 0.34) !important;
+    color: #bbf7d0 !important;
+  }
+}
+
+/* Run monitor compact density + jump target affordance. */
+.runMonitorPanel {
+  font-size: 12px;
+}
+
+.runMonitorHeader {
+  min-height: 56px;
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+.runMonitorHeader__title {
+  font-size: 14px;
+  line-height: 18px;
+}
+
+.runMonitorHeader__left {
+  gap: 5px;
+}
+
+.runMonitorStat {
+  min-height: 22px;
+  gap: 5px;
+  padding: 0 8px;
+  font-size: 10.5px;
+}
+
+.runMonitorStat__dot {
+  width: 6px;
+  height: 6px;
+}
+
+.runMonitorToggle,
+.traceErrorsOnly {
+  min-height: 26px;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.runMonitorInterval,
+.runMonitorAdminToken {
+  min-height: 28px;
+  border-radius: 9px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+
+.runMonitorCloseBtn,
+.runExplorer__refresh,
+.traceControlBtn,
+.traceLoadMore,
+.traceInspector__back,
+.traceInspector__copyBtn {
+  min-height: 27px;
+  border-radius: 9px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+
+.runExplorer__header,
+.traceTimeline__header,
+.traceInspector__header,
+.traceTimeline__footer {
+  gap: 8px;
+  padding: 10px 12px;
+}
+
+.runExplorer__body,
+.traceTimeline__body,
+.traceInspector__body {
+  padding: 10px;
+}
+
+.runExplorer__threads,
+.runExplorer__flat,
+.traceList,
+.inspectorGrid {
+  gap: 6px;
+}
+
+.runExplorer__title,
+.traceTimeline__runTitle,
+.traceInspector__name {
+  font-size: 12px;
+}
+
+.traceTimeline__footer,
+.runEntry__time,
+.traceRow__summary,
+.traceRow__time,
+.traceTimeline__runTime,
+.traceInspector__category,
+.inspectorField__label {
+  font-size: 10px;
+}
+
+.runThreadGroup__header {
+  min-height: 34px;
+  gap: 7px;
+  padding: 0 8px;
+}
+
+.runEntry {
+  gap: 7px;
+  padding: 8px;
+}
+
+.traceFilters {
+  max-height: 96px !important;
+  gap: 8px;
+  padding: 7px 12px !important;
+}
+
+.traceFilterChips {
+  gap: 5px;
+}
+
+.traceChip {
+  min-height: 23px;
+  gap: 3px;
+  padding: 0 7px;
+  font-size: 10.5px;
+}
+
+.traceRow {
+  grid-template-columns: 22px auto auto minmax(0, 1fr) auto;
+  gap: 6px;
+  padding: 7px 8px;
+  border-radius: 10px;
+}
+
+.traceRow__icon,
+.traceInspector__icon {
+  width: 22px;
+  height: 22px;
+  font-size: 13px;
+}
+
+.traceRow__name {
+  font-size: 11.5px;
+}
+
+.runEntry__kind,
+.runEntry__step,
+.traceRow__category,
+.traceRow__lifecycle,
+.traceRow__duration,
+.traceTimeline__runStatusLabel,
+.inspectorBadge {
+  padding: 1px 6px;
+  font-size: 9.5px;
+}
+
+.traceInspector__section {
+  gap: 8px;
+}
+
+.traceInspector__sectionTitle,
+.traceInspector__jsonSummary,
+.inspectorField__value {
+  font-size: 11px;
+}
+
+.inspectorField {
+  gap: 2px;
+  border-radius: 9px;
+  padding: 7px;
+}
+
+.inspectorPre,
+.traceInspector__jsonPre {
+  padding: 8px;
+  font-size: 10.5px;
+  line-height: 1.5;
+}
+
+.traceRow--jumped {
+  animation: traceRowJumpPulse 1.55s ease-out;
+}
+
+@keyframes traceRowJumpPulse {
+  0% {
+    border-color: rgba(37, 99, 235, 0.92);
+    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.32);
+  }
+  45% {
+    border-color: rgba(37, 99, 235, 0.72);
+    box-shadow: 0 0 0 5px rgba(37, 99, 235, 0.14);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0);
+  }
 }

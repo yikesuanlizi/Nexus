@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { GitNexusForceGraph } from './GitNexusForceGraph.js';
 import type { ForceGraphData, ForceGraphLevel, ForceGraphNode } from './GitNexusForceGraph.js';
 
@@ -149,7 +150,7 @@ export function GitNexusGraphModal({
 
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <div
       className="gitNexusGraphModalBackdrop"
       onClick={handleBackdropClick}
@@ -186,12 +187,12 @@ export function GitNexusGraphModal({
         <div className="gitNexusGraphContent">
           <GitNexusForceGraph
             data={data}
-            disableZoom
             level={level}
             onNodeClick={onNodeClick}
           />
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

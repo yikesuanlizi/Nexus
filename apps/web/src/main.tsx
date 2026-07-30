@@ -28,7 +28,18 @@ import { readStored } from './shared/storage.js';
 import { buildChildActivityByThread } from './features/agents/subagentActivity.js';
 import { buildSubagentStatusRows } from './features/agents/subagents.js';
 import { modeInstructionFor } from './config/taskModes.js';
-import { buildTokenUsageSummary, formatCacheDiagnostics, formatCompactionPressure } from './features/chat/usageDisplay.js';
+import {
+  buildTokenTooltip,
+  buildTokenUsageSummary,
+  cacheContextPercent,
+  contextUsagePercent,
+  formatCacheDiagnostics,
+  formatCompactionPressure,
+  hasContextPressure,
+  resolveDisplayContextPressure,
+  resolveModelCapabilities,
+  softThresholdPercent,
+} from './features/chat/usageDisplay.js';
 import { rollbackCountForTurn } from './features/chat/rollback.js';
 import { useWebProviderSettings, type SettingsResponseWithWebProvider } from './api/webProviderClient.js';
 import { useRunMonitor } from './features/monitor/runMonitor.js';
@@ -56,53 +67,6 @@ function resolveThemeShortcutMode(current: RunConfig['themeMode']): 'light' | 'd
 
 function nextThemeMode(current: RunConfig['themeMode']): RunConfig['themeMode'] {
   return resolveThemeShortcutMode(current) === 'dark' ? 'light' : 'dark';
-}
-
-function formatCompactNumber(n: number): string {
-  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
-  if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
-  return String(n);
-}
-
-function hasContextPressure(pressure: { estimatedTokens?: number; maxTokens?: number } | null | undefined): boolean {
-  return Boolean(pressure?.estimatedTokens && pressure?.maxTokens && pressure.maxTokens > 0);
-}
-
-function contextUsagePercent(pressure: { estimatedTokens?: number; maxTokens?: number } | null | undefined): number {
-  const est = Number(pressure?.estimatedTokens ?? 0);
-  const max = Number(pressure?.maxTokens ?? 0);
-  if (max <= 0) return 0;
-  return Math.min(100, Math.round((est / max) * 100));
-}
-
-function buildTokenTooltip(
-  usage: { totalInput?: number; totalCached?: number; totalOutput?: number; hitRate?: number } | null | undefined,
-  pressure: { estimatedTokens?: number; maxTokens?: number; softThreshold?: number; hardThreshold?: number } | null | undefined,
-  locale: 'zh' | 'en',
-): string {
-  const parts: string[] = [];
-  if (usage) {
-    parts.push(locale === 'zh' ? `输入: ${usage.totalInput}` : `Input: ${usage.totalInput}`);
-    parts.push(locale === 'zh' ? `缓存: ${usage.totalCached} (${usage.hitRate}%)` : `Cache: ${usage.totalCached} (${usage.hitRate}%)`);
-    parts.push(locale === 'zh' ? `输出: ${usage.totalOutput}` : `Output: ${usage.totalOutput}`);
-  }
-  if (pressure?.maxTokens) {
-    if (parts.length) parts.push('—');
-    parts.push(locale === 'zh'
-      ? `上下文: ${formatCompactNumber(pressure.estimatedTokens ?? 0)} / ${formatCompactNumber(pressure.maxTokens)}`
-      : `Context: ${formatCompactNumber(pressure.estimatedTokens ?? 0)} / ${formatCompactNumber(pressure.maxTokens)}`);
-    if (pressure.softThreshold) {
-      parts.push(locale === 'zh'
-        ? `软阈值: ${formatCompactNumber(pressure.softThreshold)}`
-        : `Soft threshold: ${formatCompactNumber(pressure.softThreshold)}`);
-    }
-    if (pressure.hardThreshold) {
-      parts.push(locale === 'zh'
-        ? `硬阈值: ${formatCompactNumber(pressure.hardThreshold)}`
-        : `Hard threshold: ${formatCompactNumber(pressure.hardThreshold)}`);
-    }
-  }
-  return parts.join(' ');
 }
 
 function parseProviderEnvVarSaveFailure(detail: string): string {
@@ -237,8 +201,19 @@ patchGlobalFetch(); function App() {
   const tokenUsage = useMemo(() => {
     return buildTokenUsageSummary(threadUsage, config.locale);
   }, [config.locale, threadUsage]);
+  const modelCapabilities = useMemo(() => resolveModelCapabilities({
+    provider: config.provider,
+    model: config.model,
+    baseUrl: config.baseUrl,
+    modelContextTokens: config.modelContextTokens,
+    modelMaxOutputTokens: config.modelMaxOutputTokens,
+  }), [config.baseUrl, config.model, config.modelContextTokens, config.modelMaxOutputTokens, config.provider]);
+  const displayCompactionPressure = useMemo(
+    () => resolveDisplayContextPressure(compactionPressure, modelCapabilities),
+    [compactionPressure, modelCapabilities],
+  );
   const cacheSummary = useMemo(() => formatCacheDiagnostics(cacheDiagnostics, config.locale), [cacheDiagnostics, config.locale]);
-  const pressureSummary = useMemo(() => formatCompactionPressure(compactionPressure, config.locale), [compactionPressure, config.locale]);
+  const pressureSummary = useMemo(() => formatCompactionPressure(displayCompactionPressure, config.locale), [displayCompactionPressure, config.locale]);
   const lastItemSignature = useMemo(() => {
     const last = items[items.length - 1];
     if (!last) return '';
@@ -427,26 +402,27 @@ patchGlobalFetch(); function App() {
         return;
       }
     }
+    let targetRunId = runId;
+    if (!targetRunId && threadId) {
+      const runForThread = runMonitor.runs.find(r => r.threadId === threadId && r.status === 'running')
+        ?? runMonitor.runs.find(r => r.threadId === threadId);
+      if (runForThread) {
+        targetRunId = runForThread.runId;
+      }
+    }
+    if (eventId || itemId) {
+      if (threadId) {
+        runMonitor.toggleThread(threadId);
+      }
+      runMonitor.focusTraceTarget({ runId: targetRunId, eventId, itemId });
+      return;
+    }
     runMonitor.openDrawer();
     if (threadId) {
       runMonitor.toggleThread(threadId);
     }
-    let targetRunId = runId;
     if (targetRunId) {
       runMonitor.selectRun(targetRunId);
-    } else if (threadId) {
-      const runForThread = runMonitor.runs.find(r => r.threadId === threadId && r.status === 'running')
-        ?? runMonitor.runs.find(r => r.threadId === threadId);
-      if (runForThread) {
-        runMonitor.selectRun(runForThread.runId);
-        targetRunId = runForThread.runId;
-      }
-    }
-    if (eventId) {
-      setTimeout(() => runMonitor.selectEvent(eventId), 300);
-    }
-    if (itemId) {
-      setTimeout(() => runMonitor.selectByItemId(itemId), 500);
     }
   }, [runMonitor]);
 
@@ -1886,34 +1862,38 @@ patchGlobalFetch(); function App() {
             <strong>{activeThread?.title || t(config.locale, 'noConversation')}</strong>
             <span>{status}</span>
           </div>
-          {tokenUsage || hasContextPressure(compactionPressure) ? (
-            <div className="tokenUsageBar" title={buildTokenTooltip(tokenUsage, compactionPressure, config.locale)}>
+          {tokenUsage || hasContextPressure(displayCompactionPressure) ? (
+            <div className="tokenUsageBar" title={buildTokenTooltip(tokenUsage, displayCompactionPressure, config.locale)}>
               <div className="tokenUsageBarRow">
                 {tokenUsage ? (
                   <span className="tokenUsageBarLabel cacheLabel">
                     {config.locale === 'zh' ? '缓存' : 'cache'} {tokenUsage.hitRate ?? 0}%
                   </span>
                 ) : null}
-                {hasContextPressure(compactionPressure) ? (
+                {hasContextPressure(displayCompactionPressure) ? (
                   <span className="tokenUsageBarLabel contextLabel">
-                    {config.locale === 'zh' ? '上下文' : 'ctx'} {contextUsagePercent(compactionPressure)}%
+                    {config.locale === 'zh' ? '上下文' : 'ctx'} {contextUsagePercent(displayCompactionPressure)}%
                   </span>
                 ) : null}
               </div>
-              {hasContextPressure(compactionPressure) ? (
+              {hasContextPressure(displayCompactionPressure) ? (
                 <div className="tokenUsageBarTrack">
                   <div
+                    className="tokenUsageBarCacheSeg"
+                    style={{ width: `${cacheContextPercent(tokenUsage, displayCompactionPressure)}%` }}
+                  />
+                  <div
                     className="tokenUsageBarContextSeg"
-                    style={{ width: `${contextUsagePercent(compactionPressure)}%`, borderRadius: '999px 0 0 999px' }}
+                    style={{ width: `${Math.max(0, contextUsagePercent(displayCompactionPressure) - cacheContextPercent(tokenUsage, displayCompactionPressure))}%` }}
                   />
                   <div
                     className="tokenUsageBarRemainSeg"
-                    style={{ width: `${Math.max(0, 100 - contextUsagePercent(compactionPressure))}%`, borderRadius: '0 999px 999px 0' }}
+                    style={{ width: `${Math.max(0, 100 - contextUsagePercent(displayCompactionPressure))}%` }}
                   />
-                  {compactionPressure?.softThreshold && compactionPressure?.maxTokens ? (
+                  {softThresholdPercent(displayCompactionPressure) !== null ? (
                     <div
                       className="tokenUsageBarSoftLine"
-                      style={{ left: `${Math.min(100, (compactionPressure.softThreshold / compactionPressure.maxTokens) * 100)}%` }}
+                      style={{ left: `${softThresholdPercent(displayCompactionPressure) ?? 0}%` }}
                     />
                   ) : null}
                 </div>
@@ -2044,6 +2024,7 @@ patchGlobalFetch(); function App() {
         selectedRunId={runMonitor.selectedRunId}
         selectedRun={runMonitor.selectedRun}
         selectedEventId={runMonitor.selectedEventId}
+        traceFocusVersion={runMonitor.traceFocusVersion}
         selectedTrace={runMonitor.selectedTrace}
         categoryFilter={runMonitor.categoryFilter}
         errorsOnly={runMonitor.errorsOnly}

@@ -31,6 +31,8 @@ export interface RunConfig {
   webProvider: WebProviderMode;
   webProviderKeySource: SecretSource;
   reasoningEffort: ReasoningEffort;
+  modelContextTokens?: number;
+  modelMaxOutputTokens?: number;
   runProfile: RunProfile;
   memoryEnabled: boolean;
   autoExtractMemories: boolean;
@@ -69,6 +71,8 @@ const USER_FIELDS: Array<keyof RunConfig> = [
   'webProvider',
   'webProviderKeySource',
   'reasoningEffort',
+  'modelContextTokens',
+  'modelMaxOutputTokens',
   'runProfile',
   'memoryEnabled',
   'autoExtractMemories',

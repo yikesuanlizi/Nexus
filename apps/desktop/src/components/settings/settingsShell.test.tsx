@@ -13,6 +13,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 
 function renderShell(overrides: {
   saveState?: Partial<SettingsSaveState>;
+  visualThemeMode?: 'light' | 'dark';
 } = {}): string {
   const baseSaveState: SettingsSaveState = {
     dirty: false,
@@ -32,6 +33,7 @@ function renderShell(overrides: {
     onSave: vi.fn(),
     onCancel: vi.fn(),
     pluginMode: false,
+    visualThemeMode: overrides.visualThemeMode,
   }));
 }
 
@@ -76,6 +78,12 @@ describe('desktop SettingsShell · P2.2 渲染与取消逻辑', () => {
     expect(htmlFresh).toContain('settingsSaveToast');
     const htmlStale = renderShell({ saveState: { savedToastAt: Date.now() - 5000 } });
     expect(htmlStale).not.toContain('settingsSaveToast');
+  });
+
+  it('dark 视觉主题直接落在设置弹层自身，避免依赖外层 appShell 选择器', () => {
+    const html = renderShell({ visualThemeMode: 'dark' });
+    expect(html).toMatch(/class="settingsLayer theme-dark"/);
+    expect(html).toMatch(/class="settingsDrawer theme-dark"/);
   });
 });
 

@@ -1,5 +1,8 @@
 import type { Locale } from '../../config/config.js';
 import type { ThreadUsage, Usage } from '../../shared/types.js';
+import { resolveModelCapabilities, type ModelCapabilities, type ModelCapabilitySource } from '@nexus/protocol';
+
+export { resolveModelCapabilities };
 
 export interface TokenUsageSummary {
   totalInput: number;
@@ -109,4 +112,125 @@ export function formatCompactionPressure(
   return locale === 'zh'
     ? `上下文接近压缩阈值：${estimated}/${hardThreshold}`
     : `Context near compaction threshold: ${estimated}/${hardThreshold}`;
+}
+
+export interface ContextPressureSnapshot {
+  status?: string;
+  estimatedTokens?: number;
+  maxTokens?: number;
+  softThreshold?: number;
+  hardThreshold?: number;
+}
+
+export interface DisplayContextPressure extends ContextPressureSnapshot {
+  estimatedTokens: number;
+  maxTokens: number;
+  softThreshold?: number;
+  hardThreshold?: number;
+  windowSource: ModelCapabilitySource | 'runtime';
+  windowLabel?: string;
+}
+
+export function resolveDisplayContextPressure(
+  pressure: ContextPressureSnapshot | null | undefined,
+  capabilities: ModelCapabilities | null | undefined,
+): DisplayContextPressure | null {
+  const runtimeMax = positiveNumber(pressure?.maxTokens);
+  const modelMax = positiveNumber(capabilities?.contextTokens);
+  const maxTokens = modelMax ?? runtimeMax;
+  if (!maxTokens) return null;
+  const estimatedTokens = Math.max(0, Number(pressure?.estimatedTokens ?? 0));
+  const softRatio = ratioFromThreshold(pressure?.softThreshold, runtimeMax) ?? 0.5;
+  const hardRatio = ratioFromThreshold(pressure?.hardThreshold, runtimeMax) ?? 0.8;
+  return {
+    ...pressure,
+    estimatedTokens,
+    maxTokens,
+    softThreshold: Math.round(maxTokens * softRatio),
+    hardThreshold: Math.round(maxTokens * hardRatio),
+    windowSource: modelMax ? capabilities?.contextSource ?? 'known-model' : 'runtime',
+    windowLabel: modelMax ? capabilities?.displayName : undefined,
+  };
+}
+
+export function hasContextPressure(pressure: { estimatedTokens?: number; maxTokens?: number } | null | undefined): boolean {
+  return Boolean(pressure?.maxTokens && pressure.maxTokens > 0);
+}
+
+export function contextUsagePercent(pressure: { estimatedTokens?: number; maxTokens?: number } | null | undefined): number {
+  const estimated = Number(pressure?.estimatedTokens ?? 0);
+  const max = Number(pressure?.maxTokens ?? 0);
+  if (max <= 0) return 0;
+  return Math.min(100, Math.max(0, Math.round((estimated / max) * 100)));
+}
+
+export function cacheContextPercent(
+  usage: { totalCached?: number } | null | undefined,
+  pressure: { maxTokens?: number } | null | undefined,
+): number {
+  const cached = Number(usage?.totalCached ?? 0);
+  const max = Number(pressure?.maxTokens ?? 0);
+  if (max <= 0) return 0;
+  return Math.min(100, Math.max(0, Math.round((cached / max) * 100)));
+}
+
+export function softThresholdPercent(pressure: { softThreshold?: number; maxTokens?: number } | null | undefined): number | null {
+  const soft = positiveNumber(pressure?.softThreshold);
+  const max = positiveNumber(pressure?.maxTokens);
+  if (!soft || !max) return null;
+  return Math.min(100, Math.max(0, (soft / max) * 100));
+}
+
+export function buildTokenTooltip(
+  usage: { totalInput?: number; totalCached?: number; totalOutput?: number; hitRate?: number } | null | undefined,
+  pressure: DisplayContextPressure | null | undefined,
+  locale: Locale,
+): string {
+  const parts: string[] = [];
+  if (usage) {
+    parts.push(locale === 'zh' ? `输入: ${usage.totalInput}` : `Input: ${usage.totalInput}`);
+    parts.push(locale === 'zh' ? `缓存: ${usage.totalCached} (${usage.hitRate}%)` : `Cache: ${usage.totalCached} (${usage.hitRate}%)`);
+    parts.push(locale === 'zh' ? `输出: ${usage.totalOutput}` : `Output: ${usage.totalOutput}`);
+  }
+  if (pressure?.maxTokens) {
+    if (parts.length) parts.push('—');
+    parts.push(locale === 'zh'
+      ? `上下文: ${formatCompactNumber(pressure.estimatedTokens ?? 0)} / ${formatCompactNumber(pressure.maxTokens)}`
+      : `Context: ${formatCompactNumber(pressure.estimatedTokens ?? 0)} / ${formatCompactNumber(pressure.maxTokens)}`);
+    if (pressure.windowLabel) {
+      parts.push(locale === 'zh'
+        ? `窗口来源: ${pressure.windowLabel}`
+        : `Window source: ${pressure.windowLabel}`);
+    }
+    if (pressure.softThreshold) {
+      parts.push(locale === 'zh'
+        ? `软阈值: ${formatCompactNumber(pressure.softThreshold)}`
+        : `Soft threshold: ${formatCompactNumber(pressure.softThreshold)}`);
+    }
+    if (pressure.hardThreshold) {
+      parts.push(locale === 'zh'
+        ? `硬阈值: ${formatCompactNumber(pressure.hardThreshold)}`
+        : `Hard threshold: ${formatCompactNumber(pressure.hardThreshold)}`);
+    }
+  }
+  return parts.join(' ');
+}
+
+export function formatCompactNumber(value: number): string {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
+  return String(Math.round(value));
+}
+
+function ratioFromThreshold(threshold: number | undefined, maxTokens: number | undefined): number | undefined {
+  if (!threshold || !maxTokens) return undefined;
+  const ratio = threshold / maxTokens;
+  if (!Number.isFinite(ratio) || ratio <= 0) return undefined;
+  return Math.min(1, Math.max(0, ratio));
+}
+
+function positiveNumber(value: unknown): number | undefined {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return undefined;
+  return numeric;
 }

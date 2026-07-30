@@ -197,6 +197,7 @@ export function GitNexusPanel({
   }, []);
 
   const isRepoAnalyzed = useMemo(() => {
+    // status 检查已经明确知道是否索引；如果 repos 里匹配也视为已索引
     if (statusChecked && indexStatus?.indexed) return true;
     const normCurrent = normalizePath(currentPath);
     return repos.some((r) => {
@@ -244,6 +245,7 @@ export function GitNexusPanel({
     }
   }, []);
 
+  // 路径变化时重置概览数据和索引状态
   useEffect(() => {
     setOverviewData(null);
     setGraphData(null);
@@ -251,6 +253,7 @@ export function GitNexusPanel({
     setIndexStatus(null);
   }, [currentPath]);
 
+  // 建完索引后自动加载概览和图
   useEffect(() => {
     if (isRepoAnalyzed && activeTab === 'overview') {
       if (!overviewData && !overviewLoading) {
@@ -290,6 +293,7 @@ export function GitNexusPanel({
     }
   }, [currentPath]);
 
+  // 挂载时自动加载 repo 列表并检查索引状态
   useEffect(() => {
     void loadRepos();
     void checkStatus();
@@ -610,48 +614,49 @@ export function GitNexusPanel({
                     >
                       {locale === 'zh' ? '刷新' : 'Refresh'}
                     </button>
-                    {graphData && graphData.nodes.length > 0 && (
-                      <button
-                        type="button"
-                        className="gitNexusGraphExpandBtn"
-                        onClick={() => setGraphModalOpen(true)}
-                        title={locale === 'zh' ? '放大查看' : 'Expand view'}
-                      >
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          width="14"
-                          height="14"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
-                        </svg>
-                      </button>
-                    )}
                   </div>
                 </div>
                 {graphLoading ? (
                   <div className="gitNexusLoading">{locale === 'zh' ? '正在加载依赖图...' : 'Loading dependency graph...'}</div>
                 ) : graphData && graphData.nodes.length > 0 ? (
-                  <GitNexusForceGraph
-                    data={graphData}
-                    height={520}
-                    level={graphLevel}
-                    onNodeClick={(node) => {
-                      if (node.label) {
-                        const inputValue = graphLevel === 'file' ? (node.file ?? node.label) : node.label;
-                        setSymbolInput(inputValue);
-                        setActiveTab('context');
-                        setResultData(null);
-                        setResultError('');
-                        setLoading(false);
-                      }
-                    }}
-                  />
+                  <div className="gitNexusGraphShell">
+                    <button
+                      type="button"
+                      className="gitNexusGraphExpandBtn gitNexusGraphExpandBtn--floating"
+                      onClick={() => setGraphModalOpen(true)}
+                      title={locale === 'zh' ? '放大查看' : 'Expand view'}
+                      aria-label={locale === 'zh' ? '放大查看图谱' : 'Expand graph view'}
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                      </svg>
+                    </button>
+                    <GitNexusForceGraph
+                      data={graphData}
+                      height={520}
+                      level={graphLevel}
+                      onNodeClick={(node) => {
+                        if (node.label) {
+                          const inputValue = graphLevel === 'file' ? (node.file ?? node.label) : node.label;
+                          setSymbolInput(inputValue);
+                          setActiveTab('context');
+                          setResultData(null);
+                          setResultError('');
+                          setLoading(false);
+                        }
+                      }}
+                    />
+                  </div>
                 ) : (
                   <div className="gitNexusEmptyHint">
                     {locale === 'zh' ? '暂无依赖图数据' : 'No dependency graph data available'}

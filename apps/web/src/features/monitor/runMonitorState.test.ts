@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { initialRunMonitorState, runMonitorReducer, type RunMonitorState } from './runMonitorState.js';
 import type { RunEvent, RunRecord } from '../../shared/types.js';
+import type { RunTraceEnvelope } from '@nexus/protocol';
 
 function makeRun(runId: string): RunRecord {
   return {
@@ -35,6 +36,28 @@ function makeEvent(eventId: string, runId: string): RunEvent {
     level: 'info',
     message: 'test',
     createdAt: '2025-01-01T00:00:00Z',
+  };
+}
+
+function makeTrace(eventId: string, runId: string, itemId?: string): RunTraceEnvelope {
+  return {
+    version: 2,
+    eventId,
+    sequence: Number(eventId.replace(/\D/g, '')) || 1,
+    runId,
+    runKind: 'turn',
+    threadId: 'th1',
+    spanId: `span-${eventId}`,
+    itemId,
+    category: 'tool',
+    name: `trace-${eventId}`,
+    lifecycle: 'completed',
+    level: 'info',
+    occurredAt: '2025-01-01T00:00:00Z',
+    payload: {
+      toolName: 'read_file',
+      callId: `call-${eventId}`,
+    },
   };
 }
 
@@ -177,5 +200,103 @@ describe('runMonitorReducer', () => {
     expect(state.loading).toBe(true);
     state = runMonitorReducer(state, { type: 'refresh.done', requestId: 1 });
     expect(state.loading).toBe(false);
+  });
+
+  it('resolves a queued trace target by itemId after traces load', () => {
+    let state: RunMonitorState = {
+      ...initialRunMonitorState,
+      selectedRunId: 'run-a',
+      activeRequestId: 1,
+    };
+
+    state = runMonitorReducer(state, {
+      type: 'queue-trace-target',
+      target: { runId: 'run-a', itemId: 'item-target' },
+    });
+    expect(state.selectedEventId).toBe('');
+
+    state = runMonitorReducer(state, {
+      type: 'traces.loaded',
+      requestId: 1,
+      runId: 'run-a',
+      traces: [
+        makeTrace('evt-1', 'run-a', 'item-other'),
+        makeTrace('evt-2', 'run-a', 'item-target'),
+      ],
+    });
+
+    expect(state.selectedEventId).toBe('evt-2');
+    expect(state.pendingTraceTarget).toBeNull();
+    expect(state.traceFocusVersion).toBe(1);
+  });
+
+  it('resolves a queued trace target by eventId after traces load', () => {
+    let state: RunMonitorState = {
+      ...initialRunMonitorState,
+      selectedRunId: 'run-b',
+      activeRequestId: 2,
+    };
+
+    state = runMonitorReducer(state, {
+      type: 'queue-trace-target',
+      target: { runId: 'run-b', eventId: 'evt-9' },
+    });
+    state = runMonitorReducer(state, {
+      type: 'traces.loaded',
+      requestId: 2,
+      runId: 'run-b',
+      traces: [
+        makeTrace('evt-8', 'run-b'),
+        makeTrace('evt-9', 'run-b'),
+      ],
+    });
+
+    expect(state.selectedEventId).toBe('evt-9');
+    expect(state.pendingTraceTarget).toBeNull();
+    expect(state.traceFocusVersion).toBe(1);
+  });
+
+  it('select-by-itemId also queues when the trace is not loaded yet', () => {
+    let state: RunMonitorState = {
+      ...initialRunMonitorState,
+      selectedRunId: 'run-c',
+      activeRequestId: 3,
+    };
+
+    state = runMonitorReducer(state, {
+      type: 'select-by-itemId',
+      itemId: 'item-late',
+    });
+    expect(state.pendingTraceTarget).toEqual({ runId: 'run-c', itemId: 'item-late' });
+
+    state = runMonitorReducer(state, {
+      type: 'traces.loaded',
+      requestId: 3,
+      runId: 'run-c',
+      traces: [makeTrace('evt-10', 'run-c', 'item-late')],
+    });
+
+    expect(state.selectedEventId).toBe('evt-10');
+    expect(state.pendingTraceTarget).toBeNull();
+    expect(state.traceFocusVersion).toBe(1);
+  });
+
+  it('re-triggers trace focus when the same selected event is queued again', () => {
+    let state: RunMonitorState = {
+      ...initialRunMonitorState,
+      selectedRunId: 'run-d',
+      traces: [makeTrace('evt-20', 'run-d', 'item-repeat')],
+      selectedEventId: 'evt-20',
+      traceFocusVersion: 4,
+    };
+
+    state = runMonitorReducer(state, {
+      type: 'queue-trace-target',
+      target: { runId: 'run-d', eventId: 'evt-20' },
+    });
+
+    expect(state.selectedEventId).toBe('evt-20');
+    expect(state.pendingTraceTarget).toBeNull();
+    expect(state.traceFocusVersion).toBe(5);
   });
 });

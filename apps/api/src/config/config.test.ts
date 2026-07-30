@@ -76,6 +76,29 @@ describe('AgentRunConfig runProfile', () => {
   });
 });
 
+describe('AgentRunConfig model token limits', () => {
+  it('keeps explicit model token limits when configured', () => {
+    expect(resolveConfig({
+      modelContextTokens: 1_000_000,
+      modelMaxOutputTokens: 128_000,
+    } as never)).toMatchObject({
+      modelContextTokens: 1_000_000,
+      modelMaxOutputTokens: 128_000,
+    });
+  });
+
+  it('does not invent a fixed model context window in stored config', () => {
+    expect(resolveConfig({} as never)).not.toHaveProperty('modelContextTokens');
+  });
+
+  it('drops invalid model token limits', () => {
+    expect(resolveConfig({
+      modelContextTokens: -1,
+      modelMaxOutputTokens: 0,
+    } as never)).not.toHaveProperty('modelContextTokens');
+  });
+});
+
 describe('AgentRunConfig themeMode', () => {
   it('defaults to light and falls back invalid values to light', () => {
     expect(defaultConfig.themeMode).toBe('light');

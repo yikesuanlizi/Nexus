@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { GitNexusForceGraph } from './GitNexusForceGraph.js';
 import type { ForceGraphData, ForceGraphLevel, ForceGraphNode } from './GitNexusForceGraph.js';
 
@@ -60,9 +61,6 @@ export function GitNexusGraphModal({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const isDark = document.documentElement.classList.contains('theme-dark')
-      || document.querySelector('.appShell')?.classList.contains('theme-dark');
-
     const resizeCanvas = () => {
       const modal = modalRef.current;
       if (modal) {
@@ -74,24 +72,23 @@ export function GitNexusGraphModal({
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
 
-    const particleCount = 50;
+    const particleCount = 80;
     const particles: Particle[] = [];
 
     for (let i = 0; i < particleCount; i++) {
       particles.push({
         x: Math.random() * canvas.width,
         y: Math.random() * canvas.height,
-        vx: (Math.random() - 0.5) * 0.3,
-        vy: (Math.random() - 0.5) * 0.3,
-        radius: Math.random() * 1.5 + 0.5,
-        alpha: Math.random() * 0.25 + 0.05,
+        vx: (Math.random() - 0.5) * 0.4,
+        vy: (Math.random() - 0.5) * 0.4,
+        radius: Math.random() * 2 + 1,
+        alpha: Math.random() * 0.4 + 0.1,
       });
     }
 
     particlesRef.current = particles;
 
-    const particleColor = isDark ? 'rgba(59, 130, 246, ' : 'rgba(37, 99, 235, ';
-    const lineColor = isDark ? 'rgba(59, 130, 246, ' : 'rgba(37, 99, 235, ';
+    const colors = ['rgba(2, 132, 199, ', 'rgba(8, 145, 178, '];
 
     const animate = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -105,13 +102,14 @@ export function GitNexusGraphModal({
         if (p.x < 0 || p.x > canvas.width) p.vx *= -1;
         if (p.y < 0 || p.y > canvas.height) p.vy *= -1;
 
+        const color = colors[i % colors.length];
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-        ctx.fillStyle = particleColor + p.alpha + ')';
+        ctx.fillStyle = color + p.alpha + ')';
         ctx.fill();
       }
 
-      const maxDist = 100;
+      const maxDist = 120;
       for (let i = 0; i < particles.length; i++) {
         for (let j = i + 1; j < particles.length; j++) {
           const dx = particles[i].x - particles[j].x;
@@ -119,11 +117,11 @@ export function GitNexusGraphModal({
           const dist = Math.sqrt(dx * dx + dy * dy);
 
           if (dist < maxDist) {
-            const alpha = (1 - dist / maxDist) * 0.1;
+            const alpha = (1 - dist / maxDist) * 0.15;
             ctx.beginPath();
             ctx.moveTo(particles[i].x, particles[i].y);
             ctx.lineTo(particles[j].x, particles[j].y);
-            ctx.strokeStyle = lineColor + alpha + ')';
+            ctx.strokeStyle = `rgba(2, 132, 199, ${alpha})`;
             ctx.lineWidth = 0.5;
             ctx.stroke();
           }
@@ -152,7 +150,7 @@ export function GitNexusGraphModal({
 
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <div
       className="gitNexusGraphModalBackdrop"
       onClick={handleBackdropClick}
@@ -194,6 +192,7 @@ export function GitNexusGraphModal({
           />
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
