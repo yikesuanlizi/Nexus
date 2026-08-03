@@ -79,17 +79,17 @@
 - Modify: apps/desktop/src/styles.css
 - Test: the four theme tests from Task 1
 
-- [ ] Step 1: extend the tests to require final token-consuming rules for .settingsDrawer, .settingsRail, .settingsMain, .settingsCard, .composer, .commandInputRow, .workbenchPanel, .dropdownMenu, .appDialog, .gitNexusGraphModal, and .turnFileSummary.
-- [ ] Step 2: run the tests. Expected: failure until the required selectors consume semantic surfaces.
-- [ ] Step 3: make every listed region use semantic values rather than late hard-coded white or near-black values.
+- [x] Step 1: extend the tests to require final token-consuming rules for .settingsDrawer, .settingsNav (live rail), .settingsContent (live main), .settingsCard, .composer, .commandInputRow, .workbenchPanel, .dropdownMenu, .appDialog, .gitNexusGraphModal, and .turnFileSummary.
+- [x] Step 2: run the tests. Expected: failure until the required selectors consume semantic surfaces.
+- [x] Step 3: make every listed region use semantic values rather than late hard-coded white or near-black values. Where the old declaration is in @layer components with !important, place the dark override in that same layer.
 
     .settingsDrawer, .workbenchPanel, .appDialog { background: var(--nx-surface-raised); color: var(--nx-text-primary); }
-    .settingsRail, .settingsCard, .turnFileSummary { background: var(--nx-surface-panel); border-color: var(--nx-control-border); }
+    .settingsNav, .settingsCard, .turnFileSummary { background: var(--nx-surface-panel); border-color: var(--nx-control-border); }
     .commandInputRow, .dropdownButton, .settingsDrawer input, .settingsDrawer select, .settingsDrawer textarea { background: var(--nx-control-bg); color: var(--nx-text-primary); border-color: var(--nx-control-border); }
 
-- [ ] Step 4: enforce one control hierarchy: primary is a muted steel-blue action; secondary, icon, close, checkbox, disabled, and select controls use dark surfaces in dark mode. Do not use gradients, bright purple-blue, or broad glow shadows.
-- [ ] Step 5: run the four theme tests and npm run build. Expected: all tests pass and TypeScript exits 0.
-- [ ] Step 6: commit with git commit -m "feat: apply Nexus semantic surfaces to shared controls".
+- [x] Step 4: enforce one control hierarchy: primary is a muted steel-blue action; secondary, icon, close, checkbox, disabled, and select controls use dark surfaces in dark mode. Do not use gradients, bright purple-blue, or broad glow shadows.
+- [x] Step 5: run the four theme tests and npm run build. Expected: all tests pass and TypeScript exits 0.
+- [x] Step 6: commit with git commit -m "feat: apply Nexus semantic surfaces to shared controls".
 
 ### Task 3: preserve desktop pane widths while removing motion jank
 

@@ -32,4 +32,67 @@ describe('dark theme skin', () => {
     expect(contract).toContain('.appShell:not(.theme-light) .settingsDrawer');
     expect(contract).not.toContain('.appShell:not(.theme-light) .settingsDrawer {\n  background: #ffffff;');
   });
+
+  it('routes shared workbench surfaces through the semantic dark tokens', () => {
+    const contract = readVisualContract();
+
+    for (const selector of [
+      '.appShell:not(.theme-light) .settingsNav',
+      '.appShell:not(.theme-light) .settingsContent',
+      '.appShell:not(.theme-light) .settingsCard',
+      '.appShell:not(.theme-light) .composer',
+      '.appShell:not(.theme-light) .commandInputRow',
+      '.appShell:not(.theme-light) .workbenchPanel',
+      '.appShell:not(.theme-light) .dropdownMenu',
+      '.appShell:not(.theme-light) .appDialog',
+      '.appShell:not(.theme-light) .gitNexusGraphModal',
+      '.appShell:not(.theme-light) .turnFileSummary',
+    ]) {
+      expect(contract).toContain(selector);
+    }
+
+    expect(contract).toContain('background: var(--nx-surface-panel);');
+    expect(contract).toContain('border-color: var(--nx-control-border);');
+    expect(contract).toContain('color: var(--nx-text-primary);');
+  });
+
+  it('overrides the legacy important light surfaces inside the dark settings shell', () => {
+    const contract = readVisualContract();
+
+    for (const selector of [
+      '.appShell:not(.theme-light) .settingsDrawer .settingsHeader',
+      '.appShell:not(.theme-light) .settingsDrawer .settingsBody',
+      '.appShell:not(.theme-light) .settingsDrawer .settingsNav',
+      '.appShell:not(.theme-light) .settingsDrawer .settingsContent',
+      '.appShell:not(.theme-light) .settingsDrawer :is(input, select, textarea, .dropdownButton)',
+    ]) {
+      expect(contract).toContain(selector);
+    }
+
+    expect(contract).toContain('background: var(--nx-surface-raised) !important;');
+    expect(contract).toContain('background: var(--nx-control-bg) !important;');
+    expect(contract).toContain('color: var(--nx-text-primary) !important;');
+  });
+
+  it('keeps every settings page readable without restoring light-only cards or buttons', () => {
+    const contract = readVisualContract();
+
+    for (const selector of [
+      '.appShell:not(.theme-light) .settingsLayer .settingsDrawer .settingsHeader .iconButton',
+      '.appShell:not(.theme-light) .settingsLayer .settingsDrawer .settingsNav :is(button, a).active',
+      '.appShell:not(.theme-light) .settingsLayer .settingsDrawer .settingsSection:not(.pluginCatalogShell) > h3',
+      '.appShell:not(.theme-light) .settingsLayer .settingsDrawer .settingsCard label',
+      '.appShell:not(.theme-light) .settingsLayer .settingsDrawer :is(.avatarSettingsPanel, .weixinBotPanel, .dingtalkBotPanel, .memoryAdvancedPanel.expanded, .settingsInfoBlock)',
+      '.appShell:not(.theme-light) .settingsLayer .settingsDrawer :is(.presetItem, .remoteBotCard, .providerCard, .skillItem)',
+      '.appShell:not(.theme-light) .settingsLayer .settingsDrawer .providerKeyCard .modelKeyStatusLine',
+    ]) {
+      expect(contract).toContain(selector);
+    }
+
+    expect(contract).toContain('background: var(--nx-surface-panel) !important;');
+    expect(contract).toContain('color: var(--nx-text-muted) !important;');
+    expect(contract).toContain(
+      '@layer components {\n  .appShell:not(.theme-light) .settingsLayer .settingsDrawer .settingsHeader .iconButton',
+    );
+  });
 });

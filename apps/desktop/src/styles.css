@@ -16633,3 +16633,204 @@
   background: var(--nx-surface-raised);
   color: var(--nx-text-primary);
 }
+
+.appShell:not(.theme-light) {
+  color-scheme: dark;
+  background: var(--nx-surface-canvas);
+}
+
+.appShell:not(.theme-light) .settingsNav,
+.appShell:not(.theme-light) .settingsCard,
+.appShell:not(.theme-light) .turnFileSummary {
+  background: var(--nx-surface-panel);
+  border-color: var(--nx-control-border);
+  color: var(--nx-text-primary);
+}
+
+.appShell:not(.theme-light) .settingsContent,
+.appShell:not(.theme-light) .workbenchPanel,
+.appShell:not(.theme-light) .composer,
+.appShell:not(.theme-light) .appDialog,
+.appShell:not(.theme-light) .gitNexusGraphModal {
+  background: var(--nx-surface-raised);
+  border-color: var(--nx-control-border);
+  color: var(--nx-text-primary);
+}
+
+.appShell:not(.theme-light) .commandInputRow,
+.appShell:not(.theme-light) .dropdownMenu,
+.appShell:not(.theme-light) .settingsDrawer :is(input, select, textarea) {
+  background: var(--nx-control-bg);
+  border-color: var(--nx-control-border);
+  color: var(--nx-text-primary);
+}
+
+.appShell:not(.theme-light) .settingsDrawer :is(.whiteButton, .iconButton, .textButton),
+.appShell:not(.theme-light) .settingsDrawer .settingsNav :is(button, a) {
+  background: var(--nx-surface-panel);
+  border-color: var(--nx-control-border);
+  color: var(--nx-text-primary);
+}
+
+.appShell:not(.theme-light) .settingsDrawer .settingsNav :is(button, a).active,
+.appShell:not(.theme-light) .settingsDrawer .settingsNav :is(button, a):hover {
+  background: var(--nx-accent-soft);
+  border-color: var(--nx-accent);
+  color: var(--nx-text-primary);
+}
+
+.appShell:not(.theme-light) .settingsDrawer :is(.settingsMuted, .settingsCardHint, .dialogMessage) {
+  color: var(--nx-text-muted);
+}
+
+.appShell:not(.theme-light) .settingsDrawer .solidButton {
+  background: #426b94;
+  border-color: #527da8;
+  color: #f6f9fc;
+}
+
+/* Dark settings must outrank the late light-only compatibility rules above. */
+.appShell:not(.theme-light) .settingsDrawer {
+  --settings-panel-bg: var(--nx-surface-raised);
+  --settings-panel-muted: var(--nx-surface-overlay);
+  --settings-panel: var(--nx-surface-panel);
+  --settings-text: var(--nx-text-primary);
+  --settings-text-muted: var(--nx-text-muted);
+  --settings-border: var(--nx-control-border);
+  --settings-border-strong: var(--nx-control-border);
+  --settings-panel-line: var(--nx-control-border);
+}
+
+.appShell:not(.theme-light) .settingsDrawer .settingsHeader,
+.appShell:not(.theme-light) .settingsDrawer .settingsBody,
+.appShell:not(.theme-light) .settingsDrawer .settingsContent {
+  background: var(--nx-surface-raised) !important;
+  color: var(--nx-text-primary) !important;
+}
+
+.appShell:not(.theme-light) .settingsDrawer .settingsNav {
+  background: var(--nx-surface-overlay) !important;
+  border-color: var(--nx-control-border) !important;
+}
+
+.appShell:not(.theme-light) .settingsDrawer .settingsCard {
+  background: transparent !important;
+  border-color: var(--nx-control-border) !important;
+}
+
+.appShell:not(.theme-light) .settingsDrawer :is(input, select, textarea, .dropdownButton) {
+  background: var(--nx-control-bg) !important;
+  border-color: var(--nx-control-border) !important;
+  color: var(--nx-text-primary) !important;
+  box-shadow: none !important;
+}
+
+.appShell:not(.theme-light) .settingsDrawer :is(.settingsHeader .iconButton, .whiteButton, .iconButton, .textButton) {
+  background: var(--nx-surface-panel) !important;
+  border-color: var(--nx-control-border) !important;
+  color: var(--nx-text-primary) !important;
+}
+
+.appShell:not(.theme-light) .settingsDrawer .settingsNav :is(button, a) {
+  background: transparent !important;
+  border-color: transparent !important;
+  color: var(--nx-text-muted) !important;
+}
+
+.appShell:not(.theme-light) .settingsDrawer .settingsNav :is(button, a).active,
+.appShell:not(.theme-light) .settingsDrawer .settingsNav :is(button, a):hover {
+  background: var(--nx-accent-soft) !important;
+  border-color: var(--nx-accent) !important;
+  color: var(--nx-text-primary) !important;
+}
+
+.appShell:not(.theme-light) .settingsLayer .settingsDrawer .settingsHeader .iconButton,
+.appShell:not(.theme-light) .settingsLayer .settingsDrawer :is(.whiteButton, .iconButton, .textButton, .outlineButton, .btn, .miniIconButton, .dropdownOptionAction) {
+  background: var(--nx-surface-panel) !important;
+  border-color: var(--nx-control-border) !important;
+  color: var(--nx-text-primary) !important;
+  box-shadow: none !important;
+}
+
+.appShell:not(.theme-light) .settingsLayer .settingsDrawer .settingsNav :is(button, a).active,
+.appShell:not(.theme-light) .settingsLayer .settingsDrawer .settingsNav :is(button, a):hover {
+  background: var(--nx-accent-soft) !important;
+  border-color: var(--nx-accent) !important;
+  color: var(--nx-text-primary) !important;
+  box-shadow: inset 3px 0 0 var(--nx-accent) !important;
+}
+
+.appShell:not(.theme-light) .settingsLayer .settingsDrawer .settingsSection:not(.pluginCatalogShell) > h3,
+.appShell:not(.theme-light) .settingsLayer .settingsDrawer .presetHeader :is(h3, h4),
+.appShell:not(.theme-light) .settingsDrawer .settingsCardHeader h3,
+.appShell:not(.theme-light) .settingsLayer .settingsDrawer :is(.providerCard, .presetItem, .remoteBotCard, .skillItem, .weixinBotHeader) strong {
+  color: var(--nx-text-primary) !important;
+}
+
+.appShell:not(.theme-light) .settingsLayer .settingsDrawer .settingsCard label,
+.appShell:not(.theme-light) .settingsDrawer .settingLabel,
+.appShell:not(.theme-light) .settingsLayer .settingsDrawer :is(.presetHeader span, .settingsInfoBlock, .emptyHint, .botNotice, .providerCard span, .presetItem span, .remoteBotCard span, .remoteBotCard small, .skillItem span, .weixinBotHeader span) {
+  color: var(--nx-text-muted) !important;
+}
+
+.appShell:not(.theme-light) .settingsLayer .settingsDrawer :is(.avatarSettingsPanel, .weixinBotPanel, .dingtalkBotPanel, .memoryAdvancedPanel.expanded, .settingsInfoBlock) {
+  background: var(--nx-surface-panel) !important;
+  border-color: var(--nx-control-border) !important;
+  box-shadow: none !important;
+}
+
+.appShell:not(.theme-light) .settingsLayer .settingsDrawer :is(.presetItem, .remoteBotCard, .providerCard, .skillItem) {
+  background: var(--nx-surface-panel) !important;
+  border-color: var(--nx-control-border) !important;
+}
+
+.appShell:not(.theme-light) .settingsLayer .settingsDrawer :is(.memoryAdvancedToggle, .providerKeyCard .modelKeyStatusLine, .settingsConfirmPanel) {
+  background: var(--nx-surface-panel) !important;
+  border-color: var(--nx-control-border) !important;
+  color: var(--nx-text-primary) !important;
+  box-shadow: none !important;
+}
+
+@layer components {
+  .appShell:not(.theme-light) .settingsLayer .settingsDrawer .settingsHeader .iconButton,
+  .appShell:not(.theme-light) .settingsLayer .settingsDrawer :is(.whiteButton, .iconButton, .textButton, .outlineButton, .btn, .miniIconButton, .dropdownOptionAction) {
+    background: var(--nx-surface-panel) !important;
+    border-color: var(--nx-control-border) !important;
+    color: var(--nx-text-primary) !important;
+    box-shadow: none !important;
+  }
+
+  .appShell:not(.theme-light) .settingsLayer .settingsDrawer .settingsNav :is(button, a).active,
+  .appShell:not(.theme-light) .settingsLayer .settingsDrawer .settingsNav :is(button, a):hover {
+    background: var(--nx-accent-soft) !important;
+    border-color: var(--nx-accent) !important;
+    color: var(--nx-text-primary) !important;
+    box-shadow: inset 3px 0 0 var(--nx-accent) !important;
+  }
+
+  .appShell:not(.theme-light) .settingsLayer .settingsDrawer .settingsSection:not(.pluginCatalogShell) > h3,
+  .appShell:not(.theme-light) .settingsLayer .settingsDrawer .presetHeader :is(h3, h4),
+  .appShell:not(.theme-light) .settingsLayer .settingsDrawer .settingsCardHeader h3,
+  .appShell:not(.theme-light) .settingsLayer .settingsDrawer :is(.providerCard, .presetItem, .remoteBotCard, .skillItem, .weixinBotHeader) strong {
+    color: var(--nx-text-primary) !important;
+  }
+
+  .appShell:not(.theme-light) .settingsLayer .settingsDrawer .settingsCard label,
+  .appShell:not(.theme-light) .settingsLayer .settingsDrawer .settingLabel,
+  .appShell:not(.theme-light) .settingsLayer .settingsDrawer :is(.presetHeader span, .settingsInfoBlock, .emptyHint, .botNotice, .providerCard span, .presetItem span, .remoteBotCard span, .remoteBotCard small, .skillItem span, .weixinBotHeader span) {
+    color: var(--nx-text-muted) !important;
+  }
+
+  .appShell:not(.theme-light) .settingsLayer .settingsDrawer :is(.avatarSettingsPanel, .weixinBotPanel, .dingtalkBotPanel, .memoryAdvancedPanel.expanded, .settingsInfoBlock, .presetItem, .remoteBotCard, .providerCard, .skillItem, .memoryAdvancedToggle, .providerKeyCard .modelKeyStatusLine, .settingsConfirmPanel) {
+    background: var(--nx-surface-panel) !important;
+    border-color: var(--nx-control-border) !important;
+    color: var(--nx-text-primary) !important;
+    box-shadow: none !important;
+  }
+
+  .appShell:not(.theme-light) .settingsLayer .settingsDrawer .providerKeyCard .modelKeyStatusLine {
+    background: var(--nx-surface-panel) !important;
+    border-color: var(--nx-control-border) !important;
+    color: var(--nx-text-primary) !important;
+  }
+}
