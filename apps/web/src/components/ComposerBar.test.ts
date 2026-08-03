@@ -159,4 +159,14 @@ describe('ComposerBar', () => {
     expect(source).toContain("selectRemoteAssistant('weixin')");
     expect(source).toContain("selectRemoteAssistant('dingtalk')");
   });
+
+  it('uses a solid semantic send control for idle and busy states', () => {
+    const styles = readFileSync(join(here, '..', 'styles.css'), 'utf-8');
+    const finalContract = styles.slice(styles.lastIndexOf('/* Nexus conversation surface contract */'));
+
+    expect(finalContract).toContain('.appShell .sendButton');
+    expect(finalContract).toContain('background: var(--nx-brand);');
+    expect(finalContract).toContain('.appShell .sendButton.busy');
+    expect(finalContract).toContain('border-radius: 10px;');
+  });
 });

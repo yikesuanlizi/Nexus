@@ -15944,6 +15944,8 @@
   --nx-text-faint: #737f8e;
   --nx-accent: #82add9;
   --nx-accent-soft: rgba(94, 143, 190, 0.15);
+  --nx-brand: #668db3;
+  --nx-brand-soft: rgba(102, 141, 179, 0.18);
 }
 
 .appShell.theme-light {
@@ -15958,6 +15960,8 @@
   --nx-text-faint: #64748b;
   --nx-accent: #2d6f9f;
   --nx-accent-soft: #e8f0f7;
+  --nx-brand: #2d6f9f;
+  --nx-brand-soft: #e8f0f7;
 }
 
 .appShell:not(.theme-light) .settingsDrawer {
@@ -16244,4 +16248,215 @@
     background: var(--nx-accent-soft);
     border-color: color-mix(in srgb, var(--nx-control-border) 86%, var(--nx-accent));
   }
+}
+
+@layer components {
+  /* Conversation surfaces preserve the existing stream and avatar structure. */
+  .appShell .messageBlock.agent .message.agent {
+    border-color: var(--nx-control-border);
+    background: var(--nx-surface-panel);
+    color: var(--nx-text-primary);
+    border-radius: 12px;
+    box-shadow: 0 1px 0 color-mix(in srgb, var(--nx-text-primary) 4%, transparent);
+  }
+
+  .appShell .messageBlock.user .message.user {
+    border-color: color-mix(in srgb, var(--nx-accent) 72%, var(--nx-control-border));
+    background: var(--nx-accent);
+    color: var(--nx-surface-canvas);
+    border-radius: 12px;
+  }
+
+  .appShell .messageBlock.user .message.user :is(strong, h1, h2, h3, h4, h5, h6) {
+    color: inherit;
+  }
+
+  .appShell .messageActions,
+  .appShell .messageTimestamp {
+    color: var(--nx-text-muted);
+  }
+
+  .appShell .messageActionButton {
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    color: var(--nx-text-muted);
+  }
+
+  .appShell .messageActionButton:hover:not(:disabled) {
+    border-color: var(--nx-control-border);
+    background: var(--nx-surface-overlay);
+    color: var(--nx-text-primary);
+    box-shadow: none;
+  }
+
+  .appShell .turnFileSummary {
+    border-color: var(--nx-control-border);
+    background: var(--nx-surface-overlay);
+    border-radius: 10px;
+  }
+
+  .appShell .turnFileSummaryHeader :is(strong, span),
+  .appShell .turnFileSummaryRow code,
+  .appShell .turnFileSummaryPath {
+    color: var(--nx-text-primary);
+  }
+
+  .appShell .turnFileSummaryRow {
+    border: 1px solid color-mix(in srgb, var(--nx-control-border) 82%, transparent);
+    background: var(--nx-surface-panel);
+    border-radius: 7px;
+  }
+
+  .appShell .commandInputRow {
+    border-color: var(--nx-control-border);
+    background: var(--nx-control-bg);
+    border-radius: 12px;
+    box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+  }
+
+  .appShell .commandInputRow:focus-within {
+    border-color: var(--nx-accent);
+    box-shadow: 0 0 0 3px var(--nx-accent-soft);
+  }
+
+  .appShell .commandInputRow textarea {
+    color: var(--nx-text-primary);
+  }
+
+  .appShell .sendButton {
+    border-color: var(--nx-accent);
+    background: var(--nx-accent);
+    color: var(--nx-surface-canvas);
+    border-radius: 10px;
+    box-shadow: 0 6px 16px color-mix(in srgb, var(--nx-accent) 22%, transparent);
+  }
+
+  .appShell .sendButton:hover:not(:disabled) {
+    transform: translate3d(0, -1px, 0);
+    box-shadow: 0 9px 20px color-mix(in srgb, var(--nx-accent) 28%, transparent);
+  }
+
+  .appShell .sendButton.busy {
+    border-color: color-mix(in srgb, #e78d97 56%, var(--nx-control-border));
+    background: var(--nx-surface-overlay);
+    color: var(--nx-text-primary);
+    border-radius: 10px;
+    box-shadow: 0 5px 16px rgba(231, 141, 151, 0.10);
+  }
+
+  .appShell .sendButton.busy::after {
+    inset: -3px;
+    border-radius: 12px;
+  }
+
+  .appShell .sendButton.planningButton {
+    border-color: var(--nx-accent);
+    background: var(--nx-accent-soft);
+    color: var(--nx-text-primary);
+  }
+}
+
+/* Nexus conversation surface contract */
+.appShell .messageBlock.agent .message.agent {
+  border-color: var(--nx-control-border);
+  background: var(--nx-surface-panel);
+  color: var(--nx-text-primary);
+  border-radius: 12px;
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--nx-text-primary) 4%, transparent);
+}
+
+.appShell .messageBlock.user .message.user {
+  border-color: color-mix(in srgb, var(--nx-brand) 72%, var(--nx-control-border));
+  background: var(--nx-brand);
+  color: var(--nx-surface-canvas);
+  border-radius: 12px;
+}
+
+.appShell .messageBlock.user .message.user :is(strong, h1, h2, h3, h4, h5, h6) {
+  color: inherit;
+}
+
+.appShell :is(.messageActions, .messageTimestamp) {
+  color: var(--nx-text-muted);
+}
+
+.appShell .messageActionButton {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  color: var(--nx-text-muted);
+}
+
+.appShell .messageActionButton:hover:not(:disabled) {
+  border-color: var(--nx-control-border);
+  background: var(--nx-surface-overlay);
+  color: var(--nx-text-primary);
+  box-shadow: none;
+}
+
+.appShell .turnFileSummary {
+  border-color: var(--nx-control-border);
+  background: var(--nx-surface-overlay);
+  border-radius: 10px;
+}
+
+.appShell .turnFileSummaryHeader :is(strong, span),
+.appShell .turnFileSummaryRow code,
+.appShell .turnFileSummaryPath {
+  color: var(--nx-text-primary);
+}
+
+.appShell .turnFileSummaryRow {
+  border: 1px solid color-mix(in srgb, var(--nx-control-border) 82%, transparent);
+  background: var(--nx-surface-panel);
+  border-radius: 7px;
+}
+
+.appShell .commandInputRow {
+  border-color: var(--nx-control-border);
+  background: var(--nx-control-bg);
+  border-radius: 12px;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+}
+
+.appShell .commandInputRow:focus-within {
+  border-color: var(--nx-accent);
+  box-shadow: 0 0 0 3px var(--nx-accent-soft);
+}
+
+.appShell .commandInputRow textarea {
+  color: var(--nx-text-primary);
+}
+
+.appShell .sendButton {
+  border-color: var(--nx-brand);
+  background: var(--nx-brand);
+  color: var(--nx-surface-canvas);
+  border-radius: 10px;
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--nx-brand) 22%, transparent);
+}
+
+.appShell .sendButton:hover:not(:disabled) {
+  transform: translate3d(0, -1px, 0);
+  box-shadow: 0 9px 20px color-mix(in srgb, var(--nx-brand) 28%, transparent);
+}
+
+.appShell .sendButton.busy {
+  border-color: color-mix(in srgb, #e78d97 56%, var(--nx-control-border));
+  background: var(--nx-surface-overlay);
+  color: var(--nx-text-primary);
+  border-radius: 10px;
+  box-shadow: 0 5px 16px rgba(231, 141, 151, 0.10);
+}
+
+.appShell .sendButton.busy::after {
+  inset: -3px;
+  border-radius: 12px;
+}
+
+.appShell .sendButton.planningButton {
+  border-color: var(--nx-brand);
+  background: var(--nx-brand-soft);
+  color: var(--nx-text-primary);
 }

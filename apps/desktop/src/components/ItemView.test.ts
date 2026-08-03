@@ -247,3 +247,16 @@ describe('agent message display sanitizing', () => {
     expect(sanitized).not.toContain('node_runtime.py');
   });
 });
+
+describe('conversation surface contract', () => {
+  it('uses semantic chat and involved-file surfaces instead of a pale card stack', () => {
+    const styles = readFileSync(join(here, '..', 'styles.css'), 'utf-8');
+    const finalContract = styles.slice(styles.lastIndexOf('/* Nexus conversation surface contract */'));
+
+    expect(finalContract).toContain('.appShell .messageBlock.agent .message.agent');
+    expect(finalContract).toContain('background: var(--nx-surface-panel);');
+    expect(finalContract).toContain('.appShell .turnFileSummary');
+    expect(finalContract).toContain('background: var(--nx-surface-overlay);');
+    expect(finalContract).toContain('.appShell .messageActionButton');
+  });
+});

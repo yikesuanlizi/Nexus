@@ -160,7 +160,7 @@
 - Modify: both styles.css files
 - Test: messageActions.test.ts, components/ItemView.test.ts, components/ComposerBar.test.ts in both apps
 
-- [ ] Step 1: add behavior guards for latest-user-only rollback, latest-assistant retry, and failure metadata/copy action.
+- [x] Step 1: keep behavior guards for latest-user-only rollback, latest-assistant retry, and failure metadata/copy action.
 
     expect(renderedLatestUser).toContain('rollback');
     expect(renderedEarlierUser).not.toContain('rollback');
@@ -168,17 +168,17 @@
     expect(renderedFailure).toContain('messageMeta');
     expect(renderedFailure).toContain('copy');
 
-- [ ] Step 2: run the six focused message/composer tests. Expected: pass before visual changes.
-- [ ] Step 3: apply compact semantic styling to message cards, message metadata, file summary, input, and send/busy control.
+- [x] Step 2: run the six focused message/composer tests. Expected: pass before visual changes.
+- [x] Step 3: apply compact semantic styling to message cards, message metadata, file summary, input, and send/busy control.
 
     .messageBlock { border-color: var(--nx-control-border); background: var(--nx-surface-panel); }
     .messageMeta, .turnFileSummary { color: var(--nx-text-muted); background: var(--nx-surface-overlay); }
     .sendButton.busy { border-radius: 10px; }
-    .sendButton.busy::after { border-radius: 3px; }
+    .sendButton.busy::after { border-radius: 12px; }
 
-- [ ] Step 4: retain key={group.item.id}, timestamp/copy controls, and the request/streaming state machine. Retain UserAvatar and existing assistant/Agent robots; only tune surrounding surface, radius, and shadow.
-- [ ] Step 5: rerun the six tests; manually send one successful and one failed turn on each client. Expected: user and assistant placeholder stay visible from the first streaming frame; failed response has timestamp and copy action.
-- [ ] Step 6: commit with git commit -m "feat: refine Nexus conversation and composer surfaces".
+- [x] Step 4: retain key={group.item.id}, timestamp/copy controls, and the request/streaming state machine. Retain UserAvatar and existing assistant/Agent robots; only tune surrounding surface, radius, and shadow.
+- [ ] Step 5: rerun the six tests; manually send one successful and one failed turn on each client. Expected: user and assistant placeholder stay visible from the first streaming frame; failed response has timestamp and copy action. Blocked only for live manual verification in this session because 5177/5178 have no API process at 4127; static render tests cover failure timestamp/copy and latest-turn actions.
+- [x] Step 6: commit with git commit -m "feat: refine Nexus conversation and composer surfaces".
 
 ### Task 6: retain original Agent animation and make event linkage specific
 
