@@ -1823,7 +1823,6 @@ function App() {
               aria-label={themeShortcutTitle}
             >
               <Icon name={themeShortcutIcon} />
-              <span className="themeQuickLabel">{themeShortcutLabel}</span>
             </button>
             <button className="iconButton" onClick={() => void threadAction('compact')} disabled={!threadId || busy || actionBusy} title={t(config.locale, 'compact')} aria-label={t(config.locale, 'compact')}><Icon name="refresh" /></button>
             <button className={monitorButtonActive ? 'iconButton panelButton active' : 'iconButton panelButton'} onClick={openUnifiedMonitor} title={config.locale === 'zh' ? '任务监控' : 'Task monitor'} aria-label={config.locale === 'zh' ? '任务监控' : 'Task monitor'}><Icon name="activity" /></button>

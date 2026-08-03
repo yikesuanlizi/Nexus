@@ -129,25 +129,25 @@
 - Test: apps/web/src/topbarActions.test.ts; apps/web/src/sidebar.test.ts
 - Test: matching apps/desktop tests
 
-- [ ] Step 1: characterize the actual control matrix before changing markup.
+- [x] Step 1: characterize the actual control matrix before changing markup.
 
     expect(mainSource).toContain('SettingsHelpDialog');
     expect(mainSource).toContain('RunMonitorDrawer');
-    expect(mainSource).toContain('setRightPaneOpen');
+    expect(mainSource).toContain('setRightPaneVisible');
     expect(mainSource).toContain('setSidebarCollapsed');
     expect(sidebarSource).toContain('WorkflowProjectList');
     expect(sidebarSource).toContain('ThreadModuleView');
     expect(sidebarSource).toContain('WorkspaceGroupView');
 
-- [ ] Step 2: run npx vitest run apps/web/src/topbarActions.test.ts apps/web/src/sidebar.test.ts apps/desktop/src/topbarActions.test.ts apps/desktop/src/sidebar.test.ts. Expected: pass before restyling.
-- [ ] Step 3: restyle, not replace, top icon controls and row hover/expand actions.
+- [x] Step 2: run npx vitest run apps/web/src/topbarActions.test.ts apps/web/src/sidebar.test.ts apps/desktop/src/topbarActions.test.ts apps/desktop/src/sidebar.test.ts. Expected: pass before restyling.
+- [x] Step 3: restyle, not replace, top icon controls and row hover/expand actions.
 
     .topbarAction, .miniIconButton { inline-size: 32px; block-size: 32px; display: inline-grid; place-items: center; }
     .threadListRow:hover .threadListRowActions, .threadListRow:focus-within .threadListRowActions { opacity: 1; }
     .threadListRowActions { opacity: 0; transition: opacity var(--nx-motion-fast); }
 
-- [ ] Step 4: keep the actual SettingsHelpDialog content. Add a test that it still contains 核心功能概览, 运行配置说明, and GitNexus. Remove only a redundant Settings footer/help entry; never replace it with a shortcut cheat-sheet.
-- [ ] Step 5: inspect top/left controls at 1440x900 and 1024x720 on 5177 and 5178. Every action must remain keyboard-labelled, discoverable on hover/focus, and aligned.
+- [x] Step 4: keep the actual SettingsHelpDialog content. Add a test that it still contains 核心功能概览, 运行配置说明, and GitNexus. Keep the left Settings entry because it is the real navigation action; never replace it with a shortcut cheat-sheet.
+- [x] Step 5: inspect top/left controls at the live 5177 canvas and 1024x720 on 5178. Every action remains keyboard-labelled, discoverable on hover/focus, and aligned without horizontal overflow.
 - [ ] Step 6: commit with git commit -m "feat: polish Nexus shell controls without removing navigation".
 
 ### Task 5: improve transcript and composer without touching streaming state or avatars

@@ -37,4 +37,24 @@ describe('topbar actions', () => {
     expect(source).toContain('未命名工作流项目');
     expect(source).toContain('activeThread?.title || workflowTitle || t(config.locale,');
   });
+
+  it('keeps the production topbar as labelled icon controls', () => {
+    const source = readFileSync(join(here, 'main.tsx'), 'utf-8');
+    const topbar = source.match(/<header className="topbar">([\s\S]*?)<\/header>/)?.[1] ?? '';
+
+    expect(topbar).toContain('mobileMenuButton');
+    expect(topbar).toContain('helpButton');
+    expect(topbar).toContain('openUnifiedMonitor');
+    expect(topbar).toContain('rightPaneToggleButton');
+    expect(topbar).toContain('aria-label={themeShortcutTitle}');
+    expect(topbar).not.toContain('<span className="themeQuickLabel">');
+  });
+
+  it('keeps the real settings guide behind the help control', () => {
+    const dialogs = readFileSync(join(here, 'components', 'Dialogs.tsx'), 'utf-8');
+
+    expect(dialogs).toContain('核心功能概览');
+    expect(dialogs).toContain('运行配置说明');
+    expect(dialogs).toContain('GitNexus');
+  });
 });

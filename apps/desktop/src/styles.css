@@ -1484,18 +1484,16 @@
   }
 
   .actions {
-    @apply flex gap-2;
+    @apply flex gap-1.5;
   }
 
   .themeQuickButton {
-    width: auto;
-    min-width: 40px;
-    grid-auto-flow: column;
-    grid-auto-columns: max-content;
-    gap: 8px;
-    padding: 0 12px;
+    width: 34px;
+    min-width: 34px;
+    height: 34px;
+    padding: 0;
     border: 1px solid var(--nx-border);
-    border-radius: 999px;
+    border-radius: 10px;
     background: var(--nx-card);
     color: var(--nx-text);
   }
@@ -1503,13 +1501,6 @@
   .themeQuickButton svg {
     width: 16px;
     height: 16px;
-  }
-
-  .themeQuickLabel {
-    font-size: 12px;
-    font-weight: 800;
-    line-height: 1;
-    white-space: nowrap;
   }
 
   .themeQuickButton:hover:not(:disabled) {
@@ -1521,17 +1512,6 @@
   .themeQuickButton:focus-visible {
     outline: none;
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--nx-accent) 16%, transparent);
-  }
-
-  @media (max-width: 720px) {
-    .themeQuickButton {
-      width: 40px;
-      padding: 0;
-    }
-
-    .themeQuickLabel {
-      display: none;
-    }
   }
 
   .contentGrid {
@@ -16833,5 +16813,85 @@
     background: var(--nx-surface-panel) !important;
     border-color: var(--nx-control-border) !important;
     color: var(--nx-text-primary) !important;
+  }
+}
+
+@layer components {
+  /* Shell controls stay compact, quiet, and discoverable through title/focus. */
+  .appShell .topbar {
+    min-height: 56px;
+    gap: 12px;
+    padding-inline: 16px;
+  }
+
+  .appShell .topbar .actions {
+    align-items: center;
+    gap: 6px;
+  }
+
+  .appShell .topbar :is(.iconButton, .themeQuickButton) {
+    width: 34px;
+    min-width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    box-shadow: none;
+  }
+
+  .appShell .topbar .panelButton.active {
+    border-color: var(--nx-accent);
+    background: var(--nx-accent-soft);
+    color: var(--nx-text-primary);
+  }
+
+  .appShell .threadListHeader {
+    height: 56px;
+    padding-inline: 12px;
+    border-color: var(--nx-control-border);
+  }
+
+  .appShell .threadListBrand strong {
+    font-size: 14px;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+  }
+
+  .appShell .threadModuleHeader,
+  .appShell .threadModuleTitle {
+    min-height: 32px;
+    padding-inline: 10px;
+    font-size: 11px;
+    letter-spacing: .035em;
+  }
+
+  .appShell .workspaceGroupActions {
+    opacity: 0;
+    transition: opacity var(--nx-motion-fast);
+  }
+
+  .appShell .workspaceGroup:hover .workspaceGroupActions,
+  .appShell .workspaceGroup:focus-within .workspaceGroupActions {
+    opacity: 1;
+  }
+
+  .appShell .workspaceThreadRow {
+    min-height: 32px;
+    border-radius: 8px;
+  }
+
+  .appShell .threadListFooter {
+    padding: 8px;
+    border-color: var(--nx-control-border);
+  }
+
+  .appShell .settingsButton {
+    height: 34px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .appShell:not(.theme-light) .threadListPanel :is(.workspaceThreadRow:hover, .workspaceThreadRow.active, .workspaceGroupHeader:hover) {
+    background: var(--nx-accent-soft);
+    border-color: color-mix(in srgb, var(--nx-control-border) 86%, var(--nx-accent));
   }
 }

@@ -1912,7 +1912,6 @@ patchGlobalFetch(); function App() {
               aria-label={themeShortcutTitle}
             >
               <Icon name={themeShortcutIcon} />
-              <span className="themeQuickLabel">{themeShortcutLabel}</span>
             </button>
             <button className="iconButton" onClick={() => void threadAction('compact')} disabled={!threadId || busy || actionBusy} title={t(config.locale, 'compact')} aria-label={t(config.locale, 'compact')}><Icon name="refresh" /></button>
             <button className="iconButton helpButton" onClick={() => setSettingsHelpOpen(true)} title={config.locale === 'zh' ? '设置说明' : 'Settings guide'} aria-label={config.locale === 'zh' ? '设置说明' : 'Settings guide'}><Icon name="question" /></button>
