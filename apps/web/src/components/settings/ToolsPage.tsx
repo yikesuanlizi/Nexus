@@ -153,9 +153,6 @@ export function ToolsPage({
             {locale === 'zh' ? '插件中心' : 'Plugins'}
             <span className="title-dot" />
           </div>
-          <div className="breadcrumb">
-            <span>Nexus</span> / {locale === 'zh' ? '插件' : 'Plugins'}
-          </div>
         </div>
         <div className="header-actions">
           <input

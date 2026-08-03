@@ -58,7 +58,6 @@ export function AgentsPage({
       <div className="presetHeader">
         <div>
           <h3>{locale === 'zh' ? '远程助手' : 'Remote bots'}</h3>
-          <span>{locale === 'zh' ? '微信优先，其他平台沿用同一网关' : 'WeChat first, other platforms use the same gateway'}</span>
         </div>
         <button className="textButton" onClick={() => void refreshBotStatus()}>{t(locale, 'refresh')}</button>
       </div>
@@ -259,7 +258,6 @@ export function AgentsPage({
         <div className="weixinBotHeader">
           <div>
             <strong>{locale === 'zh' ? '钉钉 CLI (dws)' : 'DingTalk CLI (dws)'}</strong>
-            <span>{locale === 'zh' ? '与机器人搭配使用，Agent 通过 CLI 操作钉钉企业数据' : 'Works alongside the bot; Agent operates DingTalk enterprise data via CLI'}</span>
           </div>
         </div>
 
@@ -310,7 +308,6 @@ export function AgentsPage({
         ].map(([name, enabled]) => (
           <article className="remoteBotCard" key={String(name)}>
             <strong>{String(name)}</strong>
-            <span>{locale === 'zh' ? '后续接入同一 Bot Gateway' : 'Coming through the same Bot Gateway'}</span>
             <small>{enabled ? (locale === 'zh' ? '已预留' : 'Reserved') : (locale === 'zh' ? '待接入' : 'Pending')}</small>
           </article>
         ))}

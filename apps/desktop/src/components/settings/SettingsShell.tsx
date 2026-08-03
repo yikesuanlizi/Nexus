@@ -154,7 +154,13 @@ export function SettingsShell({
               />
             ) : null}
           </div>
-          <button className="iconButton" title={t(locale, 'cancel')} aria-label={t(locale, 'cancel')} onClick={handleCancel} type="button">
+          <button
+            className="iconButton"
+            title={locale === 'zh' ? '关闭设置' : 'Close settings'}
+            aria-label={locale === 'zh' ? '关闭设置' : 'Close settings'}
+            onClick={handleCancel}
+            type="button"
+          >
             <Icon name="x" />
           </button>
         </header>
@@ -165,6 +171,7 @@ export function SettingsShell({
               <button
                 className={activeSection === tab.id ? 'active' : ''}
                 key={tab.id}
+                aria-current={activeSection === tab.id ? 'page' : undefined}
                 onClick={() => setActiveSection(tab.id)}
                 type="button"
               >

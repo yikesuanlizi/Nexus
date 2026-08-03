@@ -84,6 +84,8 @@ describe('desktop SettingsShell · P2.2 渲染与取消逻辑', () => {
     const html = renderShell({ visualThemeMode: 'dark' });
     expect(html).toMatch(/class="settingsLayer theme-dark"/);
     expect(html).toMatch(/class="settingsDrawer theme-dark"/);
+    expect(html).toContain('aria-label="Close settings"');
+    expect(html).toContain('aria-current="page"');
   });
 });
 

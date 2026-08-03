@@ -108,7 +108,6 @@ export function AccessPolicyPage({
       <header className="settingsPageHeader accessPolicyHeader">
         <div>
           <h2>{text(locale, '权限与工作区', 'Access & workspace')}</h2>
-          <p>{text(locale, '设置页只保存持久允许/禁止；运行时弹窗只临时生效。', 'Settings persist allow/deny rules; runtime approvals stay temporary.')}</p>
         </div>
         <div className="accessPolicyActions">
           <button className="whiteButton" type="button" onClick={onReload} disabled={saving}>
@@ -134,11 +133,6 @@ export function AccessPolicyPage({
             {text(locale, '当前线程规则', 'Current thread rules')}
           </button>
         </div>
-        <p className="settingsMuted">
-          {scope === 'global'
-            ? text(locale, '全局规则会影响后续所有未单独配置的线程。', 'Global rules affect threads without their own policy.')
-            : text(locale, '当前线程规则只影响这一次任务；它会和全局规则合并执行。', 'Thread rules affect this task only and merge with global rules.')}
-        </p>
       </div>
 
       <div className="settingsCard settingsCardCompact">
@@ -167,7 +161,6 @@ export function AccessPolicyPage({
         <div className="settingsSectionTitleRow">
           <div>
             <h3>{text(locale, '持久规则', 'Persistent rules')}</h3>
-            <p className="settingsMuted">{text(locale, '拒绝规则优先于允许规则；外部目录建议优先授予读取，不直接授予改写。', 'Deny rules win over allow rules. Prefer read grants for external folders.')}</p>
           </div>
           <button className="whiteButton" type="button" onClick={addRule}>
             {text(locale, '新增规则', 'Add rule')}
@@ -175,7 +168,7 @@ export function AccessPolicyPage({
         </div>
 
         {persistentRules.length === 0 ? (
-          <p className="accessPolicyEmpty">{text(locale, '没有额外持久规则。外部目录、网络或命令会在运行时请求临时授权。', 'No extra persistent rules. External paths, network, and commands will ask for temporary approval at runtime.')}</p>
+          <p className="accessPolicyEmpty">{text(locale, '暂无规则', 'No rules')}</p>
         ) : (
           <div className="accessRuleList">
             {persistentRules.map((rule) => (

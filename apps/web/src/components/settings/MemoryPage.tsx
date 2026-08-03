@@ -31,7 +31,6 @@ export function MemoryPage({
       <div className="presetHeader">
         <div>
           <h3>{locale === 'zh' ? '记忆' : 'Memory'}</h3>
-          <span>{locale === 'zh' ? '热记忆来自当前运行，温记忆来自任务片段，冷记忆来自持久记录' : 'Hot memory is runtime state, warm memory is task episodes, cold memory is persistent records'}</span>
         </div>
         <button className="textButton" type="button" onClick={() => void exportMemories()}>
           {locale === 'zh' ? '导出审计镜像' : 'Export audit mirror'}
@@ -144,7 +143,6 @@ export function MemoryPage({
       <div className="presetHeader">
         <div>
           <h4>{locale === 'zh' ? '情景记忆（任务片段）' : 'Episode memory'}</h4>
-          <span>{locale === 'zh' ? '把一次完整的任务打包记住，包含目标、进展、产出文件等' : 'Remember complete tasks with goals, progress, and artifacts'}</span>
         </div>
       </div>
       <div className="formGrid modelSettingsList">

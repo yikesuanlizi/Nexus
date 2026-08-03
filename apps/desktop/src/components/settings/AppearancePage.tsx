@@ -58,7 +58,6 @@ export function AppearancePage({ locale, config, setConfig, markDirty, dirtyFiel
       <div className="presetHeader">
         <div>
           <h3>{locale === 'zh' ? '外观' : 'Appearance'}</h3>
-          <span>{locale === 'zh' ? '界面主题' : 'Interface theme'}</span>
         </div>
       </div>
       <div className="formGrid modelSettingsList">
@@ -89,7 +88,6 @@ export function AppearancePage({ locale, config, setConfig, markDirty, dirtyFiel
         <div className="avatarSettingsHeader">
           <div>
             <strong>{locale === 'zh' ? '用户头像' : 'User avatar'}</strong>
-            <span>{locale === 'zh' ? '用于右侧用户消息，与 Agent 头像区分显示' : 'Shown on the right side of user messages, separate from agent avatars'}</span>
           </div>
           <div className="avatarSettingsPreview">
             <UserAvatar avatarId={config.userAvatarId} customDataUrl={config.customUserAvatarDataUrl} size="lg" />

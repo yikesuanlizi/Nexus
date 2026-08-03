@@ -35,6 +35,7 @@ export interface SettingsShellProps {
   pluginMode?: boolean;
   busyLayer?: boolean;
   saveLabel?: string;
+  visualThemeMode?: 'light' | 'dark';
 }
 
 export function SettingsShell({
@@ -48,6 +49,7 @@ export function SettingsShell({
   children,
   pluginMode = false,
   busyLayer = true,
+  visualThemeMode = 'light',
 }: SettingsShellProps) {
   const drawerRef = useRef<HTMLElement>(null);
   const previousActiveElementRef = useRef<HTMLElement | null>(null);
@@ -129,10 +131,10 @@ export function SettingsShell({
         : '';
 
   return (
-    <div className="settingsLayer" role="presentation">
+    <div className={`settingsLayer theme-${visualThemeMode}`} role="presentation">
       <button className="scrim" aria-label={t(locale, 'cancel')} onClick={handleCancel} type="button" />
       <aside
-        className="settingsDrawer"
+        className={`settingsDrawer theme-${visualThemeMode}`}
         role="dialog"
         aria-modal="true"
         aria-label={t(locale, 'settings')}
@@ -152,7 +154,13 @@ export function SettingsShell({
               />
             ) : null}
           </div>
-          <button className="iconButton" title={t(locale, 'cancel')} aria-label={t(locale, 'cancel')} onClick={handleCancel} type="button">
+          <button
+            className="iconButton"
+            title={locale === 'zh' ? '关闭设置' : 'Close settings'}
+            aria-label={locale === 'zh' ? '关闭设置' : 'Close settings'}
+            onClick={handleCancel}
+            type="button"
+          >
             <Icon name="x" />
           </button>
         </header>
@@ -163,6 +171,7 @@ export function SettingsShell({
               <button
                 className={activeSection === tab.id ? 'active' : ''}
                 key={tab.id}
+                aria-current={activeSection === tab.id ? 'page' : undefined}
                 onClick={() => setActiveSection(tab.id)}
                 type="button"
               >

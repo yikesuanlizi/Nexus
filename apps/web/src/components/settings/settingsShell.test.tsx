@@ -16,6 +16,7 @@ function renderShell(overrides: {
   settingsTabs?: Array<{ id: string; label: string }>;
   activeSection?: string;
   pluginMode?: boolean;
+  visualThemeMode?: 'light' | 'dark';
 } = {}): string {
   const baseSaveState: SettingsSaveState = {
     dirty: false,
@@ -38,6 +39,7 @@ function renderShell(overrides: {
     onSave: vi.fn(),
     onCancel: vi.fn(),
     pluginMode: overrides.pluginMode ?? false,
+    visualThemeMode: overrides.visualThemeMode,
   }));
 }
 
@@ -49,6 +51,29 @@ describe('SettingsShell · scope UI removal', () => {
     expect(html).not.toContain('New thread');
     expect(html).not.toContain('scopeButton');
     expect(html).not.toContain('role="radiogroup"');
+  });
+});
+
+describe('SettingsShell · visual theme ownership', () => {
+  it('places the resolved dark theme on the overlay and drawer instead of relying on the app shell', () => {
+    const html = renderShell({ visualThemeMode: 'dark' });
+    expect(html).toMatch(/class="settingsLayer theme-dark"/);
+    expect(html).toMatch(/class="settingsDrawer theme-dark"/);
+    expect(html).toContain('aria-label="Close settings"');
+    expect(html).toContain('aria-current="page"');
+  });
+
+  it('keeps both shell variants on semantic surfaces instead of hard-coded white controls', () => {
+    const webCss = readFileSync(join(here, '..', '..', 'styles.css'), 'utf-8');
+    const desktopCss = readFileSync(join(here, '..', '..', '..', '..', 'desktop', 'src', 'styles.css'), 'utf-8');
+
+    for (const css of [webCss, desktopCss]) {
+      const contract = css.slice(css.lastIndexOf('/* Nexus settings shell surface contract */'));
+      expect(contract).toContain('.settingsLayer.theme-dark');
+      expect(contract).toContain('.settingsLayer.theme-light');
+      expect(contract).toContain('var(--nx-settings-raised) !important');
+      expect(contract).toContain('var(--nx-settings-control) !important');
+    }
   });
 });
 

@@ -80,6 +80,15 @@ function accessPolicyFromConfig(config: RunConfig): AccessPolicyConfig {
   };
 }
 
+function resolveSettingsVisualThemeMode(themeMode: RunConfig['themeMode']): 'light' | 'dark' {
+  if (themeMode === 'dark') return 'dark';
+  if (themeMode === 'light') return 'light';
+  if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  return 'light';
+}
+
 export function SettingsDrawer({
   botConfig,
   botStatus,
@@ -737,6 +746,7 @@ export function SettingsDrawer({
   const firecrawlMasked = webProviderState?.firecrawl.masked ?? '';
   const firecrawlHasPreview = /[.•·]/.test(firecrawlMasked);
   const firecrawlConfigured = Boolean(webProviderState?.firecrawl.configured && firecrawlHasPreview);
+  const visualThemeMode = resolveSettingsVisualThemeMode(config.themeMode);
 
   return (
     <>
@@ -754,6 +764,7 @@ export function SettingsDrawer({
         onCancel={controller.handleCancel}
         pluginMode={activeSection === 'plugins'}
         saveLabel={controller.saveLabel}
+        visualThemeMode={visualThemeMode}
       >
         {renderActivePage()}
       </SettingsShell>
