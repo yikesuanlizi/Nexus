@@ -173,47 +173,58 @@ export function WorkspaceWorkbench({
       ) : null}
 
       <div className="workbenchContent">
-        {activeTab === 'activity' ? (
-          <div className={workbenchPanelClassName('activity', activeTab)}>
-            <LiveActivityHud
-              traceSummary={traceSummary}
-              currentPhase={workbench.currentPhase}
-              recentEvents={workbench.recentEvents}
-              controlCapabilities={controlCapabilities}
-              busy={busy}
-              onInterrupt={onInterrupt}
-              onResume={onResume}
-              onRollback={onRollback}
-              onJumpToTrace={handleJumpToTrace}
+        <div
+          className={workbenchPanelClassName('activity', activeTab)}
+          data-state={activeTab === 'activity' ? 'active' : 'inactive'}
+          aria-hidden={activeTab !== 'activity'}
+          inert={activeTab !== 'activity'}
+        >
+          <LiveActivityHud
+            traceSummary={traceSummary}
+            currentPhase={workbench.currentPhase}
+            recentEvents={workbench.recentEvents}
+            controlCapabilities={controlCapabilities}
+            busy={busy}
+            onInterrupt={onInterrupt}
+            onResume={onResume}
+            onRollback={onRollback}
+            onJumpToTrace={handleJumpToTrace}
+            locale={locale}
+          />
+        </div>
+
+        <div
+          className={workbenchPanelClassName('agents', activeTab)}
+          data-state={activeTab === 'agents' ? 'active' : 'inactive'}
+          aria-hidden={activeTab !== 'agents'}
+          inert={activeTab !== 'agents'}
+        >
+          <div className="workbenchAgentTreeWrap">
+            <AgentStagePanel
               locale={locale}
+              rows={agentStageRows}
+              selectedThreadId={selectedAgentId}
+              onSelectAgent={handleSelectAgent}
             />
           </div>
-        ) : null}
-
-        {activeTab === 'agents' ? (
-          <div className={workbenchPanelClassName('agents', activeTab)}>
-            <div className="workbenchAgentTreeWrap">
-              <AgentStagePanel
+          {selectedNode ? (
+            <div className="workbenchAgentInspectorWrap">
+              <AgentInspector
+                node={selectedNode}
+                onJumpToMonitor={handleJumpToAgentMonitor}
                 locale={locale}
-                rows={agentStageRows}
-                selectedThreadId={selectedAgentId}
-                onSelectAgent={handleSelectAgent}
               />
             </div>
-            {selectedNode ? (
-              <div className="workbenchAgentInspectorWrap">
-                <AgentInspector
-                  node={selectedNode}
-                  onJumpToMonitor={handleJumpToAgentMonitor}
-                  locale={locale}
-                />
-              </div>
-            ) : null}
-          </div>
-        ) : null}
+          ) : null}
+        </div>
 
         {shouldRenderFilesPanel ? (
-          <div className={workbenchPanelClassName('files', activeTab)} aria-hidden={activeTab !== 'files'}>
+          <div
+            className={workbenchPanelClassName('files', activeTab)}
+            data-state={activeTab === 'files' ? 'active' : 'inactive'}
+            aria-hidden={activeTab !== 'files'}
+            inert={activeTab !== 'files'}
+          >
             <WorkspaceFilesPanel
               locale={locale}
               workspaceRoot={workspaceRoot}

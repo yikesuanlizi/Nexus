@@ -99,21 +99,21 @@
 - Modify: apps/web/src/rightPaneSizing.test.ts
 - Modify: apps/desktop/src/rightPaneSizing.test.ts
 
-- [ ] Step 1: write failing width guards proving File has a separate full preview width and Activity/Agent do not inherit it.
+- [x] Step 1: extend the existing width guards with a mount/transition contract proving File keeps its separate full preview width and Activity/Agent do not inherit it.
 
     expect(source).toContain('.workspaceFiles');
     expect(source).toContain('min-width');
     expect(source).not.toContain('width: 280px; /* all right-pane tabs */');
 
-- [ ] Step 2: run npx vitest run apps/web/src/rightPaneSizing.test.ts apps/desktop/src/rightPaneSizing.test.ts. Expected: fail until tab dimensions use separate selectors.
-- [ ] Step 3: keep tab content mounted during transitions and animate opacity/transform only.
+- [x] Step 2: run npx vitest run apps/web/src/rightPaneSizing.test.ts apps/desktop/src/rightPaneSizing.test.ts. Expected: fail until inactive tab regions expose state and dimensions use separate selectors.
+- [x] Step 3: keep tab content mounted during transitions, make inactive regions inert, and animate opacity/transform only.
 
     .workbenchPanel { will-change: opacity, transform; transition: opacity var(--nx-motion-fast), transform var(--nx-motion-fast); }
     .workbenchPanel[data-state='inactive'] { pointer-events: none; opacity: 0; transform: translate3d(8px, 0, 0); }
     .workspaceFiles { min-width: min(52vw, 760px); }
 
-- [ ] Step 4: do not animate width, left, right, or grid-template-columns. Preserve the existing prefers-reduced-motion guard and vertical File-tree scroll.
-- [ ] Step 5: rerun sizing/theme tests; then use the built-in browser on 5177 and 5178 at all three desktop sizes. Switch Activity -> Agent -> File -> Activity. Expected: File retains proportional preview width, no white flash in dark mode, and no width jump.
+- [x] Step 4: do not animate width, left, right, or grid-template-columns. Preserve the existing prefers-reduced-motion guard and vertical File-tree scroll.
+- [x] Step 5: rerun sizing/theme tests; then use the built-in browser on 5177 and 5178. On 5178 validate 1440x900, 1180x760, and 1024x720; switch Activity -> Agent -> File -> Activity. Expected: File retains proportional preview width, no white flash in dark mode, and no width jump.
 - [ ] Step 6: commit with git commit -m "fix: preserve Nexus workbench widths during tab transitions".
 
 ## Phase 2: product shell, conversation, and Agent workbench

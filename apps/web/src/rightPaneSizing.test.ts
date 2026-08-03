@@ -35,4 +35,23 @@ describe('right pane sizing', () => {
     expect(source).not.toContain('rightPaneMinForTab');
     expect(source).not.toContain('workflowPaneWidthForTwoThirds');
   });
+
+  it('keeps workbench tabs mounted and transitions them only on compositor-friendly properties', () => {
+    const workbench = readFileSync(join(here, 'components', 'workbench', 'WorkspaceWorkbench.tsx'), 'utf-8');
+    const styles = readFileSync(join(here, 'styles.css'), 'utf-8');
+    const inactiveStart = styles.indexOf('.workbenchPanel.inactive {');
+    const inactiveStyles = styles.slice(inactiveStart, styles.indexOf('\n}', inactiveStart) + 2);
+
+    expect(workbench).toContain("data-state={activeTab === 'activity' ? 'active' : 'inactive'}");
+    expect(workbench).toContain("data-state={activeTab === 'agents' ? 'active' : 'inactive'}");
+    expect(workbench).toContain("data-state={activeTab === 'files' ? 'active' : 'inactive'}");
+    expect(workbench).toContain("inert={activeTab !== 'activity'}");
+    expect(workbench).toContain("inert={activeTab !== 'agents'}");
+    expect(workbench).toContain("inert={activeTab !== 'files'}");
+    expect(workbench).not.toContain("{activeTab === 'activity' ? (");
+    expect(workbench).not.toContain("{activeTab === 'agents' ? (");
+    expect(styles).toMatch(/\.workbenchPanel\s*\{[\s\S]*?transition: opacity var\(--nx-motion-fast\), transform var\(--nx-motion-fast\);/);
+    expect(inactiveStyles).toContain('transform: translate3d(8px, 0, 0);');
+    expect(inactiveStyles).not.toContain('visibility: hidden;');
+  });
 });

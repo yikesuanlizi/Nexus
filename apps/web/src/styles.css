@@ -15299,8 +15299,8 @@
   min-height: 0;
   transform: translate3d(0, 0, 0);
   transform-origin: 50% 16px;
-  animation: workbenchPanelIn 180ms var(--nx-motion-ease) both;
   will-change: transform, opacity;
+  transition: opacity var(--nx-motion-fast), transform var(--nx-motion-fast);
 }
 
 .workbenchPanel.active {
@@ -15309,15 +15309,16 @@
   opacity: 1;
   position: relative;
   z-index: 1;
+  animation: none;
 }
 
 .workbenchPanel.inactive {
   position: absolute;
   inset: 0;
   opacity: 0;
-  visibility: hidden;
   pointer-events: none;
   animation: none;
+  transform: translate3d(8px, 0, 0);
 }
 
 .workbenchFiles.workbenchPanel {
