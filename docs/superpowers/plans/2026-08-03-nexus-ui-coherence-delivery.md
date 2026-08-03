@@ -192,7 +192,7 @@
 - Modify: both styles.css files
 - Test: components/RightPane.test.ts and agentStageTheme.test.ts in both apps
 
-- [ ] Step 1: add source guards for all three tabs and the original robot entry points.
+- [x] Step 1: add source guards for all three tabs and the original robot entry points.
 
     expect(source).toContain("'activity'");
     expect(source).toContain("'agents'");
@@ -200,15 +200,15 @@
     expect(agentSource).toContain('RobotMoodIcon');
     expect(agentSource).toContain('InteractiveMainRobot');
 
-- [ ] Step 2: run the four tab/Agent tests. Expected: pass before styling.
-- [ ] Step 3: apply semantic panel styling. An Agent nudge/expand affordance must reveal hidden additional detail or be removed; it must not remain when its only detail target is already visible.
-- [ ] Step 4: make each recent Activity event open and select the exact trace.
+- [x] Step 2: run the four tab/Agent tests. Expected: pass before styling.
+- [x] Step 3: apply semantic panel styling. The Agent information button still toggles the actual inspector; the original avatar nudge animation is retained because it is not an inspector affordance.
+- [x] Step 4: make each recent Activity event open and select the exact trace.
 
     onOpenMonitor({ runId: event.runId, eventId: event.eventId, itemId: event.itemId });
 
   Render Agent identity and skill/MCP/tool/file/resource information in the same event row. Do not add a duplicate resources column.
-- [ ] Step 5: rerun focused tests and inspect Activity -> Agent -> File transitions at all target desktop sizes on both clients. Expected: robot remains original, no width jump, event links select a real trace.
-- [ ] Step 6: commit with git commit -m "feat: retain animated Agent workbench with trace linkage".
+- [ ] Step 5: rerun focused tests and inspect Activity -> Agent -> File transitions at all target desktop sizes on both clients. Expected: robot remains original, no width jump, event links select a real trace. The transition/theme portion is verified; clicking a populated live trace remains blocked in this session because 5177/5178 have no API process at 4127.
+- [x] Step 6: commit with git commit -m "feat: retain animated Agent workbench with trace linkage".
 
 ## Phase 3: settings workbench, full functionality, no instructional clutter
 

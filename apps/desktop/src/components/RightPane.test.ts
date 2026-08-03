@@ -140,7 +140,11 @@ describe('RightPane', () => {
     expect(workbenchSource).toContain("workbenchPanel${tab === activeTab ? ' active' : ' inactive'}");
     expect(styles).toContain('.workbenchPanel.inactive');
     expect(styles).toContain('position: absolute;');
-    expect(styles).toContain('visibility: hidden;');
+    const inactivePanel = styles.slice(styles.lastIndexOf('.workbenchPanel.inactive {'), styles.indexOf('}', styles.lastIndexOf('.workbenchPanel.inactive {')));
+    expect(workbenchSource).toContain("inert={activeTab !== 'files'}");
+    expect(inactivePanel).toContain('pointer-events: none;');
+    expect(inactivePanel).toContain('transform: translate3d(8px, 0, 0);');
+    expect(inactivePanel).not.toContain('visibility: hidden;');
     expect(styles).toContain('opacity: 0;');
     expect(styles).not.toContain('.workbenchPanel.inactive {\n  display: none;');
     expect(styles).toContain('.workbenchFiles.workbenchPanel');
@@ -214,5 +218,16 @@ describe('RightPane', () => {
     expect(html).toContain('frontend-design');
     expect(html).toContain('Shell');
     expect(html).toContain('npm test');
+  });
+
+  it('keeps exact event-to-trace linkage and original animated agent entry points', () => {
+    const workbenchSource = readFileSync(join(here, 'workbench', 'WorkspaceWorkbench.tsx'), 'utf-8');
+    const liveActivitySource = readFileSync(join(here, 'workbench', 'LiveActivityHud.tsx'), 'utf-8');
+    const agentStageSource = readFileSync(join(here, 'AgentStagePanel.tsx'), 'utf-8');
+
+    expect(workbenchSource).toContain('onJumpToMonitor?.({ itemId: opts.itemId, eventId: opts.eventId, runId: opts.runId, threadId: activeThreadId })');
+    expect(liveActivitySource).toContain('onJumpToTrace?.({ itemId: event.itemId, runId: event.runId, eventId: event.eventId })');
+    expect(agentStageSource).toContain('<RobotMoodIcon variant="main"');
+    expect(agentStageSource).toContain('InteractiveMainRobot');
   });
 });

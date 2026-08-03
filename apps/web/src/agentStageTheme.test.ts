@@ -21,4 +21,16 @@ describe('agent stage dark theme', () => {
       expect(block).toContain('#121519');
     }
   });
+
+  it('uses semantic workbench surfaces while retaining the original animated robot', () => {
+    const styles = readFileSync(join(here, 'styles.css'), 'utf-8');
+    const stageSource = readFileSync(join(here, 'components', 'AgentStagePanel.tsx'), 'utf-8');
+    const finalContract = styles.slice(styles.lastIndexOf('/* Nexus workbench surface contract */'));
+
+    expect(stageSource).toContain('RobotMoodIcon');
+    expect(stageSource).toContain('InteractiveMainRobot');
+    expect(finalContract).toContain('.appShell .workbenchPane');
+    expect(finalContract).toContain('.appShell .agentStageAvatarCard');
+    expect(finalContract).toContain('background: var(--nx-surface-panel);');
+  });
 });

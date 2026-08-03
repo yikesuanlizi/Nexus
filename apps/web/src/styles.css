@@ -16460,3 +16460,134 @@
   background: var(--nx-brand-soft);
   color: var(--nx-text-primary);
 }
+
+/* Nexus workbench surface contract */
+.appShell .workbenchPane {
+  background: var(--nx-surface-raised);
+  color: var(--nx-text-primary);
+  border-left-color: var(--nx-control-border);
+}
+
+.appShell .workbenchTabs {
+  background: var(--nx-surface-overlay);
+  border-bottom-color: var(--nx-control-border);
+}
+
+.appShell .workbenchTabs button {
+  min-height: 34px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--nx-text-muted);
+  border-radius: 8px;
+}
+
+.appShell .workbenchTabs button:hover:not(:disabled) {
+  background: var(--nx-surface-panel);
+  color: var(--nx-text-primary);
+}
+
+.appShell .workbenchTabs button.active {
+  border-color: color-mix(in srgb, var(--nx-brand) 58%, var(--nx-control-border));
+  background: var(--nx-brand-soft);
+  color: var(--nx-text-primary);
+  box-shadow: none;
+}
+
+.appShell .liveActivityHud,
+.appShell .workbenchAgentTreeWrap {
+  color: var(--nx-text-primary);
+}
+
+.appShell .liveActivityIdle,
+.appShell .liveActivityPhase,
+.appShell .liveActivityMetric,
+.appShell .liveActivityError,
+.appShell .liveActivityCheckpoint {
+  border-color: var(--nx-control-border);
+  background: var(--nx-surface-overlay);
+  color: var(--nx-text-primary);
+}
+
+.appShell .liveActivityMetricLabel,
+.appShell .liveActivityMeta,
+.appShell .liveActivityPhaseText span,
+.appShell .liveActivityIdle span,
+.appShell .liveActivityEventDetail {
+  color: var(--nx-text-muted);
+}
+
+.appShell .liveActivityEvent {
+  border-color: transparent;
+  background: transparent;
+  color: var(--nx-text-primary);
+  border-radius: 8px;
+}
+
+.appShell .liveActivityEvent:hover:not(:disabled) {
+  border-color: var(--nx-control-border);
+  background: var(--nx-surface-overlay);
+}
+
+.appShell .liveActivityEventAgent,
+.appShell .liveActivityEventResource {
+  border-color: color-mix(in srgb, var(--nx-control-border) 88%, transparent);
+  background: var(--nx-surface-panel);
+  color: var(--nx-text-primary);
+}
+
+.appShell .agentStageAvatarCard,
+.appShell .agentStageCard {
+  border-color: var(--nx-control-border);
+  background: var(--nx-surface-panel);
+  color: var(--nx-text-primary);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--nx-text-primary) 4%, transparent);
+}
+
+.appShell .agentStageAvatarCard {
+  border-radius: 14px;
+}
+
+.appShell .agentStageAvatarCard[data-selected="true"] {
+  border-color: var(--nx-brand);
+  box-shadow: 0 0 0 2px var(--nx-brand-soft);
+}
+
+.appShell .agentStage :is(h2, h3, strong),
+.appShell .agentStageAvatarInfo strong,
+.appShell .agentStageCard strong {
+  color: var(--nx-text-primary);
+}
+
+.appShell .agentStage :is(p, time, .agentStageRole) {
+  color: var(--nx-text-muted);
+}
+
+.appShell .agentStageInfoButton {
+  border-color: var(--nx-control-border);
+  background: var(--nx-surface-overlay);
+  color: var(--nx-text-primary);
+  box-shadow: none;
+}
+
+.appShell .workbenchFooter {
+  border-top-color: var(--nx-control-border);
+  background: var(--nx-surface-overlay);
+}
+
+/* The old event-pane skin is more specific; keep the workbench on the shared surface scale. */
+.appShell .workbenchPane {
+  background: var(--nx-surface-raised) !important;
+  color: var(--nx-text-primary) !important;
+  border-left-color: var(--nx-control-border) !important;
+}
+
+.appShell .workbenchPane .workbenchTabs {
+  background: var(--nx-surface-overlay) !important;
+  border-bottom-color: var(--nx-control-border) !important;
+}
+
+.appShell .workbenchPane .workbenchTabs button.active {
+  border-color: color-mix(in srgb, var(--nx-brand) 58%, var(--nx-control-border)) !important;
+  background: var(--nx-brand-soft) !important;
+  color: var(--nx-text-primary) !important;
+}
