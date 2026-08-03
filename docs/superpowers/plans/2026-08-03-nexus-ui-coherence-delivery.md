@@ -44,7 +44,7 @@
 - Create: apps/web/src/darkThemeSkin.test.ts
 - Create: apps/desktop/src/darkThemeSkin.test.ts
 
-- [ ] Step 1: write the failing dark-theme guards in each new test.
+- [x] Step 1: write the failing dark-theme guards in each new test.
 
     expect(styles).toContain('--nx-surface-canvas: #0a0e13;');
     expect(styles).toContain('--nx-surface-raised: #121820;');
@@ -53,8 +53,8 @@
     expect(styles).toContain('--nx-text-primary: #e9edf2;');
     expect(styles).not.toContain('.appShell:not(.theme-light) .settingsDrawer {\n  background: #ffffff;');
 
-- [ ] Step 2: run npx vitest run apps/web/src/darkThemeSkin.test.ts apps/desktop/src/darkThemeSkin.test.ts. Expected: failure for missing semantic tokens.
-- [ ] Step 3: add equivalent token families to both stylesheets, placed after the broad component rules so order cannot turn a dark region white.
+- [x] Step 2: run npx vitest run apps/web/src/darkThemeSkin.test.ts apps/desktop/src/darkThemeSkin.test.ts. Expected: failure for missing semantic tokens.
+- [x] Step 3: add equivalent token families to both stylesheets, placed after the broad component rules so order cannot turn a dark region white.
 
     --nx-surface-canvas: #0a0e13;
     --nx-surface-raised: #121820;
@@ -68,9 +68,9 @@
     --nx-accent: #82add9;
     --nx-accent-soft: rgba(94, 143, 190, 0.15);
 
-- [ ] Step 4: update both lightThemeSkin tests to require --nx-surface-canvas: #f8fafc;, --nx-text-primary: #0f172a;, and prohibit --nx-surface-canvas: #0a0e13; in the final light guard.
-- [ ] Step 5: run npx vitest run apps/web/src/lightThemeSkin.test.ts apps/web/src/darkThemeSkin.test.ts apps/desktop/src/lightThemeSkin.test.ts apps/desktop/src/darkThemeSkin.test.ts. Expected: all pass.
-- [ ] Step 6: commit only these files with git commit -m "feat: unify Nexus light and dark theme tokens".
+- [x] Step 4: update both lightThemeSkin tests to require --nx-surface-canvas: #f8fafc;, --nx-text-primary: #0f172a;, and prohibit --nx-surface-canvas: #0a0e13; in the final light guard.
+- [x] Step 5: run npx vitest run apps/web/src/lightThemeSkin.test.ts apps/web/src/darkThemeSkin.test.ts apps/desktop/src/lightThemeSkin.test.ts apps/desktop/src/darkThemeSkin.test.ts. Expected: all pass.
+- [x] Step 6: commit only these files with git commit -m "feat: unify Nexus light and dark theme tokens".
 
 ### Task 2: apply the visual contract to shared primitives before page layout
 
@@ -364,4 +364,3 @@
 - Product safeguards: working state/payload contracts, original avatars, complete Settings content, and current GitNexus entry flow are explicitly preserved.
 - Parity: each phase names web and desktop files plus matching tests; final browser validation requires both ports.
 - Execution does not begin until the user approves the phase order and acceptance matrix.
-

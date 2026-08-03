@@ -15949,3 +15949,37 @@
     box-shadow: 0 0 0 0 rgba(37, 99, 235, 0);
   }
 }
+
+/* Nexus visual contract: final semantic surface guard for light and dark clients. */
+:root {
+  --nx-surface-canvas: #0a0e13;
+  --nx-surface-raised: #121820;
+  --nx-surface-panel: #171e27;
+  --nx-surface-overlay: #10171f;
+  --nx-control-bg: #0c1218;
+  --nx-control-border: #394653;
+  --nx-text-primary: #e9edf2;
+  --nx-text-muted: #aab4c0;
+  --nx-text-faint: #737f8e;
+  --nx-accent: #82add9;
+  --nx-accent-soft: rgba(94, 143, 190, 0.15);
+}
+
+.appShell.theme-light {
+  --nx-surface-canvas: #f8fafc;
+  --nx-surface-raised: #ffffff;
+  --nx-surface-panel: #f8fafc;
+  --nx-surface-overlay: #f1f5f9;
+  --nx-control-bg: #ffffff;
+  --nx-control-border: #cbd5e1;
+  --nx-text-primary: #0f172a;
+  --nx-text-muted: #475569;
+  --nx-text-faint: #64748b;
+  --nx-accent: #2d6f9f;
+  --nx-accent-soft: #e8f0f7;
+}
+
+.appShell:not(.theme-light) .settingsDrawer {
+  background: var(--nx-surface-raised);
+  color: var(--nx-text-primary);
+}

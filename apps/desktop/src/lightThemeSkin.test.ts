@@ -14,6 +14,15 @@ function readLightGuard(): string {
 }
 
 describe('light theme skin', () => {
+  it('defines a light semantic surface contract after the legacy component rules', () => {
+    const styles = readFileSync(join(here, 'styles.css'), 'utf-8').replace(/\r\n/g, '\n');
+    const contract = styles.slice(styles.lastIndexOf('/* Nexus visual contract:'));
+
+    expect(contract).toContain('--nx-surface-canvas: #f8fafc;');
+    expect(contract).toContain('--nx-text-primary: #0f172a;');
+    expect(contract).not.toContain('.appShell.theme-light {\n  --nx-surface-canvas: #0a0e13;');
+  });
+
   it('keeps the final light-theme guard after dark settings rules', () => {
     const styles = readFileSync(join(here, 'styles.css'), 'utf-8').replace(/\r\n/g, '\n');
     const darkSettings = styles.lastIndexOf('.appShell:not(.theme-light) .settingsDrawer');
