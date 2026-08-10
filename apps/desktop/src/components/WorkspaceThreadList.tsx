@@ -9,7 +9,7 @@ import {
   type WorkspaceThreadGroup,
 } from '../features/workspaces/workspaces.js';
 import { isWorkflowProjectThread } from '../features/workflow/workflow.js';
-import { Icon } from './Icon.js';
+import { Icon, SidebarIcon, SidebarIconSprite, type SidebarIconName } from './Icon.js';
 
 type RemoteThreadBinding = {
   activeThreadId: string;
@@ -105,9 +105,10 @@ export function WorkspaceThreadList({
 
   return (
     <section className="threadListPanel" aria-label={t(locale, 'conversations')}>
+      <SidebarIconSprite />
       <header className="threadListHeader">
         <div className="threadListBrand">
-          <span className="brandMark small"><Icon name="layers" /></span>
+          <span className="brandMark small"><SidebarIcon className="icon" name="layers" /></span>
           <strong>{t(locale, 'title')}</strong>
         </div>
         <button
@@ -117,13 +118,13 @@ export function WorkspaceThreadList({
           aria-label={t(locale, 'collapseSidebar')}
           onClick={onToggleSidebar}
         >
-          <Icon name="chevron" />
+          <SidebarIcon className="icon" name="chevron" />
         </button>
       </header>
 
       <div className="workspaceThreadsHeader">
         <button className={searchVisible ? 'searchLauncher active' : 'searchLauncher'} type="button" title={locale === 'zh' ? '搜索对话' : 'Search chats'} onClick={() => setSearchOpen(true)}>
-          <Icon name="search" />
+          <SidebarIcon className="icon" name="search" />
           <span>{locale === 'zh' ? '搜索' : 'Search'}</span>
         </button>
       </div>
@@ -163,12 +164,12 @@ export function WorkspaceThreadList({
 
         <div className="threadModuleTitle">
           <button className="threadModuleToggle" type="button" onClick={() => setProjectsCollapsed((value) => !value)}>
-            <Icon name={projectsCollapsed ? 'chevronRight' : 'chevronDown'} />
-            <Icon name="folder" />
+            {projectsCollapsed ? <Icon className="icon" name="chevronRight" /> : <SidebarIcon className="icon" name="chevron" />}
+            <SidebarIcon className="icon" name="folder" />
             <span>{locale === 'zh' ? '项目' : 'Projects'}</span>
           </button>
           <button className="threadModuleAction" type="button" title={locale === 'zh' ? '选择工作区' : 'Select workspace'} onClick={onPickWorkspace}>
-            <Icon name="folderPlus" />
+            <SidebarIcon className="icon" name="plus" />
           </button>
         </div>
         {!projectsCollapsed && groups.length === 0 ? (
@@ -225,7 +226,7 @@ export function WorkspaceThreadList({
       ) : null}
       <footer className="threadListFooter">
         <button className="settingsButton" type="button" onClick={onOpenSettings}>
-          <Icon name="gear" />
+          <SidebarIcon className="icon" name="gear" />
           <span>{t(locale, 'settings')}</span>
         </button>
       </footer>
@@ -256,7 +257,7 @@ function SearchDialog({
     <div className="dialogLayer searchDialogLayer" role="presentation" onMouseDown={onClose}>
       <section className="appDialog searchDialog" role="dialog" aria-modal="true" aria-label={locale === 'zh' ? '搜索对话' : 'Search chats'} onMouseDown={(event) => event.stopPropagation()}>
         <label className="searchDialogInput">
-          <Icon name="search" />
+          <SidebarIcon className="icon" name="search" />
           <input
             autoFocus
             value={query}
@@ -319,19 +320,21 @@ function ThreadModuleView({
     <article className="threadModule">
       <div className="threadModuleHeader">
         <button className="threadModuleToggle" type="button" onClick={onToggleCollapsed}>
-          <Icon name={collapsed ? 'chevronRight' : 'chevronDown'} />
-          <Icon name="message" />
+          {collapsed ? <Icon className="icon" name="chevronRight" /> : <SidebarIcon className="icon" name="chevron" />}
+          <SidebarIcon className="icon" name="message" />
           <span>{title}</span>
         </button>
         <button type="button" title={locale === 'zh' ? '新建对话' : 'New chat'} onClick={onCreate}>
-          <Icon name="plus" />
+          <SidebarIcon className="icon" name="plus" />
         </button>
       </div>
       {!collapsed ? <div className="workspaceThreadRows plain">
         {visibleThreads.length === 0 ? (
           <div className="workspaceThreadEmptyRow">
             <span>{locale === 'zh' ? '暂无对话' : 'No chats'}</span>
-            <button type="button" onClick={onCreate}>{locale === 'zh' ? '新建' : 'New'}</button>
+            <button className="workspaceThreadCreateButton" type="button" title={locale === 'zh' ? '新建对话' : 'New chat'} aria-label={locale === 'zh' ? '新建对话' : 'New chat'} onClick={onCreate}>
+              <Icon name="plus" />
+            </button>
           </div>
         ) : visibleThreads.map((thread) => {
           const activity = threadActivityFor(thread, activeThreadId, busy, runningTurnIds);
@@ -339,6 +342,7 @@ function ThreadModuleView({
             <ThreadRow
               activity={activity}
               active={thread.threadId === activeThreadId}
+              iconName="message"
               remoteBindings={remoteBindingsForThread(remoteBindings, thread.threadId)}
               key={thread.threadId}
               locale={locale}
@@ -386,21 +390,27 @@ function WorkflowProjectList({
     <article className="threadModule">
       <div className="threadModuleHeader">
         <button className="threadModuleToggle" type="button" onClick={onToggleCollapsed}>
-          <Icon name={collapsed ? 'chevronRight' : 'chevronDown'} />
-          <Icon name="workflow" />
+          {collapsed ? <Icon className="icon" name="chevronRight" /> : <SidebarIcon className="icon" name="chevron" />}
+          <SidebarIcon className="icon" name="workflow" />
           <span>{locale === 'zh' ? '工作流项目' : 'Workflow projects'}</span>
         </button>
         <button type="button" title={locale === 'zh' ? '新建工作流' : 'New workflow'} onClick={onCreateWorkflowProject}>
-          <Icon name="plus" />
+          <SidebarIcon className="icon" name="plus" />
         </button>
       </div>
       {!collapsed ? <div className="workspaceThreadRows plain workflowProjectRows">
         {sorted.length === 0 ? (
-          <div className="workspaceThreadEmpty">{locale === 'zh' ? '暂无工作流项目' : 'No workflow projects'}</div>
+          <div className="workspaceThreadEmptyRow">
+            <span>{locale === 'zh' ? '暂无工作流项目' : 'No workflow projects'}</span>
+            <button className="workspaceThreadCreateButton" type="button" title={locale === 'zh' ? '新建工作流' : 'New workflow'} aria-label={locale === 'zh' ? '新建工作流' : 'New workflow'} onClick={onCreateWorkflowProject}>
+              <Icon name="plus" />
+            </button>
+          </div>
         ) : sorted.map((thread) => (
           <ThreadRow
             activity={threadActivityFor(thread, activeThreadId, busy, runningTurnIds)}
             active={thread.threadId === activeThreadId}
+            iconName="workflow"
             remoteBindings={remoteBindingsForThread(remoteBindings, thread.threadId)}
             key={thread.threadId}
             locale={locale}
@@ -454,16 +464,16 @@ function WorkspaceGroupView({
     <article className="workspaceGroup">
       <div className="workspaceGroupHeader" title={group.workspaceRoot || group.label}>
         <button className="workspaceGroupMain" type="button" onClick={onToggleCollapsed}>
-          <Icon name="folderCode" />
+          <SidebarIcon className="row-icon" name="folderCode" />
           <span>{group.label}</span>
         </button>
         <div className="workspaceGroupActions">
           <button type="button" title={locale === 'zh' ? '新建对话' : 'New chat'} onClick={() => onCreateInWorkspace(group.workspaceRoot)}>
-            <Icon name="plus" />
+            <SidebarIcon className="icon" name="plus" />
           </button>
           {group.workspaceRoot ? (
             <button type="button" title={locale === 'zh' ? '移除工作区' : 'Remove workspace'} onClick={() => onForgetWorkspace(group.workspaceRoot)}>
-              <Icon name="trash" />
+              <SidebarIcon className="icon" name="trash" />
             </button>
           ) : null}
         </div>
@@ -473,8 +483,8 @@ function WorkspaceGroupView({
           {visibleThreads.length === 0 ? (
             <div className="workspaceThreadEmptyRow">
               <span>{locale === 'zh' ? '暂无对话' : 'No chats'}</span>
-              <button type="button" onClick={() => onCreateInWorkspace(group.workspaceRoot)}>
-                {locale === 'zh' ? '新建' : 'New'}
+              <button className="workspaceThreadCreateButton" type="button" title={locale === 'zh' ? '新建对话' : 'New chat'} aria-label={locale === 'zh' ? '新建对话' : 'New chat'} onClick={() => onCreateInWorkspace(group.workspaceRoot)}>
+                <Icon name="plus" />
               </button>
             </div>
           ) : visibleThreads.map((thread) => {
@@ -483,6 +493,7 @@ function WorkspaceGroupView({
               <ThreadRow
                 activity={activity}
                 active={thread.threadId === activeThreadId}
+                iconName="message"
                 remoteBindings={remoteBindingsForThread(remoteBindings, thread.threadId)}
                 key={thread.threadId}
                 locale={locale}
@@ -509,6 +520,7 @@ function WorkspaceGroupView({
 function ThreadRow({
   activity,
   active,
+  iconName,
   locale,
   remoteBindings,
   thread,
@@ -518,6 +530,7 @@ function ThreadRow({
 }: {
   activity: ThreadActivityState;
   active: boolean;
+  iconName: SidebarIconName;
   locale: Locale;
   remoteBindings: RemoteThreadBinding[];
   thread: ThreadMeta;
@@ -528,6 +541,7 @@ function ThreadRow({
   return (
     <div className={active ? 'workspaceThreadRow active' : 'workspaceThreadRow'}>
       <button className="workspaceThreadMain" type="button" title={thread.title} onClick={() => onSelectThread(thread.threadId)}>
+        <SidebarIcon className="row-icon" name={iconName} />
         <span className="workspaceThreadTitle">{thread.title || t(locale, 'untitled')}</span>
         <small>{formatTimestamp(thread.updatedAt, locale)}</small>
         {remoteBindings.map((binding) => (
@@ -539,10 +553,10 @@ function ThreadRow({
       </button>
       <div className="workspaceThreadActions">
         <button type="button" title={t(locale, 'edit')} onClick={() => onRenameThread(thread)}>
-          <Icon name="pen" />
+          <SidebarIcon className="icon" name="pen" />
         </button>
         <button type="button" title={t(locale, 'deleteConversation')} onClick={() => onDeleteThread(thread.threadId)}>
-          <Icon name="trash" />
+          <SidebarIcon className="icon" name="trash" />
         </button>
       </div>
     </div>

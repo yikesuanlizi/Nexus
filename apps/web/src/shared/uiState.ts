@@ -103,7 +103,7 @@ function defaultWorkflowPaneWidth(): number {
 }
 
 function defaultStandardPaneWidth(): number {
-  return 348;
+  return 316;
 }
 
 function defaultFilesPaneWidth(): number {

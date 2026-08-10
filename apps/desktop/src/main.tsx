@@ -31,14 +31,10 @@ import { modeInstructionFor } from './config/taskModes.js';
 import {
   buildTokenTooltip,
   buildTokenUsageSummary,
-  cacheContextPercent,
   contextUsagePercent,
-  formatCacheDiagnostics,
-  formatCompactionPressure,
   hasContextPressure,
   resolveDisplayContextPressure,
   resolveModelCapabilities,
-  softThresholdPercent,
 } from './features/chat/usageDisplay.js';
 import { rollbackCountForTurn } from './features/chat/rollback.js';
 import { useRunMonitor } from './features/monitor/runMonitor.js';
@@ -91,11 +87,6 @@ function App() {
   const [rememberedWorkspaceRoots, setRememberedWorkspaceRoots] = useState<string[]>(() => readRememberedWorkspaceRoots());
   const [threadId, setThreadId] = useState(''), [turns, setTurns] = useState<TurnMeta[]>([]), [items, setItems] = useState<ThreadItem[]>([]);
   const [threadUsage, setThreadUsage] = useState<ThreadUsage | null>(null);
-  const [cacheDiagnostics, setCacheDiagnostics] = useState<{
-    stable?: boolean;
-    reasons?: string[];
-    shape?: { prefixHash?: string };
-  } | null>(null);
   const [compactionPressure, setCompactionPressure] = useState<{
     status?: string;
     estimatedTokens?: number;
@@ -133,6 +124,7 @@ function App() {
   const eventCounter = useRef(0);
   const eventSourceRef = useRef<EventSource | null>(null);
   const transcriptRef = useRef<HTMLElement | null>(null);
+  const transcriptAutoScrollFrameRef = useRef<number | null>(null);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const activeTurnThreadIdRef = useRef<string>('');
   const threadLoadGuardRef = useRef(createLatestRequestGuard());
@@ -192,8 +184,6 @@ function App() {
     () => resolveDisplayContextPressure(compactionPressure, modelCapabilities),
     [compactionPressure, modelCapabilities],
   );
-  const cacheSummary = useMemo(() => formatCacheDiagnostics(cacheDiagnostics, config.locale), [cacheDiagnostics, config.locale]);
-  const pressureSummary = useMemo(() => formatCompactionPressure(displayCompactionPressure, config.locale), [displayCompactionPressure, config.locale]);
   const lastItemSignature = useMemo(() => {
     const last = items[items.length - 1];
     if (!last) return '';
@@ -310,7 +300,7 @@ function App() {
       return [next, ...current].slice(0, 80);
     });
   }, []);
-  const runMonitor = useRunMonitor({ threadId, locale: config.locale, addEvent });
+  const runMonitor = useRunMonitor({ threadId, threadIds: threadChildren.map((child) => child.thread.threadId), locale: config.locale, addEvent });
   const monitorButtonActive = runMonitor.open;
   const openUnifiedMonitor = useCallback(() => {
     runMonitor.openDrawer();
@@ -351,7 +341,9 @@ function App() {
       durationMs: workbenchSelectedRun.completedAt
         ? new Date(workbenchSelectedRun.completedAt).getTime() - new Date(workbenchSelectedRun.startedAt).getTime()
         : Date.now() - new Date(workbenchSelectedRun.startedAt).getTime(),
-      currentSpan: runningSpan ? { spanId: runningSpan.spanId, category: runningSpan.category, name: runningSpan.name } : undefined,
+      currentSpan: workbenchSelectedRun.status === 'running' && runningSpan
+        ? { spanId: runningSpan.spanId, category: runningSpan.category, name: runningSpan.name }
+        : undefined,
       model: {
         calls: modelCalls || workbenchSelectedRun.modelCallCount,
         inputTokens: totalInput || workbenchSelectedRun.inputTokens,
@@ -395,6 +387,10 @@ function App() {
         runMonitor.toggleThread(threadId);
       }
       runMonitor.focusTraceTarget({ runId: targetRunId, eventId, itemId });
+      return;
+    }
+    if (threadId && !targetRunId) {
+      runMonitor.focusThread(threadId);
       return;
     }
     runMonitor.openDrawer();
@@ -641,7 +637,6 @@ function App() {
       setThreadId(id);
       setWorkflowPlanDraft(null);
       setEvents([]);
-      setCacheDiagnostics(null);
       setCompactionPressure(null);
       taskRuntimeMonitor.clear();
       const isCurrent = () => threadLoadGuardRef.current.isCurrent(request.generation);
@@ -717,9 +712,6 @@ function App() {
                 return updated;
               }),
             );
-          }
-          if (event.type === 'cache.diagnostics') {
-            setCacheDiagnostics(event as never);
           }
           if (event.type === 'context.compaction_pressure' && event.pressure) {
             setCompactionPressure(event.pressure as never);
@@ -856,12 +848,30 @@ function App() {
   useEffect(() => {
     const transcript = transcriptRef.current;
     if (!transcript) return;
-    if (!transcriptFollow.following) return;
-    requestAnimationFrame(() => {
+    if (!transcriptFollow.following) {
+      if (transcriptAutoScrollFrameRef.current !== null) {
+        cancelAnimationFrame(transcriptAutoScrollFrameRef.current);
+        transcriptAutoScrollFrameRef.current = null;
+      }
+      return;
+    }
+    if (transcriptAutoScrollFrameRef.current !== null) cancelAnimationFrame(transcriptAutoScrollFrameRef.current);
+    transcriptAutoScrollFrameRef.current = requestAnimationFrame(() => {
+      transcriptAutoScrollFrameRef.current = null;
       transcript.scrollTop = transcript.scrollHeight;
     });
+    return () => {
+      if (transcriptAutoScrollFrameRef.current !== null) {
+        cancelAnimationFrame(transcriptAutoScrollFrameRef.current);
+        transcriptAutoScrollFrameRef.current = null;
+      }
+    };
   }, [lastItemSignature, transcriptFollow.following]);
   function handleTranscriptScroll() {
+    if (transcriptAutoScrollFrameRef.current !== null) {
+      cancelAnimationFrame(transcriptAutoScrollFrameRef.current);
+      transcriptAutoScrollFrameRef.current = null;
+    }
     const transcript = transcriptRef.current;
     if (!transcript) return;
     const distanceFromBottom = transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight;
@@ -879,7 +889,9 @@ function App() {
     }));
     const transcript = transcriptRef.current;
     if (transcript) {
-      requestAnimationFrame(() => {
+      if (transcriptAutoScrollFrameRef.current !== null) cancelAnimationFrame(transcriptAutoScrollFrameRef.current);
+      transcriptAutoScrollFrameRef.current = requestAnimationFrame(() => {
+        transcriptAutoScrollFrameRef.current = null;
         transcript.scrollTop = transcript.scrollHeight;
       });
     }
@@ -1385,17 +1397,35 @@ function App() {
     }
   }
   async function decideApproval(requestId: string, approved: boolean, temporaryScope: TemporaryAccessScope = 'tool_call') {
-    const response = await fetch(`/api/approvals/${requestId}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        approved,
-        reason: approved ? 'approved from web' : 'denied from web',
-        temporaryScope,
-      }),
-    });
-    if (response.ok) {
-      setPendingApprovals((current) => current.filter((item) => item.requestId !== requestId));
+    try {
+      const response = await fetch(`/api/approvals/${requestId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          approved,
+          reason: approved ? 'approved from web' : 'denied from web',
+          temporaryScope,
+        }),
+      });
+      if (response.ok) {
+        setPendingApprovals((current) => current.filter((item) => item.requestId !== requestId));
+        return;
+      }
+      await refreshApprovals();
+      addEvent({
+        kind: 'approval',
+        title: config.locale === 'zh' ? '授权已失效' : 'Approval expired',
+        detail: config.locale === 'zh' ? '该请求已结束，请重新发起操作。' : 'This request has ended. Run the operation again.',
+        tone: 'warning',
+      });
+    } catch {
+      await refreshApprovals();
+      addEvent({
+        kind: 'approval',
+        title: config.locale === 'zh' ? '授权提交失败' : 'Approval failed',
+        detail: config.locale === 'zh' ? '无法提交授权决定。' : 'The approval decision could not be submitted.',
+        tone: 'danger',
+      });
     }
   }
   async function threadAction(action: 'compact' | 'fork' | 'rollback', count = 1) {
@@ -1723,7 +1753,7 @@ function App() {
     style={{
       gridTemplateColumns: sidebarCollapsed
         ? '58px minmax(0, 1fr)'
-        : '294px minmax(0, 1fr)',
+        : '278px minmax(0, 1fr)',
       gridTemplateRows: '40px minmax(0, 1fr)',
     }}>
       <div style={{ gridColumn: '1 / -1' }}>
@@ -1763,56 +1793,19 @@ function App() {
             <span>{status}</span>
           </div>
           {tokenUsage || hasContextPressure(displayCompactionPressure) ? (
-            <div className="tokenUsageBar" title={buildTokenTooltip(tokenUsage, displayCompactionPressure, config.locale)}>
-              <div className="tokenUsageBarRow">
-                <span className="tokenUsageBarLabel cacheLabel">
-                  {config.locale === 'zh' ? '缓存' : 'cache'} {tokenUsage?.hitRate ?? 0}%
+            <div className="usage-strip" title={buildTokenTooltip(tokenUsage, displayCompactionPressure, config.locale)}>
+              <span className="usage-item cache">
+                <b>{config.locale === 'zh' ? '缓存' : 'Cache'} {tokenUsage?.hitRate ?? 0}%</b>
+                <i><span style={{ width: `${tokenUsage?.hitRate ?? 0}%` }} /></i>
+              </span>
+              {hasContextPressure(displayCompactionPressure) ? (
+                <span className="usage-item context">
+                  <b>{config.locale === 'zh' ? '上下文' : 'Context'} {contextUsagePercent(displayCompactionPressure)}%</b>
+                  <i><span style={{ width: `${contextUsagePercent(displayCompactionPressure)}%` }} /></i>
                 </span>
-                {hasContextPressure(displayCompactionPressure) ? (
-                  <span className="tokenUsageBarLabel contextLabel">
-                    {config.locale === 'zh' ? '上下文' : 'ctx'} {contextUsagePercent(displayCompactionPressure)}%
-                  </span>
-                ) : null}
-              </div>
-              <div className="tokenUsageBarTrack">
-                {hasContextPressure(displayCompactionPressure) ? (
-                  <>
-                    <div
-                      className="tokenUsageBarCacheSeg"
-                      style={{ width: `${cacheContextPercent(tokenUsage, displayCompactionPressure)}%` }}
-                    />
-                    <div
-                      className="tokenUsageBarContextSeg"
-                      style={{ width: `${Math.max(0, contextUsagePercent(displayCompactionPressure) - cacheContextPercent(tokenUsage, displayCompactionPressure))}%` }}
-                    />
-                    <div
-                      className="tokenUsageBarRemainSeg"
-                      style={{ width: `${Math.max(0, 100 - contextUsagePercent(displayCompactionPressure))}%` }}
-                    />
-                    {softThresholdPercent(displayCompactionPressure) !== null ? (
-                      <div
-                        className="tokenUsageBarSoftLine"
-                        style={{ left: `${softThresholdPercent(displayCompactionPressure) ?? 0}%` }}
-                      />
-                    ) : null}
-                  </>
-                ) : (
-                  <>
-                    <div
-                      className="tokenUsageBarCacheSeg"
-                      style={{ width: `${tokenUsage?.hitRate ?? 0}%`, borderRadius: '999px 0 0 999px' }}
-                    />
-                    <div
-                      className="tokenUsageBarRemainSeg"
-                      style={{ width: `${Math.max(0, 100 - (tokenUsage?.hitRate ?? 0))}%`, borderRadius: '0 999px 999px 0' }}
-                    />
-                  </>
-                )}
-              </div>
+              ) : null}
             </div>
           ) : null}
-          {cacheSummary ? <span className="tokenPill cache">{cacheSummary}</span> : null}
-          {pressureSummary ? <span className="tokenPill warn">{pressureSummary}</span> : null}
           <div className="actions">
             {/* 移动端菜单按钮，窄屏显示 — Chinese: mobile menu button, narrow-only */}
             <button type="button" className="iconButton mobileMenuButton" onClick={() => setSidebarOpen((value) => !value)} title={config.locale === 'zh' ? '菜单' : 'Menu'} aria-label={config.locale === 'zh' ? '菜单' : 'Menu'} aria-expanded={sidebarOpen}><Icon name="menu" /></button>
@@ -1857,16 +1850,6 @@ function App() {
                 )
               ))
             )}
-            {transcriptFollow.showReturnToBottom ? (
-              <button
-                type="button"
-                className="returnToBottomButton"
-                onClick={handleReturnToBottom}
-                aria-label={config.locale === 'zh' ? '回到底部' : 'Return to bottom'}
-              >
-                {config.locale === 'zh' ? '回到底部' : '↓ Return to bottom'}
-              </button>
-            ) : null}
           </section>
           {rightPaneVisible ? (
             <>
@@ -1881,7 +1864,12 @@ function App() {
             </>
           ) : null}
         </div>
-        <ApprovalPanel locale={config.locale} approvals={pendingApprovals} onDecision={(requestId, approved, temporaryScope) => void decideApproval(requestId, approved, temporaryScope)} />
+        <ApprovalPanel locale={config.locale} approvals={pendingApprovals} onDecision={decideApproval} />
+        {transcriptFollow.showReturnToBottom ? (
+          <button type="button" className="returnToBottomButton" onClick={handleReturnToBottom} title={config.locale === 'zh' ? '回到底部' : 'Return to bottom'} aria-label={config.locale === 'zh' ? '回到底部' : 'Return to bottom'}>
+            <Icon name="chevronDown" />
+          </button>
+        ) : null}
         <ComposerBar activeSlashOption={activeSlashOption} activeThreadId={threadId} actionBusy={actionBusy} applyModelPreset={applyModelPreset} botConfig={botConfig} botStatus={botStatus} busy={busy} composerInputRef={composerInputRef} config={config} draggingImage={draggingImage} filteredSlashOptions={filteredSlashOptions} handleDrop={handleDrop} handleFileSelect={handleFileSelect} handlePaste={handlePaste} images={images} input={input} modelPresets={modelPresets} openRemoteAssistants={openRemoteAssistants} removeImage={removeImage} rightPaneVisible={rightPaneVisible} selectSlashOption={selectSlashOption} setActiveSlashOption={setActiveSlashOption} setConfig={setConfig} setDraggingImage={setDraggingImage} setInput={setInput} slashVisible={slashVisible} stopTurn={stopTurn} submitComposer={submitComposer} workflowMode={workspaceView === 'workflow'} workflowPlanning={workflowPlanning} />
       </section>
       {settingsOpen ? (

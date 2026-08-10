@@ -16,6 +16,7 @@ import { AgentsPage } from './settings/AgentsPage.js';
 import { ToolsPage } from './settings/ToolsPage.js';
 import { MonitorPage } from './settings/MonitorPage.js';
 import { MemoryPage } from './settings/MemoryPage.js';
+import { AboutPage, AdminPage, type AuthTokenPublic } from './settings/AboutPage.js';
 import { AccessPolicyPage, type AccessPolicySettingsScope } from './settings/AccessPolicyPage.js';
 import { McpConfigDialog } from './settings/McpConfigDialog.js';
 import { FirecrawlKeyDialog } from './settings/FirecrawlKeyDialog.js';
@@ -222,14 +223,17 @@ export function SettingsDrawer({
   const dingtalkStatus = botStatus?.dingtalk;
   const dingtalkConfigured = Boolean(botDraft.dingtalk.clientId && botDraft.dingtalk.clientSecret);
 
+  const [authToken, setAuthToken] = useState<AuthTokenPublic | null>(null);
+
   const settingsTabs = [
     { id: 'agent', label: locale === 'zh' ? '模型' : 'Model' },
-    { id: 'accessPolicy', label: locale === 'zh' ? '权限与工作区' : 'Access' },
     { id: 'appearance', label: locale === 'zh' ? '外观' : 'Appearance' },
     { id: 'memory', label: locale === 'zh' ? '记忆' : 'Memory' },
-    { id: 'performance', label: locale === 'zh' ? '性能' : 'Performance' },
+    { id: 'monitor', label: locale === 'zh' ? '监控' : 'Monitor' },
     { id: 'plugins', label: locale === 'zh' ? '插件中心' : 'Plugins' },
     { id: 'remote', label: locale === 'zh' ? '远程助手' : 'Remote bots' },
+    { id: 'about', label: locale === 'zh' ? '关于' : 'About' },
+    ...(config.permissions === 'danger_full_access' ? [{ id: 'admin' as const, label: locale === 'zh' ? '管理员' : 'Admin' }] : []),
   ];
 
   useEffect(() => {
@@ -572,6 +576,8 @@ export function SettingsDrawer({
             showSavedModelKey={settings.showSavedModelKey}
             setShowSavedModelKey={settings.setShowSavedModelKey}
             modelKeyNotice={settings.modelKeyNotice}
+            hasSavedModelKey={settings.hasSavedModelKey}
+            hasConfiguredModelEnvVar={settings.hasConfiguredModelEnvVar}
             modelEnvVarDraft={settings.modelEnvVarDraft}
             setModelEnvVarDraft={settings.setModelEnvVarDraft}
             modelEnvVarOptions={settings.modelEnvVarOptions}
@@ -622,7 +628,7 @@ export function SettingsDrawer({
             exportMemories={exportMemories}
           />
         );
-      case 'performance':
+      case 'monitor':
         return (
           <MonitorPage
             locale={locale}
@@ -630,6 +636,21 @@ export function SettingsDrawer({
             setConfig={setConfig}
             markDirty={settings.markDirty}
             dirtyFields={settings.dirtyFields}
+          />
+        );
+      case 'about':
+        return (
+          <AboutPage
+            locale={locale}
+          />
+        );
+      case 'admin':
+        return (
+          <AdminPage
+            locale={locale}
+            token={authToken}
+            onCopyToken={() => {}}
+            onRegenerateToken={() => {}}
           />
         );
       case 'plugins':
@@ -698,6 +719,13 @@ export function SettingsDrawer({
   const firecrawlConfigured = Boolean(webProviderState?.firecrawl.configured && firecrawlHasPreview);
   const visualThemeMode = resolveSettingsVisualThemeMode(config.themeMode);
 
+  function handleToggleTheme() {
+    setConfig((current) => ({
+      ...current,
+      themeMode: resolveSettingsVisualThemeMode(current.themeMode) === 'dark' ? 'light' : 'dark',
+    }));
+  }
+
   return (
     <>
       <SettingsShell
@@ -715,6 +743,7 @@ export function SettingsDrawer({
         saveLabel={settings.saveLabel}
         pluginMode={activeSection === 'plugins'}
         visualThemeMode={visualThemeMode}
+        onToggleTheme={handleToggleTheme}
       >
         {renderActivePage()}
       </SettingsShell>

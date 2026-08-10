@@ -46,6 +46,8 @@ export interface UseSettingsControllerResult {
   showSavedModelKey: boolean;
   setShowSavedModelKey: React.Dispatch<React.SetStateAction<boolean>>;
   modelKeyNotice: string;
+  hasSavedModelKey: boolean;
+  hasConfiguredModelEnvVar: boolean;
   setModelKeyNotice: React.Dispatch<React.SetStateAction<string>>;
   modelEnvVarDraft: string;
   setModelEnvVarDraft: React.Dispatch<React.SetStateAction<string>>;
@@ -57,6 +59,7 @@ export interface UseSettingsControllerResult {
   ensureCustomProvider: () => Promise<string | null>;
   handleSaveModelConfig: () => Promise<void>;
   handleSetCurrentModelConfig: () => Promise<void>;
+  resetModelDraft: () => void;
 }
 
 export function modelKeySourceForProvider(provider: ProviderEntry | undefined, keyState: ApiKeyState | undefined): SecretSource {
@@ -113,6 +116,25 @@ export function useSettingsController(options: UseSettingsControllerOptions): Us
   const [modelEnvVarDraft, setModelEnvVarDraft] = useState('');
   const [modelEnvVarRemoteOptions, setModelEnvVarRemoteOptions] = useState<string[]>([]);
   const [customProviderName, setCustomProviderName] = useState('');
+  const [savedKeyProviders, setSavedKeyProviders] = useState<Set<string>>(() => new Set());
+  const [savedEnvVars, setSavedEnvVars] = useState<Record<string, string>>({});
+
+  const selectedProvider = useMemo(
+    () => providers.find((provider) => provider.id === modelConfigDraft.provider),
+    [providers, modelConfigDraft.provider],
+  );
+  const selectedKeyState = useMemo(
+    () => keyStates.find((state) => state.providerId === modelConfigDraft.provider),
+    [keyStates, modelConfigDraft.provider],
+  );
+  const hasSavedModelKey = modelKeySource === 'config' && (
+    (selectedKeyState?.configured === true && selectedKeyState.source === 'config')
+    || savedKeyProviders.has(modelConfigDraft.provider)
+  );
+  const hasConfiguredModelEnvVar = modelKeySource === 'env' && (
+    (selectedKeyState?.configured === true && selectedKeyState.source === 'env')
+    || Boolean(savedEnvVars[modelConfigDraft.provider])
+  );
 
   const [_threadOverrides, setThreadOverrides] = useState<{ provider?: string; model?: string; baseUrl?: string }>({});
 
@@ -318,6 +340,7 @@ export function useSettingsController(options: UseSettingsControllerOptions): Us
     const targetProvider = providerId ?? modelConfigDraft.provider;
     if (modelKeySource === 'config' && apiKeyDraft.trim()) {
       await saveProviderKey(targetProvider, apiKeyDraft.trim());
+      setSavedKeyProviders((current) => current.has(targetProvider) ? current : new Set(current).add(targetProvider));
     }
   }, [modelKeySource, apiKeyDraft, modelConfigDraft.provider, saveProviderKey]);
 
@@ -325,6 +348,7 @@ export function useSettingsController(options: UseSettingsControllerOptions): Us
     const targetProvider = providerId ?? modelConfigDraft.provider;
     if (modelKeySource === 'env' && modelEnvVarDraft.trim()) {
       await saveProviderEnvVar(targetProvider, modelEnvVarDraft.trim());
+      setSavedEnvVars((current) => ({ ...current, [targetProvider]: modelEnvVarDraft.trim() }));
     }
   }, [modelKeySource, modelEnvVarDraft, modelConfigDraft.provider, saveProviderEnvVar]);
 
@@ -454,6 +478,25 @@ export function useSettingsController(options: UseSettingsControllerOptions): Us
     if (onClose) onClose();
   }, [hydrateFromScope, scope, onClose]);
 
+  const resetModelDraft = useCallback(() => {
+    setModelConfigDraft(modelConfigDraftFromConfig(config));
+    setApiKeyDraft('');
+    setModelKeySource((config as { modelKeySource?: SecretSource }).modelKeySource ?? 'env');
+    setModelEnvVarDraft(config.provider ? '' : '');
+    setCustomProviderName('');
+    setShowSavedModelKey(false);
+    setDirtyFields((current) => {
+      const next = { ...current };
+      delete next.provider;
+      delete next.model;
+      delete next.baseUrl;
+      delete next.modelKeySource;
+      delete next.modelEnvVar;
+      delete next.apiKey;
+      return next;
+    });
+  }, [config]);
+
   return {
     scope,
     setScope,
@@ -474,6 +517,8 @@ export function useSettingsController(options: UseSettingsControllerOptions): Us
     setShowSavedModelKey,
     modelKeyNotice,
     setModelKeyNotice,
+    hasSavedModelKey,
+    hasConfiguredModelEnvVar,
     modelEnvVarDraft,
     setModelEnvVarDraft,
     modelEnvVarOptions,
@@ -484,5 +529,6 @@ export function useSettingsController(options: UseSettingsControllerOptions): Us
     ensureCustomProvider,
     handleSaveModelConfig,
     handleSetCurrentModelConfig,
+    resetModelDraft,
   };
 }

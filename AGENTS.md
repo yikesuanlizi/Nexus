@@ -4,12 +4,10 @@
 
 - 本项目是 `Nexus`，目标是一个本地优先的 TypeScript + React Agent OS 原型。
 - 参考 Codex 的工程思路，但不要照搬 CLI 优先结构；本项目优先前端 Web 交互、API 服务、runtime/storage/model-gateway 分层。
-- 默认工作区是 `E:\langchain\Nexus`。
 - 阶段路线：缓存命中治理 → 最终 UI 改造 → 远程机器人连接器（QQ、微信/企业微信、飞书、钉钉统一 Bot Adapter）→ 桌面端封装。不要在机器人连接器完成前急着做桌面端。
 
 ## 强约束
 
-- 修改或新增 `Nexus` 功能前，第一步必须先对照 `E:\langchain\codex` 的 Codex 源码逻辑、行为和工程边界；Skills、MCP、斜杠命令、web_search、线程/rollout/resume 等能力尤其如此。确认 Codex 做法后，只做适配本项目前端 Web + API 分层的最小改动，不要凭空另造流程。
 - 只把 `src/` 视为开发源码。`dist/`、`dist-types/`、`apps/web/dist/` 都是生成物，不能手改，不能把里面的代码当作架构依据。
 - 修改运行时代码后需要重启 `npm start` 对应的 API/Vite 服务，否则浏览器可能还在跑旧进程；除非用户明确要求，助手禁止自行启动、重启或后台占用本项目服务，只能提示用户手动重启。
 - 不要留下临时验证线程、临时 rollout、临时测试文件；验证结束后清理。
@@ -54,6 +52,7 @@
 - 权限模式属于输入框附近的运行模式选择，而不是深藏在设置里。
 - 右侧运行轨迹只展示运行状态、工具、错误和 token 摘要；用户消息显示在对话区，不重复进入轨迹栏。
 - React list key 必须稳定，不能用会重复或会随状态更新冲突的数字 id。
+- 禁止生成无用介绍文字，特别是大字下面
 
 ## 调试工作流
 
@@ -70,47 +69,4 @@
 - 中文 UI 文案保持简洁，避免解释型废话。
 - 生成物、日志、数据库、rollout 不进入总结或人工维护。
 
-<!-- gitnexus:start -->
-# GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Nexus** (10022 symbols, 28047 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
-
-> Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
-
-## Always Do
-
-- **MUST run impact analysis before editing any symbol.** Before modifying a function, class, or method, run `impact({target: "symbolName", direction: "upstream"})` and report the blast radius (direct callers, affected processes, risk level) to the user.
-- **MUST run `detect_changes()` before committing** to verify your changes only affect expected symbols and execution flows. For regression review, compare against the default branch: `detect_changes({scope: "compare", base_ref: "main"})`.
-- **MUST warn the user** if impact analysis returns HIGH or CRITICAL risk before proceeding with edits.
-- When exploring unfamiliar code, use `query({search_query: "concept"})` to find execution flows instead of grepping. It returns process-grouped results ranked by relevance.
-- When you need full context on a specific symbol — callers, callees, which execution flows it participates in — use `context({name: "symbolName"})`.
-- For security review, `explain({target: "fileOrSymbol"})` lists taint findings (source→sink flows; needs `analyze --pdg`).
-
-## Never Do
-
-- NEVER edit a function, class, or method without first running `impact` on it.
-- NEVER ignore HIGH or CRITICAL risk warnings from impact analysis.
-- NEVER rename symbols with find-and-replace — use `rename` which understands the call graph.
-- NEVER commit changes without running `detect_changes()` to check affected scope.
-
-## Resources
-
-| Resource | Use for |
-|----------|---------|
-| `gitnexus://repo/Nexus/context` | Codebase overview, check index freshness |
-| `gitnexus://repo/Nexus/clusters` | All functional areas |
-| `gitnexus://repo/Nexus/processes` | All execution flows |
-| `gitnexus://repo/Nexus/process/{name}` | Step-by-step execution trace |
-
-## CLI
-
-| Task | Read this skill file |
-|------|---------------------|
-| Understand architecture / "How does X work?" | `.claude/skills/gitnexus/gitnexus-exploring/SKILL.md` |
-| Blast radius / "What breaks if I change X?" | `.claude/skills/gitnexus/gitnexus-impact-analysis/SKILL.md` |
-| Trace bugs / "Why is X failing?" | `.claude/skills/gitnexus/gitnexus-debugging/SKILL.md` |
-| Rename / extract / split / refactor | `.claude/skills/gitnexus/gitnexus-refactoring/SKILL.md` |
-| Tools, resources, schema reference | `.claude/skills/gitnexus/gitnexus-guide/SKILL.md` |
-| Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
-
-<!-- gitnexus:end -->

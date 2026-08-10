@@ -93,6 +93,9 @@ export function ItemView({
       </MessageFrame>
     );
   }
+  if (item.type === 'reasoning') {
+    return <ReasoningDetails item={item} locale={locale} onCopy={onCopy} />;
+  }
   if (
     item.type === 'tool_call'
     || item.type === 'collab_tool_call'
@@ -151,12 +154,7 @@ export function ItemView({
       </MessageFrame>
     );
   }
-  return (
-    <article className="message muted">
-      <strong>{heading.title}</strong>
-      <pre>{JSON.stringify(item, null, 2)}</pre>
-    </article>
-  );
+  return <InternalItemDetails item={item} locale={locale} />;
 }
 
 export function AssistantTurnView({
@@ -221,7 +219,7 @@ export function AssistantTurnView({
       showRegenerate={canRegenerate}
     >
       <article className="message agent assistantTurnBubble">
-        {group.items.map((item) => {
+        {group.items.map((item, index) => {
           if (item.type === 'agent_message') {
             return item.text ? (
               <RichMessageText
@@ -233,21 +231,23 @@ export function AssistantTurnView({
               />
             ) : null;
           }
+          if (item.type === 'reasoning') {
+            return <ReasoningDetails item={item} key={item.id} locale={locale} onCopy={onCopy} />;
+          }
           if (
-            item.type === 'tool_call'
-            || item.type === 'collab_tool_call'
-            || item.type === 'mcp_tool_call'
-            || item.type === 'command_execution'
-            || item.type === 'context_compaction'
-            || item.type === 'file_change'
+            isToolItem(item)
           ) {
+            if (isToolItem(group.items[index - 1])) return null;
+            const batch = group.items.slice(index).filter((candidate, offset, source) => {
+              if (offset === 0) return true;
+              return isToolItem(source[offset - 1]) && isToolItem(candidate);
+            });
             return (
-              <ToolDetails
-                childItems={childActivityForCollabItem(item, childActivityByThread)}
-                item={item}
-                key={item.id}
+              <ToolBatchDetails
+                childActivityByThread={childActivityByThread}
+                items={batch}
+                key={`tool-batch-${item.id}`}
                 locale={locale}
-                compact
                 onPreviewFile={onPreviewFile}
                 onOpenFile={onOpenFile}
               />
@@ -259,11 +259,91 @@ export function AssistantTurnView({
           if (item.type === 'error') {
             return <p className="assistantTurnError" key={item.id}>{item.message}</p>;
           }
-          return <pre key={item.id}>{JSON.stringify(item, null, 2)}</pre>;
+          return <InternalItemDetails item={item} key={item.id} locale={locale} />;
         })}
         <TurnFileSummaryBlock items={group.items as ThreadItem[]} locale={locale} onPreviewFile={onPreviewFile} workspaceRoot={workspaceRoot} />
       </article>
     </MessageFrame>
+  );
+}
+
+function ReasoningDetails({
+  item,
+  locale,
+  onCopy,
+}: {
+  item: ThreadItem;
+  locale: Locale;
+  onCopy?: (text: string) => void;
+}) {
+  const text = item.text?.trim();
+  if (!text) return <InternalItemDetails item={item} locale={locale} />;
+  return (
+    <details className="reasoningDetails">
+      <summary>{locale === 'zh' ? '思考过程' : 'Reasoning'}</summary>
+      <div className="reasoningDetailsBody"><RichMessageText text={text} onCopy={onCopy} /></div>
+    </details>
+  );
+}
+
+function isToolItem(item: ThreadItem | undefined): boolean {
+  return Boolean(item && (
+    item.type === 'tool_call'
+    || item.type === 'collab_tool_call'
+    || item.type === 'mcp_tool_call'
+    || item.type === 'command_execution'
+    || item.type === 'context_compaction'
+    || item.type === 'file_change'
+  ));
+}
+
+function ToolBatchDetails({
+  childActivityByThread,
+  items,
+  locale,
+  onPreviewFile,
+  onOpenFile,
+}: {
+  childActivityByThread: Record<string, ThreadItem[]>;
+  items: ThreadItem[];
+  locale: Locale;
+  onPreviewFile?: (path: string) => void;
+  onOpenFile?: (path: string) => void;
+}) {
+  return (
+    <details className="toolBatchDetails">
+      <summary aria-label={locale === 'zh' ? `${items.length} 个工具调用` : `${items.length} tool calls`}>
+        <span aria-hidden="true" className="toolBatchIcon"><Icon name="wrench" /></span>
+        <span aria-hidden="true" className="toolBatchChevron"><Icon name="chevronRight" /></span>
+        <span aria-hidden="true" className="toolBatchCount">{items.length}</span>
+      </summary>
+      <div className="toolBatchItems">
+        {items.map((item) => (
+          <ToolDetails
+            childItems={childActivityForCollabItem(item, childActivityByThread)}
+            item={item}
+            key={item.id}
+            locale={locale}
+            compact
+            onPreviewFile={onPreviewFile}
+            onOpenFile={onOpenFile}
+          />
+        ))}
+      </div>
+    </details>
+  );
+}
+
+function InternalItemDetails({ item, locale }: { item: ThreadItem; locale: Locale }) {
+  const heading = itemHeading(item, locale);
+  return (
+    <details className="internalItemDetails">
+      <summary>
+        <strong>{heading.title}</strong>
+        {heading.detail ? <span>{heading.detail}</span> : null}
+      </summary>
+      <pre>{formatItemPayload(item)}</pre>
+    </details>
   );
 }
 

@@ -121,6 +121,25 @@ describe('message markdown rendering', () => {
 });
 
 describe('message action visibility', () => {
+  it('keeps reasoning output collapsed instead of rendering its raw item payload', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AssistantTurnView, {
+        group: {
+          turnId: 'turn-reasoning',
+          items: [
+            { id: 'reasoning-1', type: 'reasoning', turnId: 'turn-reasoning', text: '内部推理文本', status: 'completed' },
+          ],
+        },
+        locale: 'zh',
+      }),
+    );
+
+    expect(html).toContain('<details class="reasoningDetails">');
+    expect(html).toContain('<summary>思考过程</summary>');
+    expect(html).toContain('内部推理文本');
+    expect(html).not.toContain('&quot;type&quot;:&quot;reasoning&quot;');
+  });
+
   it('shows timestamp and copy actions for error-only assistant turns', () => {
     const html = renderToStaticMarkup(
       React.createElement(AssistantTurnView, {

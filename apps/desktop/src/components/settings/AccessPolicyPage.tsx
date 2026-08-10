@@ -1,6 +1,7 @@
 import React from 'react';
 import type { AccessKind, AccessPolicyConfig, AccessRule, AccessRuleScope, AccessTarget } from '@nexus/protocol';
 import type { Locale } from '../../config/config.js';
+import { SettingsPageHeader } from './SettingsPageHeader.js';
 
 export type AccessPolicySettingsScope = 'global' | 'currentThread';
 
@@ -105,19 +106,23 @@ export function AccessPolicyPage({
 
   return (
     <section className="settingsPage settingsAccessPolicyPage">
-      <header className="settingsPageHeader accessPolicyHeader">
-        <div>
-          <h2>{text(locale, '权限与工作区', 'Access & workspace')}</h2>
-        </div>
-        <div className="accessPolicyActions">
-          <button className="whiteButton" type="button" onClick={onReload} disabled={saving}>
-            {text(locale, '重新载入', 'Reload')}
-          </button>
-          <button className="solidButton" type="button" onClick={onSave} disabled={saving}>
-            {saving ? text(locale, '保存中…', 'Saving…') : text(locale, scope === 'global' ? '保存全局规则' : '保存当前线程规则', scope === 'global' ? 'Save global rules' : 'Save thread rules')}
-          </button>
-        </div>
-      </header>
+      <SettingsPageHeader
+        eyebrow="ACCESS"
+        title={text(locale, '权限与工作区', 'Access & workspace')}
+        actions={[
+          {
+            label: text(locale, '重新载入', 'Reload'),
+            onClick: onReload,
+            disabled: saving,
+          },
+          {
+            label: saving ? text(locale, '保存中…', 'Saving…') : text(locale, scope === 'global' ? '保存全局规则' : '保存当前线程规则', scope === 'global' ? 'Save global rules' : 'Save thread rules'),
+            primary: true,
+            onClick: onSave,
+            disabled: saving,
+          },
+        ]}
+      />
 
       <div className="settingsCard settingsCardCompact">
         <div className="accessPolicyScopeTabs" role="tablist" aria-label={text(locale, '规则保存位置', 'Rule location')}>

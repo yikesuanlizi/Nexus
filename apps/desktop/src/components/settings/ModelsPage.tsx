@@ -7,6 +7,7 @@ import { t } from '../../shared/i18n.js';
 import { Icon } from '../Icon.js';
 import { DropdownSelect, type DropdownOption } from '../DropdownSelect.js';
 import { ConfirmPanel } from './ConfirmPanel.js';
+import { SettingsPageHeader } from './SettingsPageHeader.js';
 import { modelPresetMatchesRunConfig, normalizeModelConfigDraftForSettings, providerDropdownOptions, type ModelConfigDraft } from './shared.js';
 
 export interface ModelsPageProps {
@@ -25,6 +26,8 @@ export interface ModelsPageProps {
   showSavedModelKey: boolean;
   setShowSavedModelKey: React.Dispatch<React.SetStateAction<boolean>>;
   modelKeyNotice: string;
+  hasSavedModelKey: boolean;
+  hasConfiguredModelEnvVar: boolean;
   modelEnvVarDraft: string;
   setModelEnvVarDraft: React.Dispatch<React.SetStateAction<string>>;
   modelEnvVarOptions: string[];
@@ -36,6 +39,10 @@ export interface ModelsPageProps {
   handleSetCurrentModelConfig: () => Promise<void>;
   markDirty: (field: string, dirty: boolean) => void;
   dirtyFields: Record<string, boolean>;
+}
+
+function text(locale: Locale, zh: string, en: string): string {
+  return locale === 'zh' ? zh : en;
 }
 
 export function ModelsPage({
@@ -54,6 +61,8 @@ export function ModelsPage({
   showSavedModelKey,
   setShowSavedModelKey,
   modelKeyNotice,
+  hasSavedModelKey,
+  hasConfiguredModelEnvVar,
   modelEnvVarDraft,
   setModelEnvVarDraft,
   modelEnvVarOptions,
@@ -98,7 +107,7 @@ export function ModelsPage({
       return locale === 'zh' ? '未指定环境变量' : 'No env var';
     }
     const boundEnvVar = selectedKeyState?.envVar || selectedProvider?.apiKeyEnvVar;
-    if (selectedKeyState?.configured && selectedKeyState.source === 'env' && boundEnvVar === envVar) {
+    if (hasConfiguredModelEnvVar) {
       return `${envVar} · ${locale === 'zh' ? '已配置' : 'configured'}`;
     }
     if (boundEnvVar === envVar) {
@@ -108,9 +117,8 @@ export function ModelsPage({
   }
 
   function savedModelKeyPlaceholder() {
-    const hasSavedKey = selectedKeyState?.configured && selectedKeyState.source === 'config';
-    if (!hasSavedKey) return locale === 'zh' ? '未保存密钥' : 'No saved key';
-    if (showSavedModelKey) return selectedKeyState.masked ?? (locale === 'zh' ? '已保存密钥' : 'Saved key');
+    if (!hasSavedModelKey) return locale === 'zh' ? '未保存密钥' : 'No saved key';
+    if (showSavedModelKey) return selectedKeyState?.masked ?? (locale === 'zh' ? '已保存密钥' : 'Saved key');
     return '••••••••••••••••';
   }
 
@@ -155,7 +163,10 @@ export function ModelsPage({
 
   return (
     <section className="settingsSection modelSettingsPanel" id="settings-agent">
-      <h3>{locale === 'zh' ? '模型' : 'Model'}</h3>
+      <SettingsPageHeader
+        eyebrow="MODEL"
+        title={text(locale, '模型', 'Model')}
+      />
 
       <div className="settingsCard scopeApplyCard">
         <div className="settingsCardHeader">
@@ -252,7 +263,7 @@ export function ModelsPage({
               <datalist id="model-env-var-options">
                 {modelEnvVarOptions.map((envVar) => <option key={envVar} value={envVar} />)}
               </datalist>
-              <p className="modelKeyStatusLine">{modelKeyEnvStatus()}</p>
+              <p className={`modelKeyStatusLine ${hasConfiguredModelEnvVar ? 'configured' : ''}`}>{modelKeyEnvStatus()}</p>
               {modelKeyNotice ? <p className="botNotice">{modelKeyNotice}</p> : null}
             </>
           ) : (

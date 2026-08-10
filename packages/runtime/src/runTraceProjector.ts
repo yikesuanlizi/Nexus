@@ -9,6 +9,7 @@ export function projectRunTrace(input: RunTraceEnvelope[]): RunTraceSummary {
       seen.add(event.eventId);
       return true;
     });
+  const countedToolCalls = new Set<string>();
 
   const summary: RunTraceSummary = {
     status: 'pending',
@@ -23,6 +24,8 @@ export function projectRunTrace(input: RunTraceEnvelope[]): RunTraceSummary {
   for (const event of events) {
     if (event.lifecycle === 'started') {
       summary.currentSpan = { spanId: event.spanId, category: event.category, name: event.name };
+    } else if (summary.currentSpan?.category === event.category) {
+      summary.currentSpan = undefined;
     }
     if (event.category === 'turn') {
       if (event.lifecycle === 'started') {
@@ -32,10 +35,12 @@ export function projectRunTrace(input: RunTraceEnvelope[]): RunTraceSummary {
         summary.status = event.payload.status === 'interrupted' ? 'interrupted' : 'completed';
         summary.completedAt = event.occurredAt;
         summary.durationMs = event.durationMs;
+        summary.currentSpan = undefined;
       } else if (event.lifecycle === 'failed') {
         summary.status = 'failed';
         summary.completedAt = event.occurredAt;
         summary.durationMs = event.durationMs;
+        summary.currentSpan = undefined;
       }
       continue;
     }
@@ -60,6 +65,9 @@ export function projectRunTrace(input: RunTraceEnvelope[]): RunTraceSummary {
         }
         break;
       case 'tool':
+        if (event.name.startsWith('tool.batch.')) break;
+        if (countedToolCalls.has(event.payload.callId)) break;
+        countedToolCalls.add(event.payload.callId);
         summary.tools.calls += 1;
         if (event.lifecycle === 'failed') summary.tools.failed += 1;
         if (event.payload.decision === 'deny') summary.tools.denied += 1;

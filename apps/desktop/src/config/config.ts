@@ -61,6 +61,10 @@ export interface RunConfig {
   /** Whether system monitor (CPU/memory/disk) throttling is enabled. */
   /** 中文：是否启用系统监控（CPU/内存/磁盘）限流 */
   systemMonitorEnabled: boolean;
+  maxConcurrency: number;
+  toolTimeoutSeconds: number;
+  memoryThresholdPercent: number;
+  throttleNewTasks: boolean;
   themeMode: ThemeMode;
   userAvatarId: UserAvatarId;
   customUserAvatarDataUrl: string;
@@ -99,6 +103,10 @@ const USER_FIELDS: Array<keyof RunConfig> = [
   'episodeFtsCandidateLimit',
   'episodeRerankEnabled',
   'systemMonitorEnabled',
+  'maxConcurrency',
+  'toolTimeoutSeconds',
+  'memoryThresholdPercent',
+  'throttleNewTasks',
   'themeMode',
   'userAvatarId',
   'customUserAvatarDataUrl',
@@ -123,6 +131,10 @@ export function mergeRunConfigDefaults(
     episodeFtsCandidateLimit: 40,
     episodeRerankEnabled: false,
     systemMonitorEnabled: false,
+    maxConcurrency: 4,
+    toolTimeoutSeconds: 120,
+    memoryThresholdPercent: 85,
+    throttleNewTasks: true,
     ...current,
     ...serverDefaults,
   } as RunConfig;

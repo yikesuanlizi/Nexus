@@ -382,6 +382,16 @@ function deriveCurrentPhase(
   busy: boolean,
   zh: boolean,
 ): CurrentPhase {
+  if (!busy && traceSummary?.status !== 'running') {
+    if (traceSummary?.lastError) {
+      return {
+        kind: 'error',
+        label: zh ? '错误' : 'Error',
+        detail: traceSummary.lastError.message,
+      };
+    }
+    return phaseFromLastCompletedItem(runtimeItems[runtimeItems.length - 1], zh);
+  }
   if (traceSummary?.lastError) {
     return {
       kind: 'error',
@@ -476,6 +486,9 @@ function deriveCurrentPhase(
 }
 
 function phaseFromLastCompletedItem(item: ThreadItem, zh: boolean): CurrentPhase {
+  if (!item) {
+    return { kind: 'idle', label: zh ? '空闲' : 'Idle' };
+  }
   if (item.type === 'error' || item.status === 'failed') {
     return {
       kind: 'error',
@@ -651,9 +664,16 @@ function deriveRecentEvents(
     deduped.set(recentEventDedupeKey(event), event);
   }
 
-  return [...deduped.values()]
+  const sorted = [...deduped.values()]
     .sort((a, b) => a.occurredAt.localeCompare(b.occurredAt))
-    .slice(-10);
+  const recent = sorted.slice(-10);
+  const childRecent = sorted.filter((event) => event.agent.depth > 0).slice(-3);
+  for (const event of childRecent) {
+    if (recent.some((candidate) => recentEventDedupeKey(candidate) === recentEventDedupeKey(event))) continue;
+    recent.shift();
+    recent.push(event);
+  }
+  return recent.sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
 }
 
 function formatRecentEventName(item: ThreadItem): string {
@@ -663,6 +683,7 @@ function formatRecentEventName(item: ThreadItem): string {
 }
 
 function shouldShowTraceInActivity(trace: RunTraceEnvelope): boolean {
+  if (trace.category === 'tool' && trace.name.startsWith('tool.batch.')) return false;
   return trace.category === 'model'
     || trace.category === 'tool'
     || trace.category === 'file'

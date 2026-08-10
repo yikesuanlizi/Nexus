@@ -39,7 +39,7 @@ import { handleKeysRoute } from './routes/keysRoute.js';
 const storageOptions = resolveStorageOptions();
 const { store: rootStore } = createStore(defaultConfig.dataDir);
 const eventClients = new Map<string, Set<ServerResponse>>();
-const approvalBroker = new WebApprovalBroker(60_000, (entry) => {
+const approvalBroker = new WebApprovalBroker(5 * 60_000, (entry) => {
   publishEvent({
     type: 'approval.resolved',
     threadId: entry.threadId,

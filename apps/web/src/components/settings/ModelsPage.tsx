@@ -1,5 +1,5 @@
 // 设置面板：模型页（provider、API key、model preset、env var）
-// P3：三区卡片布局（预设管理 / 密钥状态 / 默认模型配置）
+// P3：按设置工作台样例结构组织：page header + section + chip + form-grid
 import React from 'react';
 import type { Locale, SecretSource, RunConfig } from '../../config/config.js';
 import type { ApiKeyState, ModelPreset, ProviderEntry } from '../../shared/types.js';
@@ -7,6 +7,8 @@ import { t } from '../../shared/i18n.js';
 import { Icon } from '../Icon.js';
 import { DropdownSelect, type DropdownOption } from '../DropdownSelect.js';
 import { ConfirmPanel } from './ConfirmPanel.js';
+import { SettingsPageHeader } from './SettingsPageHeader.js';
+import { SectionHeader } from './SectionHeader.js';
 import { modelPresetMatchesRunConfig, normalizeModelConfigDraftForSettings, providerDropdownOptions, type ModelConfigDraft } from './shared.js';
 
 export interface ModelsPageProps {
@@ -25,6 +27,8 @@ export interface ModelsPageProps {
   showSavedModelKey: boolean;
   setShowSavedModelKey: React.Dispatch<React.SetStateAction<boolean>>;
   modelKeyNotice: string;
+  hasSavedModelKey: boolean;
+  hasConfiguredModelEnvVar: boolean;
   modelEnvVarDraft: string;
   setModelEnvVarDraft: React.Dispatch<React.SetStateAction<string>>;
   modelEnvVarOptions: string[];
@@ -34,6 +38,7 @@ export interface ModelsPageProps {
   loadModelPresetIntoDraft: (presetId: string) => void;
   handleSaveModelConfig: () => Promise<void>;
   handleSetCurrentModelConfig: () => Promise<void>;
+  onReset: () => void;
   markDirty: (field: string, dirty: boolean) => void;
   dirtyFields: Record<string, boolean>;
 }
@@ -54,6 +59,8 @@ export function ModelsPage({
   showSavedModelKey,
   setShowSavedModelKey,
   modelKeyNotice,
+  hasSavedModelKey,
+  hasConfiguredModelEnvVar,
   modelEnvVarDraft,
   setModelEnvVarDraft,
   modelEnvVarOptions,
@@ -63,6 +70,7 @@ export function ModelsPage({
   loadModelPresetIntoDraft,
   handleSaveModelConfig,
   handleSetCurrentModelConfig,
+  onReset,
   markDirty,
   dirtyFields,
 }: ModelsPageProps) {
@@ -82,13 +90,6 @@ export function ModelsPage({
       label: preset.name,
       detail: [providers.find((provider) => provider.id === preset.config.provider)?.name ?? preset.config.provider, preset.config.model].filter(Boolean).join(' / '),
       current: matchedDraftPreset?.id === preset.id,
-      action: {
-        ariaLabel: locale === 'zh' ? `删除预设「${preset.name}」` : `Delete preset "${preset.name}"`,
-        className: 'danger',
-        disabled: deletingPresetId === preset.id,
-        label: locale === 'zh' ? '删除' : 'Delete',
-        onClick: () => setPendingDeletePreset(preset),
-      },
     })),
   ];
 
@@ -98,7 +99,7 @@ export function ModelsPage({
       return locale === 'zh' ? '未指定环境变量' : 'No env var';
     }
     const boundEnvVar = selectedKeyState?.envVar || selectedProvider?.apiKeyEnvVar;
-    if (selectedKeyState?.configured && selectedKeyState.source === 'env' && boundEnvVar === envVar) {
+    if (hasConfiguredModelEnvVar) {
       return `${envVar} · ${locale === 'zh' ? '已配置' : 'configured'}`;
     }
     if (boundEnvVar === envVar) {
@@ -107,10 +108,22 @@ export function ModelsPage({
     return `${envVar} · ${locale === 'zh' ? '保存后生效' : 'after saving'}`;
   }
 
+  const keyChipText = React.useMemo(() => {
+    if (modelKeySource === 'config') {
+      return hasSavedModelKey
+        ? (locale === 'zh' ? '已保存密钥 · 已配置' : 'Saved key · configured')
+        : (locale === 'zh' ? '已保存密钥 · 未配置' : 'Saved key · not configured');
+    }
+    const envVar = modelEnvVarDraft.trim() || selectedProvider?.apiKeyEnvVar || selectedKeyState?.envVar;
+    if (!envVar) return locale === 'zh' ? '未指定环境变量' : 'No env var';
+    const boundEnvVar = selectedKeyState?.envVar || selectedProvider?.apiKeyEnvVar;
+    const configured = hasConfiguredModelEnvVar;
+    return `${envVar} · ${configured ? (locale === 'zh' ? '已配置' : 'configured') : (locale === 'zh' ? '未发现' : 'missing')}`;
+  }, [modelKeySource, selectedKeyState, selectedProvider, modelEnvVarDraft, locale, hasSavedModelKey, hasConfiguredModelEnvVar]);
+
   function savedModelKeyPlaceholder() {
-    const hasSavedKey = selectedKeyState?.configured && selectedKeyState.source === 'config';
-    if (!hasSavedKey) return locale === 'zh' ? '未保存密钥' : 'No saved key';
-    if (showSavedModelKey) return selectedKeyState.masked ?? (locale === 'zh' ? '已保存密钥' : 'Saved key');
+    if (!hasSavedModelKey) return locale === 'zh' ? '未保存密钥' : 'No saved key';
+    if (showSavedModelKey) return selectedKeyState?.masked ?? (locale === 'zh' ? '已保存密钥' : 'Saved key');
     return '••••••••••••••••';
   }
 
@@ -119,7 +132,14 @@ export function ModelsPage({
   const baseUrlDirty = dirtyFields.baseUrl ? 'fieldDirty' : '';
   const envVarDirty = dirtyFields.modelEnvVar ? 'fieldDirty' : '';
 
-  const applyButtonLabel = locale === 'zh' ? '应用设置' : 'Apply settings';
+  const isCurrentModel = React.useMemo(() => {
+    return (
+      config.provider === modelConfigDraft.provider &&
+      config.model === modelConfigDraft.model &&
+      config.baseUrl === modelConfigDraft.baseUrl
+    );
+  }, [config, modelConfigDraft]);
+
   React.useEffect(() => {
     if (selectedPresetId === '__draft__') return;
     const selectedPreset = modelPresets.find((preset) => preset.id === selectedPresetId);
@@ -154,21 +174,48 @@ export function ModelsPage({
   }
 
   return (
-    <section className="settingsSection modelSettingsPanel" id="settings-agent">
-      <h3>{locale === 'zh' ? '模型' : 'Model'}</h3>
+    <section className="settingsSection modelSettingsPanel" id="settings-models">
+      <SettingsPageHeader
+        eyebrow="RUNTIME"
+        title={locale === 'zh' ? '模型' : 'Model'}
+        actions={[
+          {
+            label: locale === 'zh' ? '恢复草稿' : 'Restore draft',
+            title: locale === 'zh' ? '恢复到当前生效配置' : 'Restore to current active config',
+            onClick: onReset,
+          },
+          {
+            label: locale === 'zh' ? '应用设置' : 'Apply settings',
+            primary: true,
+            onClick: () => void handleSetCurrentModelConfig(),
+          },
+        ]}
+      />
 
-      <div className="settingsCard scopeApplyCard">
-        <div className="settingsCardHeader">
-          <h3>{locale === 'zh' ? '默认模型' : 'Default model'}</h3>
-        </div>
-        <div className="formGrid modelSettingsList">
-          <label className="wideField">
-            {t(locale, 'provider')}
+      <div className="settingsSectionBlock">
+        <SectionHeader
+          title={locale === 'zh' ? '默认模型' : 'Default model'}
+          chip={isCurrentModel ? (locale === 'zh' ? '当前生效' : 'Current') : undefined}
+          chipTone={isCurrentModel ? 'ok' : undefined}
+        />
+        <div className="settingsFormGrid three">
+          <label className="settingsField">
+            <span className="settingsFieldLabel">{t(locale, 'provider')}</span>
             <DropdownSelect className={['modelProviderSelect', providerDirty].filter(Boolean).join(' ')} value={providerSelectValue} onChange={selectModelProviderDraft} options={providerDropdownOptions(providers, locale)} />
           </label>
+          <label className={`settingsField ${modelDirty}`}>
+            <span className="settingsFieldLabel">{t(locale, 'model')}</span>
+            <input
+              value={modelConfigDraft.model}
+              onChange={(event) => {
+                setModelConfigDraft((current) => ({ ...current, model: event.target.value }));
+                markDirty('model', true);
+              }}
+            />
+          </label>
           {providerSelectValue === 'openai_compatible' ? (
-            <label className="wideField">
-              {locale === 'zh' ? '厂商名称' : 'Vendor name'}
+            <label className="settingsField">
+              <span className="settingsFieldLabel">{locale === 'zh' ? '厂商名称' : 'Vendor name'}</span>
               <input
                 placeholder={locale === 'zh' ? '例如：ai.gitee、OpenRouter、LMStudio' : 'e.g. ai.gitee, OpenRouter, LMStudio'}
                 value={displayedCustomProviderName}
@@ -178,19 +225,14 @@ export function ModelsPage({
                 }}
               />
             </label>
-          ) : null}
-          <label className={`wideField ${modelDirty}`}>
-            {t(locale, 'model')}
-            <input
-              value={modelConfigDraft.model}
-              onChange={(event) => {
-                setModelConfigDraft((current) => ({ ...current, model: event.target.value }));
-                markDirty('model', true);
-              }}
-            />
-          </label>
-          <label className={`wideField ${baseUrlDirty}`}>
-            {t(locale, 'baseUrl')}
+          ) : (
+            <label className="settingsField">
+              <span className="settingsFieldLabel">{locale === 'zh' ? '厂商名称' : 'Vendor name'}</span>
+              <input readOnly value={selectedProvider?.name ?? ''} tabIndex={-1} />
+            </label>
+          )}
+          <label className={`settingsField wide ${baseUrlDirty}`}>
+            <span className="settingsFieldLabel">{t(locale, 'baseUrl')}</span>
             <input
               placeholder="provider default"
               value={modelConfigDraft.baseUrl}
@@ -201,23 +243,17 @@ export function ModelsPage({
             />
           </label>
         </div>
-        <div className="scopeApplyActions">
-          <button
-            className="solidButton"
-            onClick={() => void handleSetCurrentModelConfig()}
-          >
-            {applyButtonLabel}
-          </button>
-        </div>
       </div>
 
-      <div className="settingsCard providerKeyCard">
-        <div className="settingsCardHeader">
-          <h3>{t(locale, 'providerKeyTitle')}</h3>
-        </div>
-        <div className={`modelKeyLayout ${modelKeySource === 'env' ? 'envMode' : 'savedMode'}`}>
-          <label>
-            {locale === 'zh' ? '来源' : 'Source'}
+      <div className="settingsSectionBlock">
+        <SectionHeader
+          title={t(locale, 'providerKeyTitle')}
+          chip={keyChipText}
+          chipTone={(modelKeySource === 'config' ? hasSavedModelKey : hasConfiguredModelEnvVar) ? 'ok' : undefined}
+        />
+        <div className="settingsFormGrid three key">
+          <label className="settingsField">
+            <span className="settingsFieldLabel">{locale === 'zh' ? '来源' : 'Source'}</span>
             <DropdownSelect<SecretSource>
               value={modelKeySource}
               onChange={(source) => {
@@ -237,8 +273,8 @@ export function ModelsPage({
           </label>
           {modelKeySource === 'env' ? (
             <>
-              <label className={envVarDirty}>
-                {locale === 'zh' ? '环境变量名' : 'Env var name'}
+              <label className={`settingsField ${envVarDirty}`}>
+                <span className="settingsFieldLabel">{locale === 'zh' ? '环境变量名' : 'Env var name'}</span>
                 <input
                   list="model-env-var-options"
                   value={modelEnvVarDraft}
@@ -252,51 +288,72 @@ export function ModelsPage({
               <datalist id="model-env-var-options">
                 {modelEnvVarOptions.map((envVar) => <option key={envVar} value={envVar} />)}
               </datalist>
-              <p className="modelKeyStatusLine">{modelKeyEnvStatus()}</p>
-              {modelKeyNotice ? <p className="botNotice">{modelKeyNotice}</p> : null}
             </>
           ) : (
-            <div className="savedModelKeyField">
-              <input
-                placeholder={savedModelKeyPlaceholder()}
-                value={apiKeyDraft}
-                onChange={(event) => {
-                  setApiKeyDraft(event.target.value);
-                  markDirty('apiKey', true);
-                }}
-                type={showSavedModelKey ? 'text' : 'password'}
-              />
-              <button
-                aria-label={showSavedModelKey ? (locale === 'zh' ? '隐藏密钥' : 'Hide key') : (locale === 'zh' ? '显示密钥' : 'Show key')}
-                className="miniIconButton"
-                onClick={() => setShowSavedModelKey((current) => !current)}
-                type="button"
-              >
-                <Icon name={showSavedModelKey ? 'eyeOff' : 'eye'} />
-              </button>
-            </div>
+            <label className="settingsField">
+              <span className="settingsFieldLabel">{locale === 'zh' ? '已保存密钥' : 'Saved key'}</span>
+              <div className="settingsInputWithSuffix">
+                <input
+                  placeholder={savedModelKeyPlaceholder()}
+                  value={apiKeyDraft}
+                  onChange={(event) => {
+                    setApiKeyDraft(event.target.value);
+                    markDirty('apiKey', true);
+                  }}
+                  type={showSavedModelKey ? 'text' : 'password'}
+                />
+                <button
+                  aria-label={showSavedModelKey ? (locale === 'zh' ? '隐藏密钥' : 'Hide key') : (locale === 'zh' ? '显示密钥' : 'Show key')}
+                  className="miniIconButton"
+                  onClick={() => setShowSavedModelKey((current) => !current)}
+                  type="button"
+                >
+                  <Icon name={showSavedModelKey ? 'eyeOff' : 'eye'} />
+                </button>
+              </div>
+            </label>
           )}
+          <div className="settingsField settingsFieldInlineEnd settingsRefreshField">
+            <button
+              className="miniIconButton settingsRefreshButton"
+              type="button"
+              title={locale === 'zh' ? '应用并刷新密钥状态' : 'Apply and refresh key status'}
+              aria-label={locale === 'zh' ? '应用并刷新密钥状态' : 'Apply and refresh key status'}
+              onClick={() => void handleSetCurrentModelConfig()}
+            >
+              <Icon name="refresh" />
+            </button>
+          </div>
         </div>
+        {modelKeyNotice ? <p className="settingsNotice">{modelKeyNotice}</p> : null}
       </div>
 
-      <div className="settingsCard modelPresetManagementCard">
-        <div className="settingsCardHeader">
-          <h3>{t(locale, 'presetsTitle')}</h3>
-        </div>
-        <div className="formGrid">
-          <label className="wideField">
-            <DropdownSelect
-              className="modelPresetSelect"
-              value={selectedPresetId}
-              onChange={handlePresetDraftChange}
-              options={modelPresetDraftOptions}
-            />
-          </label>
-          <button className="solidButton" onClick={() => void handleSaveModelConfig()}>
+      <div className="settingsSectionBlock">
+        <SectionHeader title={t(locale, 'presetsTitle')} />
+        <div className="settingsPresetRow">
+          <DropdownSelect
+            className="modelPresetSelect"
+            value={selectedPresetId}
+            onChange={handlePresetDraftChange}
+            options={modelPresetDraftOptions}
+          />
+          <button
+            className="textButton danger"
+            type="button"
+            disabled={selectedPresetId === '__draft__' || deletingPresetId === selectedPresetId}
+            onClick={() => {
+              const preset = modelPresets.find((p) => p.id === selectedPresetId);
+              if (preset) setPendingDeletePreset(preset);
+            }}
+          >
+            {locale === 'zh' ? '删除预设' : 'Delete preset'}
+          </button>
+          <button className="solidButton" type="button" onClick={() => void handleSaveModelConfig()}>
             {locale === 'zh' ? '保存为预设' : 'Save as preset'}
           </button>
         </div>
       </div>
+
       <ConfirmPanel
         locale={locale}
         open={Boolean(pendingDeletePreset)}

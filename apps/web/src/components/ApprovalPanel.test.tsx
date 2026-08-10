@@ -41,10 +41,12 @@ describe('ApprovalPanel', () => {
     const webSource = readFileSync(join(process.cwd(), 'apps/web/src/components/ApprovalPanel.tsx'), 'utf-8');
     const desktopSource = readFileSync(join(process.cwd(), 'apps/desktop/src/components/ApprovalPanel.tsx'), 'utf-8');
 
-    expect(webSource).toContain('onDecision(approval.requestId, true, selectedScope)');
-    expect(webSource).toContain('onDecision(approval.requestId, false, selectedScope)');
-    expect(desktopSource).toContain('onDecision(approval.requestId, true, selectedScope)');
-    expect(desktopSource).toContain('onDecision(approval.requestId, false, selectedScope)');
+    expect(webSource).toContain('handleDecision(approval.requestId, true, selectedScope)');
+    expect(webSource).toContain('handleDecision(approval.requestId, false, selectedScope)');
+    expect(desktopSource).toContain('handleDecision(approval.requestId, true, selectedScope)');
+    expect(desktopSource).toContain('handleDecision(approval.requestId, false, selectedScope)');
+    expect(webSource).toContain('disabled={isDeciding}');
+    expect(desktopSource).toContain('disabled={isDeciding}');
     expect(webSource).not.toContain('永久允许');
     expect(desktopSource).not.toContain('永久允许');
   });

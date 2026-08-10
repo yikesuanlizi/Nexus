@@ -12,7 +12,7 @@ describe('useRightPaneSizing', () => {
     expect(source).toContain("export type RightPaneSizingMode = 'standard' | 'files' | 'workflow'");
     expect(source).not.toContain('RightPaneTab');
     expect(source).toContain('function defaultStandardPaneWidth(): number');
-    expect(source).toContain('return 348;');
+    expect(source).toContain('return 316;');
     expect(source).toContain('function defaultFilesPaneWidth(): number');
     expect(source).toContain("localStorage.getItem('nexus.standardPaneWidth')");
     expect(source).toContain("localStorage.getItem('nexus.filesPaneWidth')");

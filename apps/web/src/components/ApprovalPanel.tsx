@@ -7,7 +7,7 @@ import { ApprovalDiffPreview } from './ApprovalDiffPreview.js';
 export interface ApprovalPanelProps {
   locale: Locale;
   approvals: ApprovalRequest[];
-  onDecision: (requestId: string, approved: boolean, temporaryScope: TemporaryAccessScope) => void;
+  onDecision: (requestId: string, approved: boolean, temporaryScope: TemporaryAccessScope) => void | Promise<void>;
 }
 
 function text(locale: Locale, zh: string, en: string): string {
@@ -20,6 +20,16 @@ function defaultScope(approval: ApprovalRequest): TemporaryAccessScope {
 
 export function ApprovalPanel({ locale, approvals, onDecision }: ApprovalPanelProps) {
   const [selectedScopes, setSelectedScopes] = useState<Record<string, TemporaryAccessScope>>({});
+  const [deciding, setDeciding] = useState<Record<string, boolean>>({});
+  const handleDecision = async (requestId: string, approved: boolean, temporaryScope: TemporaryAccessScope) => {
+    if (deciding[requestId]) return;
+    setDeciding((current) => ({ ...current, [requestId]: true }));
+    try {
+      await onDecision(requestId, approved, temporaryScope);
+    } finally {
+      setDeciding((current) => ({ ...current, [requestId]: false }));
+    }
+  };
   if (approvals.length === 0) return null;
 
   return (
@@ -29,6 +39,7 @@ export function ApprovalPanel({ locale, approvals, onDecision }: ApprovalPanelPr
           ? approval.temporaryGrantOptions
           : [{ scope: 'tool_call' as const, label: text(locale, '仅本次工具调用', 'This tool call only') }];
         const selectedScope = selectedScopes[approval.requestId] ?? defaultScope(approval);
+        const isDeciding = deciding[approval.requestId] === true;
 
         return (
           <article className="approvalItem approvalItemPanel" key={approval.requestId}>
@@ -47,6 +58,7 @@ export function ApprovalPanel({ locale, approvals, onDecision }: ApprovalPanelPr
                   ...current,
                   [approval.requestId]: event.target.value as TemporaryAccessScope,
                 }))}
+                disabled={isDeciding}
               >
                 {options.map((option) => (
                   <option key={option.scope} value={option.scope}>{option.label}</option>
@@ -59,10 +71,10 @@ export function ApprovalPanel({ locale, approvals, onDecision }: ApprovalPanelPr
               </div>
             ) : null}
             <footer className="approvalPanelFooter">
-              <button className="whiteButton" type="button" onClick={() => onDecision(approval.requestId, false, selectedScope)}>
+              <button className="whiteButton" type="button" disabled={isDeciding} onClick={() => void handleDecision(approval.requestId, false, selectedScope)}>
                 {text(locale, '拒绝', 'Deny')}
               </button>
-              <button className="solidButton" type="button" onClick={() => onDecision(approval.requestId, true, selectedScope)}>
+              <button className="solidButton" type="button" disabled={isDeciding} onClick={() => void handleDecision(approval.requestId, true, selectedScope)}>
                 {text(locale, '允许', 'Allow')}
               </button>
             </footer>

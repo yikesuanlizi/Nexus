@@ -64,7 +64,7 @@ describe('settings navigation', () => {
       expect(drawer).toContain(`<${page}`);
     }
     expect(drawer).not.toContain('<AboutPage');
-    expect(tools).toContain('<McpSection');
+    expect(tools).toContain('filteredMcps');
     expect(tools).not.toContain('className="breadcrumb"');
     expect(memory).not.toContain('热记忆来自当前运行');
     expect(memory).not.toContain('Hot memory is runtime state');

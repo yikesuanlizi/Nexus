@@ -22,6 +22,11 @@ describe('nextTranscriptFollowState', () => {
       .toEqual({ following: true, showReturnToBottom: false });
   });
 
+  it('stops auto-follow before the return button threshold', () => {
+    expect(nextTranscriptFollowState({ following: true, distanceFromBottom: 64, source: 'user' }))
+      .toEqual({ following: false, showReturnToBottom: false });
+  });
+
   it('stays not following when content grows but user has scrolled away', () => {
     expect(nextTranscriptFollowState({ following: false, distanceFromBottom: 200, source: 'content' }))
       .toEqual({ following: false, showReturnToBottom: true });

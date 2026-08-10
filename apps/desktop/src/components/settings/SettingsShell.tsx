@@ -1,10 +1,10 @@
 // 设置面板 modal 外壳：管理 open/close、Esc 关闭、tab 导航
 // P2.4 a11y：role=dialog/aria-modal、焦点进入/回收、Tab 焦点陷阱、aria-live 状态广播
-// P3：saveLabel 动态按钮文案、unsavedDot 未保存指示器
+// v3 预览对齐：topbar 跨栏 + brand mark + 主题切换 + rail-label + nav 图标
 import React, { useEffect, useRef } from 'react';
 import type { Locale } from '../../config/config.js';
 import { t } from '../../shared/i18n.js';
-import { Icon } from '../Icon.js';
+import { Icon, type IconName } from '../Icon.js';
 
 export type SettingsScope = 'global' | 'currentThread' | 'newThread';
 
@@ -21,6 +21,18 @@ export interface SettingsSaveState {
   savedToastAt: number | null;
 }
 
+// 设置导航 tab → 图标映射，对齐预览的 nav-icon 设计
+const SETTINGS_TAB_ICONS: Record<string, IconName> = {
+  agent: 'spark',
+  accessPolicy: 'shield',
+  appearance: 'palette',
+  memory: 'database',
+  performance: 'activity',
+  plugins: 'layers',
+  remote: 'send',
+  admin: 'shield',
+};
+
 export interface SettingsShellProps {
   locale: Locale;
   open: boolean;
@@ -36,6 +48,7 @@ export interface SettingsShellProps {
   busyLayer?: boolean;
   saveLabel?: string;
   visualThemeMode?: 'light' | 'dark';
+  onToggleTheme?: () => void;
 }
 
 export function SettingsShell({
@@ -50,6 +63,7 @@ export function SettingsShell({
   pluginMode = false,
   busyLayer = true,
   visualThemeMode = 'light',
+  onToggleTheme,
 }: SettingsShellProps) {
   const drawerRef = useRef<HTMLElement>(null);
   const previousActiveElementRef = useRef<HTMLElement | null>(null);
@@ -130,6 +144,12 @@ export function SettingsShell({
         ? t(locale, 'saved')
         : '';
 
+  const closeLabel = locale === 'zh' ? '关闭设置' : 'Close settings';
+  const themeToggleLabel = visualThemeMode === 'dark'
+    ? (locale === 'zh' ? '切换浅色' : 'Switch to light')
+    : (locale === 'zh' ? '切换深色' : 'Switch to dark');
+  const railLabel = locale === 'zh' ? '配置工作台' : 'Workbench';
+
   return (
     <div className={`settingsLayer theme-${visualThemeMode}`} role="presentation">
       <button className="scrim" aria-label={t(locale, 'cancel')} onClick={handleCancel} type="button" />
@@ -142,9 +162,11 @@ export function SettingsShell({
         ref={drawerRef}
         onKeyDown={handleKeyDown}
       >
-        <header className="settingsHeader">
-          <div className="settingsHeaderTitle">
-            <h2>{t(locale, 'settings')}</h2>
+        <header className="settingsHeader settingsTopbar">
+          <div className="settingsBrand">
+            <span className="settingsBrandMark" aria-hidden="true">N</span>
+            <strong className="settingsBrandName">Nexus</strong>
+            <span className="settingsBrandSub">{t(locale, 'settings')}</span>
             {saveState.dirty ? (
               <span
                 className="unsavedDot"
@@ -154,31 +176,50 @@ export function SettingsShell({
               />
             ) : null}
           </div>
-          <button
-            className="iconButton"
-            title={locale === 'zh' ? '关闭设置' : 'Close settings'}
-            aria-label={locale === 'zh' ? '关闭设置' : 'Close settings'}
-            onClick={handleCancel}
-            type="button"
-          >
-            <Icon name="x" />
-          </button>
+          <div className="settingsTopActions">
+            {onToggleTheme ? (
+              <button
+                className="iconButton settingsThemeToggle"
+                title={themeToggleLabel}
+                aria-label={themeToggleLabel}
+                onClick={onToggleTheme}
+                type="button"
+              >
+                <Icon name={visualThemeMode === 'dark' ? 'sun' : 'moon'} />
+              </button>
+            ) : null}
+            <button
+              className="iconButton settingsCloseButton"
+              title={closeLabel}
+              aria-label={closeLabel}
+              onClick={handleCancel}
+              type="button"
+            >
+              <Icon name="x" />
+            </button>
+          </div>
         </header>
 
         <div className="settingsBody">
-          <nav className="settingsNav" aria-label={t(locale, 'settings')}>
-            {settingsTabs.map((tab) => (
-              <button
-                className={activeSection === tab.id ? 'active' : ''}
-                key={tab.id}
-                aria-current={activeSection === tab.id ? 'page' : undefined}
-                onClick={() => setActiveSection(tab.id)}
-                type="button"
-              >
-                {tab.label}
-              </button>
-            ))}
-          </nav>
+          <aside className="settingsRail">
+            <div className="settingsRailLabel">{railLabel}</div>
+            <nav className="settingsNav" aria-label={t(locale, 'settings')}>
+              {settingsTabs.map((tab) => (
+                <button
+                  className={activeSection === tab.id ? 'active' : ''}
+                  key={tab.id}
+                  aria-current={activeSection === tab.id ? 'page' : undefined}
+                  onClick={() => setActiveSection(tab.id)}
+                  type="button"
+                >
+                  <span className="settingsNavIcon" aria-hidden="true">
+                    <Icon name={SETTINGS_TAB_ICONS[tab.id] ?? 'gear'} />
+                  </span>
+                  <span className="settingsNavLabel">{tab.label}</span>
+                </button>
+              ))}
+            </nav>
+          </aside>
 
           <div className={`settingsContent ${pluginMode ? 'pluginContentMode' : ''}`}>
             <fieldset className="settingsFieldset" disabled={saveState.saving && busyLayer}>

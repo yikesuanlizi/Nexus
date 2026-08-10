@@ -13,7 +13,7 @@ import { ToolsPage } from './settings/ToolsPage.js';
 import { MonitorPage } from './settings/MonitorPage.js';
 import { MemoryPage } from './settings/MemoryPage.js';
 import { AccessPolicyPage, type AccessPolicySettingsScope } from './settings/AccessPolicyPage.js';
-import { AboutPage, type AuthTokenPublic } from './settings/AboutPage.js';
+import { AboutPage, AdminPage, type AuthTokenPublic } from './settings/AboutPage.js';
 import { McpConfigDialog } from './settings/McpConfigDialog.js';
 import { FirecrawlKeyDialog } from './settings/FirecrawlKeyDialog.js';
 import { useSettingsController } from '../features/settings/useSettingsController.js';
@@ -219,12 +219,12 @@ export function SettingsDrawer({
 
   const settingsTabs = [
     { id: 'agent', label: locale === 'zh' ? '模型' : 'Model' },
-    { id: 'accessPolicy', label: locale === 'zh' ? '权限与工作区' : 'Access' },
     { id: 'appearance', label: locale === 'zh' ? '外观' : 'Appearance' },
     { id: 'memory', label: locale === 'zh' ? '记忆' : 'Memory' },
-    { id: 'performance', label: locale === 'zh' ? '性能' : 'Performance' },
+    { id: 'monitor', label: locale === 'zh' ? '监控' : 'Monitor' },
     { id: 'plugins', label: locale === 'zh' ? '插件中心' : 'Plugins' },
     { id: 'remote', label: locale === 'zh' ? '远程助手' : 'Remote bots' },
+    { id: 'about', label: locale === 'zh' ? '关于' : 'About' },
     ...(showAdminControls ? [{ id: 'admin', label: locale === 'zh' ? '管理员' : 'Admin' }] : []),
   ];
 
@@ -335,6 +335,14 @@ export function SettingsDrawer({
 
   function patchDwsCli(patch: Partial<BotConfig['dwsCli']>) {
     setBotDraft((current) => ({ ...current, dwsCli: { ...current.dwsCli, ...patch } }));
+  }
+
+  function patchFeishu(patch: Partial<BotConfig['feishu']>) {
+    setBotDraft((current) => ({ ...current, feishu: { ...current.feishu, ...patch } }));
+  }
+
+  function patchQq(patch: Partial<BotConfig['qq']>) {
+    setBotDraft((current) => ({ ...current, qq: { ...current.qq, ...patch } }));
   }
 
   async function saveDwsCliConfig() {
@@ -608,6 +616,8 @@ export function SettingsDrawer({
             showSavedModelKey={controller.showSavedModelKey}
             setShowSavedModelKey={controller.setShowSavedModelKey}
             modelKeyNotice={controller.modelKeyNotice}
+            hasSavedModelKey={controller.hasSavedModelKey}
+            hasConfiguredModelEnvVar={controller.hasConfiguredModelEnvVar}
             modelEnvVarDraft={controller.modelEnvVarDraft}
             setModelEnvVarDraft={controller.setModelEnvVarDraft}
             modelEnvVarOptions={controller.modelEnvVarOptions}
@@ -617,6 +627,7 @@ export function SettingsDrawer({
             loadModelPresetIntoDraft={controller.loadModelPresetIntoDraft}
             handleSaveModelConfig={controller.handleSaveModelConfig}
             handleSetCurrentModelConfig={controller.handleSetCurrentModelConfig}
+            onReset={controller.resetModelDraft}
             markDirty={controller.markDirty}
             dirtyFields={controller.dirtyFields}
           />
@@ -658,7 +669,7 @@ export function SettingsDrawer({
             exportMemories={exportMemories}
           />
         );
-      case 'performance':
+      case 'monitor':
         return (
           <MonitorPage
             locale={locale}
@@ -666,6 +677,24 @@ export function SettingsDrawer({
             setConfig={setConfig}
             markDirty={controller.markDirty}
             dirtyFields={controller.dirtyFields}
+            onSave={controller.handleSave}
+          />
+        );
+      case 'about':
+        return (
+          <AboutPage
+            locale={locale}
+            showAdminControls={showAdminControls}
+            adminBootstrapToken={adminBootstrapToken}
+            setAdminBootstrapToken={setAdminBootstrapToken}
+            newAuthToken={newAuthToken}
+            setNewAuthToken={setNewAuthToken}
+            authTokens={authTokens}
+            authTokenNotice={authTokenNotice}
+            refreshAuthTokens={refreshAuthTokens}
+            createAuthToken={createAuthToken}
+            deleteAuthToken={deleteAuthToken}
+            rotateAuthToken={rotateAuthToken}
           />
         );
       case 'plugins':
@@ -712,6 +741,8 @@ export function SettingsDrawer({
             patchWeixin={patchWeixin}
             patchDingtalk={patchDingtalk}
             patchDwsCli={patchDwsCli}
+            patchFeishu={patchFeishu}
+            patchQq={patchQq}
             saveWeixinConfig={saveWeixinConfig}
             saveDingtalkConfig={saveDingtalkConfig}
             saveDwsCliConfig={saveDwsCliConfig}
@@ -723,7 +754,7 @@ export function SettingsDrawer({
         );
       case 'admin':
         return (
-          <AboutPage
+          <AdminPage
             locale={locale}
             showAdminControls={showAdminControls}
             adminBootstrapToken={adminBootstrapToken}
@@ -748,6 +779,13 @@ export function SettingsDrawer({
   const firecrawlConfigured = Boolean(webProviderState?.firecrawl.configured && firecrawlHasPreview);
   const visualThemeMode = resolveSettingsVisualThemeMode(config.themeMode);
 
+  function handleToggleTheme() {
+    setConfig((current) => ({
+      ...current,
+      themeMode: resolveSettingsVisualThemeMode(current.themeMode) === 'dark' ? 'light' : 'dark',
+    }));
+  }
+
   return (
     <>
       <SettingsShell
@@ -765,6 +803,7 @@ export function SettingsDrawer({
         pluginMode={activeSection === 'plugins'}
         saveLabel={controller.saveLabel}
         visualThemeMode={visualThemeMode}
+        onToggleTheme={handleToggleTheme}
       >
         {renderActivePage()}
       </SettingsShell>

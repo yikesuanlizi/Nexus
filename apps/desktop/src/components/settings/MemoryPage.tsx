@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import type { Locale, RunConfig } from '../../config/config.js';
 import type { MemoryRecord } from '../../shared/types.js';
 import { Icon } from '../Icon.js';
+import { SettingsPageHeader } from './SettingsPageHeader.js';
 
 export interface MemoryPageProps {
   locale: Locale;
@@ -12,6 +13,37 @@ export interface MemoryPageProps {
   saveMemorySettings: (patch: Partial<RunConfig>) => Promise<void>;
   deleteMemory: (id: string) => Promise<void>;
   exportMemories: () => Promise<void>;
+}
+
+function text(locale: Locale, zh: string, en: string): string {
+  return locale === 'zh' ? zh : en;
+}
+
+function ToggleRow({
+  checked,
+  disabled,
+  onChange,
+  label,
+  description,
+}: {
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (checked: boolean) => void;
+  label: string;
+  description?: string;
+}) {
+  return (
+    <label className={`settingsToggleRow ${disabled ? 'disabled' : ''}`}>
+      <input type="checkbox" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
+      <div className="settingsToggleContent">
+        <strong>{label}</strong>
+        {description ? <span>{description}</span> : null}
+      </div>
+      <span className="settingsToggleTrack" aria-hidden="true">
+        <span className="settingsToggleThumb" />
+      </span>
+    </label>
+  );
 }
 
 export function MemoryPage({
@@ -28,14 +60,16 @@ export function MemoryPage({
 
   return (
     <section className="settingsSection" id="settings-memory">
-      <div className="presetHeader">
-        <div>
-          <h3>{locale === 'zh' ? '记忆' : 'Memory'}</h3>
-        </div>
-        <button className="textButton" type="button" onClick={() => void exportMemories()}>
-          {locale === 'zh' ? '导出审计镜像' : 'Export audit mirror'}
-        </button>
-      </div>
+      <SettingsPageHeader
+        eyebrow="CONTEXT"
+        title={text(locale, '记忆', 'Memory')}
+        actions={[
+          {
+            label: text(locale, '整理记忆', 'Export audit mirror'),
+            onClick: () => void exportMemories(),
+          },
+        ]}
+      />
       <div className="formGrid modelSettingsList">
         <label className="toggle">
           <input
@@ -56,26 +90,13 @@ export function MemoryPage({
             </span>
           </span>
         </label>
-        <label className="toggle">
-          <input
-            checked={config.autoExtractMemories}
-            disabled={!config.memoryEnabled}
-            onChange={(event) => void saveMemorySettings({ autoExtractMemories: event.target.checked })}
-            type="checkbox"
-          />
-          <span className="settingRow">
-            <span className="settingLabel">
-              {locale === 'zh' ? '自动保存长期记忆' : 'Auto extract cold memories'}
-              <span className="settingHelpIcon">
-                <Icon name="question" />
-              </span>
-            </span>
-            <span className="settingTooltip">
-              <strong>{locale === 'zh' ? '自动保存长期记忆' : 'Auto extract cold memories'}</strong>
-              {locale === 'zh' ? '对话结束后，AI 会自动从对话中提炼有价值的知识点、用户偏好、决策结论等，存到长期记忆库里。关掉就不会自动存了。' : 'After each conversation, AI automatically extracts valuable facts, preferences, and decisions into long-term memory. Turn off to disable auto-saving.'}
-            </span>
-          </span>
-        </label>
+        <ToggleRow
+          checked={config.autoExtractMemories}
+          disabled={!config.memoryEnabled}
+          onChange={(checked) => void saveMemorySettings({ autoExtractMemories: checked })}
+          label={locale === 'zh' ? '自动保存长期记忆' : 'Auto extract cold memories'}
+          description={locale === 'zh' ? '对话结束后自动提炼有价值的知识点和偏好。' : 'Automatically extract valuable facts and preferences after conversation.'}
+        />
         <label className="toggle">
           <input
             checked={config.useColdMemories}
@@ -310,6 +331,13 @@ export function MemoryPage({
               onChange={(event) => void saveMemorySettings({ episodeFtsCandidateLimit: Number(event.target.value) })}
             />
           </label>
+          <ToggleRow
+            checked={config.episodeRerankEnabled}
+            disabled={!config.memoryEnabled || !config.episodeMemoryEnabled}
+            onChange={(checked) => void saveMemorySettings({ episodeRerankEnabled: checked })}
+            label={locale === 'zh' ? '启用重排序' : 'Enable rerank'}
+            description={locale === 'zh' ? '对候选情景进行二次排序以提升匹配精度。' : 'Re-rank candidate episodes for better matching accuracy.'}
+          />
         </div>
       </div>
       {memoryNotice ? <p className="emptyHint">{memoryNotice}</p> : null}

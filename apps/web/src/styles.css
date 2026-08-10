@@ -1516,22 +1516,28 @@
   }
 
   .returnToBottomButton {
-    position: sticky;
-    bottom: 12px;
-    align-self: center;
+    position: relative;
+    grid-column: 1;
+    grid-row: 3;
+    justify-self: center;
+    align-self: end;
     z-index: 10;
-    margin-top: auto;
-    padding: 6px 14px;
-    border-radius: 999px;
-    border: 1px solid rgba(99,102,241,.35);
-    background: rgba(99,102,241,.92);
-    color: #fff;
-    font-size: 12px;
-    font-weight: 600;
+    display: grid;
+    width: 30px;
+    height: 30px;
+    place-items: center;
+    padding: 0;
+    border: 1px solid var(--nx-control-border);
+    border-radius: 50%;
+    background: var(--nx-surface-raised);
+    color: var(--nx-text-muted);
     cursor: pointer;
-    box-shadow: 0 4px 14px rgba(99,102,241,.35);
+    margin: 0 0 8px;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, .12);
     transition: transform .15s ease, opacity .15s ease;
   }
+
+  .returnToBottomButton svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 2; }
 
   .returnToBottomButton:hover {
     transform: translateY(-1px);
@@ -16841,7 +16847,7 @@
 
 /* Nexus settings workbench density contract */
 .settingsLayer .settingsDrawer .settingsContent {
-  padding: 24px 32px !important;
+  padding: 28px 42px 40px !important;
 }
 
 .settingsLayer .settingsDrawer .settingsFieldset {
@@ -17013,4 +17019,3488 @@
   .settingsLayer .settingsDrawer .modelKeyLayout.savedMode {
     grid-template-columns: 1fr;
   }
+}
+
+/* =============================================================
+ * V3 FINAL OVERRIDE - 强制 v3 设计生效（line-separator 风格）
+ * 高特异性选择器 + !important，确保覆盖所有基类样式
+ * ============================================================= */
+
+/* 1. Section: line-separator 风格 — 对应预览中的.page容器，无padding无border */
+.settingsLayer.theme-light .settingsDrawer .settingsSection:not(.pluginCatalogShell),
+.settingsLayer.theme-light .settingsDrawer .settingsSection.modelSettingsPanel,
+.settingsLayer.theme-light .settingsDrawer .settingsSection {
+  max-width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  display: block !important;
+  grid-template-columns: none !important;
+  border-radius: 0 !important;
+  gap: 0 !important;
+}
+
+.settingsLayer.theme-light .settingsDrawer .settingsSection:not(.pluginCatalogShell):last-child,
+.settingsLayer.theme-light .settingsDrawer .settingsSection.modelSettingsPanel:last-child,
+.settingsLayer.theme-light .settingsDrawer .settingsSection:last-child {
+  border-bottom: 0 !important;
+}
+
+/* 2. SectionBlock: 对应预览中的.section，分隔线风格 */
+.settingsLayer.theme-light .settingsDrawer .settingsSectionBlock,
+.settingsLayer .settingsDrawer .settingsSectionBlock {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 14px !important;
+  padding: 23px 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--nx-settings-border, #dce2eb) !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  margin: 0 !important;
+}
+
+.settingsLayer.theme-light .settingsDrawer .settingsSectionBlock:last-child,
+.settingsLayer .settingsDrawer .settingsSectionBlock:last-child {
+  border-bottom: 0 !important;
+}
+
+/* 插件中心的catalog block不需要padding/border */
+.settingsLayer .settingsDrawer .pluginCatalogBlock {
+  padding: 0 !important;
+  border: 0 !important;
+  margin-top: 0 !important;
+}
+
+/* 3. Section 内的 h3 隐藏（v3 用 SectionHeader 而不是直接 h3） */
+.settingsLayer.theme-light .settingsDrawer .settingsSection > h3,
+.settingsLayer .settingsDrawer .settingsSection > h3 {
+  display: none !important;
+}
+
+/* 4. SectionHeader: 正确显示为基线对齐 */
+.settingsLayer .settingsDrawer .settingsSectionHeader,
+.settingsLayer.theme-light .settingsDrawer .settingsSectionHeader {
+  display: flex !important;
+  align-items: baseline !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+  margin-bottom: 14px !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+}
+
+.settingsLayer .settingsDrawer .settingsSectionHeaderTitle,
+.settingsLayer.theme-light .settingsDrawer .settingsSectionHeaderTitle {
+  margin: 0 !important;
+  color: var(--nx-settings-text, #172033) !important;
+  font-size: 13px !important;
+  font-weight: 680 !important;
+  letter-spacing: -0.01em !important;
+  line-height: 1.4 !important;
+  text-transform: none !important;
+}
+
+.settingsLayer .settingsDrawer .settingsSectionHeaderDesc,
+.settingsLayer.theme-light .settingsDrawer .settingsSectionHeaderDesc {
+  margin: 0 !important;
+  color: var(--nx-settings-text-faint, #8a97ab) !important;
+  font-size: 11px !important;
+  font-weight: 400 !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+}
+
+.settingsLayer .settingsDrawer .settingsSectionHeaderExtras,
+.settingsLayer.theme-light .settingsDrawer .settingsSectionHeaderExtras {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  flex-shrink: 0 !important;
+}
+
+.settingsLayer .settingsDrawer .settingsSectionHeaderChip,
+.settingsLayer.theme-light .settingsDrawer .settingsSectionHeaderChip {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  min-height: 24px !important;
+  padding: 0 8px !important;
+  border: 1px solid var(--nx-settings-border, #dce2eb) !important;
+  border-radius: 99px !important;
+  color: var(--nx-settings-text-muted, #526078) !important;
+  background: #f7f8fa !important;
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  white-space: nowrap !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+}
+
+.settingsLayer .settingsDrawer .settingsSectionHeaderChip::before,
+.settingsLayer.theme-light .settingsDrawer .settingsSectionHeaderChip::before {
+  content: "" !important;
+  width: 5px !important;
+  height: 5px !important;
+  border-radius: 50% !important;
+  background: currentColor !important;
+}
+
+.settingsLayer .settingsDrawer .settingsSectionHeaderChip.ok,
+.settingsLayer.theme-light .settingsDrawer .settingsSectionHeaderChip.ok {
+  color: var(--nx-settings-success, #2e7d68) !important;
+  border-color: color-mix(in srgb, #2e7d68 35%, #dce2eb) !important;
+  background: color-mix(in srgb, #2e7d68 8%, #f7f8fa) !important;
+}
+
+.settingsLayer .settingsDrawer .settingsSectionHeaderAction,
+.settingsLayer.theme-light .settingsDrawer .settingsSectionHeaderAction {
+  height: 28px !important;
+  padding: 0 10px !important;
+  border: 1px solid var(--nx-settings-border, #dce2eb) !important;
+  border-radius: 8px !important;
+  background: transparent !important;
+  color: var(--nx-settings-text-muted, #526078) !important;
+  font-size: 12px !important;
+  cursor: pointer !important;
+}
+
+.settingsLayer .settingsDrawer .settingsSectionHeaderAction:hover,
+.settingsLayer.theme-light .settingsDrawer .settingsSectionHeaderAction:hover {
+  background: #f7f8fa !important;
+  color: var(--nx-settings-text, #172033) !important;
+}
+
+/* 5. Fieldset: 居中容器 */
+.settingsLayer .settingsDrawer .settingsFieldset,
+.settingsLayer.theme-light .settingsDrawer .settingsFieldset {
+  border: 0 !important;
+  padding: 0 !important;
+  margin: 0 auto !important;
+  max-width: 850px !important;
+  min-width: 0 !important;
+  display: block !important;
+}
+
+/* 6. PageHeader: 顶部分隔 */
+.settingsLayer .settingsDrawer .settingsPageHeader,
+.settingsLayer.theme-light .settingsDrawer .settingsPageHeader {
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: space-between !important;
+  gap: 18px !important;
+  padding-bottom: 22px !important;
+  border-bottom: 1px solid var(--nx-settings-border, #dce2eb) !important;
+  margin-bottom: 0 !important;
+  background: transparent !important;
+  border-radius: 0 !important;
+}
+
+.settingsLayer .settingsDrawer .settingsPageHeaderTitles,
+.settingsLayer.theme-light .settingsDrawer .settingsPageHeaderTitles {
+  display: grid !important;
+  gap: 5px !important;
+  min-width: 0 !important;
+}
+
+.settingsLayer .settingsDrawer .settingsPageHeaderEyebrow,
+.settingsLayer.theme-light .settingsDrawer .settingsPageHeaderEyebrow {
+  color: var(--nx-settings-accent, #356fcb) !important;
+  font-size: 10px !important;
+  font-weight: 750 !important;
+  letter-spacing: 0.12em !important;
+  text-transform: uppercase !important;
+  margin: 0 !important;
+}
+
+.settingsLayer .settingsDrawer .settingsPageHeaderTitle,
+.settingsLayer.theme-light .settingsDrawer .settingsPageHeaderTitle {
+  margin: 0 !important;
+  color: var(--nx-settings-text, #172033) !important;
+  font-size: 21px !important;
+  font-weight: 660 !important;
+  letter-spacing: -0.025em !important;
+  line-height: 1.25 !important;
+}
+
+.settingsLayer .settingsDrawer .settingsPageHeaderDesc,
+.settingsLayer.theme-light .settingsDrawer .settingsPageHeaderDesc {
+  margin: 4px 0 0 !important;
+  color: var(--nx-settings-text-muted, #526078) !important;
+  font-size: 12px !important;
+}
+
+.settingsLayer .settingsDrawer .settingsPageHeaderActions,
+.settingsLayer.theme-light .settingsDrawer .settingsPageHeaderActions {
+  display: flex !important;
+  flex: 0 0 auto !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+
+.settingsLayer .settingsDrawer .settingsPageHeaderAction,
+.settingsLayer.theme-light .settingsDrawer .settingsPageHeaderAction {
+  height: 32px !important;
+  padding: 0 13px !important;
+  border: 1px solid var(--nx-settings-border-strong, #c6d0de) !important;
+  border-radius: 8px !important;
+  font-size: 12px !important;
+  font-weight: 620 !important;
+  cursor: pointer !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  white-space: nowrap !important;
+  background: transparent !important;
+  color: var(--nx-settings-text-muted, #526078) !important;
+  transition: background .15s ease, color .15s ease, border-color .15s ease, transform .15s ease;
+}
+
+.settingsLayer .settingsDrawer .settingsPageHeaderAction:hover,
+.settingsLayer.theme-light .settingsDrawer .settingsPageHeaderAction:hover {
+  background: #f7f8fa !important;
+  color: var(--nx-settings-text, #172033) !important;
+  border-color: var(--nx-settings-text-faint, #8a97ab) !important;
+}
+
+.settingsLayer .settingsDrawer .settingsPageHeaderAction.primary,
+.settingsLayer.theme-light .settingsDrawer .settingsPageHeaderAction.primary {
+  padding: 0 13px !important;
+  border-color: #2e63b8 !important;
+  color: #ffffff !important;
+  background: #2f67bf !important;
+  box-shadow: 0 1px 1px rgba(9, 36, 81, 0.18) !important;
+}
+
+.settingsLayer .settingsDrawer .settingsPageHeaderAction.primary:hover,
+.settingsLayer.theme-light .settingsDrawer .settingsPageHeaderAction.primary:hover {
+  background: #285bab !important;
+  border-color: #2e63b8 !important;
+  color: #ffffff !important;
+  transform: translateY(-1px) !important;
+}
+
+.settingsLayer .settingsDrawer .settingsPageHeaderAction.ghost,
+.settingsLayer.theme-light .settingsDrawer .settingsPageHeaderAction.ghost {
+  padding: 0 12px !important;
+  background: transparent !important;
+  color: var(--nx-settings-text-muted, #526078) !important;
+}
+
+.settingsLayer .settingsDrawer .settingsPageHeaderAction.danger,
+.settingsLayer.theme-light .settingsDrawer .settingsPageHeaderAction.danger {
+  padding: 0 10px !important;
+  color: var(--nx-settings-danger, #c84c4c) !important;
+  border-color: transparent !important;
+}
+
+.settingsLayer .settingsDrawer .settingsPageHeaderAction.danger:hover,
+.settingsLayer.theme-light .settingsDrawer .settingsPageHeaderAction.danger:hover {
+  background: color-mix(in srgb, #c84c4c 10%, transparent) !important;
+  color: var(--nx-settings-danger, #c84c4c) !important;
+  border-color: transparent !important;
+}
+
+.settingsLayer .settingsDrawer .settingsPageHeaderAction:disabled,
+.settingsLayer.theme-light .settingsDrawer .settingsPageHeaderAction:disabled {
+  opacity: 0.45 !important;
+  cursor: not-allowed !important;
+  transform: none !important;
+}
+
+/* 7. FormGrid: 表单网格 */
+.settingsLayer .settingsDrawer .settingsFormGrid,
+.settingsLayer.theme-light .settingsDrawer .settingsFormGrid {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 15px 18px !important;
+}
+
+.settingsLayer .settingsDrawer .settingsFormGrid.three,
+.settingsLayer.theme-light .settingsDrawer .settingsFormGrid.three {
+  grid-template-columns: 1.05fr 1fr 0.82fr !important;
+}
+
+.settingsLayer .settingsDrawer .settingsField,
+.settingsLayer.theme-light .settingsDrawer .settingsField {
+  display: flex !important;
+  flex-direction: column !important;
+  min-width: 0 !important;
+}
+
+.settingsLayer .settingsDrawer .settingsField.wide,
+.settingsLayer.theme-light .settingsDrawer .settingsField.wide {
+  grid-column: 1 / -1 !important;
+}
+
+.settingsLayer .settingsDrawer .settingsFieldLabel,
+.settingsLayer.theme-light .settingsDrawer .settingsFieldLabel {
+  display: block !important;
+  margin-bottom: 6px !important;
+  color: var(--nx-settings-text-muted, #526078) !important;
+  font-size: 11px !important;
+  font-weight: 590 !important;
+}
+
+.settingsLayer .settingsDrawer .settingsFieldHint,
+.settingsLayer.theme-light .settingsDrawer .settingsFieldHint {
+  display: block !important;
+  margin-top: 5px !important;
+  color: var(--nx-settings-text-faint, #8a97ab) !important;
+  font-size: 10px !important;
+}
+
+.settingsLayer .settingsDrawer .settingsField input,
+.settingsLayer .settingsDrawer .settingsField select,
+.settingsLayer .settingsDrawer .settingsField textarea,
+.settingsLayer.theme-light .settingsDrawer .settingsField input,
+.settingsLayer.theme-light .settingsDrawer .settingsField select,
+.settingsLayer.theme-light .settingsDrawer .settingsField textarea {
+  width: 100% !important;
+  height: 37px !important;
+  padding: 0 10px !important;
+  border: 1px solid var(--nx-settings-border-strong, #c6d0de) !important;
+  border-radius: 7px !important;
+  outline: 0 !important;
+  color: var(--nx-settings-text, #172033) !important;
+  background: #ffffff !important;
+  font-size: 13px !important;
+  box-shadow: 0 1px 1px rgba(16, 29, 52, 0.015) !important;
+  transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+}
+
+.settingsLayer .settingsDrawer .settingsField input:focus,
+.settingsLayer .settingsDrawer .settingsField select:focus,
+.settingsLayer .settingsDrawer .settingsField textarea:focus,
+.settingsLayer.theme-light .settingsDrawer .settingsField input:focus,
+.settingsLayer.theme-light .settingsDrawer .settingsField select:focus,
+.settingsLayer.theme-light .settingsDrawer .settingsField textarea:focus {
+  border-color: var(--nx-settings-accent, #356fcb) !important;
+  box-shadow: 0 0 0 3px #e8f0ff !important;
+}
+
+/* 8. PluginCatalogShell: 特殊处理，保留卡片 */
+.settingsLayer .settingsDrawer .settingsSection.pluginCatalogShell,
+.settingsLayer.theme-light .settingsDrawer .settingsSection.pluginCatalogShell {
+  display: block !important;
+  padding: 23px 0 !important;
+  border-bottom: 1px solid var(--nx-settings-border, #dce2eb) !important;
+  background: transparent !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+}
+
+/* 9. PresetRow */
+.settingsLayer .settingsDrawer .settingsPresetRow,
+.settingsLayer.theme-light .settingsDrawer .settingsPresetRow {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  min-width: 0 !important;
+}
+
+.settingsLayer .settingsDrawer .settingsPresetRow .modelPresetSelect,
+.settingsLayer.theme-light .settingsDrawer .settingsPresetRow .modelPresetSelect {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+}
+
+/* 10. Notice */
+.settingsLayer .settingsDrawer .settingsNotice,
+.settingsLayer.theme-light .settingsDrawer .settingsNotice {
+  margin: 14px 0 0 !important;
+  padding: 9px 11px !important;
+  border-left: 2px solid var(--nx-settings-accent, #356fcb) !important;
+  border-radius: 0 7px 7px 0 !important;
+  color: var(--nx-settings-text-muted, #526078) !important;
+  background: color-mix(in srgb, #e8f0ff 72%, transparent) !important;
+  font-size: 11px !important;
+  line-height: 1.55 !important;
+}
+
+/* =============================================================
+ * Dark mode 覆盖
+ * ============================================================= */
+.settingsLayer.theme-dark .settingsDrawer .settingsSection:not(.pluginCatalogShell),
+.settingsLayer.theme-dark .settingsDrawer .settingsSection {
+  background: transparent !important;
+  border-bottom-color: #27313c !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsSectionHeaderTitle {
+  color: #e9edf2 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsSectionHeaderDesc {
+  color: #737f8e !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsSectionHeaderChip {
+  background: #11171e !important;
+  border-color: #27313c !important;
+  color: #aab4c0 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsSectionHeaderChip.ok {
+  color: #79bda1 !important;
+  border-color: color-mix(in srgb, #79bda1 35%, #27313c) !important;
+  background: color-mix(in srgb, #79bda1 8%, #11171e) !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsSectionHeaderAction {
+  border-color: #27313c !important;
+  color: #aab4c0 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsSectionHeaderAction:hover {
+  background: #11171e !important;
+  color: #e9edf2 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsPageHeader {
+  border-bottom-color: #27313c !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsPageHeaderTitle {
+  color: #e9edf2 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsPageHeaderDesc {
+  color: #aab4c0 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsPageHeaderAction {
+  background: transparent !important;
+  border-color: #394653 !important;
+  color: #aab4c0 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsPageHeaderAction:hover {
+  background: #11171e !important;
+  color: #e9edf2 !important;
+  border-color: #4a5a6c !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsField input,
+.settingsLayer.theme-dark .settingsDrawer .settingsField select,
+.settingsLayer.theme-dark .settingsDrawer .settingsField textarea {
+  background: #0c1218 !important;
+  color: #e9edf2 !important;
+  border-color: #394653 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsField input:focus,
+.settingsLayer.theme-dark .settingsDrawer .settingsField select:focus,
+.settingsLayer.theme-dark .settingsDrawer .settingsField textarea:focus {
+  border-color: #82add9 !important;
+  box-shadow: 0 0 0 3px rgba(94, 143, 190, 0.15) !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsFieldLabel {
+  color: #aab4c0 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsNotice {
+  color: #aab4c0 !important;
+  background: rgba(94, 143, 190, 0.15) !important;
+}
+
+/* =============================================================
+ * V3 PREVIEW FIX - 严格对齐 settings-workbench-preview.html
+ * 覆盖所有旧 settings 样式，消除蓝色左竖条、gradient、错误尺寸等
+ * ============================================================= */
+
+/* --- Drawer frame --- */
+.settingsLayer .settingsDrawer,
+.settingsLayer.theme-light .settingsDrawer,
+.settingsLayer.theme-dark .settingsDrawer {
+  width: min(1180px, calc(100vw - 56px)) !important;
+  height: min(790px, calc(100vh - 56px)) !important;
+  min-height: 620px !important;
+  border-radius: 18px !important;
+  border: 1px solid var(--nx-settings-border-strong, #c6d0de) !important;
+  box-shadow: 0 28px 76px rgba(27, 39, 61, .16), 0 2px 10px rgba(27, 39, 61, .05) !important;
+  position: relative !important;
+  inset: auto !important;
+  transform: none !important;
+  max-width: none !important;
+  background: var(--nx-settings-shell, #ffffff) !important;
+  font-size: 13px !important;
+  color: var(--nx-settings-text, #172033) !important;
+}
+
+/* --- Topbar --- */
+.settingsLayer .settingsDrawer .settingsHeader,
+.settingsLayer .settingsDrawer .settingsTopbar,
+.settingsLayer.theme-light .settingsDrawer .settingsHeader,
+.settingsLayer.theme-light .settingsDrawer .settingsTopbar,
+.settingsLayer.theme-dark .settingsDrawer .settingsHeader,
+.settingsLayer.theme-dark .settingsDrawer .settingsTopbar {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  height: 58px !important;
+  min-height: 58px !important;
+  padding: 0 18px 0 20px !important;
+  border-bottom: 1px solid var(--nx-settings-border, #dce2eb) !important;
+  background: transparent !important;
+  gap: 12px !important;
+  background-image: none !important;
+}
+
+.settingsLayer .settingsDrawer .settingsBrand,
+.settingsLayer.theme-light .settingsDrawer .settingsBrand,
+.settingsLayer.theme-dark .settingsDrawer .settingsBrand {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  min-width: 0 !important;
+  flex: 1 1 auto !important;
+}
+
+.settingsLayer .settingsDrawer .settingsBrandMark,
+.settingsLayer.theme-light .settingsDrawer .settingsBrandMark,
+.settingsLayer.theme-dark .settingsDrawer .settingsBrandMark {
+  display: grid !important;
+  place-items: center !important;
+  width: 22px !important;
+  height: 22px !important;
+  color: #ffffff !important;
+  font-size: 12px !important;
+  line-height: 1 !important;
+  font-weight: 700 !important;
+  background: #244e8e !important;
+  border-radius: 7px !important;
+  box-shadow: 0 3px 8px rgba(28, 75, 142, .25) !important;
+  flex: 0 0 auto !important;
+}
+
+.settingsLayer .settingsDrawer .settingsBrandName,
+.settingsLayer.theme-light .settingsDrawer .settingsBrandName,
+.settingsLayer.theme-dark .settingsDrawer .settingsBrandName {
+  font-size: 15px !important;
+  font-weight: 650 !important;
+  letter-spacing: .015em !important;
+  color: var(--nx-settings-text, #172033) !important;
+}
+
+.settingsLayer .settingsDrawer .settingsBrandSub,
+.settingsLayer.theme-light .settingsDrawer .settingsBrandSub,
+.settingsLayer.theme-dark .settingsDrawer .settingsBrandSub {
+  color: var(--nx-settings-text-faint, #8a97ab) !important;
+  font-size: 12px !important;
+  font-weight: 400 !important;
+}
+
+.settingsLayer .settingsDrawer .settingsTopActions,
+.settingsLayer.theme-light .settingsDrawer .settingsTopActions,
+.settingsLayer.theme-dark .settingsDrawer .settingsTopActions {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  flex: 0 0 auto !important;
+}
+
+/* --- Body grid: rail + content --- */
+.settingsLayer .settingsDrawer .settingsBody,
+.settingsLayer.theme-light .settingsDrawer .settingsBody,
+.settingsLayer.theme-dark .settingsDrawer .settingsBody {
+  display: grid !important;
+  grid-template-columns: 216px minmax(0, 1fr) !important;
+  min-height: 0 !important;
+  background: transparent !important;
+}
+
+/* --- Rail --- */
+.settingsLayer .settingsDrawer .settingsRail,
+.settingsLayer.theme-light .settingsDrawer .settingsRail,
+.settingsLayer.theme-dark .settingsDrawer .settingsRail {
+  min-width: 0 !important;
+  padding: 16px 10px !important;
+  border-right: 1px solid var(--nx-settings-border, #dce2eb) !important;
+  background: var(--nx-settings-rail, #f1f3f6) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 3px !important;
+  overflow-y: auto !important;
+}
+
+.settingsLayer .settingsDrawer .settingsRailLabel,
+.settingsLayer.theme-light .settingsDrawer .settingsRailLabel,
+.settingsLayer.theme-dark .settingsDrawer .settingsRailLabel {
+  padding: 0 10px 9px !important;
+  color: var(--nx-settings-text-faint, #8a97ab) !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  letter-spacing: .11em !important;
+  text-transform: uppercase !important;
+  margin: 0 !important;
+}
+
+/* --- Nav --- */
+.settingsLayer .settingsDrawer .settingsNav,
+.settingsLayer.theme-light .settingsDrawer .settingsNav,
+.settingsLayer.theme-dark .settingsDrawer .settingsNav {
+  display: grid !important;
+  gap: 3px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+}
+
+.settingsLayer .settingsDrawer .settingsNav button,
+.settingsLayer .settingsDrawer .settingsNav a,
+.settingsLayer.theme-light .settingsDrawer .settingsNav button,
+.settingsLayer.theme-light .settingsDrawer .settingsNav a,
+.settingsLayer.theme-dark .settingsDrawer .settingsNav button,
+.settingsLayer.theme-dark .settingsDrawer .settingsNav a {
+  width: 100% !important;
+  height: 38px !important;
+  min-height: 38px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  padding: 0 10px !important;
+  border: 0 !important;
+  border-radius: 8px !important;
+  color: var(--nx-settings-text-muted, #526078) !important;
+  background: transparent !important;
+  text-align: left !important;
+  font-size: 13px !important;
+  font-weight: 520 !important;
+  letter-spacing: 0 !important;
+  box-shadow: none !important;
+  transition: background .15s ease, color .15s ease, box-shadow .15s ease !important;
+  cursor: pointer !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.settingsLayer .settingsDrawer .settingsNav button:hover:not(:disabled),
+.settingsLayer .settingsDrawer .settingsNav a:hover,
+.settingsLayer.theme-light .settingsDrawer .settingsNav button:hover:not(:disabled),
+.settingsLayer.theme-light .settingsDrawer .settingsNav a:hover {
+  color: var(--nx-settings-text, #172033) !important;
+  background: color-mix(in srgb, var(--nx-settings-panel, #ffffff) 78%, transparent) !important;
+}
+
+.settingsLayer .settingsDrawer .settingsNav button.active,
+.settingsLayer .settingsDrawer .settingsNav a.active,
+.settingsLayer.theme-light .settingsDrawer .settingsNav button.active,
+.settingsLayer.theme-light .settingsDrawer .settingsNav a.active {
+  color: var(--nx-settings-text, #172033) !important;
+  background: var(--nx-settings-panel, #ffffff) !important;
+  box-shadow: 0 1px 1px rgba(20, 30, 46, .04), 0 0 0 1px var(--nx-settings-border, #dce2eb) inset !important;
+  border: 0 !important;
+  outline: none !important;
+}
+
+.settingsLayer .settingsDrawer .settingsNav button.active .settingsNavIcon,
+.settingsLayer .settingsDrawer .settingsNav a.active .settingsNavIcon,
+.settingsLayer.theme-light .settingsDrawer .settingsNav button.active .settingsNavIcon,
+.settingsLayer.theme-light .settingsDrawer .settingsNav a.active .settingsNavIcon {
+  color: var(--nx-settings-focus, #2f67bf) !important;
+}
+
+.settingsLayer .settingsDrawer .settingsNavIcon,
+.settingsLayer.theme-light .settingsDrawer .settingsNavIcon,
+.settingsLayer.theme-dark .settingsDrawer .settingsNavIcon {
+  width: 17px !important;
+  height: 17px !important;
+  flex: 0 0 17px !important;
+  color: var(--nx-settings-text-faint, #8a97ab) !important;
+  font-size: 14px !important;
+  display: grid !important;
+  place-items: center !important;
+}
+
+.settingsLayer .settingsDrawer .settingsNavIcon svg,
+.settingsLayer.theme-light .settingsDrawer .settingsNavIcon svg,
+.settingsLayer.theme-dark .settingsDrawer .settingsNavIcon svg {
+  width: 17px !important;
+  height: 17px !important;
+}
+
+.settingsLayer .settingsDrawer .settingsNavLabel,
+.settingsLayer.theme-light .settingsDrawer .settingsNavLabel,
+.settingsLayer.theme-dark .settingsDrawer .settingsNavLabel {
+  font-size: 13px !important;
+  font-weight: 520 !important;
+  line-height: 1 !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.settingsLayer .settingsDrawer .settingsNav button:focus-visible,
+.settingsLayer.theme-light .settingsDrawer .settingsNav button:focus-visible {
+  outline: 2px solid var(--nx-settings-focus-soft, rgba(47, 103, 191, .22)) !important;
+  outline-offset: -1px !important;
+}
+
+/* --- Content --- */
+.settingsLayer .settingsDrawer .settingsContent,
+.settingsLayer.theme-light .settingsDrawer .settingsContent,
+.settingsLayer.theme-dark .settingsDrawer .settingsContent {
+  min-width: 0 !important;
+  min-height: 0 !important;
+  overflow: auto !important;
+  padding: 32px 42px 40px !important;
+  background: var(--nx-settings-shell, #ffffff) !important;
+  background-image: none !important;
+}
+
+/* --- Fieldset / page container (max 850px, centered) --- */
+.settingsLayer .settingsDrawer .settingsFieldset,
+.settingsLayer.theme-light .settingsDrawer .settingsFieldset,
+.settingsLayer.theme-dark .settingsDrawer .settingsFieldset {
+  border: 0 !important;
+  padding: 0 !important;
+  margin: 0 auto !important;
+  max-width: 850px !important;
+  min-width: 0 !important;
+  display: block !important;
+  animation: settingsPageIn .18s ease both !important;
+}
+
+@keyframes settingsPageIn {
+  from { opacity: .25; transform: translateY(3px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* --- Section line-separator style --- */
+.settingsLayer .settingsDrawer .settingsSectionBlock,
+.settingsLayer.theme-light .settingsDrawer .settingsSectionBlock,
+.settingsLayer.theme-dark .settingsDrawer .settingsSectionBlock {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 14px !important;
+  padding: 23px 0 !important;
+  border-bottom: 1px solid var(--nx-settings-border, #dce2eb) !important;
+  background: transparent !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+}
+
+.settingsLayer .settingsDrawer .settingsSectionBlock:last-child,
+.settingsLayer.theme-light .settingsDrawer .settingsSectionBlock:last-child,
+.settingsLayer.theme-dark .settingsDrawer .settingsSectionBlock:last-child {
+  border-bottom: 0 !important;
+}
+
+/* Top-level settingsSection: no extra padding/border/shadow */
+.settingsLayer .settingsDrawer .settingsSection,
+.settingsLayer.theme-light .settingsDrawer .settingsSection,
+.settingsLayer.theme-dark .settingsDrawer .settingsSection {
+  padding: 0 !important;
+  border: 0 !important;
+  border-bottom: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  display: block !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+  border-radius: 0 !important;
+  gap: 0 !important;
+  grid-template-columns: none !important;
+}
+
+/* Page header (eyebrow + h1 + actions) - bottom border */
+.settingsLayer .settingsDrawer .settingsPageHeader,
+.settingsLayer.theme-light .settingsDrawer .settingsPageHeader,
+.settingsLayer.theme-dark .settingsDrawer .settingsPageHeader {
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: space-between !important;
+  gap: 18px !important;
+  padding-bottom: 22px !important;
+  border-bottom: 1px solid var(--nx-settings-border, #dce2eb) !important;
+  margin-bottom: 0 !important;
+}
+
+/* Section heading within a section-block */
+.settingsLayer .settingsDrawer .settingsSectionHeader,
+.settingsLayer.theme-light .settingsDrawer .settingsSectionHeader,
+.settingsLayer.theme-dark .settingsDrawer .settingsSectionHeader {
+  display: flex !important;
+  align-items: baseline !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+  margin-bottom: 14px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  min-height: 0 !important;
+}
+
+.settingsLayer .settingsDrawer .settingsSectionHeaderTitle,
+.settingsLayer.theme-light .settingsDrawer .settingsSectionHeaderTitle,
+.settingsLayer.theme-dark .settingsDrawer .settingsSectionHeaderTitle {
+  margin: 0 !important;
+  color: var(--nx-settings-text, #172033) !important;
+  font-size: 13px !important;
+  font-weight: 680 !important;
+  letter-spacing: -.01em !important;
+  line-height: 1.4 !important;
+  text-transform: none !important;
+}
+
+/* Form grid */
+.settingsLayer .settingsDrawer .settingsFormGrid,
+.settingsLayer.theme-light .settingsDrawer .settingsFormGrid,
+.settingsLayer.theme-dark .settingsDrawer .settingsFormGrid {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 15px 18px !important;
+}
+
+.settingsLayer .settingsDrawer .settingsFormGrid.three,
+.settingsLayer.theme-light .settingsDrawer .settingsFormGrid.three {
+  grid-template-columns: 1.05fr 1fr .82fr !important;
+}
+
+/* Field label */
+.settingsLayer .settingsDrawer .settingsFieldLabel,
+.settingsLayer.theme-light .settingsDrawer .settingsFieldLabel,
+.settingsLayer.theme-dark .settingsDrawer .settingsFieldLabel {
+  display: block !important;
+  margin-bottom: 6px !important;
+  color: var(--nx-settings-text-muted, #526078) !important;
+  font-size: 11px !important;
+  font-weight: 590 !important;
+}
+
+/* Inputs / selects / controls */
+.settingsLayer .settingsDrawer .settingsField input,
+.settingsLayer .settingsDrawer .settingsField select,
+.settingsLayer .settingsDrawer .settingsField .control,
+.settingsLayer.theme-light .settingsDrawer .settingsField input,
+.settingsLayer.theme-light .settingsDrawer .settingsField select,
+.settingsLayer.theme-light .settingsDrawer .settingsField .control {
+  width: 100% !important;
+  height: 37px !important;
+  padding: 0 10px !important;
+  border: 1px solid var(--nx-settings-border-strong, #c6d0de) !important;
+  border-radius: 7px !important;
+  outline: 0 !important;
+  color: var(--nx-settings-text, #172033) !important;
+  background: var(--nx-settings-input, #ffffff) !important;
+  font-size: 13px !important;
+  box-shadow: 0 1px 1px rgba(16, 29, 52, .015) !important;
+  box-sizing: border-box !important;
+  transition: border-color .15s ease, box-shadow .15s ease, background .15s ease !important;
+}
+
+.settingsLayer .settingsDrawer .settingsField input:focus,
+.settingsLayer .settingsDrawer .settingsField select:focus,
+.settingsLayer.theme-light .settingsDrawer .settingsField input:focus,
+.settingsLayer.theme-light .settingsDrawer .settingsField select:focus {
+  border-color: var(--nx-settings-focus, #2f67bf) !important;
+  box-shadow: 0 0 0 3px var(--nx-settings-focus-soft, rgba(47, 103, 191, .18)) !important;
+}
+
+/* Buttons (page-actions area) */
+.settingsLayer .settingsDrawer .settingsPageActions button,
+.settingsLayer.theme-light .settingsDrawer .settingsPageActions button {
+  height: 32px !important;
+  padding: 0 12px !important;
+  border-radius: 7px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  border: 1px solid var(--nx-settings-border-strong, #c6d0de) !important;
+  background: var(--nx-settings-panel, #ffffff) !important;
+  color: var(--nx-settings-text, #172033) !important;
+  cursor: pointer !important;
+  transition: background .15s ease, transform .15s ease, box-shadow .15s ease !important;
+}
+
+.settingsLayer .settingsDrawer .settingsPageActions button.primary,
+.settingsLayer .settingsDrawer .settingsPageActions button[data-primary="true"],
+.settingsLayer.theme-light .settingsDrawer .settingsPageActions button.primary,
+.settingsLayer.theme-light .settingsDrawer .settingsPageActions button[data-primary="true"] {
+  border-color: #2e63b8 !important;
+  color: #ffffff !important;
+  background: #2f67bf !important;
+  box-shadow: 0 1px 1px rgba(9, 36, 81, .18) !important;
+}
+
+.settingsLayer .settingsDrawer .settingsPageActions button.primary:hover,
+.settingsLayer.theme-light .settingsDrawer .settingsPageActions button.primary:hover {
+  background: #285bab !important;
+  transform: translateY(-1px) !important;
+}
+
+/* Icon buttons (theme toggle, close) */
+.settingsLayer .settingsDrawer .iconButton,
+.settingsLayer.theme-light .settingsDrawer .iconButton {
+  width: 32px !important;
+  height: 32px !important;
+  min-width: 32px !important;
+  min-height: 32px !important;
+  border-radius: 7px !important;
+  border: 1px solid var(--nx-settings-border, #dce2eb) !important;
+  background: var(--nx-settings-panel, #ffffff) !important;
+  color: var(--nx-settings-text-muted, #526078) !important;
+  display: grid !important;
+  place-items: center !important;
+  padding: 0 !important;
+  cursor: pointer !important;
+  transition: background .15s ease, color .15s ease, border-color .15s ease !important;
+}
+
+.settingsLayer .settingsDrawer .iconButton:hover,
+.settingsLayer.theme-light .settingsDrawer .iconButton:hover {
+  color: var(--nx-settings-text, #172033) !important;
+  border-color: var(--nx-settings-border-strong, #c6d0de) !important;
+  background: color-mix(in srgb, var(--nx-settings-rail, #f1f3f6) 60%, transparent) !important;
+}
+
+.settingsLayer .settingsDrawer .iconButton svg,
+.settingsLayer.theme-light .settingsDrawer .iconButton svg {
+  width: 16px !important;
+  height: 16px !important;
+}
+
+/* --- Dark theme overrides --- */
+.settingsLayer.theme-dark .settingsDrawer {
+  background: #1c2331 !important;
+  border-color: #2a3345 !important;
+  color: #e0e5ec !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsHeader,
+.settingsLayer.theme-dark .settingsDrawer .settingsTopbar {
+  border-bottom-color: #2a3345 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsBrandMark {
+  background: #315473 !important;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, .32) !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsBrandName {
+  color: #e9edf2 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsBrandSub {
+  color: #728096 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsRail {
+  background: #171d29 !important;
+  border-right-color: #2a3345 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsRailLabel {
+  color: #5b6a82 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsNav button,
+.settingsLayer.theme-dark .settingsDrawer .settingsNav a {
+  color: #7a88a0 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsNav button:hover:not(:disabled) {
+  color: #d7dde6 !important;
+  background: color-mix(in srgb, #232c3c 78%, transparent) !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsNav button.active,
+.settingsLayer.theme-dark .settingsDrawer .settingsNav a.active {
+  color: #e9edf2 !important;
+  background: #232c3c !important;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, .18), 0 0 0 1px #2a3345 inset !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsNavIcon {
+  color: #5b6a82 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsNav button.active .settingsNavIcon {
+  color: #6c9ee0 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsContent {
+  background: #1c2331 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsSectionBlock {
+  border-bottom-color: #2a3345 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsPageHeader {
+  border-bottom-color: #2a3345 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsSectionHeaderTitle {
+  color: #e0e5ec !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsFieldLabel {
+  color: #90a0b8 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsField input,
+.settingsLayer.theme-dark .settingsDrawer .settingsField select {
+  background: #232c3c !important;
+  border-color: #32405a !important;
+  color: #e0e5ec !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsField input:focus {
+  border-color: #4d84cc !important;
+  box-shadow: 0 0 0 3px rgba(77, 132, 204, .18) !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .iconButton {
+  background: #232c3c !important;
+  border-color: #32405a !important;
+  color: #7a88a0 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .iconButton:hover {
+  background: #2a3547 !important;
+  border-color: #3e4f6e !important;
+  color: #d7dde6 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsPageActions button {
+  background: #232c3c !important;
+  border-color: #32405a !important;
+  color: #d7dde6 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsPageActions button.primary {
+  background: #2f67bf !important;
+  border-color: #3d76cf !important;
+}
+
+/* --- High-specificity overrides to kill legacy blue-left-bar active state --- */
+.appShell .settingsLayer .settingsDrawer .settingsNav button.active,
+.appShell .settingsLayer .settingsDrawer .settingsNav a.active,
+.appShell.theme-light .settingsLayer .settingsDrawer .settingsNav button.active,
+.appShell.theme-light .settingsLayer .settingsDrawer .settingsNav a.active,
+.appShell:not(.theme-light) .settingsLayer .settingsDrawer .settingsNav button.active,
+.appShell:not(.theme-light) .settingsLayer .settingsDrawer .settingsNav a.active {
+  color: var(--nx-settings-text, #172033) !important;
+  background: var(--nx-settings-panel, #ffffff) !important;
+  box-shadow: 0 1px 1px rgba(20, 30, 46, .04), 0 0 0 1px var(--nx-settings-border, #dce2eb) inset !important;
+  border: 0 !important;
+  border-left: 0 !important;
+  outline: none !important;
+}
+
+.appShell .settingsLayer .settingsDrawer .settingsNav button.active .settingsNavIcon,
+.appShell:not(.theme-light) .settingsLayer .settingsDrawer .settingsNav button.active .settingsNavIcon {
+  color: var(--nx-settings-focus, #2f67bf) !important;
+}
+
+.appShell .settingsLayer .settingsDrawer .settingsNav button,
+.appShell .settingsLayer .settingsDrawer .settingsNav a {
+  box-shadow: none !important;
+  border: 0 !important;
+  border-left: 0 !important;
+  border-radius: 8px !important;
+  height: 38px !important;
+  min-height: 38px !important;
+  font-size: 13px !important;
+  font-weight: 520 !important;
+  padding: 0 10px !important;
+  background: transparent !important;
+  background-image: none !important;
+}
+
+.appShell .settingsLayer .settingsDrawer .settingsNav,
+.appShell.theme-light .settingsLayer .settingsDrawer .settingsNav,
+.appShell:not(.theme-light) .settingsLayer .settingsDrawer .settingsNav {
+  padding: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  display: grid !important;
+  gap: 3px !important;
+}
+
+.appShell .settingsLayer .settingsDrawer .settingsBody,
+.appShell.theme-light .settingsLayer .settingsDrawer .settingsBody,
+.appShell:not(.theme-light) .settingsLayer .settingsDrawer .settingsBody {
+  grid-template-columns: 216px minmax(0, 1fr) !important;
+  background: transparent !important;
+}
+
+.appShell .settingsLayer .settingsDrawer .settingsRail,
+.appShell.theme-light .settingsLayer .settingsDrawer .settingsRail,
+.appShell:not(.theme-light) .settingsLayer .settingsDrawer .settingsRail {
+  padding: 16px 10px !important;
+  background: var(--nx-settings-rail, #f1f3f6) !important;
+  border-right: 1px solid var(--nx-settings-border, #dce2eb) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 3px !important;
+  overflow-y: auto !important;
+}
+
+.appShell .settingsLayer .settingsDrawer .settingsHeader,
+.appShell .settingsLayer .settingsDrawer .settingsTopbar,
+.appShell.theme-light .settingsLayer .settingsDrawer .settingsHeader,
+.appShell.theme-light .settingsLayer .settingsDrawer .settingsTopbar,
+.appShell:not(.theme-light) .settingsLayer .settingsDrawer .settingsHeader,
+.appShell:not(.theme-light) .settingsLayer .settingsDrawer .settingsTopbar {
+  min-height: 58px !important;
+  height: 58px !important;
+  background: transparent !important;
+  background-image: none !important;
+  border-bottom: 1px solid var(--nx-settings-border, #dce2eb) !important;
+}
+
+.appShell .settingsLayer .settingsDrawer .settingsContent,
+.appShell.theme-light .settingsLayer .settingsDrawer .settingsContent,
+.appShell:not(.theme-light) .settingsLayer .settingsDrawer .settingsContent {
+  padding: 32px 42px 40px !important;
+  background: var(--nx-settings-shell, #ffffff) !important;
+  background-image: none !important;
+}
+
+.appShell .settingsLayer .settingsDrawer,
+.appShell.theme-light .settingsLayer .settingsDrawer,
+.appShell:not(.theme-light) .settingsLayer .settingsDrawer {
+  border-radius: 18px !important;
+  background: var(--nx-settings-shell, #ffffff) !important;
+  background-image: none !important;
+  box-shadow: 0 28px 76px rgba(27, 39, 61, .16), 0 2px 10px rgba(27, 39, 61, .05) !important;
+}
+
+/* Dark mode appShell overrides */
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingsRail {
+  background: #171d29 !important;
+  border-right-color: #2a3345 !important;
+}
+
+.appShell.theme-dark .settingsLayer .settingsDrawer {
+  background: #1c2331 !important;
+  border-color: #2a3345 !important;
+}
+
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingsContent {
+  background: #1c2331 !important;
+}
+
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingsNav button.active,
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingsNav a.active {
+  background: #232c3c !important;
+  color: #e9edf2 !important;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, .18), 0 0 0 1px #2a3345 inset !important;
+}
+
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingsNav button {
+  color: #7a88a0 !important;
+}
+
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingsNavIcon {
+  color: #5b6a82 !important;
+}
+
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingsNav button.active .settingsNavIcon {
+  color: #6c9ee0 !important;
+}
+
+/* =============================================================
+ * V3 COMPONENT STYLES - toggles, plugin catalog, chips, clusters, etc.
+ * 严格对齐 settings-workbench-preview.html
+ * ============================================================= */
+
+/* --- Content/page entry animation cleanup --- */
+.settingsLayer .settingsDrawer .settingsPageHeaderEyebrow {
+  color: var(--nx-settings-focus, #2f67bf) !important;
+  font-size: 10px !important;
+  font-weight: 750 !important;
+  letter-spacing: .12em !important;
+  text-transform: uppercase !important;
+  margin: 0 !important;
+}
+
+.settingsLayer .settingsDrawer .settingsPageHeaderTitle {
+  margin: 5px 0 4px !important;
+  color: var(--nx-settings-text, #172033) !important;
+  font-size: 21px !important;
+  letter-spacing: -.025em !important;
+  font-weight: 660 !important;
+}
+
+.settingsLayer .settingsDrawer .settingsPageHeaderTitles p,
+.settingsLayer .settingsDrawer .settingsPageHeaderDescription {
+  margin: 0 !important;
+  color: var(--nx-settings-text-muted, #526078) !important;
+  font-size: 12px !important;
+}
+
+.settingsLayer .settingsDrawer .settingsPageHeaderTitles {
+  min-width: 0 !important;
+}
+
+.settingsLayer .settingsDrawer .settingsPageHeaderActions {
+  display: flex !important;
+  flex: 0 0 auto !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+
+/* Section header chip (right side count, e.g. "11 / 11") */
+.settingsLayer .settingsDrawer .settingsSectionHeaderChip {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  min-height: 24px !important;
+  padding: 0 8px !important;
+  border: 1px solid var(--nx-settings-border, #dce2eb) !important;
+  border-radius: 99px !important;
+  color: var(--nx-settings-text-muted, #526078) !important;
+  background: var(--nx-settings-panel-subtle, #f6f8fb) !important;
+  font-size: 10px !important;
+  white-space: nowrap !important;
+}
+
+.settingsLayer .settingsDrawer .settingsSectionHeaderChip.ok {
+  color: var(--nx-settings-success, #1f9d55) !important;
+  border-color: color-mix(in srgb, var(--nx-settings-success, #1f9d55) 35%, var(--nx-settings-border, #dce2eb)) !important;
+  background: color-mix(in srgb, var(--nx-settings-success, #1f9d55) 8%, var(--nx-settings-panel-subtle, #f6f8fb)) !important;
+}
+
+.settingsLayer .settingsDrawer .settingsSectionHeaderChip.dot::before {
+  content: "" !important;
+  width: 5px !important;
+  height: 5px !important;
+  border-radius: 50% !important;
+  background: currentColor !important;
+}
+
+/* --- Toggle switches (replaces native checkbox visual) --- */
+.settingsLayer .settingsDrawer .settingsToggleList {
+  display: grid !important;
+  gap: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  list-style: none !important;
+}
+
+.settingsLayer .settingsDrawer .settingsToggleRow {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 16px !important;
+  padding: 12px 0 !important;
+  cursor: pointer !important;
+  border-top: 1px solid var(--nx-settings-border, #dce2eb) !important;
+}
+
+.settingsLayer .settingsDrawer .settingsToggleRow:first-child {
+  border-top: 0 !important;
+}
+
+.settingsLayer .settingsDrawer .settingsToggleRow.disabled {
+  opacity: .5 !important;
+  cursor: not-allowed !important;
+}
+
+/* Hide native checkbox visually but keep it accessible */
+.settingsLayer .settingsDrawer .settingsToggleRow > input[type="checkbox"] {
+  position: absolute !important;
+  opacity: 0 !important;
+  width: 0 !important;
+  height: 0 !important;
+  pointer-events: none !important;
+}
+
+.settingsLayer .settingsDrawer .settingsToggleContent {
+  min-width: 0 !important;
+  flex: 1 1 auto !important;
+}
+
+.settingsLayer .settingsDrawer .settingsToggleContent strong {
+  display: block !important;
+  color: var(--nx-settings-text, #172033) !important;
+  font-size: 12px !important;
+  font-weight: 620 !important;
+}
+
+.settingsLayer .settingsDrawer .settingsToggleContent span {
+  display: block !important;
+  margin-top: 4px !important;
+  color: var(--nx-settings-text-faint, #8a97ab) !important;
+  font-size: 11px !important;
+}
+
+.settingsLayer .settingsDrawer .settingsToggleTrack {
+  position: relative !important;
+  width: 34px !important;
+  height: 20px !important;
+  flex: 0 0 34px !important;
+  border: 0 !important;
+  border-radius: 99px !important;
+  background: var(--nx-settings-border-strong, #c6d0de) !important;
+  transition: background .16s ease !important;
+  cursor: pointer !important;
+}
+
+.settingsLayer .settingsDrawer .settingsToggleTrack::after {
+  content: "" !important;
+  position: absolute !important;
+  top: 3px !important;
+  left: 3px !important;
+  width: 14px !important;
+  height: 14px !important;
+  border-radius: 50% !important;
+  background: #ffffff !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .17) !important;
+  transition: transform .16s ease !important;
+}
+
+.settingsLayer .settingsDrawer .settingsToggleRow:has(input:checked) .settingsToggleTrack,
+.settingsLayer .settingsDrawer .settingsToggleRow input:checked ~ .settingsToggleTrack {
+  background: var(--nx-settings-focus, #2f67bf) !important;
+}
+
+.settingsLayer .settingsDrawer .settingsToggleRow:has(input:checked) .settingsToggleTrack::after,
+.settingsLayer .settingsDrawer .settingsToggleRow input:checked ~ .settingsToggleTrack::after {
+  transform: translateX(14px) !important;
+}
+
+.settingsLayer .settingsDrawer .settingsToggleRow.disabled .settingsToggleTrack {
+  cursor: not-allowed !important;
+}
+
+/* --- Plugin catalog --- */
+.settingsLayer .settingsDrawer .settingsSection.pluginCatalogShell {
+  display: block !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+}
+
+.settingsLayer .settingsDrawer .pluginCatalogBlock {
+  padding: 23px 0 !important;
+  border-bottom: 0 !important;
+  gap: 16px !important;
+}
+
+.settingsLayer .settingsDrawer .pluginCatalogToolbar {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 14px !important;
+  margin-bottom: 16px !important;
+  flex-wrap: wrap !important;
+}
+
+.settingsLayer .settingsDrawer .pluginCatalogTabs {
+  display: flex !important;
+  align-items: center !important;
+  gap: 3px !important;
+  padding: 3px !important;
+  overflow: auto !important;
+  border: 1px solid var(--nx-settings-border, #dce2eb) !important;
+  border-radius: 8px !important;
+  background: var(--nx-settings-panel-subtle, #f6f8fb) !important;
+}
+
+.settingsLayer .settingsDrawer .pluginCatalogTabs button {
+  height: 28px !important;
+  padding: 0 10px !important;
+  border: 0 !important;
+  border-radius: 5px !important;
+  color: var(--nx-settings-text-faint, #8a97ab) !important;
+  background: transparent !important;
+  font-size: 11px !important;
+  white-space: nowrap !important;
+  cursor: pointer !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  transition: background .12s ease, color .12s ease, box-shadow .12s ease !important;
+  font-weight: 520 !important;
+}
+
+.settingsLayer .settingsDrawer .pluginCatalogTabs button svg {
+  width: 13px !important;
+  height: 13px !important;
+  opacity: .7 !important;
+}
+
+.settingsLayer .settingsDrawer .pluginCatalogTabs button.active {
+  color: var(--nx-settings-text, #172033) !important;
+  background: var(--nx-settings-panel, #ffffff) !important;
+  box-shadow: 0 1px 2px rgba(24, 36, 59, .1) !important;
+}
+
+.settingsLayer .settingsDrawer .pluginCatalogTabs button.active svg {
+  opacity: 1 !important;
+  color: var(--nx-settings-focus, #2f67bf) !important;
+}
+
+.settingsLayer .settingsDrawer .pluginCatalogTabCount {
+  font-weight: 600 !important;
+  font-size: 10px !important;
+  color: inherit !important;
+  opacity: .7 !important;
+}
+
+.settingsLayer .settingsDrawer .pluginSearchField {
+  width: 190px !important;
+  flex: 0 1 190px !important;
+  height: 32px !important;
+  padding: 0 10px !important;
+  border: 1px solid var(--nx-settings-border-strong, #c6d0de) !important;
+  border-radius: 7px !important;
+  color: var(--nx-settings-text, #172033) !important;
+  background: var(--nx-settings-input, #ffffff) !important;
+  font-size: 11px !important;
+  outline: 0 !important;
+  transition: border-color .15s ease, box-shadow .15s ease !important;
+}
+
+.settingsLayer .settingsDrawer .pluginSearchField:focus {
+  border-color: var(--nx-settings-focus, #2f67bf) !important;
+  box-shadow: 0 0 0 3px var(--nx-settings-focus-soft, rgba(47, 103, 191, .18)) !important;
+}
+
+.settingsLayer .settingsDrawer .pluginCatalogPane {
+  min-width: 0 !important;
+}
+
+.settingsLayer .settingsDrawer .pluginCatalogSummary {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+  margin: 0 0 11px !important;
+  color: var(--nx-settings-text-faint, #8a97ab) !important;
+  font-size: 11px !important;
+}
+
+.settingsLayer .settingsDrawer .pluginCatalogSummary b {
+  color: var(--nx-settings-text, #172033) !important;
+  font-weight: 650 !important;
+}
+
+.settingsLayer .settingsDrawer .pluginGrid {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 10px !important;
+}
+
+.settingsLayer .settingsDrawer .pluginCard {
+  min-width: 0 !important;
+  padding: 14px !important;
+  border: 1px solid var(--nx-settings-border, #dce2eb) !important;
+  border-radius: 9px !important;
+  background: var(--nx-settings-panel, #ffffff) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0 !important;
+  transition: border-color .15s ease, box-shadow .15s ease !important;
+}
+
+.settingsLayer .settingsDrawer .pluginCard:hover {
+  border-color: color-mix(in srgb, var(--nx-settings-focus, #2f67bf) 40%, var(--nx-settings-border, #dce2eb)) !important;
+}
+
+.settingsLayer .settingsDrawer .pluginCardHead {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  min-width: 0 !important;
+}
+
+.settingsLayer .settingsDrawer .pluginCardIcon {
+  width: 25px !important;
+  height: 25px !important;
+  display: grid !important;
+  place-items: center !important;
+  border-radius: 7px !important;
+  color: var(--nx-settings-focus, #2f67bf) !important;
+  font-size: 12px !important;
+  flex: 0 0 25px !important;
+}
+
+.settingsLayer .settingsDrawer .pluginCardIcon svg {
+  width: 14px !important;
+  height: 14px !important;
+}
+
+.settingsLayer .settingsDrawer .pluginCardHead b,
+.settingsLayer .settingsDrawer .pluginCard b {
+  min-width: 0 !important;
+  overflow: hidden !important;
+  color: var(--nx-settings-text, #172033) !important;
+  font-size: 12px !important;
+  font-weight: 650 !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.settingsLayer .settingsDrawer .pluginCard p {
+  margin: 9px 0 12px !important;
+  height: 34px !important;
+  overflow: hidden !important;
+  color: var(--nx-settings-text-muted, #526078) !important;
+  font-size: 11px !important;
+  line-height: 1.5 !important;
+}
+
+.settingsLayer .settingsDrawer .pluginCardFooter {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 8px !important;
+  margin-top: auto !important;
+}
+
+.settingsLayer .settingsDrawer .pluginCardMeta {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  color: var(--nx-settings-text-faint, #8a97ab) !important;
+  font-size: 10px !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+}
+
+.settingsLayer .settingsDrawer .pluginTag {
+  display: inline-flex !important;
+  align-items: center !important;
+  height: 20px !important;
+  padding: 0 6px !important;
+  border: 1px solid var(--nx-settings-border, #dce2eb) !important;
+  border-radius: 5px !important;
+  color: var(--nx-settings-text-faint, #8a97ab) !important;
+  background: var(--nx-settings-panel-subtle, #f6f8fb) !important;
+  font-size: 9px !important;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace !important;
+  white-space: nowrap !important;
+}
+
+/* Card footer buttons - reuse page action sizing but smaller */
+.settingsLayer .settingsDrawer .pluginCardFooter button {
+  height: 28px !important;
+  padding: 0 9px !important;
+  font-size: 11px !important;
+  border-radius: 6px !important;
+  border: 1px solid var(--nx-settings-border-strong, #c6d0de) !important;
+  background: var(--nx-settings-panel, #ffffff) !important;
+  color: var(--nx-settings-text, #172033) !important;
+  cursor: pointer !important;
+  font-weight: 600 !important;
+  flex: 0 0 auto !important;
+  transition: background .15s ease, transform .15s ease !important;
+}
+
+.settingsLayer .settingsDrawer .pluginCardFooter button.primary {
+  border-color: #2e63b8 !important;
+  color: #ffffff !important;
+  background: #2f67bf !important;
+  box-shadow: 0 1px 1px rgba(9, 36, 81, .18) !important;
+}
+
+.settingsLayer .settingsDrawer .pluginCardFooter button.primary:hover {
+  background: #285bab !important;
+  transform: translateY(-1px) !important;
+}
+
+/* --- Empty state --- */
+.settingsLayer .settingsDrawer .accessPolicyEmpty,
+.settingsLayer .settingsDrawer .settingsEmptyState {
+  padding: 24px !important;
+  border: 1px dashed var(--nx-settings-border-strong, #c6d0de) !important;
+  border-radius: 9px !important;
+  color: var(--nx-settings-text-faint, #8a97ab) !important;
+  text-align: center !important;
+  font-size: 12px !important;
+}
+
+/* --- Cluster card (used in remote bots, memory advanced, etc.) --- */
+.settingsLayer .settingsDrawer .cluster {
+  padding: 14px !important;
+  border: 1px solid var(--nx-settings-border, #dce2eb) !important;
+  border-radius: 9px !important;
+  background: var(--nx-settings-panel, #ffffff) !important;
+}
+
+.settingsLayer .settingsDrawer .cluster + .cluster {
+  margin-top: 10px !important;
+}
+
+.settingsLayer .settingsDrawer .clusterHeader {
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+  padding-bottom: 11px !important;
+  border-bottom: 1px solid var(--nx-settings-border, #dce2eb) !important;
+}
+
+.settingsLayer .settingsDrawer .clusterHeader h3 {
+  margin: 0 !important;
+  color: var(--nx-settings-text, #172033) !important;
+  font-size: 13px !important;
+  font-weight: 660 !important;
+}
+
+.settingsLayer .settingsDrawer .clusterHeader p {
+  margin: 4px 0 0 !important;
+  color: var(--nx-settings-text-faint, #8a97ab) !important;
+  font-size: 10px !important;
+}
+
+.settingsLayer .settingsDrawer .clusterBody {
+  padding-top: 13px !important;
+}
+
+.settingsLayer .settingsDrawer .cluster .settingsFormGrid {
+  gap: 12px !important;
+}
+
+.settingsLayer .settingsDrawer .cluster .settingsField input,
+.settingsLayer .settingsDrawer .cluster .settingsField select {
+  height: 35px !important;
+  font-size: 12px !important;
+}
+
+.settingsLayer .settingsDrawer .cluster .settingsFieldLabel {
+  margin-bottom: 5px !important;
+  font-size: 10px !important;
+}
+
+/* --- Row card (Skills path row etc.) --- */
+.settingsLayer .settingsDrawer .rowCard {
+  padding: 14px !important;
+  border: 1px solid var(--nx-settings-border, #dce2eb) !important;
+  border-radius: 9px !important;
+  background: var(--nx-settings-panel, #ffffff) !important;
+}
+
+.settingsLayer .settingsDrawer .rowCard + .rowCard {
+  margin-top: 8px !important;
+}
+
+.settingsLayer .settingsDrawer .rowCardMain {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+}
+
+.settingsLayer .settingsDrawer .rowCardText {
+  min-width: 0 !important;
+  flex: 1 1 auto !important;
+}
+
+.settingsLayer .settingsDrawer .rowCardText strong {
+  display: block !important;
+  color: var(--nx-settings-text, #172033) !important;
+  font-size: 12px !important;
+  font-weight: 640 !important;
+}
+
+.settingsLayer .settingsDrawer .rowCardText span {
+  display: block !important;
+  margin-top: 3px !important;
+  color: var(--nx-settings-text-faint, #8a97ab) !important;
+  font-size: 11px !important;
+}
+
+.settingsLayer .settingsDrawer .rowCardActions {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  flex: 0 0 auto !important;
+}
+
+/* --- Action row buttons cluster --- */
+.settingsLayer .settingsDrawer .actionRow {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  gap: 7px !important;
+  margin-top: 13px !important;
+}
+
+.settingsLayer .settingsDrawer .actionRow button {
+  height: 30px !important;
+  padding: 0 12px !important;
+  font-size: 12px !important;
+  border-radius: 7px !important;
+}
+
+/* --- Segmented control (mode pills near composer) --- */
+.settingsLayer .settingsDrawer .segmented {
+  display: inline-flex !important;
+  align-items: center !important;
+  padding: 3px !important;
+  gap: 2px !important;
+  border: 1px solid var(--nx-settings-border, #dce2eb) !important;
+  border-radius: 8px !important;
+  background: var(--nx-settings-panel-subtle, #f6f8fb) !important;
+}
+
+.settingsLayer .settingsDrawer .segmented button {
+  height: 29px !important;
+  padding: 0 12px !important;
+  border: 0 !important;
+  border-radius: 5px !important;
+  color: var(--nx-settings-text-muted, #526078) !important;
+  background: transparent !important;
+  font-size: 12px !important;
+  font-weight: 520 !important;
+  cursor: pointer !important;
+  transition: background .12s ease, color .12s ease, box-shadow .12s ease !important;
+}
+
+.settingsLayer .settingsDrawer .segmented button.active {
+  color: var(--nx-settings-text, #172033) !important;
+  background: var(--nx-settings-panel, #ffffff) !important;
+  box-shadow: 0 1px 2px rgba(24, 36, 59, .1) !important;
+}
+
+/* --- Memory advanced toggle button --- */
+.settingsLayer .settingsDrawer .memoryAdvancedToggle {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  margin-top: 13px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  color: var(--nx-settings-focus, #2f67bf) !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+}
+
+.settingsLayer .settingsDrawer .memoryAdvancedToggle svg {
+  width: 13px !important;
+  height: 13px !important;
+  transition: transform .15s ease !important;
+}
+
+.settingsLayer .settingsDrawer .memoryAdvancedToggle.open svg {
+  transform: rotate(180deg) !important;
+}
+
+.settingsLayer .settingsDrawer .memoryAdvancedPanel {
+  margin-top: 13px !important;
+  padding-top: 13px !important;
+  border-top: 1px solid var(--nx-settings-border, #dce2eb) !important;
+}
+
+.settingsLayer .settingsDrawer .memoryAdvancedPanel[hidden] {
+  display: none !important;
+}
+
+/* --- Read-only line (e.g. logged-in account display) --- */
+.settingsLayer .settingsDrawer .readonlyLine {
+  min-height: 34px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 9px !important;
+  padding: 0 10px !important;
+  border: 1px solid var(--nx-settings-border, #dce2eb) !important;
+  border-radius: 7px !important;
+  color: var(--nx-settings-text-muted, #526078) !important;
+  background: var(--nx-settings-panel-subtle, #f6f8fb) !important;
+  font-size: 11px !important;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace !important;
+}
+
+.settingsLayer .settingsDrawer .readonlyLine code {
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+/* --- Remote columns (two-column grid for remote sections) --- */
+.settingsLayer .settingsDrawer .remoteColumns {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 10px !important;
+}
+
+.settingsLayer .settingsDrawer .remoteStack {
+  display: grid !important;
+  gap: 13px !important;
+}
+
+/* --- Connection detail (key-value list inside cluster) --- */
+.settingsLayer .settingsDrawer .connectionDetail {
+  display: grid !important;
+  gap: 9px !important;
+  padding: 0 !important;
+}
+
+.settingsLayer .settingsDrawer .connectionDetail > div {
+  display: flex !important;
+  align-items: baseline !important;
+  justify-content: space-between !important;
+  gap: 14px !important;
+  color: var(--nx-settings-text-muted, #526078) !important;
+  font-size: 11px !important;
+}
+
+.settingsLayer .settingsDrawer .connectionDetail > div > span:first-child {
+  color: var(--nx-settings-text-faint, #8a97ab) !important;
+}
+
+.settingsLayer .settingsDrawer .connectionDetail code {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace !important;
+  font-size: 10px !important;
+  color: var(--nx-settings-text-muted, #526078) !important;
+}
+
+/* --- Danger button --- */
+.settingsLayer .settingsDrawer .settingsPageHeaderAction.danger,
+.settingsLayer .settingsDrawer button.danger {
+  color: var(--nx-settings-danger, #c53030) !important;
+  border-color: color-mix(in srgb, var(--nx-settings-danger, #c53030) 35%, var(--nx-settings-border, #dce2eb)) !important;
+}
+
+.settingsLayer .settingsDrawer button.danger:hover {
+  background: color-mix(in srgb, var(--nx-settings-danger, #c53030) 8%, var(--nx-settings-panel, #ffffff)) !important;
+}
+
+/* --- Ghost button (no strong border) --- */
+.settingsLayer .settingsDrawer .settingsPageHeaderAction.ghost,
+.settingsLayer .settingsDrawer button.ghost {
+  border-color: transparent !important;
+  background: transparent !important;
+  color: var(--nx-settings-text-muted, #526078) !important;
+}
+
+.settingsLayer .settingsDrawer .settingsPageHeaderAction.ghost:hover,
+.settingsLayer .settingsDrawer button.ghost:hover {
+  background: var(--nx-settings-panel-subtle, #f6f8fb) !important;
+  color: var(--nx-settings-text, #172033) !important;
+}
+
+/* --- Quiet button --- */
+.settingsLayer .settingsDrawer button.quiet {
+  border-color: transparent !important;
+  background: transparent !important;
+  color: var(--nx-settings-text-muted, #526078) !important;
+}
+
+.settingsLayer .settingsDrawer button.quiet:hover {
+  background: var(--nx-settings-panel-subtle, #f6f8fb) !important;
+}
+
+/* --- Helper text under controls --- */
+.settingsLayer .settingsDrawer .field small,
+.settingsLayer .settingsDrawer .settingsField small,
+.settingsLayer .settingsDrawer .helper {
+  display: flex !important;
+  align-items: flex-start !important;
+  gap: 7px !important;
+  margin-top: 5px !important;
+  color: var(--nx-settings-text-faint, #8a97ab) !important;
+  font-size: 10px !important;
+  line-height: 1.55 !important;
+}
+
+/* --- Notice toast --- */
+.settingsLayer .settingsDrawer .settingsNotice {
+  position: absolute !important;
+  right: 18px !important;
+  bottom: 17px !important;
+  padding: 9px 11px !important;
+  border: 1px solid color-mix(in srgb, var(--nx-settings-success, #1f9d55) 45%, var(--nx-settings-border, #dce2eb)) !important;
+  border-radius: 8px !important;
+  color: var(--nx-settings-success, #1f9d55) !important;
+  background: color-mix(in srgb, var(--nx-settings-panel, #ffffff) 85%, var(--nx-settings-success, #1f9d55)) !important;
+  box-shadow: 0 10px 24px rgba(16, 31, 54, .16) !important;
+  font-size: 12px !important;
+  animation: settingsToastIn .18s ease both !important;
+}
+
+@keyframes settingsToastIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* --- Wide field (spans full form grid row) --- */
+.settingsLayer .settingsDrawer .settingsField.wide {
+  grid-column: 1 / -1 !important;
+}
+
+/* --- Inline control row (input + button inline) --- */
+.settingsLayer .settingsDrawer .inlineControl {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+
+.settingsLayer .settingsDrawer .inlineControl .settingsField input,
+.settingsLayer .settingsDrawer .inlineControl input {
+  flex: 1 1 auto !important;
+  width: auto !important;
+  min-width: 0 !important;
+}
+
+.settingsLayer .settingsDrawer .inlineControl select {
+  flex: 0 0 136px !important;
+}
+
+.settingsLayer .settingsDrawer .inlineControl .quiet-button,
+.settingsLayer .settingsDrawer .inlineControl button.quiet {
+  flex: 0 0 auto !important;
+  white-space: nowrap !important;
+}
+
+/* --- Model current display --- */
+.settingsLayer .settingsDrawer .modelCurrent {
+  padding: 10px 12px !important;
+  border: 1px solid var(--nx-settings-border, #dce2eb) !important;
+  border-radius: 8px !important;
+  background: var(--nx-settings-panel-subtle, #f6f8fb) !important;
+}
+
+.settingsLayer .settingsDrawer .modelCurrent strong {
+  display: block !important;
+  color: var(--nx-settings-text, #172033) !important;
+  font-size: 12px !important;
+  font-weight: 640 !important;
+}
+
+.settingsLayer .settingsDrawer .modelCurrent span {
+  display: block !important;
+  margin-top: 3px !important;
+  color: var(--nx-settings-text-faint, #8a97ab) !important;
+  font-size: 11px !important;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace !important;
+}
+
+/* --- Preset line --- */
+.settingsLayer .settingsDrawer .presetLine,
+.settingsLayer .settingsDrawer .choiceRow,
+.settingsLayer .settingsDrawer .statusRow {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  min-width: 0 !important;
+}
+
+.settingsLayer .settingsDrawer .presetLine select {
+  flex: 1 1 auto !important;
+}
+
+.settingsLayer .settingsDrawer .presetLine .danger-button,
+.settingsLayer .settingsDrawer .presetLine button.danger {
+  flex: 0 0 auto !important;
+}
+
+/* --- Unsaved dot --- */
+.settingsLayer .settingsDrawer .unsavedDot {
+  width: 7px !important;
+  height: 7px !important;
+  border-radius: 50% !important;
+  background: var(--nx-settings-focus, #2f67bf) !important;
+  margin-left: 4px !important;
+  flex: 0 0 7px !important;
+}
+
+/* --- Dark theme component overrides --- */
+.settingsLayer.theme-dark .settingsDrawer .settingsPageHeaderEyebrow {
+  color: #6c9ee0 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsPageHeaderTitle {
+  color: #e9edf2 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsPageHeaderTitles p {
+  color: #7a88a0 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsSectionHeaderTitle {
+  color: #e0e5ec !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsSectionHeaderChip {
+  border-color: #32405a !important;
+  color: #7a88a0 !important;
+  background: #232c3c !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsToggleContent strong {
+  color: #e0e5ec !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsToggleContent span {
+  color: #728096 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsToggleRow {
+  border-top-color: #2a3345 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsToggleTrack {
+  background: #3d4d68 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsToggleRow:has(input:checked) .settingsToggleTrack {
+  background: #4d84cc !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .pluginCatalogTabs {
+  border-color: #2a3345 !important;
+  background: #171d29 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .pluginCatalogTabs button {
+  color: #7a88a0 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .pluginCatalogTabs button.active {
+  color: #e9edf2 !important;
+  background: #232c3c !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .25) !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .pluginCatalogTabs button.active svg {
+  color: #6c9ee0 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .pluginSearchField {
+  background: #232c3c !important;
+  border-color: #32405a !important;
+  color: #e0e5ec !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .pluginSearchField:focus {
+  border-color: #4d84cc !important;
+  box-shadow: 0 0 0 3px rgba(77, 132, 204, .18) !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .pluginCatalogSummary {
+  color: #728096 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .pluginCatalogSummary b {
+  color: #e0e5ec !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .pluginGrid,
+.settingsLayer.theme-dark .settingsDrawer .pluginCard {
+  background: transparent !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .pluginCard {
+  background: #232c3c !important;
+  border-color: #32405a !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .pluginCardHead b,
+.settingsLayer.theme-dark .settingsDrawer .pluginCard b {
+  color: #e0e5ec !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .pluginCard p {
+  color: #90a0b8 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .pluginCardIcon {
+  color: #6c9ee0 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .pluginTag {
+  background: #1c2331 !important;
+  border-color: #32405a !important;
+  color: #7a88a0 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .pluginCardFooter button {
+  background: #232c3c !important;
+  border-color: #32405a !important;
+  color: #d7dde6 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .pluginCardFooter button.primary {
+  background: #2f67bf !important;
+  border-color: #3d76cf !important;
+  color: #ffffff !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .accessPolicyEmpty,
+.settingsLayer.theme-dark .settingsDrawer .settingsEmptyState {
+  border-color: #3d4d68 !important;
+  color: #728096 !important;
+  background: #171d29 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .cluster,
+.settingsLayer.theme-dark .settingsDrawer .rowCard {
+  background: #232c3c !important;
+  border-color: #32405a !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .clusterHeader {
+  border-bottom-color: #32405a !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .clusterHeader h3 {
+  color: #e0e5ec !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .clusterHeader p {
+  color: #5b6a82 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .clusterBody {
+  color: #d7dde6 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .segmented {
+  background: #171d29 !important;
+  border-color: #32405a !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .segmented button {
+  color: #7a88a0 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .segmented button.active {
+  background: #232c3c !important;
+  color: #e9edf2 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .readonlyLine {
+  background: #171d29 !important;
+  border-color: #32405a !important;
+  color: #90a0b8 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .memoryAdvancedPanel {
+  border-top-color: #2a3345 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsPageHeaderAction.ghost,
+.settingsLayer.theme-dark .settingsDrawer button.ghost {
+  color: #7a88a0 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsPageHeaderAction.ghost:hover,
+.settingsLayer.theme-dark .settingsDrawer button.ghost:hover {
+  background: #2a3547 !important;
+  color: #d7dde6 !important;
+}
+
+/* --- AppShell-level dark toggle/plugin overrides --- */
+.appShell.theme-dark .settingsLayer .settingsDrawer .pluginCard {
+  background: #232c3c !important;
+  border-color: #32405a !important;
+}
+
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingsToggleTrack {
+  background: #3d4d68 !important;
+}
+
+.appShell.theme-dark .settingsLayer .settingsDrawer .settingsToggleRow:has(input:checked) .settingsToggleTrack {
+  background: #4d84cc !important;
+}
+
+/* Responsive */
+@media (max-width: 980px) {
+  .settingsLayer .settingsDrawer {
+    width: min(calc(100vw - 32px), 1180px) !important;
+    height: min(calc(100vh - 32px), 790px) !important;
+  }
+  .settingsLayer .settingsDrawer .settingsBody {
+    grid-template-columns: 190px minmax(0, 1fr) !important;
+  }
+  .settingsLayer .settingsDrawer .settingsContent {
+    padding: 28px !important;
+  }
+  .settingsLayer .settingsDrawer .pluginGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  .settingsLayer .settingsDrawer .remoteColumns,
+  .settingsLayer .settingsDrawer .denseGrid {
+    grid-template-columns: 1fr !important;
+  }
+  .settingsLayer .settingsDrawer .settingsFormGrid.three {
+    grid-template-columns: 1fr 1fr !important;
+  }
+}
+
+@media (max-width: 720px) {
+  .settingsLayer .settingsDrawer .pluginGrid {
+    grid-template-columns: 1fr !important;
+  }
+  .settingsLayer .settingsDrawer .pluginCatalogToolbar {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+  .settingsLayer .settingsDrawer .pluginSearchField {
+    width: 100% !important;
+    flex: 1 1 auto !important;
+  }
+}
+
+/* =============================================================
+ * ULTIMATE V3 FIX - 最终修复所有对齐问题
+ * 解决：toggle checkbox、缺失类名、原生元素尺寸、空白问题
+ * ============================================================= */
+
+/* --- 1. 彻底隐藏所有原生 checkbox（包括label包裹的mini toggle） --- */
+.settingsLayer .settingsDrawer .settingsToggleTrack input[type="checkbox"],
+.settingsLayer .settingsDrawer label.settingsToggleTrack > input[type="checkbox"] {
+  position: absolute !important;
+  opacity: 0 !important;
+  width: 0 !important;
+  height: 0 !important;
+  pointer-events: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* --- 2. Toggle track 基础样式（label也适用） --- */
+.settingsLayer .settingsDrawer label.settingsToggleTrack,
+.settingsLayer .settingsDrawer .settingsToggleTrack {
+  position: relative !important;
+  width: 34px !important;
+  height: 20px !important;
+  flex: 0 0 34px !important;
+  border: 0 !important;
+  border-radius: 99px !important;
+  background: var(--nx-settings-border-strong, #c6d0de) !important;
+  transition: background .16s ease !important;
+  cursor: pointer !important;
+  display: inline-block !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+}
+
+.settingsLayer .settingsDrawer label.settingsToggleTrack::after,
+.settingsLayer .settingsDrawer .settingsToggleTrack::after {
+  content: "" !important;
+  position: absolute !important;
+  top: 3px !important;
+  left: 3px !important;
+  width: 14px !important;
+  height: 14px !important;
+  border-radius: 50% !important;
+  background: #ffffff !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .17) !important;
+  transition: transform .16s ease !important;
+}
+
+.settingsLayer .settingsDrawer label.settingsToggleTrack.on,
+.settingsLayer .settingsDrawer .settingsToggleTrack.on {
+  background: var(--nx-settings-focus, #2f67bf) !important;
+}
+
+.settingsLayer .settingsDrawer label.settingsToggleTrack.on::after,
+.settingsLayer .settingsDrawer .settingsToggleTrack.on::after {
+  transform: translateX(14px) !important;
+}
+
+/* --- 3. Mini toggle（用于compactOption）缩小版 --- */
+.settingsLayer .settingsDrawer .settingsToggleTrack.mini,
+.settingsLayer .settingsDrawer label.settingsToggleTrack.mini {
+  transform: scale(.86) !important;
+  transform-origin: right center !important;
+}
+
+/* --- 4. Dark theme toggle --- */
+.settingsLayer.theme-dark .settingsDrawer label.settingsToggleTrack,
+.settingsLayer.theme-dark .settingsDrawer .settingsToggleTrack {
+  background: #3d4d68 !important;
+}
+.settingsLayer.theme-dark .settingsDrawer label.settingsToggleTrack.on,
+.settingsLayer.theme-dark .settingsDrawer .settingsToggleTrack.on {
+  background: #4d84cc !important;
+}
+
+/* --- 5. Plugin Row Card（Skills根目录行） --- */
+.settingsLayer .settingsDrawer .pluginRowCard {
+  padding: 14px !important;
+  border: 1px solid var(--nx-settings-border, #dce2eb) !important;
+  border-radius: 9px !important;
+  background: var(--nx-settings-panel, #ffffff) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 16px !important;
+}
+
+.settingsLayer .settingsDrawer .pluginRowCardText {
+  min-width: 0 !important;
+  flex: 1 1 auto !important;
+}
+
+.settingsLayer .settingsDrawer .pluginRowCardText strong {
+  display: block !important;
+  color: var(--nx-settings-text, #172033) !important;
+  font-size: 12px !important;
+  font-weight: 650 !important;
+}
+
+.settingsLayer .settingsDrawer .pluginRowCardText span {
+  display: block !important;
+  margin-top: 4px !important;
+  overflow: hidden !important;
+  color: var(--nx-settings-text-muted, #526078) !important;
+  font-size: 11px !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.settingsLayer .settingsDrawer .pluginRowCardActions {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  flex: 0 0 auto !important;
+}
+
+.settingsLayer .settingsDrawer .pluginRowCardInput {
+  width: 260px !important;
+  height: 32px !important;
+  padding: 0 10px !important;
+  border: 1px solid var(--nx-settings-border-strong, #c6d0de) !important;
+  border-radius: 7px !important;
+  color: var(--nx-settings-text, #172033) !important;
+  background: var(--nx-settings-input, #ffffff) !important;
+  font-size: 11px !important;
+  outline: 0 !important;
+}
+
+.settingsLayer .settingsDrawer .pluginRowCardInput:focus {
+  border-color: var(--nx-settings-focus, #2f67bf) !important;
+  box-shadow: 0 0 0 3px var(--nx-settings-focus-soft, rgba(47, 103, 191, .18)) !important;
+}
+
+/* --- 6. Compact Option（cluster内的开关行） --- */
+.settingsLayer .settingsDrawer .compactOption {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 10px !important;
+  padding: 10px 0 !important;
+  border-top: 1px solid var(--nx-settings-border, #dce2eb) !important;
+}
+
+.settingsLayer .settingsDrawer .compactOption:first-child {
+  padding-top: 0 !important;
+  border-top: 0 !important;
+}
+
+.settingsLayer .settingsDrawer .compactOption strong {
+  color: var(--nx-settings-text, #172033) !important;
+  font-size: 11px !important;
+  font-weight: 620 !important;
+  display: block !important;
+}
+
+.settingsLayer .settingsDrawer .compactOption p {
+  margin: 3px 0 0 !important;
+  color: var(--nx-settings-text-faint, #8a97ab) !important;
+  font-size: 10px !important;
+}
+
+/* --- 7. Cluster Action Row --- */
+.settingsLayer .settingsDrawer .clusterActionRow {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  gap: 7px !important;
+  margin-top: 13px !important;
+}
+
+.settingsLayer .settingsDrawer .clusterActionRow button {
+  height: 30px !important;
+  padding: 0 12px !important;
+  font-size: 12px !important;
+  border-radius: 7px !important;
+}
+
+/* --- 8. Plugin Card Actions（MCP卡片里的按钮组） --- */
+.settingsLayer .settingsDrawer .pluginCardActions {
+  display: flex !important;
+  align-items: center !important;
+  gap: 7px !important;
+  flex: 0 0 auto !important;
+}
+
+/* --- 9. Plugin Catalog Subpane --- */
+.settingsLayer .settingsDrawer .pluginCatalogSubpane {
+  min-width: 0 !important;
+}
+
+.settingsLayer .settingsDrawer .pluginCatalogSubpane[hidden] {
+  display: none !important;
+}
+
+/* --- 10. Plugin tag ok 状态（绿色） --- */
+.settingsLayer .settingsDrawer .pluginTag.ok {
+  color: var(--nx-settings-success, #2e7d68) !important;
+  border-color: color-mix(in srgb, var(--nx-settings-success, #2e7d68) 35%, var(--nx-settings-border, #dce2eb)) !important;
+  background: color-mix(in srgb, var(--nx-settings-success, #2e7d68) 8%, var(--nx-settings-panel-subtle, #f7f8fa)) !important;
+}
+
+.settingsLayer .settingsDrawer .pluginTag.dot::before {
+  content: "" !important;
+  display: inline-block !important;
+  width: 5px !important;
+  height: 5px !important;
+  border-radius: 50% !important;
+  background: currentColor !important;
+  margin-right: 4px !important;
+}
+
+/* --- 11. Plugin card code 样式 --- */
+.settingsLayer .settingsDrawer .pluginCard code {
+  color: var(--nx-settings-text-muted, #526078) !important;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace !important;
+  font-size: 10px !important;
+  word-break: break-all !important;
+}
+
+/* --- 12. Plugin catalog empty --- */
+.settingsLayer .settingsDrawer .pluginCatalogEmpty {
+  padding: 24px !important;
+  border: 1px dashed var(--nx-settings-border-strong, #c6d0de) !important;
+  border-radius: 9px !important;
+  color: var(--nx-settings-text-faint, #8a97ab) !important;
+  text-align: center !important;
+  font-size: 12px !important;
+}
+
+/* --- 13. textButton 危险样式 --- */
+.settingsLayer .settingsDrawer .textButton.danger {
+  color: var(--nx-settings-danger, #c84c4c) !important;
+  border-color: transparent !important;
+  background: transparent !important;
+  height: 28px !important;
+  width: 28px !important;
+  padding: 0 !important;
+  display: grid !important;
+  place-items: center !important;
+  border-radius: 6px !important;
+}
+
+.settingsLayer .settingsDrawer .textButton.danger:hover {
+  background: color-mix(in srgb, var(--nx-settings-danger, #c84c4c) 10%, transparent) !important;
+}
+
+.settingsLayer .settingsDrawer .textButton.danger svg {
+  width: 14px !important;
+  height: 14px !important;
+}
+
+/* --- 14. Settings notice inside section-block --- */
+.settingsLayer .settingsDrawer .settingsSectionBlock .settingsNotice {
+  position: static !important;
+  margin: 0 !important;
+  padding: 9px 11px !important;
+  border: 1px solid color-mix(in srgb, var(--nx-settings-focus, #2f67bf) 35%, var(--nx-settings-border, #dce2eb)) !important;
+  border-radius: 8px !important;
+  color: var(--nx-settings-focus, #2f67bf) !important;
+  background: var(--nx-settings-focus-soft, rgba(47, 103, 191, .12)) !important;
+  font-size: 11px !important;
+  box-shadow: none !important;
+  animation: none !important;
+}
+
+/* --- 15. 重置settingsDrawer内p标签默认margin（防止大空白） --- */
+.settingsLayer .settingsDrawer .settingsSection p,
+.settingsLayer .settingsDrawer .settingsSectionBlock p {
+  margin: 0 !important;
+}
+
+/* --- 15b. Plugin card p 文字截断为2行 --- */
+.settingsLayer .settingsDrawer .pluginCard > p {
+  display: -webkit-box !important;
+  -webkit-box-orient: vertical !important;
+  -webkit-line-clamp: 2 !important;
+  overflow: hidden !important;
+  margin: 8px 0 0 !important;
+  line-height: 1.45 !important;
+}
+
+/* --- 15d. Settings page header 与内容间距 --- */
+.settingsLayer .settingsDrawer .settingsPageHeader {
+  margin-bottom: 0 !important;
+}
+
+/* --- 16. Settings page header description --- */
+.settingsLayer .settingsDrawer .settingsPageHeaderDesc {
+  margin: 4px 0 0 !important;
+  color: var(--nx-settings-text-muted, #526078) !important;
+  font-size: 12px !important;
+  line-height: 1.5 !important;
+}
+
+/* --- 17. Dark theme plugin card & cluster --- */
+.settingsLayer.theme-dark .settingsDrawer .pluginRowCard,
+.settingsLayer.theme-dark .settingsDrawer .pluginCard,
+.settingsLayer.theme-dark .settingsDrawer .cluster {
+  background: #1c2331 !important;
+  border-color: #2a3345 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .pluginRowCardInput {
+  background: #121820 !important;
+  border-color: #32405a !important;
+  color: #e9edf2 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .compactOption {
+  border-top-color: #2a3345 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .pluginTag {
+  background: #232c3c !important;
+  border-color: #32405a !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .textButton.danger {
+  color: #e78d97 !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .textButton.danger:hover {
+  background: rgba(231, 141, 151, 0.1) !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .pluginCatalogEmpty {
+  border-color: #394653 !important;
+  color: #5b6a82 !important;
+}
+
+/* --- 18. Settings Field 内联 toggle（用于表单网格中的checkbox开关） --- */
+.settingsLayer .settingsDrawer .settingsInlineToggle {
+  position: relative !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  height: 32px !important;
+  cursor: pointer !important;
+}
+
+.settingsLayer .settingsDrawer .settingsInlineToggle input[type="checkbox"] {
+  position: absolute !important;
+  opacity: 0 !important;
+  width: 0 !important;
+  height: 0 !important;
+  margin: 0 !important;
+}
+
+.settingsLayer .settingsDrawer .settingsInlineToggleTrack {
+  position: relative !important;
+  width: 34px !important;
+  height: 20px !important;
+  border-radius: 99px !important;
+  background: var(--nx-settings-border-strong, #c6d0de) !important;
+  transition: background .16s ease !important;
+  display: inline-block !important;
+}
+
+.settingsLayer .settingsDrawer .settingsInlineToggleTrack::after {
+  content: "" !important;
+  position: absolute !important;
+  top: 3px !important;
+  left: 3px !important;
+  width: 14px !important;
+  height: 14px !important;
+  border-radius: 50% !important;
+  background: #ffffff !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .17) !important;
+  transition: transform .16s ease !important;
+}
+
+.settingsLayer .settingsDrawer .settingsInlineToggle.on .settingsInlineToggleTrack {
+  background: var(--nx-settings-focus, #2f67bf) !important;
+}
+
+.settingsLayer .settingsDrawer .settingsInlineToggle.on .settingsInlineToggleTrack::after {
+  transform: translateX(14px) !important;
+}
+
+.settingsLayer .settingsDrawer .settingsInlineToggle.disabled {
+  opacity: .5 !important;
+  cursor: not-allowed !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .settingsInlineToggleTrack {
+  background: #3d4d68 !important;
+}
+.settingsLayer.theme-dark .settingsDrawer .settingsInlineToggle.on .settingsInlineToggleTrack {
+  background: #4d84cc !important;
+}
+
+.appShell {
+  --nx-surface-canvas: #0a0f15;
+  --nx-surface-raised: #111820;
+  --nx-surface-panel: #151d26;
+  --nx-surface-overlay: #10171f;
+  --nx-control-bg: #10171f;
+  --nx-control-border: #27323e;
+  --nx-text-primary: #e7ebef;
+  --nx-text-muted: #a7b1be;
+  --nx-text-faint: #778492;
+  --nx-accent: #83add8;
+  --nx-accent-soft: #16283a;
+  --nx-brand: #83add8;
+  --nx-brand-soft: #16283a;
+  grid-template-columns: 278px minmax(0, 1fr);
+  background: var(--nx-surface-canvas);
+}
+
+.appShell.theme-light {
+  --nx-surface-canvas: #f5f7fa;
+  --nx-surface-raised: #ffffff;
+  --nx-surface-panel: #ffffff;
+  --nx-surface-overlay: #f8fafc;
+  --nx-control-bg: #f8fafc;
+  --nx-control-border: #e1e7ef;
+  --nx-text-primary: #162033;
+  --nx-text-muted: #61718a;
+  --nx-text-faint: #8e9bb0;
+  --nx-accent: #2463da;
+  --nx-accent-soft: #e9f0ff;
+  --nx-brand: #2463da;
+  --nx-brand-soft: #e9f0ff;
+}
+
+.appShell .conversationPane,
+.appShell .threadListPanel,
+.appShell .workspace,
+.appShell .topbar,
+.appShell .eventPane,
+.appShell .workbenchPane {
+  border-color: var(--nx-control-border);
+}
+
+.appShell .conversationPane,
+.appShell .threadListPanel,
+.appShell .eventPane,
+.appShell .workbenchPane {
+  background: var(--nx-surface-raised) !important;
+}
+
+.appShell .rail {
+  gap: 4px;
+  padding: 10px 8px;
+  border-color: var(--nx-control-border);
+  background: var(--nx-surface-raised);
+}
+
+.appShell .brandMark,
+.appShell .sidebarBrandButton {
+  border-color: color-mix(in srgb, var(--nx-brand) 34%, var(--nx-control-border));
+  background: var(--nx-brand-soft);
+  color: var(--nx-brand);
+}
+
+.appShell .threadListHeader {
+  height: 56px;
+  border-color: var(--nx-control-border);
+}
+
+.appShell .conversationSearch {
+  height: 34px;
+  border-color: var(--nx-control-border);
+  border-radius: 7px;
+  background: var(--nx-surface-overlay);
+  color: var(--nx-text-muted);
+}
+
+.appShell .workspaceGroupHeader,
+.appShell .workspaceThreadRow,
+.appShell .settingsButton {
+  border-radius: 7px;
+}
+
+.appShell .workspaceGroupMain span,
+.appShell .workspaceThreadMain .workspaceThreadTitle,
+.appShell .threadListBrand strong {
+  color: var(--nx-text-primary);
+}
+
+.appShell .workspaceGroupMain small,
+.appShell .workspaceThreadMain small,
+.appShell .settingsButton {
+  color: var(--nx-text-muted);
+}
+
+.appShell .workspaceThreadRow {
+  min-height: 33px;
+  margin-inline: 4px;
+  border-color: transparent;
+}
+
+.appShell .workspaceThreadRow:hover,
+.appShell .workspaceGroupHeader:hover,
+.appShell .settingsButton:hover:not(:disabled) {
+  background: var(--nx-surface-overlay);
+  color: var(--nx-text-primary);
+}
+
+.appShell .workspaceThreadRow.active {
+  border-color: color-mix(in srgb, var(--nx-brand) 28%, var(--nx-control-border));
+  background: var(--nx-brand-soft);
+}
+
+.appShell .workspace {
+  background: var(--nx-surface-canvas);
+}
+
+.appShell .topbar {
+  min-height: 58px;
+  padding: 0 17px;
+  background: var(--nx-surface-raised);
+}
+
+.appShell .conversationTitle {
+  gap: 4px;
+}
+
+.appShell .conversationTitle strong {
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--nx-text-primary);
+}
+
+.appShell .conversationTitle span {
+  font-size: 11px;
+  color: var(--nx-text-faint);
+}
+
+.appShell .tokenUsageBar {
+  width: 188px;
+  gap: 4px;
+  padding: 6px 8px;
+  border-color: var(--nx-control-border);
+  border-radius: 7px;
+  background: var(--nx-surface-overlay);
+  box-shadow: none;
+}
+
+.appShell .tokenUsageBarLabel {
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.appShell .tokenUsageBarTrack {
+  height: 4px;
+  background: var(--nx-control-border);
+  box-shadow: none;
+}
+
+.appShell .actions {
+  gap: 7px;
+}
+
+.appShell .topbar :is(.iconButton, .themeQuickButton) {
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  border-color: var(--nx-control-border);
+  border-radius: 8px;
+  background: var(--nx-surface-raised);
+  color: var(--nx-text-muted);
+}
+
+.appShell .topbar :is(.iconButton, .themeQuickButton):hover:not(:disabled),
+.appShell .topbar .panelButton.active {
+  border-color: color-mix(in srgb, var(--nx-brand) 45%, var(--nx-control-border));
+  background: var(--nx-brand-soft);
+  color: var(--nx-brand);
+}
+
+.appShell .transcript {
+  padding: 18px 25px 0;
+  background: var(--nx-surface-canvas);
+}
+
+.appShell .messageBlock.agent .message.agent {
+  border-color: var(--nx-control-border);
+  border-radius: 12px;
+  background: var(--nx-surface-raised);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--nx-text-primary) 3%, transparent);
+}
+
+.appShell .messageBlock.user .message.user {
+  border-color: color-mix(in srgb, var(--nx-brand) 28%, var(--nx-control-border));
+  border-radius: 12px;
+  background: var(--nx-brand-soft);
+  color: var(--nx-text-primary);
+}
+
+.appShell .composer,
+.appShell.theme-light .composer {
+  width: min(calc(100% - 48px), 920px);
+  margin: 0 auto;
+  padding: 9px;
+  border-color: var(--nx-control-border);
+  border-radius: 12px 12px 0 0;
+  background: var(--nx-surface-raised);
+  box-shadow: 0 -8px 25px color-mix(in srgb, var(--nx-text-primary) 5%, transparent);
+  backdrop-filter: none;
+}
+
+.appShell .composerMain {
+  grid-template-columns: minmax(0, 1fr) 32px;
+  gap: 8px;
+}
+
+.appShell .commandInputRow,
+.appShell.theme-light .commandInputRow {
+  min-height: 50px;
+  padding: 8px 10px;
+  border-color: transparent;
+  border-radius: 8px;
+  background: var(--nx-surface-overlay);
+  box-shadow: none;
+}
+
+.appShell .commandInputRow:focus-within,
+.appShell.theme-light .commandInputRow:focus-within {
+  border-color: color-mix(in srgb, var(--nx-brand) 52%, var(--nx-control-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--nx-brand) 12%, transparent);
+}
+
+.appShell .composer textarea,
+.appShell .commandInputRow textarea {
+  min-height: 32px;
+  padding: 2px;
+  font-size: 13px;
+}
+
+.appShell .sendButton {
+  width: 32px;
+  height: 32px;
+  border-color: var(--nx-brand);
+  border-radius: 9px;
+  background: var(--nx-brand);
+  box-shadow: 0 4px 10px color-mix(in srgb, var(--nx-brand) 24%, transparent);
+}
+
+.appShell .composerBottom {
+  min-height: 28px;
+  margin-top: 6px;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.appShell .modelPresetSelect .dropdownButton,
+.appShell .modeSelect .dropdownButton,
+.appShell .composerActions .fileButton,
+.appShell .weixinBindingButton {
+  height: 26px;
+  border-color: var(--nx-control-border);
+  border-radius: 6px;
+  background: var(--nx-surface-raised);
+  color: var(--nx-text-muted);
+  font-size: 10px;
+}
+
+.appShell .rightPaneDivider {
+  width: 7px;
+  background: transparent;
+}
+
+.appShell .rightPaneDivider:hover,
+.appShell .rightPaneDivider:focus-visible {
+  background: color-mix(in srgb, var(--nx-brand) 16%, transparent);
+}
+
+.appShell .eventPane,
+.appShell .workbenchPane {
+  padding: 0;
+  background: var(--nx-surface-raised) !important;
+}
+
+.appShell .workbenchPane .workbenchTabs {
+  min-height: 55px;
+  gap: 4px;
+  padding: 0 10px;
+  border-bottom-color: var(--nx-control-border) !important;
+  background: var(--nx-surface-raised) !important;
+}
+
+.appShell .workbenchPane .workbenchTabs button {
+  height: 31px;
+  min-height: 31px;
+  gap: 6px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: var(--nx-text-muted);
+  font-size: 12px;
+}
+
+.appShell .workbenchPane .workbenchTabs button.active {
+  border-color: var(--nx-control-border) !important;
+  background: var(--nx-surface-overlay) !important;
+  color: var(--nx-text-primary) !important;
+}
+
+.appShell .liveActivityHud {
+  gap: 0;
+  padding: 13px;
+}
+
+.appShell .liveActivityHeader {
+  min-height: 30px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--nx-control-border);
+}
+
+.appShell .liveActivityStatus {
+  font-size: 12px;
+}
+
+.appShell .liveActivityStatusDot {
+  width: 7px;
+  height: 7px;
+}
+
+.appShell .liveActivityIdle {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 32px 0;
+}
+
+.appShell .liveActivityIdle p {
+  font-size: 12px;
+  color: var(--nx-text-muted);
+}
+
+.appShell .liveActivityIdle span {
+  font-size: 11px;
+  color: var(--nx-text-faint);
+}
+
+.appShell .liveActivityPhase,
+.appShell .liveActivityMetric,
+.appShell .liveActivityCheckpoint,
+.appShell .liveActivityError {
+  border-color: var(--nx-control-border);
+  border-radius: 7px;
+  background: var(--nx-surface-overlay);
+}
+
+.appShell .liveActivityRecent {
+  gap: 0;
+  margin-top: 14px;
+}
+
+.appShell .liveActivityRecent h4 {
+  margin: 0 0 6px;
+  color: var(--nx-text-muted);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+.appShell .liveActivityEvent {
+  padding: 9px 4px;
+  border-bottom: 1px solid var(--nx-control-border);
+  border-radius: 0;
+}
+
+.appShell .liveActivityEvent:hover:not(:disabled) {
+  border-color: var(--nx-control-border);
+  background: var(--nx-surface-overlay);
+}
+
+.appShell .workbenchAgents {
+  gap: 10px;
+  padding: 13px;
+}
+
+.appShell .agentStageAvatarCard,
+.appShell .agentStageCard,
+.appShell .agentInspector {
+  border-color: var(--nx-control-border);
+  border-radius: 10px;
+  background: var(--nx-surface-overlay);
+  box-shadow: none;
+}
+
+.appShell .workspaceFiles,
+.appShell .workspaceFileTreePane,
+.appShell .workspacePreviewPane {
+  background: var(--nx-surface-raised);
+}
+
+.appShell .workbenchPanel.active {
+  animation: workbenchPanelIn 180ms var(--nx-motion-ease) both;
+}
+
+@media (max-width: 1040px) {
+  .appShell {
+    grid-template-columns: 240px minmax(0, 1fr);
+  }
+
+  .appShell .composer,
+  .appShell.theme-light .composer {
+    width: min(calc(100% - 32px), 920px);
+  }
+}
+
+.settingsLayer .settingsDrawer .settingsFormGrid.three.key {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(132px, .72fr);
+  align-items: end;
+}
+
+.settingsLayer .settingsDrawer .settingsFormGrid.three.key .settingsFieldInlineEnd {
+  align-self: end;
+}
+
+.settingsLayer .settingsDrawer .settingsFormGrid.three.key .settingsFieldInlineEnd .ghostButton {
+  width: 100%;
+  min-height: 40px;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+.settingsLayer .settingsDrawer .settingsPresetRow {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) max-content max-content;
+  align-items: center;
+  gap: 10px;
+}
+
+.settingsLayer .settingsDrawer .settingsPresetRow :is(.textButton.danger, .solidButton) {
+  min-height: 40px;
+  white-space: nowrap;
+  word-break: normal;
+}
+
+.settingsLayer .settingsDrawer .settingsPresetRow .textButton.danger {
+  min-width: 76px;
+  overflow: visible;
+}
+
+.settingsLayer .settingsDrawer .settingsPresetRow .solidButton {
+  min-width: 146px;
+}
+
+.settingsLayer .settingsDrawer .memoryAdvancedToggle {
+  display: inline-flex !important;
+  width: auto !important;
+  min-width: 0;
+  margin-left: 0 !important;
+  justify-self: start;
+}
+
+.settingsLayer .settingsDrawer .settingsSection > .formGrid.modelSettingsList {
+  grid-column: 1 / -1;
+  gap: 14px 26px;
+}
+
+.appShell .workspaceThreadsHeader {
+  padding: 8px 8px 5px;
+}
+
+.appShell .searchLauncher {
+  width: 100%;
+  min-height: 40px;
+  padding-inline: 12px;
+}
+
+.appShell .workspaceGroupList {
+  display: grid;
+  gap: 7px;
+  padding: 3px 8px 14px;
+}
+
+.appShell :is(.threadModuleHeader, .threadModuleTitle) {
+  min-height: 36px;
+  padding-inline: 8px;
+}
+
+.appShell .threadModuleToggle {
+  min-width: 0;
+  gap: 8px;
+}
+
+.appShell .workspaceThreadRows.plain {
+  padding: 0 8px 2px;
+}
+
+.appShell .workspaceThreadEmptyRow {
+  min-height: 30px;
+  padding: 2px 8px;
+}
+
+.appShell .workspaceThreadEmptyRow button {
+  min-height: 28px;
+  padding: 0 4px;
+  white-space: nowrap;
+}
+
+.appShell .workspaceGroupHeader {
+  min-height: 36px;
+  margin-inline: 4px;
+}
+
+.appShell .workspaceGroupMain {
+  min-height: 36px;
+  padding: 0 8px;
+}
+
+.appShell .topbar,
+.appShell .conversationTitle {
+  min-width: 0;
+}
+
+.appShell .conversationTitle {
+  overflow: hidden;
+}
+
+.appShell .tokenUsageBar {
+  flex: 0 0 188px;
+  min-width: 188px;
+}
+
+.appShell .tokenUsageBarRow {
+  min-width: 0;
+}
+
+.appShell .tokenUsageBarLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.appShell :is(.reasoningDetails, .internalItemDetails) {
+  margin: 8px 0;
+  border: 1px solid var(--nx-control-border);
+  border-radius: 8px;
+  background: var(--nx-surface-overlay);
+  color: var(--nx-text-muted);
+}
+
+.appShell :is(.reasoningDetails, .internalItemDetails) > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 10px;
+  cursor: pointer;
+  color: var(--nx-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.appShell .reasoningDetailsBody {
+  padding: 0 10px 10px;
+}
+
+.appShell .internalItemDetails pre {
+  max-height: 280px;
+  margin: 0;
+  padding: 0 10px 10px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+@media (max-width: 760px) {
+  .settingsLayer .settingsDrawer .settingsFormGrid.three.key,
+  .settingsLayer .settingsDrawer .settingsPresetRow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .settingsLayer .settingsDrawer .settingsPresetRow :is(.textButton.danger, .solidButton) {
+    width: 100%;
+  }
+
+  .appShell .tokenUsageBar {
+    display: none;
+  }
+}
+
+.appShell .workspaceGroupList { display: block !important; gap: 0 !important; padding: 2px 7px 13px !important; }
+.appShell :is(.threadModule, .workspaceGroup) { margin: 5px 0 10px !important; }
+.appShell :is(.threadModuleHeader, .threadModuleTitle, .workspaceGroupHeader) { min-height: 30px !important; padding-inline: 5px !important; }
+.appShell .workspaceThreadRows { gap: 1px !important; margin: 1px 0 0 22px !important; }
+.appShell .workspaceThreadRows.plain { margin-left: 0 !important; padding: 0 !important; }
+.appShell .workspaceThreadRow { min-height: 33px !important; margin: 1px 4px !important; }
+.appShell .workspaceThreadEmptyRow { min-height: 30px !important; padding: 0 5px !important; }
+.appShell .workspaceThreadEmptyRow button.workspaceThreadCreateButton { display: grid; place-items: center; width: 25px; height: 25px; padding: 0; border: 0; background: transparent; }
+.appShell .workspaceThreadCreateButton svg { width: 15px; height: 15px; }
+
+.settingsLayer .settingsDrawer .settingsSectionHeaderChip.ok,
+.settingsLayer .settingsDrawer .modelKeyStatusLine.configured {
+  color: #16845b !important;
+  border-color: rgba(22, 132, 91, .28) !important;
+  background: rgba(22, 132, 91, .08) !important;
+}
+
+.settingsLayer .settingsDrawer .modelKeyStatusLine.configured::before {
+  background: #16845b !important;
+}
+
+.settingsLayer .settingsDrawer .settingsRefreshField {
+  align-items: end;
+  justify-content: end;
+}
+
+.settingsLayer .settingsDrawer .settingsRefreshButton {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+}
+
+.appShell .topbar {
+  min-height: 66px;
+}
+
+.appShell .workspaceGroupList {
+  display: block;
+  gap: 0;
+  padding: 2px 7px 13px;
+}
+
+.appShell :is(.threadModule, .workspaceGroup) {
+  margin: 5px 0 10px;
+}
+
+.appShell :is(.threadModuleHeader, .threadModuleTitle, .workspaceGroupHeader) {
+  min-height: 30px;
+  padding-inline: 5px;
+}
+
+.appShell .threadModuleToggle {
+  gap: 6px;
+}
+
+.appShell .threadModuleToggle svg {
+  width: 15px;
+  height: 15px;
+}
+
+.appShell .workspaceThreadRows {
+  gap: 1px;
+  margin-left: 22px;
+  margin-top: 1px;
+}
+
+.appShell .workspaceThreadRows.plain {
+  gap: 1px;
+  margin-left: 0;
+  padding: 0;
+}
+
+.appShell .workspaceThreadRow {
+  min-height: 33px;
+  margin: 1px 4px;
+  border-radius: 7px;
+}
+
+.appShell .workspaceThreadEmptyRow {
+  min-height: 30px;
+  padding: 0 5px;
+}
+
+.appShell .workspaceThreadCreateButton {
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--nx-text-faint);
+}
+
+.appShell .workspaceThreadCreateButton svg {
+  width: 15px;
+  height: 15px;
+}
+
+.appShell .usage-strip { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.appShell .usage-item { display: grid; gap: 4px; min-width: 98px; padding: 7px 9px; border: 1px solid var(--nx-control-border); border-radius: 7px; background: var(--nx-surface-overlay); }
+.appShell .usage-item b { color: var(--nx-text-muted); font-size: 10px; font-weight: 600; white-space: nowrap; }
+.appShell .usage-item i { display: block; height: 4px; border-radius: 9px; overflow: hidden; background: var(--nx-control-border); }
+.appShell .usage-item i span { display: block; height: 100%; border-radius: inherit; background: #70a0fb; }
+.appShell .usage-item.cache i span { background: #d79d37; }
+.appShell .workspaceThreadMain { grid-template-columns: 18px minmax(0,1fr) auto 25px; gap: 6px; }
+.appShell .workspaceThreadMain > svg { width: 15px; height: 15px; color: var(--nx-text); flex: none; }
+.appShell .workspaceThreadMain > .row-icon,
+.appShell .workspaceGroupMain > .row-icon { color: var(--nx-text-faint); }
+.appShell .workspaceThreadRow.active .row-icon { color: var(--nx-brand); }
+.appShell .iconSprite { position: absolute; width: 0; height: 0; overflow: hidden; pointer-events: none; }
+
+.appShell .reasoningDetails {
+  margin: 5px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--nx-text-faint);
+}
+.appShell .reasoningDetails > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 22px;
+  padding: 0;
+  color: var(--nx-text-faint);
+  font-size: 0;
+  font-weight: 650;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.appShell .reasoningDetails > summary::-webkit-details-marker { display: none; }
+.appShell .reasoningDetails > summary::before { content: 'THINK'; font-size: 10px; }
+.appShell .reasoningDetails > summary::after {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--nx-brand);
+  box-shadow: 6px 0 var(--nx-brand), 12px 0 var(--nx-brand);
+  content: '';
+  opacity: .35;
+  animation: reasoningPulse 1.2s ease-in-out infinite;
+}
+.appShell .reasoningDetailsBody {
+  margin: 4px 0 0 20px;
+  padding: 0 0 0 10px;
+  border-left: 1px solid var(--nx-control-border);
+  color: var(--nx-text-muted);
+  font-size: 12px;
+}
+@keyframes reasoningPulse { 0%, 100% { opacity: .28; transform: translateX(0); } 50% { opacity: 1; transform: translateX(1px); } }
+
+.appShell :is(.message.tool, .message.inlineTool) {
+  margin: 4px 0;
+  padding: 0 0 0 10px;
+  border: 0;
+  border-left: 1px solid var(--nx-control-border);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.appShell :is(.message.tool, .message.inlineTool) > summary { min-height: 22px; padding: 0; color: var(--nx-text-muted); font-size: 11px; }
+.appShell .message.tool .toolSummaryValue { color: var(--nx-text-muted) !important; font-weight: 500; }
+.appShell .message.tool .toolSummaryMeta,
+.appShell .message.tool .toolSummaryStatus { color: var(--nx-text-faint) !important; }
+.appShell .message.tool > pre { margin: 4px 0 0; padding: 7px 0 0; border: 0; border-top: 1px solid var(--nx-control-border); border-radius: 0; background: transparent; font-size: 11px; }
+
+.appShell .childActivityReasoning {
+  margin: 4px 0;
+  padding: 0 0 0 10px;
+  border: 0;
+  border-left: 1px solid var(--nx-control-border);
+  border-radius: 0;
+  background: transparent;
+}
+.appShell .childActivityReasoning > summary { gap: 8px; min-height: 22px; font-size: 0; color: var(--nx-text-faint); }
+.appShell .childActivityReasoning > summary svg { display: none; }
+.appShell .childActivityReasoning > summary::before { content: 'THINK'; font-size: 10px; letter-spacing: .08em; }
+.appShell .childActivityReasoning > summary::after { width: 3px; height: 3px; border-radius: 50%; background: var(--nx-text-faint); box-shadow: 6px 0 var(--nx-text-faint), 12px 0 var(--nx-text-faint); content: ''; opacity: .45; animation: reasoningPulse 1.2s ease-in-out infinite; }
+.appShell .childActivityReasoningText { margin: 4px 0 0 10px; padding: 0; border: 0; font-size: 12px; line-height: 1.55; color: var(--nx-text-muted); }
+
+.appShell .internalItemDetails { margin: 5px 0; border: 0; border-left: 1px solid var(--nx-control-border); border-radius: 0; background: transparent; }
+.appShell .internalItemDetails > summary { min-height: 22px; padding: 0 0 0 10px; font-size: 11px; }
+.appShell .internalItemDetails pre { margin: 4px 0 0 10px; padding: 7px 0 0; border: 0; border-top: 1px solid var(--nx-control-border); background: transparent; font-size: 11px; }
+
+.appShell .workspaceThreadRow.active { box-shadow: none !important; }
+.appShell .threadListBrand .icon,
+.appShell .threadModuleHeader .icon,
+.appShell .threadModuleTitle .icon,
+.appShell .workspaceGroupMain .row-icon,
+.appShell .workspaceThreadMain .row-icon { color: var(--nx-text-faint) !important; }
+.settingsLayer .settingsDrawer .settingsNav :is(button, a).active { border-left: 0 !important; border-inline-start: 0 !important; box-shadow: 0 1px 1px rgba(20, 30, 46, .04), 0 0 0 1px var(--nx-settings-border, #dce2eb) inset !important; }
+.settingsLayer .settingsDrawer .settingsNav :is(button, a).active .settingsNavIcon { color: var(--nx-settings-muted, #718096) !important; }
+
+.appShell .toolBatchDetails {
+  margin: 4px 0;
+  border-left: 1px solid var(--nx-control-border);
+  background: transparent;
+}
+.appShell .toolBatchDetails > summary {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-height: 22px;
+  padding: 0 8px 0 10px;
+  color: var(--nx-text-faint);
+  cursor: pointer;
+  font-size: 11px;
+}
+.appShell .toolBatchIcon { display: grid; width: 15px; height: 15px; margin-right: auto; place-items: center; color: var(--nx-text-faint); }
+.appShell .toolBatchIcon svg { width: 14px; height: 14px; }
+.appShell .toolBatchDetails > summary::-webkit-details-marker { display: none; }
+.appShell .toolBatchDetails > summary::marker { content: ''; }
+.appShell .toolBatchChevron { display: grid; width: 14px; height: 14px; place-items: center; color: var(--nx-text-faint); transition: transform .16s ease; }
+.appShell .toolBatchChevron svg { width: 14px; height: 14px; }
+.appShell .toolBatchDetails[open] .toolBatchChevron { transform: rotate(90deg); }
+.appShell .toolBatchCount { min-width: 12px; color: var(--nx-text-faint); font-size: 11px; font-variant-numeric: tabular-nums; text-align: right; }
+.appShell .toolBatchItems { display: grid; gap: 2px; margin: 4px 0 0 10px; }
+
+.appShell .codeBlock {
+  margin: 8px 0;
+  overflow: hidden;
+  border: 1px solid var(--nx-control-border);
+  border-radius: 7px;
+  background: var(--nx-surface-panel);
+  box-shadow: none;
+}
+.appShell .codeBlock figcaption {
+  height: 28px;
+  border-bottom: 1px solid var(--nx-control-border);
+  background: var(--nx-surface-overlay);
+  padding: 0 9px;
+}
+.appShell .codeBlock figcaption span { color: var(--nx-text-faint); font-size: 10px; letter-spacing: .06em; }
+.appShell .codeCopyButton { color: var(--nx-text-faint); }
+.appShell .codeCopyButton:hover:not(:disabled) { background: var(--nx-surface-hover); color: var(--nx-text); }
+.appShell .codeBlock pre {
+  max-height: 420px;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: #f6f8fb;
+  color: #273449;
+  padding: 11px 12px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.appShell .codeBlock code { color: inherit; }
+
+.appShell.theme-dark .codeBlock { border-color: #283645; background: #111a23; }
+.appShell.theme-dark .codeBlock figcaption { border-bottom-color: #283645; background: #111a23; }
+.appShell.theme-dark .codeBlock figcaption span,
+.appShell.theme-dark .codeCopyButton { color: #9eabb9; }
+.appShell.theme-dark .codeCopyButton:hover:not(:disabled) { background: #1b2732; color: #e2e8f0; }
+.appShell.theme-dark .codeBlock pre { background: #151f29; color: #d7dee7; }
+
+.appShell :is(.agentStageAvatarCard, .agentStageCard)[data-selected="true"] {
+  outline: 0;
+  outline-offset: 0;
+  border-color: var(--nx-control-border);
+  background: var(--nx-surface-panel);
+  box-shadow: none;
+}
+
+.appShell .agentStageCard.running {
+  border-color: var(--nx-control-border);
+  background: var(--nx-surface-panel);
+  box-shadow: none;
 }

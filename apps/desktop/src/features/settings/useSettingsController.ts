@@ -44,6 +44,8 @@ export interface UseSettingsControllerResult {
   showSavedModelKey: boolean;
   setShowSavedModelKey: React.Dispatch<React.SetStateAction<boolean>>;
   modelKeyNotice: string;
+  hasSavedModelKey: boolean;
+  hasConfiguredModelEnvVar: boolean;
   setModelKeyNotice: React.Dispatch<React.SetStateAction<string>>;
   modelEnvVarDraft: string;
   setModelEnvVarDraft: React.Dispatch<React.SetStateAction<string>>;
@@ -111,6 +113,8 @@ export function useSettingsController(options: UseSettingsControllerOptions): Us
   const [modelEnvVarDraft, setModelEnvVarDraft] = useState('');
   const [modelEnvVarRemoteOptions, setModelEnvVarRemoteOptions] = useState<string[]>([]);
   const [customProviderName, setCustomProviderName] = useState('');
+  const [savedKeyProviders, setSavedKeyProviders] = useState<Set<string>>(() => new Set());
+  const [savedEnvVars, setSavedEnvVars] = useState<Record<string, string>>({});
 
   const selectedProvider = useMemo(
     () => providers.find((provider) => provider.id === modelConfigDraft.provider),
@@ -119,6 +123,14 @@ export function useSettingsController(options: UseSettingsControllerOptions): Us
   const selectedKeyState = useMemo(
     () => keyStates.find((state) => state.providerId === modelConfigDraft.provider),
     [keyStates, modelConfigDraft.provider],
+  );
+  const hasSavedModelKey = modelKeySource === 'config' && (
+    (selectedKeyState?.configured === true && selectedKeyState.source === 'config')
+    || savedKeyProviders.has(modelConfigDraft.provider)
+  );
+  const hasConfiguredModelEnvVar = modelKeySource === 'env' && (
+    (selectedKeyState?.configured === true && selectedKeyState.source === 'env')
+    || Boolean(savedEnvVars[modelConfigDraft.provider])
   );
 
   const modelEnvVarOptions = useMemo(() => [...new Set([
@@ -248,6 +260,8 @@ export function useSettingsController(options: UseSettingsControllerOptions): Us
     const nextKey = apiKeyDraft.trim();
     if (!nextKey) return;
     await saveProviderKey(providerId ?? modelConfigDraft.provider, nextKey);
+    const targetProvider = providerId ?? modelConfigDraft.provider;
+    setSavedKeyProviders((current) => current.has(targetProvider) ? current : new Set(current).add(targetProvider));
     setApiKeyDraft('');
   }
 
@@ -256,6 +270,8 @@ export function useSettingsController(options: UseSettingsControllerOptions): Us
     const envVar = modelEnvVarDraft.trim();
     if (!envVar) return;
     await saveProviderEnvVar(providerId ?? modelConfigDraft.provider, envVar);
+    const targetProvider = providerId ?? modelConfigDraft.provider;
+    setSavedEnvVars((current) => ({ ...current, [targetProvider]: envVar }));
     setModelEnvVarRemoteOptions((current) => current.includes(envVar) ? current : [...current, envVar].sort((a, b) => a.localeCompare(b)));
   }
 
@@ -428,6 +444,8 @@ export function useSettingsController(options: UseSettingsControllerOptions): Us
 
   useEffect(() => {
     if (dirtyFields.modelKeySource || dirtyFields.modelEnvVar || dirtyFields.apiKey) return;
+    if (modelKeySource === 'config' && savedKeyProviders.has(modelConfigDraft.provider)) return;
+    if (modelKeySource === 'env' && savedEnvVars[modelConfigDraft.provider]) return;
     const nextSource = modelKeySourceForProvider(selectedProvider, selectedKeyState);
     setModelKeySource(nextSource);
     setModelEnvVarDraft(modelEnvVarForProvider(selectedProvider, selectedKeyState, nextSource));
@@ -440,6 +458,9 @@ export function useSettingsController(options: UseSettingsControllerOptions): Us
     selectedKeyState?.source,
     selectedProvider?.apiKeyEnvVar,
     selectedProvider?.isLocal,
+    modelKeySource,
+    savedKeyProviders,
+    savedEnvVars,
     dirtyFields.modelKeySource,
     dirtyFields.modelEnvVar,
     dirtyFields.apiKey,
@@ -477,6 +498,8 @@ export function useSettingsController(options: UseSettingsControllerOptions): Us
     setShowSavedModelKey,
     modelKeyNotice,
     setModelKeyNotice,
+    hasSavedModelKey,
+    hasConfiguredModelEnvVar,
     modelEnvVarDraft,
     setModelEnvVarDraft,
     modelEnvVarOptions,

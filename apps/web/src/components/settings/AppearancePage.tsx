@@ -4,13 +4,14 @@ import type { Locale, RunConfig, ThemeMode } from '../../config/config.js';
 import { t } from '../../shared/i18n.js';
 import { DropdownSelect } from '../DropdownSelect.js';
 import { CUSTOM_USER_AVATAR_ID, DEFAULT_USER_AVATAR_ID, USER_AVATAR_OPTIONS, UserAvatar, userAvatarLabel } from '../UserAvatar.js';
+import { SettingsPageHeader } from './SettingsPageHeader.js';
+import { SectionHeader } from './SectionHeader.js';
 
 export interface AppearancePageProps {
   locale: Locale;
   config: RunConfig;
   setConfig: React.Dispatch<React.SetStateAction<RunConfig>>;
   markDirty: (field: string, dirty: boolean) => void;
-  // P2.2 dirty 跟踪：每个字段标记是否未保存
   dirtyFields: Record<string, boolean>;
 }
 
@@ -51,49 +52,51 @@ export function AppearancePage({ locale, config, setConfig, markDirty, dirtyFiel
 
   const themeDirty = dirtyFields.themeMode ? 'dirty' : '';
   const localeDirty = dirtyFields.locale ? 'dirty' : '';
-  const avatarDirty = dirtyFields.userAvatarId || dirtyFields.customUserAvatarDataUrl ? 'dirty' : '';
 
   return (
     <section className="settingsSection" id="settings-appearance">
-      <div className="presetHeader">
-        <div>
-          <h3>{locale === 'zh' ? '外观' : 'Appearance'}</h3>
+      <SettingsPageHeader
+        eyebrow="INTERFACE"
+        title={locale === 'zh' ? '外观' : 'Appearance'}
+      />
+
+      <div className="settingsSectionBlock">
+        <SectionHeader title={locale === 'zh' ? '界面' : 'Interface'} />
+        <div className="settingsFormGrid">
+          <label className={`settingsField ${themeDirty}`}>
+            <span className="settingsFieldLabel">{locale === 'zh' ? '主题' : 'Theme'}</span>
+            <DropdownSelect<ThemeMode>
+              value={config.themeMode}
+              onChange={(themeMode) => {
+                setConfig((current) => ({ ...current, themeMode }));
+                markDirty('themeMode', true);
+              }}
+              options={[{ value: 'dark', label: locale === 'zh' ? '深色' : 'Dark' }, { value: 'light', label: locale === 'zh' ? '浅色' : 'Light' }, { value: 'system', label: locale === 'zh' ? '跟随系统' : 'System' }]}
+            />
+          </label>
+          <label className={`settingsField ${localeDirty}`}>
+            <span className="settingsFieldLabel">{t(locale, 'language')}</span>
+            <DropdownSelect<Locale>
+              value={config.locale}
+              onChange={(nextLocale) => {
+                setConfig((current) => ({ ...current, locale: nextLocale }));
+                markDirty('locale', true);
+              }}
+              options={[{ value: 'zh', label: '中文' }, { value: 'en', label: 'English' }]}
+            />
+          </label>
         </div>
       </div>
-      <div className="formGrid modelSettingsList">
-        <label className={themeDirty ? 'fieldDirty' : ''}>
-          {locale === 'zh' ? '主题' : 'Theme'}
-          <DropdownSelect<ThemeMode>
-            value={config.themeMode}
-            onChange={(themeMode) => {
-              setConfig((current) => ({ ...current, themeMode }));
-              markDirty('themeMode', true);
-            }}
-            options={[{ value: 'dark', label: locale === 'zh' ? '深色' : 'Dark' }, { value: 'light', label: locale === 'zh' ? '浅色' : 'Light' }, { value: 'system', label: locale === 'zh' ? '跟随系统' : 'System' }]}
-          />
-        </label>
-        <label className={localeDirty ? 'fieldDirty' : ''}>
-          {t(locale, 'language')}
-          <DropdownSelect<Locale>
-            value={config.locale}
-            onChange={(nextLocale) => {
-              setConfig((current) => ({ ...current, locale: nextLocale }));
-              markDirty('locale', true);
-            }}
-            options={[{ value: 'zh', label: '中文' }, { value: 'en', label: 'English' }]}
-          />
-        </label>
-      </div>
-      <div className={`avatarSettingsPanel ${avatarDirty ? 'panelDirty' : ''}`}>
-        <div className="avatarSettingsHeader">
-          <div>
-            <strong>{locale === 'zh' ? '用户头像' : 'User avatar'}</strong>
-          </div>
-          <div className="avatarSettingsPreview">
-            <UserAvatar avatarId={config.userAvatarId} customDataUrl={config.customUserAvatarDataUrl} size="lg" />
-            <span>{userAvatarLabel(config.userAvatarId, locale)}</span>
-          </div>
-        </div>
+
+      <div className="settingsSectionBlock">
+        <SectionHeader
+          title={locale === 'zh' ? '用户头像' : 'User avatar'}
+          action={{
+            label: locale === 'zh' ? '恢复默认' : 'Reset',
+            title: locale === 'zh' ? '恢复默认头像' : 'Reset to default avatar',
+            onClick: resetUserAvatar,
+          }}
+        />
         <div className="userAvatarGrid" aria-label={locale === 'zh' ? '选择用户头像' : 'Choose user avatar'}>
           {USER_AVATAR_OPTIONS.map((option) => (
             <button
@@ -111,16 +114,6 @@ export function AppearancePage({ locale, config, setConfig, markDirty, dirtyFiel
             <UserAvatar avatarId={CUSTOM_USER_AVATAR_ID} customDataUrl={config.customUserAvatarDataUrl} size="md" />
             <span>{config.customUserAvatarDataUrl ? (locale === 'zh' ? '更换自定义' : 'Replace custom') : (locale === 'zh' ? '上传自定义' : 'Upload custom')}</span>
           </label>
-        </div>
-        <div className="avatarSettingsActions">
-          {config.customUserAvatarDataUrl ? (
-            <button className="textButton" type="button" onClick={() => selectUserAvatar(CUSTOM_USER_AVATAR_ID)}>
-              {locale === 'zh' ? '使用自定义头像' : 'Use custom avatar'}
-            </button>
-          ) : null}
-          <button className="textButton" type="button" onClick={resetUserAvatar}>
-            {locale === 'zh' ? '恢复默认头像' : 'Reset avatar'}
-          </button>
         </div>
       </div>
     </section>

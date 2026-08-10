@@ -1,6 +1,4 @@
 // 图标组件：统一输出 24x24 SVG，各图标名称映射到对应的 path 数据
-// Icon component: outputs a unified 24x24 SVG, each name maps to its path data
-
 import React from 'react';
 
 export type IconName =
@@ -53,9 +51,35 @@ export type IconName =
   | 'translate'
   | 'workflow'
   | 'wrench'
+  | 'palette'
+  | 'shield'
   | 'x';
 
-export function Icon({ name }: { name: IconName }) {
+export type SidebarIconName = 'chevron' | 'folder' | 'folderCode' | 'gear' | 'layers' | 'message' | 'pen' | 'plus' | 'search' | 'trash' | 'workflow';
+
+export function SidebarIconSprite() {
+  return (
+    <svg aria-hidden="true" className="iconSprite">
+      <symbol id="nexus-sidebar-layers" viewBox="0 0 24 24"><path d="m12 3 8 4.5-8 4.5-8-4.5L12 3Z" /><path d="m4 12 8 4.5 8-4.5M4 16.5 12 21l8-4.5" /></symbol>
+      <symbol id="nexus-sidebar-chevron" viewBox="0 0 24 24"><path d="m7 9 5 5 5-5" /></symbol>
+      <symbol id="nexus-sidebar-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6" /><path d="m16 16 4 4" /></symbol>
+      <symbol id="nexus-sidebar-workflow" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2" /><circle cx="18" cy="12" r="2" /><circle cx="6" cy="18" r="2" /><path d="m8 7 8 4M8 17l8-4" /></symbol>
+      <symbol id="nexus-sidebar-message" viewBox="0 0 24 24"><path d="M5 5h14v11H9l-4 3V5Z" /></symbol>
+      <symbol id="nexus-sidebar-folder" viewBox="0 0 24 24"><path d="M3 6h6l2 2h10v10H3V6Z" /></symbol>
+      <symbol id="nexus-sidebar-folderCode" viewBox="0 0 24 24"><path d="M3 6h6l2 2h10v10H3V6Z" /><path d="m10 12-2 2 2 2m4-4 2 2-2 2" /></symbol>
+      <symbol id="nexus-sidebar-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></symbol>
+      <symbol id="nexus-sidebar-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M19 12a7.6 7.6 0 0 0-.1-1l2-1.5-2-3.4-2.4 1a8 8 0 0 0-1.8-1L14.4 3H9.6l-.3 3.1a8 8 0 0 0-1.8 1l-2.4-1-2 3.4L5.1 11a7.6 7.6 0 0 0 0 2l-2 1.5 2 3.4 2.4-1a8 8 0 0 0 1.8 1l.3 3h4.8l.3-3a8 8 0 0 0 1.8-1l2.4 1 2-3.4-2-1.5c.1-.3.1-.7.1-1Z" /></symbol>
+      <symbol id="nexus-sidebar-pen" viewBox="0 0 24 24"><path d="m4 20 4.2-1 9.6-9.6-3.2-3.2L5 15.8 4 20Z" /><path d="m13.8 7.2 3.2 3.2" /></symbol>
+      <symbol id="nexus-sidebar-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3m-9 0 1 14h10l1-14" /></symbol>
+    </svg>
+  );
+}
+
+export function SidebarIcon({ className, name }: { className: 'icon' | 'row-icon'; name: SidebarIconName }) {
+  return <svg className={className} viewBox="0 0 24 24"><use href={`#nexus-sidebar-${name}`} /></svg>;
+}
+
+export function Icon({ className, name }: { className?: string; name: IconName }) {
   const paths: Record<IconName, React.ReactNode> = {
     activity: <path d="M3 12h4l2-7 4 14 2-7h6" />,
     browser: (
@@ -88,7 +112,7 @@ export function Icon({ name }: { name: IconName }) {
       </>
     ),
     chevron: <path d="m15 18-6-6 6-6" />,
-    chevronDown: <path d="m6 9 6 6 6-6" />,
+    chevronDown: <path d="m7 9 5 5 5-5" />,
     chevronRight: <path d="m9 6 6 6-6 6" />,
     clip: <path d="m21.4 11.6-8.6 8.6a5 5 0 0 1-7.1-7.1l9.2-9.2a3.5 3.5 0 0 1 5 5l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5" />,
     copy: <path d="M8 8h11v11H8zM5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" />,
@@ -111,8 +135,8 @@ export function Icon({ name }: { name: IconName }) {
     eye: <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Zm10 3a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />,
     eyeOff: <path d="m3 3 18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 5.2A10.8 10.8 0 0 1 12 5c6.5 0 10 7 10 7a18 18 0 0 1-3.1 4.1M6.6 6.6C3.7 8.4 2 12 2 12s3.5 7 10 7a10.8 10.8 0 0 0 4.1-.8" />,
     file: <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6Zm0 0v6h6M8 13h8M8 17h5" />,
-    folder: <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l2 2h6.5A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5v-9Z" />,
-    folderCode: <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l2 2h6.5A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5v-9Zm6.5 4L7 14l2.5 2.5M14.5 11.5 17 14l-2.5 2.5" />,
+    folder: <path d="M3 6h6l2 2h10v10H3V6Z" />,
+    folderCode: <><path d="M3 6h6l2 2h10v10H3V6Z" /><path d="m10 12-2 2 2 2m4-4 2 2-2 2" /></>,
     folderPlus: <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l2 2h6.5A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5v-9Zm9 3v5m-2.5-2.5h5" />,
     gear: <path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm8.2 4.8a7.7 7.7 0 0 0 0-2.6l2-1.5-2-3.4-2.4 1a8 8 0 0 0-2.2-1.3L15.3 3h-4l-.3 2.5a8 8 0 0 0-2.2 1.3l-2.4-1-2 3.4 2 1.5a7.7 7.7 0 0 0 0 2.6l-2 1.5 2 3.4 2.4-1a8 8 0 0 0 2.2 1.3l.3 2.5h4l.3-2.5a8 8 0 0 0 2.2-1.3l2.4 1 2-3.4-2-1.5Z" />,
     github: <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22" />,
@@ -152,7 +176,7 @@ export function Icon({ name }: { name: IconName }) {
         <line x1="3" y1="18" x2="21" y2="18" />
       </>
     ),
-    message: <path d="M4 5h16v11H8l-4 4V5Z" />,
+    message: <path d="M5 5h14v11H9l-4 3V5Z" />,
     monitor: (
       <>
         <rect x="3" y="4" width="18" height="13" rx="2" />
@@ -213,15 +237,23 @@ export function Icon({ name }: { name: IconName }) {
         <path d="M14.5 16.5h3" />
       </>
     ),
-    workflow: <path d="M6 5a3 3 0 1 0 0 6 3 3 0 0 0 0-6Zm12 8a3 3 0 1 0 0 6 3 3 0 0 0 0-6ZM9 8h4a3 3 0 0 1 3 3v2M15 16h-4a3 3 0 0 1-3-3v-2" />,
+    workflow: <><circle cx="6" cy="6" r="2" /><circle cx="18" cy="12" r="2" /><circle cx="6" cy="18" r="2" /><path d="m8 7 8 4M8 17l8-4" /></>,
     wrench: <path d="M14.7 6.3a4 4 0 0 0-5 5L3 18l3 3 6.7-6.7a4 4 0 0 0 5-5l-2.8 2.8-2.1-2.1 2.8-2.8Z" />,
+    palette: (
+      <>
+        <path d="M12 3a9 9 0 0 0 0 18c1.7 0 2-1.3 1.3-2.2-.8-1 .1-2.3 1.2-2.3H17a4 4 0 0 0 4-4c0-5-4.5-9-9-9Z" />
+        <circle cx="7.5" cy="11" r="1.1" fill="currentColor" stroke="none" />
+        <circle cx="10" cy="7.5" r="1.1" fill="currentColor" stroke="none" />
+        <circle cx="14" cy="7.5" r="1.1" fill="currentColor" stroke="none" />
+        <circle cx="16.5" cy="11" r="1.1" fill="currentColor" stroke="none" />
+      </>
+    ),
+    shield: <path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3Z" />,
     x: <path d="M18 6 6 18M6 6l12 12" />,
   };
   // paths 映射：图标名称到 SVG path 节点
-  // paths map: icon name to SVG path node
-
   return (
-    <svg aria-hidden="true" viewBox="0 0 24 24">
+    <svg aria-hidden="true" className={className} viewBox="0 0 24 24">
       {paths[name]}
     </svg>
   );

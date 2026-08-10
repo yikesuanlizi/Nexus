@@ -109,35 +109,10 @@ export function AppDialog({ dialog, onClose }: { dialog: AppDialogState; onClose
 
 export function SettingsHelpDialog({ locale, onClose }: { locale: Locale; onClose(): void }) {
   const zh = locale === 'zh';
-  const sections = [
+  type HelpSection = { num: number; title: string; body?: string; items?: Array<string | { name: string; desc: string }> };
+  const sections: HelpSection[] = [
     {
       num: 1,
-      title: zh ? '欢迎使用 Nexus' : 'Welcome to Nexus',
-      body: zh
-        ? 'Nexus 是一款 AI 原生的智能开发助手，集成了多 Agent 协作、工作流编排、代码知识库、微信/钉钉对接等能力，帮助你提升开发效率，让 AI 真正融入日常工作流。'
-        : 'Nexus is an AI-native intelligent development assistant with multi-agent collaboration, workflow orchestration, code knowledge base, and WeChat/DingTalk integration to boost your productivity.',
-    },
-    {
-      num: 2,
-      title: zh ? '核心功能概览' : 'Core Features',
-      items: zh
-        ? [
-            '多 Agent 协作：主控 Agent + 专业 Agent 协同完成复杂任务',
-            '工作流项目：可视化编排 AI 工作流，支持条件分支和循环',
-            'GitNexus 代码分析：基于知识图谱的代码架构理解与智能搜索',
-            '微信/钉钉对接：在群聊中直接调用 AI 能力',
-            'MCP 插件生态：通过 Model Context Protocol 扩展工具能力',
-          ]
-        : [
-            'Multi-agent collaboration: Orchestrator + specialist agents work together',
-            'Workflow projects: Visual AI workflow designer with branches and loops',
-            'GitNexus code analysis: Knowledge-graph based code understanding',
-            'WeChat/DingTalk integration: Use AI directly in group chats',
-            'MCP plugin ecosystem: Extend tools via Model Context Protocol',
-          ],
-    },
-    {
-      num: 3,
       title: zh ? '运行配置说明' : 'Run Configuration',
       items: [
         zh
@@ -197,7 +172,7 @@ export function SettingsHelpDialog({ locale, onClose }: { locale: Locale; onClos
       ],
     },
     {
-      num: 4,
+      num: 2,
       title: zh ? 'GitNexus 代码分析' : 'GitNexus Code Analysis',
       items: [
         zh
@@ -248,7 +223,7 @@ export function SettingsHelpDialog({ locale, onClose }: { locale: Locale; onClos
       ],
     },
     {
-      num: 5,
+      num: 3,
       title: zh ? '使用小贴士' : 'Tips & Tricks',
       items: zh
         ? [
