@@ -23,7 +23,7 @@ packages/
 └── bot/              钉钉 / 微信等 IM 平台桥接
 apps/
 ├── api/              本地 Node API，负责运行时、工具执行、审批、线程与 harness 控制
-├── desktop/          Tauri 桌面端（Windows / macOS / Linux）
+├── desktop/          Electron 桌面端（Windows / macOS / Linux）
 └── web/              React + TypeScript 本地控制台
 ```
 
@@ -40,6 +40,53 @@ npm start
 - API 服务：http://127.0.0.1:4127
 
 默认启动是 **单机模式**，使用 SQLite + 本地 rollout 文件，适合个人桌面使用。首次打开 Web 控制台可选择单人/多人模式。
+
+## 桌面端启动
+
+桌面端（Electron + WebContentsView）是浏览器运行时（内置浏览器面板）的唯一宿主：用户与 Agent 操作**同一个** WebContentsView（同一 DOM / Cookie / 会话），Agent 动作通过 webContents.debugger（CDP）实时驱动用户可见页面。
+
+### 前置环境
+
+| 组件 | 说明 | 获取方式 |
+| --- | --- | --- |
+| Node.js ≥ 22 | 运行 Electron Main / 构建 | https://nodejs.org |
+| Electron（含 Chromium） | 桌面窗口与内置浏览器 | `npm install`（devDependencies 已含，安装时自动下载二进制） |
+
+### 完整桌面应用（Electron 窗口）
+
+```bash
+npm install
+npm run desktop:dev
+```
+
+`desktop:dev` 通过 `scripts/start-desktop.mjs` 自动拉起 API 服务（http://127.0.0.1:4127）、桌面 UI 开发服务器（http://127.0.0.1:5178）与 Electron Main（dev 模式加载 5178 Renderer，含「浏览器」工作台）。
+
+### 仅桌面 UI 预览（无 Electron，浏览器里看界面）
+
+```bash
+npm start                                              # API 服务
+npm --workspace @nexus/desktop run dev:ui              # 打开 http://127.0.0.1:5178
+```
+
+> 注意：浏览器预览模式没有 `nexusDesktop` 桥，浏览器工作台会显示「桌面浏览器不可用」——这是 strict 模式的预期行为，生产环境不会静默降级为 mock。真实浏览器功能必须通过 Electron 桌面窗口使用。
+
+### 生产构建
+
+```bash
+npm run desktop:build        # 构建 Electron 可执行产物（安装包打包在 Phase 5）
+```
+
+### 浏览器运行时链路
+
+桌面窗口内浏览器工作台的动作链路：
+
+```text
+React Desktop UI → Electron Main（BrowserViewManager + CDP Adapter）
+  → Agent Runtime（BrowserTaskOrchestrator 在 Main 进程：策略/预算/账本/审批）
+  → 同一 WebContentsView（用户可见页面，单一持久化会话 persist:nexus-browser）
+```
+
+策略执行点位于 Main 进程的 orchestrator：所有动作强制经过 `BrowserTaskOrchestrator`（AccessPolicy / ApprovalRequest / 预算 / checkpoint），外部副作用动作会先弹出审批请求。Agent 的导航/点击/输入在用户可见的真实页面上实时发生。
 
 ## 核心能力
 

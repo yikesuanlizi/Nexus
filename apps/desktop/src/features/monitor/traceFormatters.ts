@@ -17,6 +17,7 @@ export function traceIcon(category: RunTraceCategory): string {
     approval: '🛂',
     error: '❌',
     control: '🎮',
+    browser: '🌐',
   };
   return icons[category] ?? '•';
 }
@@ -38,6 +39,7 @@ export function traceCategoryLabel(category: RunTraceCategory, zh: boolean): str
     approval: { zh: '授权决策', en: 'Approval' },
     error: { zh: '错误', en: 'Error' },
     control: { zh: '控制指令', en: 'Control' },
+    browser: { zh: '浏览器动作', en: 'Browser' },
   };
   return zh ? labels[category].zh : labels[category].en;
 }

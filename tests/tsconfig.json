@@ -15,6 +15,7 @@
     { "path": "../packages/tools" },
     { "path": "../packages/memory" },
     { "path": "../packages/extensions" },
-    { "path": "../packages/runtime" }
+    { "path": "../packages/runtime" },
+    { "path": "../packages/browser-runtime" }
   ]
 }

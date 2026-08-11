@@ -5,7 +5,7 @@ import type { TaskRuntimeMonitorState } from '../features/monitor/taskRuntimeMon
 import type { RunControlCapabilities, RunTraceEnvelope, RunTraceSummary } from '@nexus/protocol';
 import type { ExternalPreviewRequest } from './WorkspaceFilesPanel.js';
 import { WorkspaceWorkbench } from './workbench/WorkspaceWorkbench.js';
-import type { WorkbenchTab } from './workbench/WorkbenchTabs.js';
+import type { UtilityWorkbenchTab, WorkbenchTab } from './workbench/WorkbenchTabs.js';
 
 export type RightPaneTab = WorkbenchTab;
 
@@ -61,14 +61,38 @@ export function RightPane({
   void activeThreadTitle;
   void taskRuntimeState;
   const [activeTab, setActiveTab] = useState<RightPaneTab>(() => initialActiveTab ?? readStoredRightPaneTab());
+  const [openUtilityTabs, setOpenUtilityTabs] = useState<UtilityWorkbenchTab[]>(() => {
+    return initialActiveTab === 'browser' || initialActiveTab === 'files' ? [initialActiveTab] : [];
+  });
 
   const handleTabChange = useCallback((tab: RightPaneTab) => {
+    if (isUtilityWorkbenchTab(tab)) {
+      setOpenUtilityTabs((tabs) => tabs.includes(tab) ? tabs : [...tabs, tab]);
+    }
     setActiveTab(tab);
     try {
-      localStorage.setItem('nexus.rightPane.tab', tab);
+      if (isUtilityWorkbenchTab(tab)) {
+        localStorage.removeItem('nexus.rightPane.tab');
+      } else {
+        localStorage.setItem('nexus.rightPane.tab', tab);
+      }
     } catch { /* best-effort local UI preference */ }
     onTabChange?.(tab);
   }, [onTabChange]);
+
+  const handleOpenUtilityTab = useCallback((tab: UtilityWorkbenchTab) => {
+    handleTabChange(tab);
+  }, [handleTabChange]);
+
+  const handleCloseUtilityTab = useCallback((tab: UtilityWorkbenchTab) => {
+    setOpenUtilityTabs((tabs) => tabs.filter((item) => item !== tab));
+    if (activeTab !== tab) return;
+    setActiveTab('activity');
+    try {
+      localStorage.setItem('nexus.rightPane.tab', 'activity');
+    } catch { /* best-effort local UI preference */ }
+    onTabChange?.('activity');
+  }, [activeTab, onTabChange]);
 
   return (
     <WorkspaceWorkbench
@@ -86,6 +110,9 @@ export function RightPane({
       externalPreviewRequest={externalPreviewRequest}
       activeTab={activeTab}
       onTabChange={handleTabChange}
+      openUtilityTabs={openUtilityTabs}
+      onOpenUtilityTab={handleOpenUtilityTab}
+      onCloseUtilityTab={handleCloseUtilityTab}
       onJumpToMonitor={onJumpToMonitor}
       onInterrupt={onInterrupt}
       onResume={onResume}
@@ -100,8 +127,13 @@ export function RightPane({
 function readStoredRightPaneTab(): RightPaneTab {
   try {
     const stored = localStorage.getItem('nexus.rightPane.tab');
-    if (stored === 'files' || stored === 'agents' || stored === 'activity') return stored;
+    if (stored === 'agents' || stored === 'activity') return stored;
+    if (stored === 'files' || stored === 'browser') localStorage.removeItem('nexus.rightPane.tab');
     if (stored === 'status') return 'activity';
   } catch { /* best-effort local UI preference */ }
   return 'activity';
+}
+
+function isUtilityWorkbenchTab(tab: WorkbenchTab): tab is UtilityWorkbenchTab {
+  return tab === 'files' || tab === 'browser';
 }

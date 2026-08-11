@@ -1,0 +1,22 @@
+<!doctype html>
+<!-- Phase 0 本地固定测试站点：验证同会话（用户输入 → 执行器读取；执行器点击 → 用户可见）。
+     — English: Phase 0 fixed local test site — proves the shared session
+       (user input → executor reads; executor click → user sees). -->
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>Phase0 Test Site</title>
+  </head>
+  <body>
+    <h1 id="site-title">Phase0 Test Site</h1>
+    <input id="name" placeholder="输入名称" />
+    <button id="go" type="button">提交</button>
+    <p id="out">等待输入</p>
+    <script>
+      document.getElementById('go').addEventListener('click', function () {
+        var value = document.getElementById('name').value;
+        document.getElementById('out').textContent = '收到: ' + value;
+      });
+    </script>
+  </body>
+</html>

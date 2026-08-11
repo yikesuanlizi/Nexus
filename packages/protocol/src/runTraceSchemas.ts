@@ -10,7 +10,7 @@ export const runTraceLifecycleSchema = z.enum(['instant', 'started', 'completed'
 export const runTraceCategorySchema = z.enum([
   'turn', 'iteration', 'context', 'memory', 'middleware',
   'model', 'tool', 'item', 'agent', 'file',
-  'checkpoint', 'evidence', 'approval', 'error', 'control',
+  'checkpoint', 'evidence', 'approval', 'error', 'control', 'browser',
 ]);
 export const runTraceRunKindSchema = z.enum(['turn', 'control', 'workflow', 'subagent']);
 
@@ -159,6 +159,25 @@ const controlPayloadSchema = z.object({
   reason: z.string().optional(),
 }).strict();
 
+// 浏览器领域 span：观测、策略、动作、验证与取消的统一关联载荷
+// — English: browser domain span — correlates observation, policy, action, verification and cancellation
+const browserPayloadSchema = z.object({
+  phase: z.enum(['observe', 'policy', 'prepare', 'execute', 'verify', 'cancel']),
+  taskId: z.string().min(1).optional(),
+  pageId: z.string().min(1).optional(),
+  observationId: z.string().min(1).optional(),
+  actionId: z.string().min(1).optional(),
+  actionKind: z.string().min(1).optional(),
+  outcome: z.enum(['allowed', 'confirm', 'denied', 'committed', 'uncertain', 'failed', 'cancelled']).optional(),
+  risk: z.string().min(1).optional(),
+  effect: z.string().min(1).optional(),
+  elementCount: z.number().int().min(0).optional(),
+  verificationPassed: z.boolean().optional(),
+  errorCode: z.string().min(1).optional(),
+  url: z.string().min(1).optional(),
+  reason: z.string().min(1).optional(),
+}).strict();
+
 // ─── Payload schema 映射（与 RunTracePayloadMap 同步） ─────────────────────
 // — English: payload schema map synced with RunTracePayloadMap
 export const runTracePayloadSchemaMap = {
@@ -177,6 +196,7 @@ export const runTracePayloadSchemaMap = {
   approval: approvalPayloadSchema,
   error: errorPayloadSchema,
   control: controlPayloadSchema,
+  browser: browserPayloadSchema,
 } as const;
 
 // ─── Envelope 基础字段 ─────────────────────────────────────────────────────
@@ -292,8 +312,14 @@ const controlEnvelopeSchema = z.object({
   payload: controlPayloadSchema,
 }).strict();
 
-// 14 个 envelope variant 的有序数组，用于构造 union 和派生 draft/observation
-// — English: ordered array of 14 envelope variants for union / draft / observation derivation
+const browserEnvelopeSchema = z.object({
+  ...runTraceBaseFields,
+  category: z.literal('browser'),
+  payload: browserPayloadSchema,
+}).strict();
+
+// 15 个 envelope variant 的有序数组，用于构造 union 和派生 draft/observation
+// — English: ordered array of 15 envelope variants for union / draft / observation derivation
 const envelopeVariants = [
   turnEnvelopeSchema,
   iterationEnvelopeSchema,
@@ -310,6 +336,7 @@ const envelopeVariants = [
   approvalEnvelopeSchema,
   errorEnvelopeSchema,
   controlEnvelopeSchema,
+  browserEnvelopeSchema,
 ] as const;
 
 // envelope 级别的关联性 refine（lifecycle × durationMs、item × itemId、runKind=turn × turnId）
@@ -379,6 +406,7 @@ export const runTraceEnvelopeSchemasByCategory = {
   approval: approvalEnvelopeSchema,
   error: errorEnvelopeSchema,
   control: controlEnvelopeSchema,
+  browser: browserEnvelopeSchema,
 } as const;
 
 // ─── 派生 schema：Draft / Observation ───────────────────────────────────────

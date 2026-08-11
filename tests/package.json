@@ -9,6 +9,7 @@
     "@nexus/sandbox": "1.7.0",
     "@nexus/storage": "1.7.0",
     "@nexus/runtime": "1.7.0",
+    "@nexus/browser-runtime": "1.7.0",
     "@nexus/memory": "1.7.0",
     "@nexus/extensions": "1.7.0",
     "@nexus/i18n": "1.7.0",

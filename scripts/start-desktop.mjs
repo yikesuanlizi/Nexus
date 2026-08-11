@@ -101,6 +101,13 @@ async function chooseWeixinBridgePort() {
 const build = run(bin('tsc'), ['-b'], { allowExit: true });
 build.on('exit', async (code) => {
   if (code) process.exit(code);
+  const electronBuild = run('node', ['apps/desktop/scripts/build-electron.mjs'], { allowExit: true });
+  electronBuild.on('exit', async (electronCode) => {
+    if (electronCode) process.exit(electronCode);
+    await startDesktopStack();
+  });
+});
+async function startDesktopStack() {
   const apiPort = process.env.NEXUS_API_PORT ?? '4127';
   if (!await isPortFreeAnyAddress(Number(apiPort))) {
     console.error(`[api] Port ${apiPort} is already in use. Nexus may already be running.`);
@@ -131,10 +138,17 @@ build.on('exit', async (code) => {
     env: { FORCE_COLOR: '1' },
   });
 
+  // Electron Main（迁移计划 Phase 1）：dev 模式加载 5178 Vite Renderer。
+  // — English: Electron Main (Phase 1) — dev mode loads the 5178 Vite renderer.
+  const electronMain = run(bin('electron'), ['apps/desktop/dist-electron/main/index.js'], {
+    cwd: path.join(root, 'apps', 'desktop'),
+    env: { NEXUS_ELECTRON_LOAD: 'dev', NEXUS_API_URL: `http://127.0.0.1:${apiPort}` },
+  });
+
   const stop = () => {
     stopChildren();
   };
 
   process.on('SIGINT', stop);
   process.on('SIGTERM', stop);
-});
+}

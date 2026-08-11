@@ -508,9 +508,9 @@ describe('RunTraceDraft / RunTraceObservation 派生类型', () => {
 describe('RunTrace 各 category payload schema 独立校验', () => {
   it('每个 category 都有对应的 envelope schema', () => {
     const categories = Object.keys(runTraceEnvelopeSchemasByCategory);
-    expect(categories).toHaveLength(15);
+    expect(categories).toHaveLength(16);
     expect(categories.sort()).toEqual([
-      'agent', 'approval', 'checkpoint', 'context', 'control', 'error', 'evidence',
+      'agent', 'approval', 'browser', 'checkpoint', 'context', 'control', 'error', 'evidence',
       'file', 'item', 'iteration', 'memory', 'middleware', 'model',
       'tool', 'turn',
     ]);

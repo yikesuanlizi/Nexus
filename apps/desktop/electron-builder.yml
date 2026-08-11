@@ -1,0 +1,42 @@
+# Electron 打包配置（Phase 5）
+# — English: electron-builder configuration (Phase 5).
+appId: com.nexus.desktop
+productName: Nexus
+directories:
+  output: release
+  buildResources: build
+
+# 只打包编译后的 Main/preload + 产物 UI + 运行依赖（node_modules 由 builder 收集）。
+# — English: package only the compiled Main/preload, the built UI and runtime
+#   deps (node_modules are collected by the builder).
+files:
+  - dist-electron/**/*
+  - dist/**/*
+  - package.json
+
+# workspace 运行时依赖随包收集（ElectronWebContentsRuntime 动态 import）。
+# — English: workspace runtime deps travel with the app (dynamic import in
+#   ElectronWebContentsRuntime).
+npmRebuild: false
+
+# 无远程仓库（本地 .git 无 remote），禁用自动更新元数据生成，
+# 否则 electron-builder 在 updateInfoBuilder 崩（null provider）。
+# — English: no remote repository (local .git without remote) — disable publish
+#   so electron-builder skips update metadata (avoids the null-provider crash).
+publish: null
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  # 图标暂用默认；替换为 build/icon.ico 后即可启用。
+  # — English: default icon for now; drop build/icon.ico to enable a custom one.
+  # icon: build/icon.ico
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+  createDesktopShortcut: true
+  shortcutName: Nexus

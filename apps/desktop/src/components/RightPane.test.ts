@@ -9,7 +9,7 @@ import { RightPane } from './RightPane.js';
 const here = dirname(fileURLToPath(import.meta.url));
 
 describe('RightPane', () => {
-  it('renders workbench tabs (activity/agents/files)', () => {
+  it('renders only fixed tabs at startup and keeps utilities behind the add menu', () => {
     const html = renderToStaticMarkup(React.createElement(RightPane, {
       activeTab: 'activity',
       activeThreadId: 'thread_1',
@@ -34,6 +34,9 @@ describe('RightPane', () => {
     expect(html).toContain('活动');
     expect(html).toContain('智能体');
     expect(html).toContain('文件');
+    expect(html).toContain('workbenchUtilityTabs');
+    expect(html).not.toContain('workbenchDynamicTab');
+    expect(html).not.toContain('browserPanel');
   });
 
   it('renders activity tab with idle state when not busy', () => {
@@ -128,15 +131,16 @@ describe('RightPane', () => {
     expect(styles).toContain('@keyframes workbenchPanelIn');
   });
 
-  it('keeps the files panel warm-mounted after first open instead of remounting the heavy tree', () => {
+  it('mounts file and browser panels only while their dynamic tabs are open', () => {
     const workbenchSource = readFileSync(join(here, 'workbench', 'WorkspaceWorkbench.tsx'), 'utf-8');
     const styles = readFileSync(join(here, '..', 'styles.css'), 'utf-8');
 
-    expect(workbenchSource).toContain('const [filesPanelMounted, setFilesPanelMounted]');
-    expect(workbenchSource).toContain('requestIdleCallback');
-    expect(workbenchSource).toContain("if (activeTab === 'files' || externalPreviewRequest?.path)");
-    expect(workbenchSource).toContain("const shouldRenderFilesPanel = filesPanelMounted || activeTab === 'files' || Boolean(externalPreviewRequest?.path)");
+    expect(workbenchSource).toContain("const shouldRenderFilesPanel = openUtilityTabs.includes('files');");
+    expect(workbenchSource).toContain("const shouldRenderBrowserWorkbench = openUtilityTabs.includes('browser');");
+    expect(workbenchSource).not.toContain('filesPanelMounted');
+    expect(workbenchSource).not.toContain('requestIdleCallback');
     expect(workbenchSource).toContain("aria-hidden={activeTab !== 'files'}");
+    expect(workbenchSource).toContain("aria-hidden={activeTab !== 'browser'}");
     expect(workbenchSource).toContain("workbenchPanel${tab === activeTab ? ' active' : ' inactive'}");
     expect(styles).toContain('.workbenchPanel.inactive');
     expect(styles).toContain('position: absolute;');
@@ -151,16 +155,18 @@ describe('RightPane', () => {
     expect(styles).toContain('contain: layout paint style;');
   });
 
-  it('keeps workbench tab state local but reports lightweight sizing mode to the app shell', () => {
+  it('keeps dynamic tabs local, does not restore them on startup, and reports sizing to the app shell', () => {
     const mainSource = readFileSync(join(here, '..', 'main.tsx'), 'utf-8');
     const rightPaneSource = readFileSync(join(here, 'RightPane.tsx'), 'utf-8');
 
     expect(rightPaneSource).toContain('useState<RightPaneTab>');
+    expect(rightPaneSource).toContain('const [openUtilityTabs, setOpenUtilityTabs]');
     expect(rightPaneSource).toContain("localStorage.getItem('nexus.rightPane.tab')");
-    expect(rightPaneSource).toContain("localStorage.setItem('nexus.rightPane.tab', tab)");
+    expect(rightPaneSource).toContain("localStorage.removeItem('nexus.rightPane.tab')");
+    expect(rightPaneSource).toContain("onTabChange?.('activity')");
     expect(mainSource).not.toContain('setRightPaneTab');
     expect(mainSource).toContain("setRightPaneSizingMode(rightPaneSizingModeForTab(tab))");
-    expect(mainSource).toContain("return tab === 'files' ? 'files' : 'standard';");
+    expect(mainSource).toContain("if (tab === 'files' || tab === 'browser') localStorage.removeItem('nexus.rightPane.tab');");
     expect(mainSource).not.toContain('onTabChange={setRightPaneTab}');
   });
 

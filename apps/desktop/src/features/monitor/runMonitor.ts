@@ -12,7 +12,7 @@ const TRACE_FETCH_LIMIT = 200;
 
 const ALL_CATEGORIES: RunTraceCategory[] = [
   'model', 'tool', 'approval', 'item', 'file', 'error', 'agent', 'checkpoint', 'control',
-  'turn', 'iteration', 'context', 'memory', 'middleware', 'evidence',
+  'turn', 'iteration', 'context', 'memory', 'middleware', 'evidence', 'browser',
 ];
 
 function buildTraceUrl(

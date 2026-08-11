@@ -7,10 +7,11 @@ import { WorkspaceFilesPanel } from '../WorkspaceFilesPanel.js';
 import { Icon } from '../Icon.js';
 import { buildAgentWorkbench } from '../../features/agents/agentWorkbenchModel.js';
 import { buildAgentStageRows, buildSubagentStatusRows } from '../../features/agents/subagents.js';
-import { WorkbenchTabs, type WorkbenchTab } from './WorkbenchTabs.js';
+import { WorkbenchTabs, type UtilityWorkbenchTab, type WorkbenchTab } from './WorkbenchTabs.js';
 import { LiveActivityHud } from './LiveActivityHud.js';
 import { AgentInspector } from './AgentInspector.js';
 import { AgentStagePanel } from '../AgentStagePanel.js';
+import { BrowserWorkbench } from '../BrowserWorkbench.js';
 
 export function WorkspaceWorkbench({
   activeThread,
@@ -27,6 +28,9 @@ export function WorkspaceWorkbench({
   externalPreviewRequest,
   activeTab,
   onTabChange,
+  openUtilityTabs,
+  onOpenUtilityTab,
+  onCloseUtilityTab,
   onJumpToMonitor,
   onInterrupt,
   onResume,
@@ -49,6 +53,9 @@ export function WorkspaceWorkbench({
   externalPreviewRequest?: ExternalPreviewRequest | null;
   activeTab: WorkbenchTab;
   onTabChange(tab: WorkbenchTab): void;
+  openUtilityTabs: UtilityWorkbenchTab[];
+  onOpenUtilityTab(tab: UtilityWorkbenchTab): void;
+  onCloseUtilityTab(tab: UtilityWorkbenchTab): void;
   onJumpToMonitor?(opts: { runId?: string; eventId?: string; itemId?: string; threadId?: string }): void;
   onInterrupt?(): void;
   onResume?(): void;
@@ -59,7 +66,6 @@ export function WorkspaceWorkbench({
 }) {
   const zh = locale === 'zh';
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
-  const [filesPanelMounted, setFilesPanelMounted] = useState(false);
   const handledPreviewRequestKeyRef = useRef('');
   const mainAgentThreadId = activeThreadId || 'main';
 
@@ -73,37 +79,9 @@ export function WorkspaceWorkbench({
     if (handledPreviewRequestKeyRef.current === previewRequestKey) return;
     handledPreviewRequestKeyRef.current = previewRequestKey;
     if (activeTab !== 'files') {
-      onTabChange('files');
+      onOpenUtilityTab('files');
     }
-  }, [externalPreviewRequest?.nonce, externalPreviewRequest?.path, externalPreviewRequest?.pin, activeTab, onTabChange]);
-
-  useEffect(() => {
-    if (activeTab === 'files' || externalPreviewRequest?.path) {
-      setFilesPanelMounted(true);
-    }
-  }, [activeTab, externalPreviewRequest?.path]);
-
-  useEffect(() => {
-    if (filesPanelMounted || !workspaceRoot) return;
-    const idleWindow = window as Window & {
-      cancelIdleCallback?: (id: number) => void;
-      requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
-    };
-    let timeoutId: number | undefined;
-    let idleId: number | undefined;
-    const mountFilesPanel = () => setFilesPanelMounted(true);
-
-    if (idleWindow.requestIdleCallback) {
-      idleId = idleWindow.requestIdleCallback(mountFilesPanel, { timeout: 1400 });
-    } else {
-      timeoutId = window.setTimeout(mountFilesPanel, 700);
-    }
-
-    return () => {
-      if (idleId !== undefined) idleWindow.cancelIdleCallback?.(idleId);
-      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
-    };
-  }, [filesPanelMounted, workspaceRoot]);
+  }, [externalPreviewRequest?.nonce, externalPreviewRequest?.path, externalPreviewRequest?.pin, activeTab, onOpenUtilityTab]);
 
   const workbench = useMemo(() => buildAgentWorkbench({
     mainThreadId: mainAgentThreadId,
@@ -134,7 +112,8 @@ export function WorkspaceWorkbench({
   }, [workbench.nodes, selectedAgentId]);
 
   const memoryExcluded = activeThread?.tags?.memoryExcluded === 'true';
-  const shouldRenderFilesPanel = filesPanelMounted || activeTab === 'files' || Boolean(externalPreviewRequest?.path);
+  const shouldRenderFilesPanel = openUtilityTabs.includes('files');
+  const shouldRenderBrowserWorkbench = openUtilityTabs.includes('browser');
 
   const handleTabChange = (tab: WorkbenchTab) => {
     onTabChange(tab);
@@ -157,6 +136,9 @@ export function WorkspaceWorkbench({
       <WorkbenchTabs
         activeTab={activeTab}
         onTabChange={handleTabChange}
+        openUtilityTabs={openUtilityTabs}
+        onOpenUtilityTab={onOpenUtilityTab}
+        onCloseUtilityTab={onCloseUtilityTab}
         runningAgentCount={runningAgentCount}
         locale={locale}
       />
@@ -232,6 +214,17 @@ export function WorkspaceWorkbench({
             />
           </div>
         ) : null}
+
+        {shouldRenderBrowserWorkbench ? (
+          <div
+            className={workbenchPanelClassName('browser', activeTab)}
+            data-state={activeTab === 'browser' ? 'active' : 'inactive'}
+            aria-hidden={activeTab !== 'browser'}
+            inert={activeTab !== 'browser'}
+          >
+            <BrowserWorkbench />
+          </div>
+        ) : null}
       </div>
 
       {activeThread && onToggleMemoryExcluded ? (
@@ -264,6 +257,6 @@ export function WorkspaceWorkbench({
 }
 
 function workbenchPanelClassName(tab: WorkbenchTab, activeTab: WorkbenchTab): string {
-  const base = tab === 'activity' ? 'workbenchActivity' : tab === 'agents' ? 'workbenchAgents' : 'workbenchFiles';
+  const base = tab === 'activity' ? 'workbenchActivity' : tab === 'agents' ? 'workbenchAgents' : tab === 'browser' ? 'workbenchBrowser' : 'workbenchFiles';
   return `${base} workbenchPanel${tab === activeTab ? ' active' : ' inactive'}`;
 }

@@ -40,12 +40,12 @@ function makeTurnEnvelope(overrides: Record<string, unknown> = {}): Record<strin
 }
 
 describe('RunTrace schema — 基础枚举', () => {
-  it('runTraceCategorySchema 包含全部 15 个 category', () => {
+  it('runTraceCategorySchema 包含全部 16 个 category', () => {
     const categories = runTraceCategorySchema.options;
     expect(categories).toEqual([
       'turn', 'iteration', 'context', 'memory', 'middleware',
       'model', 'tool', 'item', 'agent', 'file',
-      'checkpoint', 'evidence', 'approval', 'error', 'control',
+      'checkpoint', 'evidence', 'approval', 'error', 'control', 'browser',
     ]);
   });
 
@@ -67,11 +67,11 @@ describe('RunTrace schema — 基础枚举', () => {
 });
 
 describe('RunTrace schema — payload strict 校验', () => {
-  it('runTracePayloadSchemaMap 包含 15 个 payload schema', () => {
+  it('runTracePayloadSchemaMap 包含 16 个 payload schema', () => {
     const keys = Object.keys(runTracePayloadSchemaMap);
-    expect(keys).toHaveLength(15);
+    expect(keys).toHaveLength(16);
     expect(keys.sort()).toEqual([
-      'agent', 'approval', 'checkpoint', 'context', 'control', 'error', 'evidence',
+      'agent', 'approval', 'browser', 'checkpoint', 'context', 'control', 'error', 'evidence',
       'file', 'item', 'iteration', 'memory', 'middleware', 'model',
       'tool', 'turn',
     ]);

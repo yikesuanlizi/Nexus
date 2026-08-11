@@ -9,7 +9,7 @@ export type RunTraceLifecycle = 'instant' | 'started' | 'completed' | 'failed' |
 export type RunTraceCategory =
   | 'turn' | 'iteration' | 'context' | 'memory' | 'middleware'
   | 'model' | 'tool' | 'item' | 'agent' | 'file'
-  | 'checkpoint' | 'evidence' | 'approval' | 'error' | 'control';
+  | 'checkpoint' | 'evidence' | 'approval' | 'error' | 'control' | 'browser';
 export type RunTraceRunKind = 'turn' | 'control' | 'workflow' | 'subagent';
 
 export interface RunTracePayloadMap {
@@ -83,6 +83,22 @@ export interface RunTracePayloadMap {
   };
   error: { code: string; message: string; retryable: boolean; source?: string };
   control: { action: 'interrupt' | 'resume' | 'rollback'; outcome: 'requested' | 'accepted' | 'rejected' | 'completed'; checkpointId?: string; reason?: string };
+  browser: {
+    phase: 'observe' | 'policy' | 'prepare' | 'execute' | 'verify' | 'cancel';
+    taskId?: string;
+    pageId?: string;
+    observationId?: string;
+    actionId?: string;
+    actionKind?: string;
+    outcome?: 'allowed' | 'confirm' | 'denied' | 'committed' | 'uncertain' | 'failed' | 'cancelled';
+    risk?: string;
+    effect?: string;
+    elementCount?: number;
+    verificationPassed?: boolean;
+    errorCode?: string;
+    url?: string;
+    reason?: string;
+  };
 }
 
 interface RunTraceBase<C extends RunTraceCategory> {

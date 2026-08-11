@@ -21319,3 +21319,238 @@
   background: var(--nx-surface-panel);
   box-shadow: none;
 }
+
+.appShell .workbenchPane .workbenchTabs {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+/* Overlay and sheet modes keep the close control above the tab strip. */
+.appShell .workbench-overlay .workbenchTabs,
+.appShell .workbench-sheet .workbenchTabs {
+  padding-right: 46px;
+}
+
+.appShell .workbench-overlay .workbenchUtilityTabs,
+.appShell .workbench-sheet .workbenchUtilityTabs {
+  margin-right: 36px;
+}
+
+.appShell .workbenchPrimaryTabs,
+.appShell .workbenchUtilityTabs {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.appShell .workbenchPrimaryTabs {
+  gap: 3px;
+}
+
+.appShell .workbenchUtilityTabs {
+  position: relative;
+  flex: 0 0 auto;
+  gap: 3px;
+}
+
+.appShell .workbenchPane .workbenchUtilityTabs > button {
+  width: 31px;
+  min-width: 31px;
+  padding: 0;
+  justify-content: center;
+}
+
+.appShell .workbenchDynamicTab {
+  display: flex;
+  min-width: 0;
+  height: 31px;
+  border: 1px solid var(--nx-control-border);
+  border-radius: 6px;
+  background: var(--nx-surface-raised);
+}
+
+.appShell .workbenchDynamicTab.active {
+  border-color: color-mix(in srgb, var(--nx-brand) 40%, var(--nx-control-border));
+  background: var(--nx-surface-overlay);
+}
+
+.appShell .workbenchPane .workbenchDynamicTab > button:first-child {
+  min-width: 0;
+  gap: 5px;
+  padding: 0 5px 0 7px;
+  border: 0;
+  background: transparent;
+}
+
+.appShell .workbenchPane .workbenchDynamicTabClose {
+  width: 24px;
+  min-width: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--nx-text-muted);
+}
+
+.appShell .workbenchPane .workbenchDynamicTabClose:hover {
+  background: var(--nx-surface-hover);
+  color: var(--nx-text-primary);
+}
+
+.appShell .workbenchUtilityMenu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  right: 0;
+  display: grid;
+  width: 118px;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--nx-control-border);
+  border-radius: 7px;
+  background: var(--nx-surface-raised);
+  box-shadow: 0 10px 26px color-mix(in srgb, #000 18%, transparent);
+}
+
+.appShell .workbenchPane .workbenchUtilityMenu button {
+  width: 100%;
+  min-width: 0;
+  justify-content: flex-start;
+  padding: 0 8px;
+}
+
+.appShell .workbenchBrowser.workbenchPanel {
+  padding: 0;
+  overflow: hidden;
+}
+
+.appShell .browserPanel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+}
+
+.appShell .browserToolbar {
+  display: flex;
+  align-items: center;
+  min-height: 52px;
+  gap: 12px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--nx-control-border);
+}
+
+.appShell .browserToolbarControls {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 5px;
+}
+
+.appShell .browserToolbarControls button,
+.appShell .browserPanelError button {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  place-items: center;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--nx-text-muted);
+}
+
+.appShell .browserToolbarControls button:hover:not(:disabled),
+.appShell .browserPanelError button:hover {
+  background: var(--nx-surface-overlay);
+  color: var(--nx-text-primary);
+}
+
+.appShell .browserToolbarControls button:disabled {
+  opacity: .4;
+}
+
+.appShell .browserAddressForm {
+  min-width: 0;
+  flex: 1;
+}
+
+.appShell .browserAddressForm input {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--nx-control-border);
+  border-radius: 7px;
+  outline: none;
+  background: var(--nx-surface-overlay);
+  color: var(--nx-text-primary);
+  font: inherit;
+}
+
+.appShell .browserAddressForm input:focus {
+  border-color: var(--nx-brand);
+}
+
+.appShell .browserViewport {
+  position: relative;
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  place-items: center;
+  background: var(--nx-surface-panel);
+}
+
+.appShell .browserViewport[data-page-loaded="true"] {
+  display: block;
+  overflow: auto;
+  background: #fff;
+}
+
+.appShell .browserScreenshot {
+  display: block;
+  width: 100%;
+  height: auto;
+  user-select: none;
+}
+
+.appShell .browserEmptyState {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  color: var(--nx-text-muted);
+}
+
+.appShell .browserEmptyState .icon {
+  width: 36px;
+  height: 36px;
+  stroke-width: 1.5;
+}
+
+.appShell .browserEmptyState strong {
+  color: var(--nx-text-primary);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.appShell .browserEmptyState span {
+  font-size: 13px;
+}
+
+.appShell .browserPanelError {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  display: flex;
+  max-width: min(520px, calc(100% - 28px));
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 8px 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--nx-danger) 45%, var(--nx-control-border));
+  border-radius: 6px;
+  background: var(--nx-surface-raised);
+  color: var(--nx-danger);
+  font-size: 12px;
+  line-height: 1.45;
+}

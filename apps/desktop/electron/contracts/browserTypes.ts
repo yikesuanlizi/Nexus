@@ -1,0 +1,71 @@
+// Phase 0 最小共享类型：electron 目录不跨包依赖（CJS 边界），内联浏览器契约类型。
+// Phase 3 接入 browser-runtime 时改为共享协议 Schema。
+// — English: Phase 0 minimal shared types — the electron dir stays package-free
+//   (CJS boundary); Phase 3 wires the shared protocol schemas.
+export interface BrowserViewBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface CreateBrowserTabInput {
+  url: string;
+  bounds: BrowserViewBounds;
+}
+
+export interface BrowserTabState {
+  tabId: string;
+  url: string;
+  title: string;
+  visible: boolean;
+  loading: boolean;
+  favicon?: string;
+}
+
+export interface BrowserNavigateInput {
+  tabId: string;
+  url: string;
+}
+
+export interface BrowserEvaluateInput {
+  tabId: string;
+  expression: string;
+}
+
+export interface BrowserClickInput {
+  tabId: string;
+  x: number;
+  y: number;
+}
+
+export type BrowserDesktopEvent =
+  | { type: 'tab-created'; tabId: string; url: string }
+  | { type: 'tab-closed'; tabId: string }
+  | { type: 'tab-visible'; tabId: string; visible: boolean }
+  | { type: 'did-navigate'; tabId: string; url: string }
+  | { type: 'page-title'; tabId: string; title: string }
+  | { type: 'loading'; tabId: string; loading: boolean }
+  | { type: 'favicon'; tabId: string; favicon?: string }
+  | { type: 'page-crashed'; tabId: string }
+  | { type: 'download-started'; tabId: string; filename: string }
+  | { type: 'download-progress'; tabId: string; filename: string; receivedBytes: number; totalBytes: number }
+  | { type: 'download-completed'; tabId: string; filename: string }
+  | { type: 'download-failed'; tabId: string; filename: string };
+
+// 桌面能力（迁移计划 Phase 1：替换 Tauri desktop_capabilities）。
+// — English: desktop capabilities (Phase 1 — replaces Tauri desktop_capabilities).
+export interface DesktopCapabilitiesContract {
+  desktop: boolean;
+  weixinBridge: {
+    managedAvailable: boolean;
+    rpcUrl: string;
+    reason?: string;
+  };
+}
+
+// 窗口控制状态事件（TitleBar 最大最小化图标）。
+// — English: window-control state events (TitleBar maximize icon).
+export interface WindowControlEvent {
+  maximized: boolean;
+}

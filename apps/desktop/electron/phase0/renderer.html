@@ -1,0 +1,103 @@
+<!doctype html>
+<!-- Phase 0 最小测试 Renderer：验证 preload 白名单 API、bounds 提交与 WebContentsView 布局。
+     完整 React 工作台在 Phase 1 接入。— English: Phase 0 minimal test renderer —
+     verifies the preload whitelist API, bounds submission and WebContentsView layout. -->
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>Nexus Electron Phase 0</title>
+    <style>
+      body { margin: 0; font-family: system-ui, sans-serif; }
+      #toolbar { height: 40px; display: flex; gap: 8px; align-items: center; padding: 0 8px;
+                 border-bottom: 1px solid #ccc; background: #f7f7f8; }
+      #toolbar button { cursor: pointer; }
+      #viewArea { position: relative; width: 100%; height: calc(100vh - 40px); background: #eee; }
+      #status { font-size: 12px; color: #666; padding: 4px 8px; }
+      #placeholder { display: flex; align-items: center; justify-content: center; height: 100%;
+                     color: #999; font-size: 14px; }
+      .hidden { display: none; }
+    </style>
+  </head>
+  <body>
+    <div id="toolbar">
+      <button id="btn-create" type="button">新建标签</button>
+      <button id="btn-hide" type="button">隐藏</button>
+      <button id="btn-show" type="button">显示</button>
+      <button id="btn-close" type="button">关闭标签</button>
+      <span id="status">未创建标签</span>
+    </div>
+    <div id="viewArea">
+      <div id="placeholder">点击「新建标签」在下方加载真实页面（WebContentsView）</div>
+    </div>
+    <script>
+      // Phase 0 最小 UI 逻辑：通过 preload 白名单 API 驱动浏览器 View。
+      // — English: minimal Phase 0 UI logic driving the browser view via the preload API.
+      (function () {
+        var api = window.nexusDesktop;
+        if (!api || !api.browser) {
+          document.getElementById('status').textContent = 'nexusDesktop API 不可用（preload 未加载）';
+          return;
+        }
+        var status = document.getElementById('status');
+        var viewArea = document.getElementById('viewArea');
+        var placeholder = document.getElementById('placeholder');
+        var currentTab = null;
+
+        function rect() {
+          var r = viewArea.getBoundingClientRect();
+          return { x: Math.round(r.x), y: Math.round(r.y + window.scrollY),
+                   width: Math.round(r.width), height: Math.round(r.height) };
+        }
+
+        function setStatus(text) {
+          status.textContent = text;
+        }
+
+        document.getElementById('btn-create').addEventListener('click', function () {
+          api.browser.createTab({
+            url: document.getElementById('tab-url') ? document.getElementById('tab-url').value : 'about:blank',
+            bounds: rect(),
+          }).then(function (tab) {
+            currentTab = tab.tabId;
+            placeholder.classList.add('hidden');
+            setStatus('标签 ' + tab.tabId + ' 已创建: ' + tab.url);
+          }).catch(function (err) { setStatus('创建失败: ' + String(err)); });
+        });
+
+        document.getElementById('btn-hide').addEventListener('click', function () {
+          if (!currentTab) return;
+          api.browser.setVisible({ tabId: currentTab, visible: false }).then(function () {
+            setStatus('标签已隐藏');
+          });
+        });
+
+        document.getElementById('btn-show').addEventListener('click', function () {
+          if (!currentTab) return;
+          api.browser.setVisible({ tabId: currentTab, visible: true }).then(function () {
+            setStatus('标签已显示');
+          });
+        });
+
+        document.getElementById('btn-close').addEventListener('click', function () {
+          if (!currentTab) return;
+          api.browser.closeTab(currentTab).then(function () {
+            currentTab = null;
+            placeholder.classList.remove('hidden');
+            setStatus('标签已关闭');
+          });
+        });
+
+        window.addEventListener('resize', function () {
+          if (!currentTab) return;
+          api.browser.setBounds({ tabId: currentTab, bounds: rect() });
+        });
+
+        api.browser.subscribe(function (event) {
+          if (event && event.type === 'page-title' && event.tabId === currentTab) {
+            setStatus('标题: ' + event.title);
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>

@@ -11,6 +11,7 @@ export * from './fileKnowledgeSchemas.js';
 export * from './modelCapabilities.js';
 export * from './accessPolicy.js';
 export * from './accessPolicySchemas.js';
+export * from './browser/index.js';
 export * from './a2a/index.js';
 
 // 协议版本号：用于跨端兼容性与版本协商；英文说明：Protocol version for cross-runtime compatibility

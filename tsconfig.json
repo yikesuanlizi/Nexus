@@ -12,6 +12,7 @@
     { "path": "packages/i18n" },
     { "path": "packages/bot" },
     { "path": "packages/runtime" },
+    { "path": "packages/browser-runtime" },
     { "path": "apps/api" },
     { "path": "apps/web" },
     { "path": "apps/desktop" }

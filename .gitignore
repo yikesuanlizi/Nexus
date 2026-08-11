@@ -3,6 +3,8 @@ node_modules.*/
 .trae/
 dist/
 dist-types/
+dist-electron/
+release/
 target/
 **/src-tauri/gen/
 .tsbuildinfo
@@ -25,3 +27,4 @@ outputs/
 **/src/**/*.js.map
 **/src/**/*.d.ts
 **/src/**/*.d.ts.map
+.reasonix/

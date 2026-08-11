@@ -9,6 +9,7 @@ export type IconName =
   | 'calculator'
   | 'chevron'
   | 'chevronDown'
+  | 'chevronLeft'
   | 'chevronRight'
   | 'clip'
   | 'copy'
@@ -53,7 +54,10 @@ export type IconName =
   | 'wrench'
   | 'palette'
   | 'shield'
-  | 'x';
+  | 'x'
+  | 'minimize'
+  | 'maximize'
+  | 'restore';
 
 export type SidebarIconName = 'chevron' | 'folder' | 'folderCode' | 'gear' | 'layers' | 'message' | 'pen' | 'plus' | 'search' | 'trash' | 'workflow';
 
@@ -113,6 +117,7 @@ export function Icon({ className, name }: { className?: string; name: IconName }
     ),
     chevron: <path d="m15 18-6-6 6-6" />,
     chevronDown: <path d="m7 9 5 5 5-5" />,
+    chevronLeft: <path d="m15 6-6 6 6 6" />,
     chevronRight: <path d="m9 6 6 6-6 6" />,
     clip: <path d="m21.4 11.6-8.6 8.6a5 5 0 0 1-7.1-7.1l9.2-9.2a3.5 3.5 0 0 1 5 5l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5" />,
     copy: <path d="M8 8h11v11H8zM5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" />,
@@ -220,6 +225,14 @@ export function Icon({ className, name }: { className?: string; name: IconName }
       </>
     ),
     stop: <path d="M8 8h8v8H8z" />,
+    minimize: <path d="M5 12h14" />,
+    maximize: <rect x="5" y="5" width="14" height="14" rx="1" />,
+    restore: (
+      <>
+        <rect x="5" y="9" width="10" height="10" rx="1" />
+        <path d="M9 5h10v10" />
+      </>
+    ),
     sun: (
       <>
         <circle cx="12" cy="12" r="4" />

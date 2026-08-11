@@ -113,7 +113,7 @@ function App() {
   // 中文注释：外部预览请求 — 从对话条目点击"预览"时驱动右侧文件面板加载该文件
   // — Chinese: external preview request — drives right file panel to load a file when "preview" is clicked from chat
   const [previewRequest, setPreviewRequest] = useState<ExternalPreviewRequest | null>(null);
-  const [rightPaneSizingMode, setRightPaneSizingMode] = useState<'standard' | 'files'>(() => readStoredRightPaneSizingMode());
+  const [rightPaneSizingMode, setRightPaneSizingMode] = useState<'standard' | 'files' | 'browser'>(() => readStoredRightPaneSizingMode());
   const [pendingApprovals, setPendingApprovals] = useState<ApprovalRequest[]>([]);
   const taskRuntimeMonitor = useTaskRuntimeMonitor();
   const [providers, setProviders] = useState<ProviderEntry[]>([]);
@@ -1948,16 +1948,20 @@ function App() {
   );
 }
 
-function readStoredRightPaneSizingMode(): 'standard' | 'files' {
+function readStoredRightPaneSizingMode(): 'standard' | 'files' | 'browser' {
   try {
-    return localStorage.getItem('nexus.rightPane.tab') === 'files' ? 'files' : 'standard';
+    const tab = localStorage.getItem('nexus.rightPane.tab');
+    if (tab === 'files' || tab === 'browser') localStorage.removeItem('nexus.rightPane.tab');
+    return 'standard';
   } catch {
     return 'standard';
   }
 }
 
-function rightPaneSizingModeForTab(tab: string): 'standard' | 'files' {
-  return tab === 'files' ? 'files' : 'standard';
+function rightPaneSizingModeForTab(tab: string): 'standard' | 'files' | 'browser' {
+  if (tab === 'files') return 'files';
+  if (tab === 'browser') return 'browser';
+  return 'standard';
 }
 
 createRoot(document.getElementById('root')!).render(<App />);
