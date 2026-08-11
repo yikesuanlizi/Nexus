@@ -3,6 +3,7 @@ import { Dirent } from 'node:fs';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 import type { ToolDefinition, ToolContext, ToolResult } from './registry.js';
+import { browserTools } from './browserTool.js';
 import { resolveToolPath, resolveToolPathAccess, toolResultFromAccessDecision } from './accessGuard.js';
 import { WebProviderRouter } from './web/provider.js';
 import {
@@ -859,6 +860,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   webFetchTool,
   applyPatchTool,
   getSystemStatusTool,
+  ...browserTools,
 ];
 
 // ─── Helpers ────────────────────────────────────────────────────────────────

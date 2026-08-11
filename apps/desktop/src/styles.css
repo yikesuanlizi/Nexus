@@ -21679,8 +21679,10 @@ html[data-nexus-theme='dark'] body.electron-shell #root {
 }
 
 .electron-shell .appShell {
-  height: calc(100vh - 16px) !important;
-  margin: 8px;
+  height: calc(100vh - 8px) !important;
+  /* 顶部 0（与标题栏衔接），左右下 8px 留边。 */
+  /* — English: 0 top (flush with the title bar), 8px gutters on left/right/bottom. */
+  margin: 0 8px 8px 8px;
   border: 1px solid rgba(128, 151, 169, .28);
   border-radius: 12px;
   overflow: hidden;

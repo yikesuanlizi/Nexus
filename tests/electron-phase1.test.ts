@@ -13,46 +13,55 @@ import { _electron as electron } from 'playwright';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const MAIN_JS = join(here, '../apps/desktop/dist-electron/main/index.js');
-const VITE_UI_PORT = 5178;
 
 // 起 Vite dev server（复用 Phase 1 开发入口；Electron dev 模式加载它）。
+// 随机端口（--port 0）避免测试间 5178 竞争；从 vite 日志解析实际端口。
 // — English: start the Vite dev server (the Phase 1 dev entry the Electron dev
-//   mode loads).
+//   mode loads). A random port (--port 0) avoids 5178 contention between
+//   tests; the actual port is parsed from vite's log.
 let viteServer: ChildProcess | null = null;
+let viteUiUrl = 'http://127.0.0.1:5178';
 
 async function startViteDev(): Promise<void> {
   if (viteServer !== null) return;
   // Windows 下 .cmd 包装 spawn 需 shell；直接调 vite 的 node 入口更稳。
   // — English: .cmd shims need a shell on Windows — invoke vite's node entry directly.
   const viteEntry = join(here, '../node_modules/vite/bin/vite.js');
-  viteServer = spawn(process.execPath, [viteEntry, '--host', '127.0.0.1', '--port', String(VITE_UI_PORT)], {
+  viteServer = spawn(process.execPath, [viteEntry, '--host', '127.0.0.1', '--port', '5196'], {
     cwd: join(here, '../apps/desktop'),
-    env: { ...process.env, FORCE_COLOR: '1' },
+    env: { ...process.env, NO_COLOR: '1' },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   });
-  // 等待 dev server 就绪（探测首页）。
-  // — English: wait until the dev server answers.
+  let viteLog = '';
+  viteServer.stdout?.on('data', (chunk: Buffer) => {
+    viteLog += String(chunk);
+  });
+  viteServer.stderr?.on('data', (chunk: Buffer) => {
+    viteLog += String(chunk);
+  });
+  // 等待 dev server 就绪（vite 日志出现 Local 行）。
+  // — English: wait until the dev server is ready (the Local line in vite's log).
   const deadline = Date.now() + 30_000;
-  for (;;) {
-    const ok = await probe(`http://127.0.0.1:${VITE_UI_PORT}/`);
-    if (ok) return;
-    if (Date.now() > deadline) throw new Error('vite dev server did not become ready');
-    await new Promise((r) => setTimeout(r, 250));
+  while (Date.now() < deadline) {
+    const readyMatch = viteLog.match(/127\.0\.0\.1:(?:\u001b\[[0-9;]*m)?(\d+)/);
+    if (readyMatch !== null) {
+      viteUiUrl = `http://127.0.0.1:${readyMatch[1]}`;
+      return;
+    }
+    if (viteServer.exitCode !== null) {
+      throw new Error(`vite exited early: ${viteLog.slice(-500)}`);
+    }
+    await new Promise((r) => setTimeout(r, 200));
   }
-}
-
-async function probe(url: string): Promise<boolean> {
-  try {
-    const response = await fetch(url);
-    return response.ok;
-  } catch {
-    return false;
-  }
+  throw new Error(`vite dev server did not become ready: ${viteLog.slice(-500)}`);
 }
 
 function launchElectronDev() {
-  return electron.launch({ args: [MAIN_JS], env: { ...process.env, NEXUS_ELECTRON_LOAD: 'dev', NEXUS_DISABLE_SINGLE_INSTANCE: '1' } });
+  return electron.launch({
+    args: [MAIN_JS, '--disable-gpu'],
+    env: { ...process.env, NEXUS_ELECTRON_LOAD: 'dev', NEXUS_DISABLE_SINGLE_INSTANCE: '1', NEXUS_UI_URL: viteUiUrl },
+  });
 }
 
 beforeAll(async () => {

@@ -3,7 +3,10 @@
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src",
-    "tsBuildInfoFile": "dist/.tsbuildinfo"
+    "tsBuildInfoFile": "dist/.tsbuildinfo",
+    "paths": {
+      "@nexus/browser-runtime": ["node_modules/@nexus/browser-runtime/dist/index.d.ts"]
+    }
   },
   "include": ["src"],
   "references": [

@@ -28,6 +28,10 @@ export class BrowserViewManager {
   private readonly host: BaseWindow;
   private readonly emit: (event: BrowserDesktopEvent) => void;
   private nextId = 1;
+  // 当前活动标签（用户可见 View；Agent 会话绑定它）。
+  // — English: the currently active tab (the user-visible view the agent
+  //   session binds to).
+  private activeTabId: string | null = null;
 
   constructor(deps: { host: BaseWindow; emit: (event: BrowserDesktopEvent) => void }) {
     this.host = deps.host;
@@ -115,6 +119,7 @@ export class BrowserViewManager {
       loading: true,
     };
     this.views.set(tabId, managed);
+    this.activeTabId = tabId;
     this.host.contentView.addChildView(view);
     this.setBounds(tabId, input.bounds);
 
@@ -246,6 +251,7 @@ export class BrowserViewManager {
   activateTab(tabId: string): void {
     const target = this.views.get(tabId);
     if (target === undefined) throw new Error(`unknown tab: ${tabId}`);
+    this.activeTabId = tabId;
     for (const managed of this.views.values()) {
       const visible = managed.tabId === tabId;
       if (visible !== managed.visible) {
@@ -360,6 +366,18 @@ export class BrowserViewManager {
   // 否则页面残留在窗口上）。
   // — English: recycle every view when the browser panel closes (React unmount
   //   does not destroy native views — without this the page stays on screen).
+  // 当前活动标签（无活动标签时回退第一个）。Agent 会话绑定用户可见的 View。
+  // — English: the active tab (falls back to the first); the agent session
+  //   binds the user-visible view.
+  activeTabOrFirst(): { tabId: string; view: WebContentsView } {
+    const tabs = this.listTabs();
+    if (tabs.length === 0) throw new Error('no browser tab open');
+    const tabId = this.activeTabId !== null && tabs.some((t) => t.tabId === this.activeTabId)
+      ? this.activeTabId
+      : tabs[0].tabId;
+    return { tabId, view: this.viewFor(tabId) };
+  }
+
   destroyAll(): void {
     this.dispose();
   }

@@ -37,10 +37,15 @@ import { registerBrowserIpc } from '../ipc/registerBrowserIpc.js';
 import { registerDesktopIpc } from './registerDesktopIpc.js';
 import { registerTaskRuntimeIpc } from './taskRuntime.js';
 import { registerMenuIpc, setApplicationMenu } from './menu.js';
+import { startBrowserCommandServer, type BrowserServerHandle } from './browserServer.js';
 import { applyWindowState, loadWindowState, persistWindowState, registerShutdownCleanup } from './lifecycle.js';
 import type { BrowserDesktopEvent } from '../contracts/browserTypes.js';
 
 const LOAD_MODE = process.env.NEXUS_ELECTRON_LOAD ?? 'file';
+// dev 模式 UI 地址（测试用随机端口时经 NEXUS_UI_URL 注入，避免 5178 竞争）。
+// — English: dev-mode UI URL (tests inject a random port via NEXUS_UI_URL to
+//   avoid 5178 contention).
+const DEV_UI_URL = process.env.NEXUS_UI_URL ?? 'http://127.0.0.1:5178';
 
 // 测试探测入口：Playwright 集成测试读取本文件判断应用是否就绪。
 // — English: probe entry for integration tests.
@@ -67,14 +72,21 @@ app.whenReady().then(() => {
   });
   applySecurityDefaults();
 
-  const restored = loadWindowState();
+  // 测试模式（单实例旁路）不恢复/不保存窗口状态，避免用户上次的窗口几何
+  // 污染断言（isMaximized 等）。
+  // — English: test mode (single-instance bypass) skips window-state restore
+  //   and save so the user's last geometry cannot pollute assertions.
+  const restored = process.env.NEXUS_DISABLE_SINGLE_INSTANCE === '1'
+    ? null
+    : loadWindowState();
+  const windowBounds = restored?.bounds ?? { width: 1200, height: 800, x: 0, y: 0 };
   // 主窗口：承载 Nexus UI Renderer，同时是 WebContentsView 的宿主。
   // — English: the main window hosts the Nexus UI renderer AND the WebContentsView host.
   const host = new BrowserWindow({
-    width: restored.bounds.width,
-    height: restored.bounds.height,
-    x: restored.bounds.x,
-    y: restored.bounds.y,
+    width: windowBounds.width,
+    height: windowBounds.height,
+    x: windowBounds.x,
+    y: windowBounds.y,
     title: 'Nexus',
     autoHideMenuBar: true,
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#0f2026' : '#e7f4f6',
@@ -85,7 +97,9 @@ app.whenReady().then(() => {
       nodeIntegration: false,
     },
   });
-  applyWindowState(host, restored);
+  if (restored !== null) {
+    applyWindowState(host, restored);
+  }
 
   const emit = (event: BrowserDesktopEvent): void => {
     if (!host.isDestroyed()) {
@@ -106,6 +120,35 @@ app.whenReady().then(() => {
   setApplicationMenu('en');
   host.setMenuBarVisibility(false);
 
+  // 浏览器命令 TCP 服务（Agent 经 BrowserTool 驱动真实 View）。
+  // handle 保存在 Main，退出时收口；启动失败记录状态（可查询/可观测）。
+  // — English: browser-command TCP service (the agent drives the real view via
+  //   BrowserTool). The handle lives in Main for an orderly shutdown on exit;
+  //   a start failure is recorded (observable/queryable).
+  let browserServer: BrowserServerHandle | null = null;
+  startBrowserCommandServer({ manager: browserManager }).then((handle) => {
+    browserServer = handle;
+  }).catch((err: unknown) => {
+    console.error('[browser-server] failed to start:', String(err));
+  });
+
+  // 退出时收口 TCP 服务（不泄漏监听端口）。
+  // — English: close the TCP service on exit (no leaked listening port).
+  const closeBrowserServer = async (): Promise<void> => {
+    if (browserServer !== null) {
+      const handle = browserServer;
+      browserServer = null;
+      try {
+        await handle.close();
+      } catch (err) {
+        console.error('[browser-server] close failed:', String(err));
+      }
+    }
+  };
+  process.once('before-exit', () => {
+    void closeBrowserServer();
+  });
+
   registerTaskRuntimeIpc({
     manager: browserManager,
   });
@@ -125,7 +168,7 @@ app.whenReady().then(() => {
   });
 
   if (LOAD_MODE === 'dev') {
-    void host.loadURL('http://127.0.0.1:5178');
+    void host.loadURL(DEV_UI_URL);
   } else if (LOAD_MODE === 'phase0') {
     void host.loadFile(join(__dirname, '../phase0/renderer.html'));
   } else {

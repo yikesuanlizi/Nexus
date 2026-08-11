@@ -118,12 +118,21 @@ async function startDesktopStack() {
   const weixinBridgePort = await chooseWeixinBridgePort();
   const weixinBridgeUrl = `http://127.0.0.1:${weixinBridgePort}/api/v1/admin/rpc`;
 
+  // 每次桌面会话的浏览器控制 capability token：API（BrowserTool）与 Electron
+  // （browser-server）共享同一随机值；TCP 首帧握手校验，防本机未授权进程控制浏览器。
+  // — English: a per-desktop-session capability token for browser control,
+  //   shared between the API (BrowserTool) and Electron (browser-server); the
+  //   TCP first-frame handshake checks it so unauthorized local processes
+  //   cannot drive the browser.
+  const browserToken = (await import('node:crypto')).randomBytes(24).toString('hex');
+
   const api = run('node', ['apps/api/dist/server.js'], {
     env: {
       NEXUS_API_PORT: apiPort,
       NEXUS_WEIXIN_BRIDGE_PORT: String(weixinBridgePort),
       NEXUS_WEIXIN_BRIDGE_URL: weixinBridgeUrl,
       NEXUS_LOG_DIR: process.env.NEXUS_LOG_DIR ?? logDir,
+      NEXUS_BROWSER_TOKEN: browserToken,
     },
   });
   const weixinBridge = run('node', ['apps/desktop/bridge/weixin-bridge.mjs'], {
@@ -146,7 +155,7 @@ async function startDesktopStack() {
   //   path doubles and Electron can't find the app.
   const electronMain = run(bin('electron'), ['dist-electron/main/index.js'], {
     cwd: path.join(root, 'apps', 'desktop'),
-    env: { NEXUS_ELECTRON_LOAD: 'dev', NEXUS_API_URL: `http://127.0.0.1:${apiPort}` },
+    env: { NEXUS_ELECTRON_LOAD: 'dev', NEXUS_API_URL: `http://127.0.0.1:${apiPort}`, NEXUS_BROWSER_TOKEN: browserToken },
   });
 
   const stop = () => {

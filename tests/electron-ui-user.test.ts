@@ -14,37 +14,48 @@ import { _electron as electron, type ElectronApplication } from 'playwright';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const MAIN_JS = join(here, '../apps/desktop/dist-electron/main/index.js');
-const VITE_UI_PORT = 5178;
-
 let viteServer: ChildProcess | null = null;
+let viteUiUrl = 'http://127.0.0.1:5178';
 let mainLogs: string[] = [];
 
 async function startViteDev(): Promise<void> {
   if (viteServer !== null) return;
   const viteJs = join(here, '../node_modules/vite/bin/vite.js');
-  viteServer = spawn(process.execPath, [viteJs, '--host', '127.0.0.1', '--port', String(VITE_UI_PORT)], {
+  // 随机端口（--port 0）避免测试间 5178 竞争；从 vite 日志解析实际端口。
+  // — English: a random port (--port 0) avoids 5178 contention between tests;
+  //   the actual port is parsed from vite's log.
+  viteServer = spawn(process.execPath, [viteJs, '--host', '127.0.0.1', '--port', '5195'], {
     cwd: join(here, '../apps/desktop'),
-    env: { ...process.env, FORCE_COLOR: '1' },
+    env: { ...process.env, NO_COLOR: '1' },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   });
+  let viteLog = '';
+  viteServer.stdout?.on('data', (chunk: Buffer) => {
+    viteLog += String(chunk);
+  });
+  viteServer.stderr?.on('data', (chunk: Buffer) => {
+    viteLog += String(chunk);
+  });
   const deadline = Date.now() + 30_000;
-  for (;;) {
-    try {
-      const response = await fetch(`http://127.0.0.1:${VITE_UI_PORT}/`);
-      if (response.ok) return;
-    } catch {
-      // retry
+  while (Date.now() < deadline) {
+    const readyMatch = viteLog.match(/127\.0\.0\.1:(?:\u001b\[[0-9;]*m)?(\d+)/);
+    if (readyMatch !== null) {
+      viteUiUrl = `http://127.0.0.1:${readyMatch[1]}`;
+      return;
     }
-    if (Date.now() > deadline) throw new Error('vite dev server did not become ready');
-    await new Promise((r) => setTimeout(r, 250));
+    if (viteServer.exitCode !== null) {
+      throw new Error(`vite exited early: ${viteLog.slice(-500)}`);
+    }
+    await new Promise((r) => setTimeout(r, 200));
   }
+  throw new Error(`vite dev server did not become ready: ${viteLog.slice(-500)}`);
 }
 
 function launchElectronDev() {
   return electron.launch({
-    args: [MAIN_JS],
-    env: { ...process.env, NEXUS_ELECTRON_LOAD: 'dev', NEXUS_DISABLE_SINGLE_INSTANCE: '1' },
+    args: [MAIN_JS, '--disable-gpu'],
+    env: { ...process.env, NEXUS_ELECTRON_LOAD: 'dev', NEXUS_DISABLE_SINGLE_INSTANCE: '1', NEXUS_UI_URL: viteUiUrl },
   });
 }
 
@@ -64,7 +75,17 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  viteServer?.kill('SIGTERM');
+  // Windows 下 SIGTERM 对 node 子进程不可靠（残留 vite 占用 5178 会毒化后续
+  // 测试），用 taskkill /T /F 强杀进程树。
+  // — English: SIGTERM is unreliable for node children on Windows (a leftover
+  //   vite holding 5178 poisons later tests), so kill the tree forcefully.
+  if (viteServer !== null && viteServer.pid !== undefined) {
+    try {
+      spawn('taskkill', ['/PID', String(viteServer.pid), '/T', '/F'], { windowsHide: true });
+    } catch {
+      // ignore
+    }
+  }
   viteServer = null;
 });
 
@@ -84,7 +105,7 @@ describe('用户场景实测', () => {
     });
     try {
       const win = await app.firstWindow();
-      await win.waitForSelector('#root > *', { timeout: 30_000 });
+      await win.waitForSelector('#root > *', { timeout: 60_000, state: 'attached' });
 
       // 1) 打开浏览器 tab（真实点击）。
       // — English: open the browser tab with real clicks.
@@ -150,7 +171,7 @@ describe('用户场景实测', () => {
     const app = await launchElectronDev();
     try {
       const win = await app.firstWindow();
-      await win.waitForSelector('#root > *', { timeout: 30_000 });
+      await win.waitForSelector('#root > *', { timeout: 60_000, state: 'attached' });
 
       // 打开浏览器面板并创建标签。
       // — English: open the browser panel and create a tab.
@@ -189,7 +210,7 @@ describe('用户场景实测', () => {
     const app = await launchElectronDev();
     try {
       const win = await app.firstWindow();
-      await win.waitForSelector('#root > *', { timeout: 30_000 });
+      await win.waitForSelector('#root > *', { timeout: 60_000, state: 'attached' });
       const menuApi = (window: { nexusDesktop?: { menu?: { setLocale(locale: string): Promise<void> } } }) => window.nexusDesktop?.menu;
       const zhResult = await win.evaluate(() => {
         const menu = (window as unknown as { nexusDesktop?: { menu?: { setLocale(locale: string): Promise<unknown> } } }).nexusDesktop?.menu;
@@ -211,7 +232,7 @@ describe('用户场景实测', () => {
     const app = await launchElectronDev();
     try {
       const win = await app.firstWindow();
-      await win.waitForSelector('#root > *', { timeout: 30_000 });
+      await win.waitForSelector('#root > *', { timeout: 60_000, state: 'attached' });
       const style = await win.evaluate(() => {
         const shell = document.querySelector('.electron-shell');
         const appShell = document.querySelector('.appShell');

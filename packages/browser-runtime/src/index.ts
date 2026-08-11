@@ -28,6 +28,7 @@ export * from './ipc/codec.js';
 export * from './sidecar/sidecar.js';
 export * from './sidecar/sidecarClient.js';
 export * from './sidecar/sidecarProcessHost.js';
+export * from './sidecar/tcpTransport.js';
 // 注意：sidecarEntry / runtimeHostEntry 是进程入口（顶层代码含 stdin 循环），
 // 绝不从 index 导出——import 即执行会抢占宿主进程 stdin（Electron Main/测试）。
 // — English: sidecarEntry/runtimeHostEntry are process entries whose top-level
