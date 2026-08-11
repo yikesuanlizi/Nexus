@@ -140,6 +140,37 @@ export class BrowserViewManager {
       managed.favicon = favicons[0];
       this.emit({ type: 'favicon', tabId, favicon: favicons[0] });
     });
+    // F12 → DevTools（用户可见网页的调试入口；与 Chrome 习惯一致）。
+    // — English: F12 toggles DevTools for the user-visible page (Chrome habit).
+    view.webContents.on('before-input-event', (event, input) => {
+      if (input.type === 'keyDown' && input.key === 'F12') {
+        event.preventDefault();
+        if (view.webContents.isDevToolsOpened()) {
+          view.webContents.closeDevTools();
+        } else {
+          view.webContents.openDevTools({ mode: 'detach' });
+        }
+      }
+    });
+    // 页面 console 日志 → Renderer 事件（BrowserWorkbench 可展示）+ Main 终端。
+    // Electron 32+ 的 console-message 是 event 对象签名（level/message/lineNumber/sourceId）。
+    // — English: page console messages → renderer event + Main terminal.
+    //   Electron 32+ uses the event-object signature for console-message.
+    view.webContents.on('console-message', (event) => {
+      const params = event as unknown as {
+        level?: 'info' | 'warning' | 'error' | 'debug';
+        message?: string;
+        lineNumber?: number;
+        sourceId?: string;
+      };
+      const level = (params.level === 'warning' || params.level === 'error' ? params.level : 'info') as 'info' | 'warning' | 'error';
+      const message = params.message ?? '';
+      const line = params.lineNumber ?? 0;
+      const sourceId = params.sourceId ?? '';
+      const text = `${message} (${sourceId}:${line})`;
+      this.emit({ type: 'console', tabId, level, message: text });
+      console.log(`[browser:${tabId}] ${text}`);
+    });
     view.webContents.on('render-process-gone', (_event, details) => {
       if (details.reason !== 'clean-exit') {
         this.emit({ type: 'page-crashed', tabId });
@@ -165,10 +196,29 @@ export class BrowserViewManager {
     return this.stateOf(managed);
   }
 
+  // 网页四周留边距 + 圆角（视觉上与 Electron 窗口融合更好看）。
+  // — English: the web page gets an inset margin and rounded corners so it
+  //   blends nicely with the Electron window.
+  private static readonly VIEW_INSET = 8;
+  private static readonly VIEW_RADIUS = 12;
+
   setBounds(tabId: string, bounds: BrowserViewBounds): void {
     const managed = this.views.get(tabId);
     if (managed === undefined) throw new Error(`unknown tab: ${tabId}`);
-    managed.view.setBounds(bounds);
+    const inset = BrowserViewManager.VIEW_INSET;
+    const padded: BrowserViewBounds = {
+      x: bounds.x + inset,
+      y: bounds.y + inset,
+      width: Math.max(bounds.width - inset * 2, 1),
+      height: Math.max(bounds.height - inset * 2, 1),
+    };
+    managed.view.setBounds(padded);
+    try {
+      managed.view.setBorderRadius(BrowserViewManager.VIEW_RADIUS);
+    } catch {
+      // 老版本 Electron 无 setBorderRadius——忽略（仅影响圆角）。
+      // — English: older Electron lacks setBorderRadius — ignore (corners only).
+    }
   }
 
   setVisible(tabId: string, visible: boolean): void {
@@ -304,6 +354,14 @@ export class BrowserViewManager {
     for (const tabId of [...this.views.keys()]) {
       this.destroy(tabId);
     }
+  }
+
+  // 关闭浏览器面板时回收全部 View（React 卸载不会销毁原生 View，必须显式清理，
+  // 否则页面残留在窗口上）。
+  // — English: recycle every view when the browser panel closes (React unmount
+  //   does not destroy native views — without this the page stays on screen).
+  destroyAll(): void {
+    this.dispose();
   }
 
   private stateOf(managed: ManagedView): BrowserTabState {

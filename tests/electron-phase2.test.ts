@@ -44,7 +44,7 @@ afterAll(async () => {
 });
 
 function launchPhase0() {
-  return electron.launch({ args: [MAIN_JS], env: { ...process.env, NEXUS_ELECTRON_LOAD: 'phase0' } });
+  return electron.launch({ args: [MAIN_JS], env: { ...process.env, NEXUS_ELECTRON_LOAD: 'phase0', NEXUS_DISABLE_SINGLE_INSTANCE: '1' } });
 }
 
 type ElectronApp = Awaited<ReturnType<typeof electron.launch>>;

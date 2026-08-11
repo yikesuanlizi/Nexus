@@ -22,8 +22,11 @@ export function applySecurityDefaults(): void {
   session.defaultSession.setPermissionCheckHandler(() => false);
 
   // 单实例：第二个实例聚焦已有窗口并退出（Phase 1 完善窗口状态）。
-  // — English: single-instance lock — a second instance focuses the existing window.
-  if (!app.requestSingleInstanceLock()) {
+  // 集成测试/多实例场景用 NEXUS_DISABLE_SINGLE_INSTANCE=1 绕过。
+  // — English: single-instance lock — a second instance focuses the existing
+  //   window. NEXUS_DISABLE_SINGLE_INSTANCE=1 bypasses it (integration tests /
+  //   multiple instances).
+  if (process.env.NEXUS_DISABLE_SINGLE_INSTANCE !== '1' && !app.requestSingleInstanceLock()) {
     app.quit();
     return;
   }

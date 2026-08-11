@@ -20,7 +20,7 @@ describe('Phase 5 · 打包产物', () => {
   it('打包产物启动：React 工作台挂载 + nexusDesktop API 可用（file 模式）', async () => {
     const app = await electron.launch({
       executablePath: EXE,
-      env: { ...process.env, NEXUS_ELECTRON_LOAD: 'file' },
+      env: { ...process.env, NEXUS_ELECTRON_LOAD: 'file', NEXUS_DISABLE_SINGLE_INSTANCE: '1' },
       args: [],
     });
     try {

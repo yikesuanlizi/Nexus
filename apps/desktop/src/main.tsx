@@ -14,7 +14,6 @@ import { openInSystemEditor } from './api/desktopBridge.js';
 import { WorkflowPanel } from './components/WorkflowPanel.js';
 import { RunMonitorDrawer } from './components/RunMonitorDrawer.js';
 import { WorkspaceThreadList } from './components/WorkspaceThreadList.js';
-import { TitleBar } from './components/TitleBar.js';
 import { useBotControls, type WeixinLoginState } from './api/botClient.js';
 import { resizeTextareaToContent } from './shared/composer.js';
 import { useRightPaneSizing, useToastNotice } from './shared/uiState.js';
@@ -64,6 +63,25 @@ function nextThemeMode(current: RunConfig['themeMode']): RunConfig['themeMode'] 
   return resolveThemeShortcutMode(current) === 'dark' ? 'light' : 'dark';
 }
 
+function useSystemTheme(): 'light' | 'dark' {
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => (
+    typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches
+      ? 'dark'
+      : 'light'
+  ));
+
+  useEffect(() => {
+    const media = window.matchMedia?.('(prefers-color-scheme: dark)');
+    if (!media) return undefined;
+    const update = (): void => setTheme(media.matches ? 'dark' : 'light');
+    update();
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
+
+  return theme;
+}
+
 function parseProviderEnvVarSaveFailure(detail: string): string {
   const trimmed = detail.trim();
   if (!trimmed) return '';
@@ -77,12 +95,18 @@ function parseProviderEnvVarSaveFailure(detail: string): string {
 }
 
 function App() {
-  const [hasStoredRunConfig] = useState(() => Boolean(localStorage.getItem(RUN_CONFIG_STORAGE_KEY)));
-  const [config, setConfig] = useState<RunConfig>(() => ({
+  const isElectronShell = typeof (window as unknown as { nexusDesktop?: unknown }).nexusDesktop === 'object';
+  useEffect(() => {
+    if (isElectronShell) {
+      document.body.classList.add('electron-shell');
+    }
+  }, [isElectronShell]);
+  const [hasStoredRunConfig] = useState(() => Boolean(localStorage.getItem(RUN_CONFIG_STORAGE_KEY)));  const [config, setConfig] = useState<RunConfig>(() => ({
     ...defaultConfig,
     ...readStored<Partial<RunConfig>>(RUN_CONFIG_STORAGE_KEY, {}),
   }));
   const [configHydrated, setConfigHydrated] = useState(false);
+  const systemTheme = useSystemTheme();
   const [threads, setThreads] = useState<ThreadMeta[]>([]);
   const [rememberedWorkspaceRoots, setRememberedWorkspaceRoots] = useState<string[]>(() => readRememberedWorkspaceRoots());
   const [threadId, setThreadId] = useState(''), [turns, setTurns] = useState<TurnMeta[]>([]), [items, setItems] = useState<ThreadItem[]>([]);
@@ -821,6 +845,25 @@ function App() {
     if (!configHydrated) return;
     localStorage.setItem(RUN_CONFIG_STORAGE_KEY, JSON.stringify(config));
   }, [config, configHydrated]);
+  useEffect(() => {
+    if (!configHydrated) return;
+    (window as unknown as { nexusDesktop?: { menu?: { setLocale(locale: 'zh' | 'en'): Promise<void> } } })
+      .nexusDesktop?.menu?.setLocale(config.locale === 'zh' ? 'zh' : 'en')
+      .catch(() => undefined);
+  }, [config.locale, configHydrated]);
+  const visualThemeMode = config.themeMode === 'system' ? systemTheme : config.themeMode;
+  useEffect(() => {
+    document.documentElement.dataset.nexusTheme = visualThemeMode;
+    document.documentElement.style.colorScheme = visualThemeMode;
+    const appearance = (window as unknown as {
+      nexusDesktop?: {
+        appearance?: {
+          setTheme(input: { source: RunConfig['themeMode']; resolved: 'light' | 'dark' }): Promise<void>;
+        };
+      };
+    }).nexusDesktop?.appearance;
+    void appearance?.setTheme({ source: config.themeMode, resolved: visualThemeMode }).catch(() => undefined);
+  }, [config.themeMode, visualThemeMode]);
   useEffect(() => {
     const roots = [config.workspaceRoot, ...threads.map((thread) => thread.workspaceRoot)];
     setRememberedWorkspaceRoots((current) => rememberWorkspaceRoots(current, roots));
@@ -1754,11 +1797,8 @@ function App() {
       gridTemplateColumns: sidebarCollapsed
         ? '58px minmax(0, 1fr)'
         : '278px minmax(0, 1fr)',
-      gridTemplateRows: '40px minmax(0, 1fr)',
-    }}>
-      <div style={{ gridColumn: '1 / -1' }}>
-        <TitleBar title="Nexus" locale={config.locale} />
-      </div>
+      gridTemplateRows: 'minmax(0, 1fr)',
+      }}>
       {/* 窄屏 sidebar scrim 遮罩 — Chinese: narrow sidebar scrim */}
       <button type="button" className={`sidebarScrim${sidebarOpen ? ' mobileOpen' : ''}`} aria-label={config.locale === 'zh' ? '关闭侧栏' : 'Close sidebar'} onClick={() => setSidebarOpen(false)} />
       <aside className={[sidebarCollapsed ? 'conversationPane collapsed' : 'conversationPane', sidebarOpen ? 'mobileOpen' : ''].filter(Boolean).join(' ')}>

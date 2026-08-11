@@ -99,5 +99,9 @@ export function registerBrowserIpc(deps: BrowserIpcDeps): void {
     manager.destroy(tabId);
   });
 
+  ipcMain.handle('browser:closeAll', () => {
+    manager.destroyAll();
+  });
+
   ipcMain.handle('browser:listTabs', () => manager.listTabs());
 }

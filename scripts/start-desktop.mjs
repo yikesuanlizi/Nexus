@@ -139,8 +139,12 @@ async function startDesktopStack() {
   });
 
   // Electron Main（迁移计划 Phase 1）：dev 模式加载 5178 Vite Renderer。
+  // 注意：args 是相对 cwd（apps/desktop）的路径，不能带 apps/desktop 前缀，
+  // 否则会拼成 apps/desktop/apps/desktop/... 导致 "Unable to find Electron app"。
   // — English: Electron Main (Phase 1) — dev mode loads the 5178 Vite renderer.
-  const electronMain = run(bin('electron'), ['apps/desktop/dist-electron/main/index.js'], {
+  //   args are relative to cwd (apps/desktop) — no apps/desktop prefix, or the
+  //   path doubles and Electron can't find the app.
+  const electronMain = run(bin('electron'), ['dist-electron/main/index.js'], {
     cwd: path.join(root, 'apps', 'desktop'),
     env: { NEXUS_ELECTRON_LOAD: 'dev', NEXUS_API_URL: `http://127.0.0.1:${apiPort}` },
   });

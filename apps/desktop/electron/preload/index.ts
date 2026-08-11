@@ -25,6 +25,7 @@ export interface NexusDesktopApi {
     click(input: unknown): Promise<void>;
     insertText(input: unknown): Promise<void>;
     closeTab(input: unknown): Promise<void>;
+    closeAllTabs(): Promise<void>;
     listTabs(): Promise<unknown>;
     subscribe(handler: (event: unknown) => void): () => void;
   };
@@ -43,6 +44,12 @@ export interface NexusDesktopApi {
   desktop: {
     capabilities(): Promise<DesktopCapabilitiesContract>;
     openPath(path: string): Promise<boolean>;
+  };
+  appearance: {
+    setTheme(input: { source: 'light' | 'dark' | 'system'; resolved: 'light' | 'dark' }): Promise<void>;
+  };
+  menu: {
+    setLocale(locale: 'zh' | 'en'): Promise<void>;
   };
   // Agent Runtime 任务（Phase 3：orchestrator 在 Main 进程驱动真实 View）。
   // — English: Agent Runtime tasks (Phase 3 — the orchestrator runs in Main and
@@ -70,6 +77,7 @@ const api: NexusDesktopApi = {
     click: (input) => ipcRenderer.invoke('browser:click', input),
     insertText: (input) => ipcRenderer.invoke('browser:insertText', input),
     closeTab: (input) => ipcRenderer.invoke('browser:closeTab', input),
+    closeAllTabs: () => ipcRenderer.invoke('browser:closeAll'),
     listTabs: () => ipcRenderer.invoke('browser:listTabs'),
     subscribe: (handler) => {
       const listener = (_event: unknown, payload: unknown): void => {
@@ -100,6 +108,12 @@ const api: NexusDesktopApi = {
   desktop: {
     capabilities: () => ipcRenderer.invoke('desktop:capabilities'),
     openPath: (path) => ipcRenderer.invoke('desktop:openPath', path),
+  },
+  appearance: {
+    setTheme: (input) => ipcRenderer.invoke('appearance:setTheme', input),
+  },
+  menu: {
+    setLocale: (locale) => ipcRenderer.invoke('menu:setLocale', locale),
   },
   task: {
     runGolden: (input) => ipcRenderer.invoke('task:runGolden', input),

@@ -47,7 +47,7 @@ type ElectronApp = Awaited<ReturnType<typeof electron.launch>>;
 // Phase 0 模式：加载最小测试 Renderer（renderer.html）。
 // — English: Phase 0 mode — loads the minimal test renderer (renderer.html).
 function launchPhase0() {
-  return electron.launch({ args: [MAIN_JS], env: { ...process.env, NEXUS_ELECTRON_LOAD: 'phase0' } });
+  return electron.launch({ args: [MAIN_JS], env: { ...process.env, NEXUS_ELECTRON_LOAD: 'phase0', NEXUS_DISABLE_SINGLE_INSTANCE: '1' } });
 }
 
 async function browserApi<T>(win: ElectronApp, call: string, arg?: unknown): Promise<T> {

@@ -21426,6 +21426,117 @@
   overflow: hidden;
 }
 
+/* BrowserWorkbench（Phase 2）：flex 纵向布局，viewContainer 撑满剩余高度。
+   — English: BrowserWorkbench (Phase 2) — flex column; the view container fills
+   the remaining height so the WebContentsView gets a non-zero bounds. */
+.appShell .browserWorkbench {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.appShell .browserToolbarButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  background: transparent;
+  color: var(--nx-text-secondary);
+  border-radius: 6px;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.appShell .browserToolbarButton:hover:not(:disabled) {
+  background: var(--nx-control-hover, rgba(128, 128, 128, 0.12));
+  color: var(--nx-text-primary);
+}
+
+.appShell .browserToolbarButton:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.appShell .browserTabStrip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--nx-control-border);
+  overflow-x: auto;
+  flex: 0 0 auto;
+}
+
+.appShell .browserTab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 200px;
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--nx-text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.appShell .browserTab.active {
+  background: var(--nx-control-active, rgba(128, 128, 128, 0.15));
+  color: var(--nx-text-primary);
+}
+
+.appShell .browserTabEmpty {
+  border-style: dashed;
+}
+
+.appShell .browserTabTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.appShell .browserTabClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.appShell .browserTabClose:hover {
+  background: rgba(128, 128, 128, 0.2);
+}
+
+.appShell .browserViewContainer {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+  /* 网页四周缩进 8px 后露出的底色（View 圆角 + 边界的视觉基底）。
+     — English: base colour behind the 8px inset around the web page (visual
+     base for the rounded corners and margin). */
+  background: var(--nx-surface);
+}
+
+.appShell .browserViewTitleHint {
+  position: absolute;
+  top: 8px;
+  left: 12px;
+  font-size: 12px;
+  color: var(--nx-text-tertiary, rgba(128, 128, 128, 0.7));
+  pointer-events: none;
+  z-index: 1;
+}
+
 .appShell .browserPanel {
   display: flex;
   flex-direction: column;
@@ -21553,4 +21664,47 @@
   color: var(--nx-danger);
   font-size: 12px;
   line-height: 1.45;
+}
+
+html[data-nexus-theme='light'],
+html[data-nexus-theme='light'] body.electron-shell,
+html[data-nexus-theme='light'] body.electron-shell #root {
+  background: linear-gradient(110deg, #f4faf5 0%, #eaf8f1 46%, #e4f6fb 100%) !important;
+}
+
+html[data-nexus-theme='dark'],
+html[data-nexus-theme='dark'] body.electron-shell,
+html[data-nexus-theme='dark'] body.electron-shell #root {
+  background: linear-gradient(110deg, #14242a 0%, #10262c 48%, #0d1929 100%) !important;
+}
+
+.electron-shell .appShell {
+  height: calc(100vh - 16px) !important;
+  margin: 8px;
+  border: 1px solid rgba(128, 151, 169, .28);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 16px 40px rgba(30, 76, 88, .12);
+}
+
+.electron-shell .appShell.theme-light {
+  background: #ffffff !important;
+}
+
+.electron-shell .appShell.theme-dark {
+  border-color: rgba(120, 155, 168, .24);
+  background: #101c23 !important;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, .26);
+}
+
+.electron-shell .appShell.theme-light :is(.conversationPane, .threadListPanel, .topbar, .eventPane, .workbenchPane) {
+  background: #ffffff !important;
+}
+
+.electron-shell .appShell.theme-dark :is(.conversationPane, .threadListPanel, .topbar, .eventPane, .workbenchPane) {
+  background: #101c23 !important;
+}
+
+.electron-shell .appShell :is(.workspace, .contentGrid, .transcript) {
+  background: transparent !important;
 }

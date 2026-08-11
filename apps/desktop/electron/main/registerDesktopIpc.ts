@@ -3,11 +3,27 @@
 // — English: desktop service IPC — window controls, capability query, open_path
 //   (replacing Tauri desktop_capabilities / open_path). Every handler validates
 //   its args and only acts while the host window is alive.
-import { ipcMain, shell, type BrowserWindow } from 'electron';
+import { ipcMain, nativeTheme, shell, type BrowserWindow } from 'electron';
 import type { DesktopCapabilitiesContract } from '../contracts/browserTypes.js';
 
 export interface DesktopIpcDeps {
   host: BrowserWindow;
+}
+
+type AppearanceSource = 'light' | 'dark' | 'system';
+type VisualTheme = 'light' | 'dark';
+
+function isAppearanceSource(value: unknown): value is AppearanceSource {
+  return value === 'light' || value === 'dark' || value === 'system';
+}
+
+function isVisualTheme(value: unknown): value is VisualTheme {
+  return value === 'light' || value === 'dark';
+}
+
+function applyWindowAppearance(host: BrowserWindow, visualTheme: VisualTheme): void {
+  const dark = visualTheme === 'dark';
+  host.setBackgroundColor(dark ? '#0f2026' : '#e7f4f6');
 }
 
 function capabilities(): DesktopCapabilitiesContract {
@@ -25,6 +41,13 @@ function capabilities(): DesktopCapabilitiesContract {
 
 export function registerDesktopIpc(deps: DesktopIpcDeps): void {
   const { host } = deps;
+  let appearanceSource: AppearanceSource = 'system';
+
+  nativeTheme.on('updated', () => {
+    if (appearanceSource === 'system' && !host.isDestroyed()) {
+      applyWindowAppearance(host, nativeTheme.shouldUseDarkColors ? 'dark' : 'light');
+    }
+  });
 
   // 最大化状态事件 → Renderer（TitleBar 图标同步）。
   // — English: maximize state events → Renderer (TitleBar icon sync).
@@ -66,5 +89,15 @@ export function registerDesktopIpc(deps: DesktopIpcDeps): void {
     }
     const error = await shell.openPath(path);
     return error === '';
+  });
+
+  ipcMain.handle('appearance:setTheme', (_event, input: unknown) => {
+    const value = input as { source?: unknown; resolved?: unknown } | null;
+    if (!isAppearanceSource(value?.source) || !isVisualTheme(value?.resolved)) {
+      throw new Error('invalid appearance theme');
+    }
+    appearanceSource = value.source;
+    nativeTheme.themeSource = value.source;
+    applyWindowAppearance(host, value.resolved);
   });
 }

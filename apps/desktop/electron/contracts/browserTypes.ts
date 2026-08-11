@@ -51,7 +51,8 @@ export type BrowserDesktopEvent =
   | { type: 'download-started'; tabId: string; filename: string }
   | { type: 'download-progress'; tabId: string; filename: string; receivedBytes: number; totalBytes: number }
   | { type: 'download-completed'; tabId: string; filename: string }
-  | { type: 'download-failed'; tabId: string; filename: string };
+  | { type: 'download-failed'; tabId: string; filename: string }
+  | { type: 'console'; tabId: string; level: 'info' | 'warning' | 'error'; message: string };
 
 // 桌面能力（迁移计划 Phase 1：替换 Tauri desktop_capabilities）。
 // — English: desktop capabilities (Phase 1 — replaces Tauri desktop_capabilities).

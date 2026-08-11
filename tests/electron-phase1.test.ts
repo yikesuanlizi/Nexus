@@ -52,7 +52,7 @@ async function probe(url: string): Promise<boolean> {
 }
 
 function launchElectronDev() {
-  return electron.launch({ args: [MAIN_JS], env: { ...process.env, NEXUS_ELECTRON_LOAD: 'dev' } });
+  return electron.launch({ args: [MAIN_JS], env: { ...process.env, NEXUS_ELECTRON_LOAD: 'dev', NEXUS_DISABLE_SINGLE_INSTANCE: '1' } });
 }
 
 beforeAll(async () => {

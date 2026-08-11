@@ -29,6 +29,7 @@ type BrowserEvent =
 interface BrowserApi {
   createTab(input: { url: string; bounds: { x: number; y: number; width: number; height: number } }): Promise<BrowserTabState>;
   closeTab(input: { tabId: string }): Promise<void>;
+  closeAllTabs(): Promise<void>;
   activateTab(input: { tabId: string }): Promise<void>;
   setBounds(input: { tabId: string; bounds: { x: number; y: number; width: number; height: number } }): Promise<void>;
   navigate(input: { tabId: string; url: string }): Promise<void>;
@@ -103,6 +104,11 @@ export function BrowserWorkbench() {
     });
     return () => {
       unsubscribe();
+      // 面板卸载（关闭浏览器 tab / 应用退出）时销毁全部原生 View，
+      // 否则网页画面残留在窗口上。
+      // — English: when the panel unmounts (browser tab closed / app exit),
+      //   destroy every native view or the page stays on screen.
+      void api.closeAllTabs();
     };
   }, []);
 
@@ -150,10 +156,27 @@ export function BrowserWorkbench() {
 
   const submitAddress = useCallback(() => {
     const api = apiRef.current;
-    if (!api || !activeTabId) return;
+    const container = containerRef.current;
     const url = address.trim();
-    if (url === '') return;
+    if (!api || url === '') return;
     const normalized = /^[a-z]+:\/\//i.test(url) ? url : `https://${url}`;
+    // 无标签时直接创建并导航（用户打开面板即可输入网址，不必先建标签）。
+    // — English: with no tab yet, create one and navigate directly (the address
+    //   bar works right after opening the panel).
+    if (!activeTabId) {
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      void api.createTab({
+        url: normalized,
+        bounds: {
+          x: Math.round(rect.x),
+          y: Math.round(rect.y + window.scrollY),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+        },
+      });
+      return;
+    }
     void api.navigate({ tabId: activeTabId, url: normalized });
   }, [activeTabId, address]);
 

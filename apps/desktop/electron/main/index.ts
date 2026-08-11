@@ -6,7 +6,7 @@
 //   state restore, browser management and desktop-service IPC. The render layer is
 //   selected via NEXUS_ELECTRON_LOAD: dev → the 5178 Vite dev server; file → the
 //   built UI (dist/index.html).
-import { app, BrowserWindow, protocol } from 'electron';
+import { app, BrowserWindow, nativeTheme, protocol } from 'electron';
 import { extname } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -36,6 +36,7 @@ protocol.registerSchemesAsPrivileged([
 import { registerBrowserIpc } from '../ipc/registerBrowserIpc.js';
 import { registerDesktopIpc } from './registerDesktopIpc.js';
 import { registerTaskRuntimeIpc } from './taskRuntime.js';
+import { registerMenuIpc, setApplicationMenu } from './menu.js';
 import { applyWindowState, loadWindowState, persistWindowState, registerShutdownCleanup } from './lifecycle.js';
 import type { BrowserDesktopEvent } from '../contracts/browserTypes.js';
 
@@ -75,6 +76,8 @@ app.whenReady().then(() => {
     x: restored.bounds.x,
     y: restored.bounds.y,
     title: 'Nexus',
+    autoHideMenuBar: true,
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#0f2026' : '#e7f4f6',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -99,6 +102,9 @@ app.whenReady().then(() => {
   });
 
   registerDesktopIpc({ host });
+  registerMenuIpc();
+  setApplicationMenu('en');
+  host.setMenuBarVisibility(false);
 
   registerTaskRuntimeIpc({
     manager: browserManager,
