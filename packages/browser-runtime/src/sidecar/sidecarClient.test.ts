@@ -190,6 +190,9 @@ describe('SidecarClient', () => {
       navigationEpoch: obs.navigationEpoch,
     });
 
+    const remoteGraph = await client.listPages();
+    expect(remoteGraph).toEqual(graph);
+
     // act：click [e1] → 详情页，postcondition url_contains 'detail' 通过。
     const result = await client.act({
       intent: makeIntent({
@@ -239,6 +242,17 @@ describe('SidecarClient', () => {
     expect(prepared).toBeDefined();
     expect(prepared?.actionId).toBe('act-2');
     expect(statuses.some((s) => s.status === 'committed')).toBe(true);
+  });
+
+  it('navigate 透传 pageId，未知页面不会回退到根页面', async () => {
+    const sidecar = createSidecar({ runtime: new FakeBrowserRuntime(site), log: () => {} });
+    const transport = new MemoryTransport(sidecar);
+    const client = await createSidecarClient({ taskId: 'task-page', transport });
+
+    await expect(client.navigate({ url: 'https://example.com/list', pageId: 'popup-1' })).rejects.toMatchObject({
+      code: 'PAGE_NOT_FOUND',
+      retryable: true,
+    });
   });
 
   it('取消：abort 触发 cancel 帧 → act 返回 failed kind=cancelled', async () => {

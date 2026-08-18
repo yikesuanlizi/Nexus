@@ -3,7 +3,7 @@ import { z } from 'zod';
 export const accessModeSchema = z.enum(['chat', 'workspace', 'danger_full_access']);
 export const accessKindSchema = z.enum(['read', 'write', 'command', 'network', 'tool_call']);
 export const accessEffectSchema = z.enum(['allow', 'deny']);
-export const accessRuleScopeSchema = z.enum(['global', 'thread']);
+export const accessRuleScopeSchema = z.enum(['global', 'workspace', 'thread']);
 export const temporaryAccessScopeSchema = z.enum(['tool_call', 'turn', 'session']);
 
 export const accessTargetSchema = z.discriminatedUnion('kind', [
@@ -19,6 +19,8 @@ export const accessRuleSchema = z.object({
   access: accessKindSchema,
   target: accessTargetSchema,
   scope: accessRuleScopeSchema,
+  workspaceRoot: z.string().trim().optional(),
+  threadId: z.string().trim().optional(),
   reason: z.string().trim().optional(),
   createdAt: z.string().datetime().optional(),
   updatedAt: z.string().datetime().optional(),
@@ -46,6 +48,7 @@ export const accessRequestSchema = z.object({
   toolCallId: z.string().trim().optional(),
   agentThreadId: z.string().trim().optional(),
   agentRole: z.string().nullable().optional(),
+  workspaceRoot: z.string().trim().optional(),
   description: z.string().trim().min(1),
 }).strict();
 

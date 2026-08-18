@@ -1,13 +1,16 @@
 import type React from 'react';
 import { useCallback, useEffect, useState } from 'react';
 
-const RIGHT_PANE_MAIN_MIN = 220;
+const RIGHT_PANE_MAIN_MIN = 300;
 const STANDARD_RIGHT_PANE_MIN = 220;
 const FILES_RIGHT_PANE_MIN = 300;
-const BROWSER_RIGHT_PANE_MIN = 440;
+const BROWSER_RIGHT_PANE_MIN = 380;
+const TERMINAL_RIGHT_PANE_MIN = 460;
 const WORKFLOW_RIGHT_PANE_MIN = 300;
+const SIDEBAR_WIDTH = 236;
+const PANE_DIVIDER_WIDTH = 7;
 
-export type RightPaneSizingMode = 'standard' | 'files' | 'browser' | 'workflow';
+export type RightPaneSizingMode = 'standard' | 'files' | 'browser' | 'terminal' | 'workflow';
 
 export interface ToastNotice {
   id: number;
@@ -32,6 +35,7 @@ export function useToastNotice(timeoutMs = 1800) {
 }
 
 export function useRightPaneSizing(visible: boolean, mode: RightPaneSizingMode = 'standard') {
+  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
   const [width, setWidth] = useState(() => {
     if (mode === 'files') {
       const stored = Number(localStorage.getItem('nexus.filesPaneWidth') ?? 0);
@@ -40,6 +44,10 @@ export function useRightPaneSizing(visible: boolean, mode: RightPaneSizingMode =
     if (mode === 'browser') {
       const stored = Number(localStorage.getItem('nexus.browserPaneWidth') ?? 0);
       return clampRightPaneWidth(stored || defaultBrowserPaneWidth(), BROWSER_RIGHT_PANE_MIN);
+    }
+    if (mode === 'terminal') {
+      const stored = Number(localStorage.getItem('nexus.terminalPaneWidth') ?? 0);
+      return clampRightPaneWidth(stored || defaultTerminalPaneWidth(), TERMINAL_RIGHT_PANE_MIN);
     }
     if (mode !== 'workflow') {
       const stored = Number(localStorage.getItem('nexus.standardPaneWidth') ?? 0);
@@ -63,10 +71,22 @@ export function useRightPaneSizing(visible: boolean, mode: RightPaneSizingMode =
         const stored = Number(localStorage.getItem('nexus.browserPaneWidth') ?? 0);
         return clampRightPaneWidth(stored || defaultBrowserPaneWidth(), BROWSER_RIGHT_PANE_MIN);
       }
+      if (mode === 'terminal') {
+        const stored = Number(localStorage.getItem('nexus.terminalPaneWidth') ?? 0);
+        return clampRightPaneWidth(stored || defaultTerminalPaneWidth(), TERMINAL_RIGHT_PANE_MIN);
+      }
       const stored = Number(localStorage.getItem('nexus.standardPaneWidth') ?? 0);
       return clampRightPaneWidth(stored || defaultStandardPaneWidth(), STANDARD_RIGHT_PANE_MIN);
     });
   }, [mode]);
+
+  useEffect(() => {
+    const updateViewport = () => setViewportWidth(window.innerWidth);
+    window.addEventListener('resize', updateViewport);
+    return () => window.removeEventListener('resize', updateViewport);
+  }, []);
+
+  const layout = rightPaneLayoutForViewport(mode, width, viewportWidth);
 
   const startResize = useCallback((event: React.PointerEvent<HTMLElement>) => {
     if (!visible) return;
@@ -74,14 +94,16 @@ export function useRightPaneSizing(visible: boolean, mode: RightPaneSizingMode =
     event.currentTarget.setPointerCapture(event.pointerId);
     const startX = event.clientX;
     const startWidth = width;
-    const resizeMin = rightPaneMinForMode(mode);
-    const max = Math.max(resizeMin, rightPaneAvailableMax());
+    const currentLayout = rightPaneLayoutForViewport(mode, width, window.innerWidth);
+    const resizeMin = currentLayout.min;
+    const max = currentLayout.max;
     function move(moveEvent: PointerEvent) {
       const next = startWidth - (moveEvent.clientX - startX);
       const nextWidth = Math.min(max, Math.max(resizeMin, next));
       if (mode === 'workflow') localStorage.setItem('nexus.workflowPaneWidth', String(Math.round(nextWidth)));
       if (mode === 'files') localStorage.setItem('nexus.filesPaneWidth', String(Math.round(nextWidth)));
       if (mode === 'browser') localStorage.setItem('nexus.browserPaneWidth', String(Math.round(nextWidth)));
+      if (mode === 'terminal') localStorage.setItem('nexus.terminalPaneWidth', String(Math.round(nextWidth)));
       if (mode === 'standard') localStorage.setItem('nexus.standardPaneWidth', String(Math.round(nextWidth)));
       setWidth(nextWidth);
     }
@@ -93,19 +115,13 @@ export function useRightPaneSizing(visible: boolean, mode: RightPaneSizingMode =
     window.addEventListener('pointerup', up);
   }, [mode, visible, width]);
 
-  const rightPaneMin = rightPaneMinForMode(mode);
-
   return {
-    rightPaneWidth: width,
+    rightPaneWidth: layout.width,
     rightPaneGridTemplateColumns: visible
-      ? `minmax(${RIGHT_PANE_MAIN_MIN}px, 1fr) 7px minmax(${rightPaneMin}px, min(${width}px, calc(100vw - 240px)))`
+      ? `minmax(${layout.mainMin}px, 1fr) ${PANE_DIVIDER_WIDTH}px minmax(${layout.min}px, ${layout.width}px)`
       : 'minmax(0, 1fr)',
     startRightPaneResize: startResize,
   };
-}
-
-function rightPaneAvailableMax(): number {
-  return Math.max(STANDARD_RIGHT_PANE_MIN, window.innerWidth - 240);
 }
 
 function defaultWorkflowPaneWidth(): number {
@@ -121,16 +137,42 @@ function defaultFilesPaneWidth(): number {
 }
 
 function defaultBrowserPaneWidth(): number {
-  return Math.round(Math.min(760, Math.max(560, window.innerWidth * 0.46)));
+  return Math.round(Math.min(1180, Math.max(640, window.innerWidth * 0.56)));
+}
+
+function defaultTerminalPaneWidth(): number {
+  return Math.round(Math.min(1120, Math.max(700, window.innerWidth * 0.54)));
 }
 
 function rightPaneMinForMode(mode: RightPaneSizingMode): number {
   if (mode === 'workflow') return WORKFLOW_RIGHT_PANE_MIN;
   if (mode === 'files') return FILES_RIGHT_PANE_MIN;
   if (mode === 'browser') return BROWSER_RIGHT_PANE_MIN;
+  if (mode === 'terminal') return TERMINAL_RIGHT_PANE_MIN;
   return STANDARD_RIGHT_PANE_MIN;
 }
 
+function rightPaneLayoutForViewport(mode: RightPaneSizingMode, requestedWidth: number, viewportWidth: number): { min: number; max: number; width: number; mainMin: number } {
+  const workspaceWidth = Math.max(0, viewportWidth - SIDEBAR_WIDTH);
+  const mainMin = mode === 'browser'
+    ? 240
+    : mode === 'terminal'
+      ? 220
+      : Math.min(420, Math.max(RIGHT_PANE_MAIN_MIN, Math.round(workspaceWidth * 0.42)));
+  const max = Math.max(180, workspaceWidth - mainMin - PANE_DIVIDER_WIDTH);
+  const min = Math.min(rightPaneMinForMode(mode), max);
+  return {
+    min,
+    max,
+    width: Math.min(max, Math.max(min, requestedWidth)),
+    mainMin,
+  };
+}
+
 function clampRightPaneWidth(width: number, min: number): number {
-  return Math.min(Math.max(min, rightPaneAvailableMax()), Math.max(min, width));
+  // Immersive utility panes (browser/terminal) may consume most of the
+  // workspace. Their layout function still protects the chat column, while
+  // this hydration clamp must not reintroduce the old 300px hard cap.
+  const max = Math.max(min, window.innerWidth - SIDEBAR_WIDTH - 220 - PANE_DIVIDER_WIDTH);
+  return Math.min(max, Math.max(min, width));
 }

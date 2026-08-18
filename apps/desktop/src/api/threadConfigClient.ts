@@ -1,10 +1,9 @@
-import type { AccessPolicyConfig } from '@nexus/protocol';
+import type { AccessPolicyConfig, ThreadRunConfigOverrides } from '@nexus/protocol';
 
-export interface ThreadConfigOverrides {
-  provider?: string;
-  model?: string;
-  baseUrl?: string;
-}
+export type ThreadConfigOverrides = Pick<
+  ThreadRunConfigOverrides,
+  'provider' | 'model' | 'baseUrl' | 'permissions' | 'reasoningEffort' | 'runProfile'
+>;
 
 export interface ThreadConfigResponse {
   overrides: ThreadConfigOverrides;

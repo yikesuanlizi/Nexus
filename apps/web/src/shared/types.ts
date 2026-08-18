@@ -112,6 +112,7 @@ export interface ThreadItem {
   prompt?: string;
   agentStatus?: string;
   workflow?: unknown;
+  attachments?: Array<{ name: string; path: string; mimeType?: string; url?: string }>;
   /** 远程 Agent 状态轨迹（仅 spawn_remote_agent 工具） */
   remoteStatusTrail?: Array<{ timestamp: string; state: string; text?: string }>;
   /** 远程 Agent 中间文本流（仅 spawn_remote_agent 工具） */
@@ -233,6 +234,9 @@ export interface ThreadWithRuns {
   status: string;
   runCount: number;
   lastActiveAt: string;
+  parentThreadId?: string | null;
+  agentNickname?: string | null;
+  agentRole?: string | null;
 }
 
 export interface ControlCapability {

@@ -389,6 +389,9 @@ interface ThreadWithRunStats {
   lastActiveAt: string;
   tenantId: string;
   status: string;
+  parentThreadId: string | null;
+  agentNickname: string | null;
+  agentRole: string | null;
 }
 
 async function listThreadsWithRuns(
@@ -446,6 +449,9 @@ async function listThreadsWithRuns(
       lastActiveAt: stats.lastActiveAt,
       tenantId: thread.tenantId ?? stats.tenantId,
       status: thread.status,
+      parentThreadId: thread.parentThreadId ?? null,
+      agentNickname: thread.agentNickname ?? null,
+      agentRole: thread.agentRole ?? null,
     });
   }
 

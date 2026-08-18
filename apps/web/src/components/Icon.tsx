@@ -1,8 +1,71 @@
 // 图标组件：统一输出 24x24 SVG，各图标名称映射到对应的 path 数据
 import React from 'react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import {
+  faCss3Alt,
+  faCuttlefish,
+  faDocker,
+  faGitAlt,
+  faGolang,
+  faHtml5,
+  faJava,
+  faMarkdown,
+  faNpm,
+  faNodeJs,
+  faPhp,
+  faPython,
+  faReact,
+  faRust,
+  faTypescript,
+  faVuejs,
+} from './fontAwesomeBrandIcons.js';
+import {
+  faAtom,
+  faBolt,
+  faBrain,
+  faChartLine,
+  faCircleStop,
+  faCodeBranch,
+  faComments,
+  faCubes,
+  faDatabase,
+  faFlask,
+  faGlobe,
+  faGears,
+  faFile,
+  faFileCode,
+  faFileExcel,
+  faFileImage,
+  faFileLines,
+  faFilePdf,
+  faFileZipper,
+  faFolder,
+  faFolderOpen,
+  faGaugeHigh,
+  faImages,
+  faLaptopCode,
+  faLayerGroup,
+  faMicrochip,
+  faMugHot,
+  faObjectGroup,
+  faPaintbrush,
+  faPuzzlePiece,
+  faRobot,
+  faSliders,
+  faStarOfDavid,
+  faTerminal,
+  faWaveSquare,
+  type IconDefinition,
+} from '@fortawesome/free-solid-svg-icons';
 
 export type IconName =
   | 'activity'
+  | 'alert'
+  | 'agentGroup'
+  | 'assistant'
+  | 'modelGroup'
+  | 'bot'
+  | 'brain'
   | 'browser'
   | 'branch'
   | 'calendar'
@@ -18,10 +81,38 @@ export type IconName =
   | 'eye'
   | 'eyeOff'
   | 'file'
+  | 'fileArchive'
+  | 'fileCode'
+  | 'fileImage'
+  | 'fileJson'
+  | 'filePdf'
+  | 'fileSettings'
+  | 'fileSpreadsheet'
+  | 'fileText'
+  | 'fileMarkdown'
+  | 'fileGit'
+  | 'fileNpm'
+  | 'filePhp'
+  | 'filePython'
+  | 'fileGo'
+  | 'fileJava'
+  | 'fileJavaScript'
+  | 'fileTypeScript'
+  | 'fileReact'
+  | 'fileVue'
+  | 'fileHtml'
+  | 'fileCss'
+  | 'fileRust'
+  | 'fileC'
+  | 'fileShell'
+  | 'fileSql'
+  | 'fileDocker'
   | 'folder'
   | 'folderCode'
+  | 'folderOpen'
   | 'folderPlus'
   | 'gear'
+  | 'gauge'
   | 'github'
   | 'hash'
   | 'layers'
@@ -30,13 +121,18 @@ export type IconName =
   | 'mermaid'
   | 'menu'
   | 'message'
+  | 'messages'
+  | 'images'
   | 'monitor'
   | 'moon'
   | 'panel'
   | 'pen'
+  | 'paintbrush'
   | 'play'
   | 'plus'
   | 'puppet'
+  | 'pulse'
+  | 'puzzle'
   | 'question'
   | 'refresh'
   | 'review'
@@ -53,9 +149,11 @@ export type IconName =
   | 'wrench'
   | 'palette'
   | 'shield'
+  | 'settingsSliders'
+  | 'stopCircle'
   | 'x';
 
-export type SidebarIconName = 'chevron' | 'folder' | 'folderCode' | 'gear' | 'layers' | 'message' | 'pen' | 'plus' | 'search' | 'trash' | 'workflow';
+export type SidebarIconName = 'chevron' | 'folder' | 'folderCode' | 'folderOpen' | 'gear' | 'layers' | 'message' | 'messages' | 'pen' | 'plus' | 'search' | 'trash' | 'workflow';
 
 export function SidebarIconSprite() {
   return (
@@ -65,7 +163,9 @@ export function SidebarIconSprite() {
       <symbol id="nexus-sidebar-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6" /><path d="m16 16 4 4" /></symbol>
       <symbol id="nexus-sidebar-workflow" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2" /><circle cx="18" cy="12" r="2" /><circle cx="6" cy="18" r="2" /><path d="m8 7 8 4M8 17l8-4" /></symbol>
       <symbol id="nexus-sidebar-message" viewBox="0 0 24 24"><path d="M5 5h14v11H9l-4 3V5Z" /></symbol>
+      <symbol id="nexus-sidebar-messages" viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h9A2.5 2.5 0 0 1 18 5.5v6a2.5 2.5 0 0 1-2.5 2.5H9l-4 2.7V14A2.5 2.5 0 0 1 2.5 11.5v-6A2.5 2.5 0 0 1 4 5.5Z" /><path d="M8 17.5A2.5 2.5 0 0 0 10.5 20h5l4 2.5V18A2.5 2.5 0 0 0 22 15.5" /></symbol>
       <symbol id="nexus-sidebar-folder" viewBox="0 0 24 24"><path d="M3 6h6l2 2h10v10H3V6Z" /></symbol>
+      <symbol id="nexus-sidebar-folderOpen" viewBox="0 0 24 24"><path d="M3 6h6l2 2h10v3H5.5L3 19V6Z" /><path d="M5.5 11H21l-2.2 8H3l2.5-8Z" /></symbol>
       <symbol id="nexus-sidebar-folderCode" viewBox="0 0 24 24"><path d="M3 6h6l2 2h10v10H3V6Z" /><path d="m10 12-2 2 2 2m4-4 2 2-2 2" /></symbol>
       <symbol id="nexus-sidebar-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></symbol>
       <symbol id="nexus-sidebar-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M19 12a7.6 7.6 0 0 0-.1-1l2-1.5-2-3.4-2.4 1a8 8 0 0 0-1.8-1L14.4 3H9.6l-.3 3.1a8 8 0 0 0-1.8 1l-2.4-1-2 3.4L5.1 11a7.6 7.6 0 0 0 0 2l-2 1.5 2 3.4 2.4-1a8 8 0 0 0 1.8 1l.3 3h4.8l.3-3a8 8 0 0 0 1.8-1l2.4 1 2-3.4-2-1.5c.1-.3.1-.7.1-1Z" /></symbol>
@@ -76,12 +176,68 @@ export function SidebarIconSprite() {
 }
 
 export function SidebarIcon({ className, name }: { className: 'icon' | 'row-icon'; name: SidebarIconName }) {
-  return <svg className={className} viewBox="0 0 24 24"><use href={`#nexus-sidebar-${name}`} /></svg>;
+  return <svg aria-hidden="true" className={className} viewBox="0 0 24 24"><use href={`#nexus-sidebar-${name}`} /></svg>;
 }
 
 export function Icon({ className, name }: { className?: string; name: IconName }) {
-  const paths: Record<IconName, React.ReactNode> = {
+  const fontAwesomeIcons: Partial<Record<IconName, IconDefinition>> = {
+    agentGroup: faStarOfDavid,
+    assistant: faBolt,
+    modelGroup: faObjectGroup,
+    activity: faChartLine,
+    bot: faRobot,
+    brain: faBrain,
+    file: faFile,
+    fileArchive: faFileZipper,
+    fileCode: faFileCode,
+    fileImage: faFileImage,
+    fileJson: faFileLines,
+    filePdf: faFilePdf,
+    fileSettings: faFileLines,
+    fileSpreadsheet: faFileExcel,
+    fileText: faFileLines,
+    filePython: faPython,
+    fileGo: faGolang,
+    fileJava: faJava,
+    fileJavaScript: faNodeJs,
+    fileTypeScript: faTypescript,
+    fileReact: faReact,
+    fileVue: faVuejs,
+    fileHtml: faHtml5,
+    fileCss: faCss3Alt,
+    fileRust: faRust,
+    fileC: faCuttlefish,
+    fileShell: faTerminal,
+    fileSql: faDatabase,
+    fileDocker: faDocker,
+    fileMarkdown: faMarkdown,
+    fileGit: faGitAlt,
+    fileNpm: faNpm,
+    filePhp: faPhp,
+    folder: faFolder,
+    folderOpen: faFolderOpen,
+    gauge: faGaugeHigh,
+    images: faImages,
+    messages: faComments,
+    paintbrush: faPaintbrush,
+    pulse: faWaveSquare,
+    puzzle: faPuzzlePiece,
+    settingsSliders: faSliders,
+    stopCircle: faCircleStop,
+  };
+  const fontAwesomeIcon = fontAwesomeIcons[name];
+  if (fontAwesomeIcon) {
+    return <FontAwesomeIcon aria-hidden="true" className={className} icon={fontAwesomeIcon} />;
+  }
+
+  const paths: Partial<Record<IconName, React.ReactNode>> = {
     activity: <path d="M3 12h4l2-7 4 14 2-7h6" />,
+    alert: <><circle cx="12" cy="12" r="9" /><path d="M12 7v6M12 17h.01" /></>,
+    agentGroup: <><circle cx="9" cy="9" r="3" /><circle cx="17" cy="10" r="2.5" /><path d="M3.5 19a5.5 5.5 0 0 1 11 0M15 16a4 4 0 0 1 5.5 3" /></>,
+    assistant: <><rect x="5" y="6" width="14" height="12" rx="3" /><path d="M9 6V4h6v2M9 12h.01M15 12h.01M8 18v2m8-2v2" /></>,
+    modelGroup: <><circle cx="8" cy="8" r="3" /><circle cx="16" cy="8" r="3" /><path d="M5 16h14M8 13v6m8-6v6" /></>,
+    bot: <><rect x="5" y="7" width="14" height="12" rx="3" /><path d="M9 12h.01M15 12h.01M12 7V4m-2 0h4M8 19v2m8-2v2" /></>,
+    brain: <path d="M9.5 4.5A3.5 3.5 0 0 0 6 8a3.5 3.5 0 0 0 .5 7 3.5 3.5 0 0 0 6 2.5V7a3.5 3.5 0 0 0-3-2.5ZM14.5 4.5A3.5 3.5 0 0 1 18 8a3.5 3.5 0 0 1-.5 7 3.5 3.5 0 0 1-6 2.5V7a3.5 3.5 0 0 1 3-2.5Z" />,
     browser: (
       <>
         <rect x="2" y="3" width="20" height="18" rx="2" />
@@ -135,10 +291,34 @@ export function Icon({ className, name }: { className?: string; name: IconName }
     eye: <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Zm10 3a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />,
     eyeOff: <path d="m3 3 18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 5.2A10.8 10.8 0 0 1 12 5c6.5 0 10 7 10 7a18 18 0 0 1-3.1 4.1M6.6 6.6C3.7 8.4 2 12 2 12s3.5 7 10 7a10.8 10.8 0 0 0 4.1-.8" />,
     file: <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6Zm0 0v6h6M8 13h8M8 17h5" />,
+    fileArchive: <><path d="M6 3h9l4 4v14H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" /><path d="M14 3v5h5M10 10h4m-4 3h4m-4 3h4m-2-6v6" /></>,
+    fileCode: <><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6Z" /><path d="m10 13-2 2 2 2m4-4 2 2-2 2" /></>,
+    fileImage: <><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6Z" /><path d="M14 3v6h6M7 18l3-3 2 2 2-2 3 3M8 11h.01" /></>,
+    fileJson: <><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6Z" /><path d="M14 3v6h6M10 13l-1.5 1.5L10 16m4-3 1.5 1.5L14 16" /></>,
+    filePdf: <><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6Z" /><path d="M14 3v6h6M8 17h2a1.5 1.5 0 0 0 0-3H8v5m5-5h1a2 2 0 0 1 0 4h-1v-4m4 0v5m0-2h2" /></>,
+    fileSettings: <><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6Z" /><path d="M14 3v6h6M10 14h6m-6 3h4" /></>,
+    fileSpreadsheet: <><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6Z" /><path d="M14 3v6h6M8 13h8M8 17h8M12 11v8" /></>,
+    fileText: <><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6Z" /><path d="M14 3v6h6M8 13h8M8 17h5" /></>,
+    filePython: <path d="M6 4h7a3 3 0 0 1 3 3v4H9a3 3 0 0 1-3-3V4Zm12 16h-7a3 3 0 0 1-3-3v-4h7a3 3 0 0 1 3 3v4Z" />,
+    fileGo: <path d="M4 7h16M4 12h16M4 17h16M7 4v16m5-16v16m5-16v16" />,
+    fileJava: <path d="M8 18h8M9 21h6M10 15c4 1 6-1 4-3-2-1-2-3 0-5M7 12c-2 2 0 4 3 4" />,
+    fileJavaScript: <path d="M5 3h14v18H5zM8 16c0 2 3 2 3 0v-4M15 12v6c0 2-3 2-3 0" />,
+    fileTypeScript: <path d="M4 4h16v16H4zM7 9h6M10 9v7m4-3h3c2 0 2 3 0 3h-3" />,
+    fileReact: <><circle cx="12" cy="12" r="2" /><ellipse cx="12" cy="12" rx="9" ry="4" /><ellipse cx="12" cy="12" rx="9" ry="4" transform="rotate(60 12 12)" /><ellipse cx="12" cy="12" rx="9" ry="4" transform="rotate(120 12 12)" /></>,
+    fileVue: <path d="m4 5 4 0 4 7 4-7h4l-8 14L4 5Z" />,
+    fileHtml: <path d="m5 4 1.5 16L12 22l5.5-2L19 4H5Zm3 4h8M8 12h7" />,
+    fileCss: <path d="m5 4 1.5 16L12 22l5.5-2L19 4H5Zm3 4h8M8 12h6" />,
+    fileRust: <><path d="M5 7h14v10H5z" /><path d="m8 7 1-3h6l1 3m-8 10 1 3h6l1-3M8 12h8" /></>,
+    fileC: <><path d="M19 8a7 7 0 1 0 0 8" /><path d="M5 9h8M5 15h8" /></>,
+    fileShell: <path d="m5 7 5 5-5 5m7 0h7" />,
+    fileSql: <><ellipse cx="12" cy="6" rx="7" ry="3" /><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6" /></>,
+    fileDocker: <><path d="M3 14h18M5 11h3V8h3v3h3V8h3v3h3M5 14c1 5 5 7 9 7 3 0 6-1 7-4" /></>,
     folder: <path d="M3 6h6l2 2h10v10H3V6Z" />,
     folderCode: <><path d="M3 6h6l2 2h10v10H3V6Z" /><path d="m10 12-2 2 2 2m4-4 2 2-2 2" /></>,
+    folderOpen: <><path d="M3 6h6l2 2h10v3H5.5L3 19V6Z" /><path d="M5.5 11H21l-2.2 8H3l2.5-8Z" /></>,
     folderPlus: <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l2 2h6.5A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5v-9Zm9 3v5m-2.5-2.5h5" />,
     gear: <path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm8.2 4.8a7.7 7.7 0 0 0 0-2.6l2-1.5-2-3.4-2.4 1a8 8 0 0 0-2.2-1.3L15.3 3h-4l-.3 2.5a8 8 0 0 0-2.2 1.3l-2.4-1-2 3.4 2 1.5a7.7 7.7 0 0 0 0 2.6l-2 1.5 2 3.4 2.4-1a8 8 0 0 0 2.2 1.3l.3 2.5h4l.3-2.5a8 8 0 0 0 2.2-1.3l2.4 1 2-3.4-2-1.5Z" />,
+    gauge: <><path d="M4 15a8 8 0 1 1 16 0" /><path d="m12 13 4-4M6 19h12" /></>,
     github: <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22" />,
     hash: <path d="M10 3 8 21M16 3l-2 18M4 9h17M3 15h17" />,
     layers: <path d="m12 3 9 5-9 5-9-5 9-5Zm-7 9 7 4 7-4M5 16l7 4 7-4" />,
@@ -177,6 +357,8 @@ export function Icon({ className, name }: { className?: string; name: IconName }
       </>
     ),
     message: <path d="M5 5h14v11H9l-4 3V5Z" />,
+    messages: <><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h9A2.5 2.5 0 0 1 18 5.5v6a2.5 2.5 0 0 1-2.5 2.5H9l-4 2.7V14A2.5 2.5 0 0 1 2.5 11.5v-6A2.5 2.5 0 0 1 4 5.5Z" /><path d="M8 17.5A2.5 2.5 0 0 0 10.5 20h5l4 2.5V18A2.5 2.5 0 0 0 22 15.5" /></>,
+    images: <><rect x="3" y="5" width="15" height="14" rx="2" /><path d="m5 16 4-4 3 3 2-2 4 4M16 8h5v11a2 2 0 0 1-2 2H8" /><circle cx="8" cy="9" r="1" /></>,
     monitor: (
       <>
         <rect x="3" y="4" width="18" height="13" rx="2" />
@@ -187,6 +369,7 @@ export function Icon({ className, name }: { className?: string; name: IconName }
     moon: <path d="M20 14.5A8.5 8.5 0 1 1 9.5 4 6.8 6.8 0 0 0 20 14.5Z" />,
     panel: <path d="M4 5h16v14H4zM15 5v14" />,
     pen: <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4 11.5-11.5Z" />,
+    paintbrush: <><path d="m14 4 6 6-8.5 8.5a3 3 0 0 1-4.2-4.2L16 5.6" /><path d="M5 19c-1.3 1.3-1.3 2.7 0 2.7 2.2 0 3.3-1.2 3.3-2.7 0-1.1-.8-1.7-1.7-1.7" /></>,
     play: <path d="M8 5v14l11-7L8 5Z" />,
     plus: <path d="M12 5v14M5 12h14" />,
     puppet: (
@@ -201,6 +384,8 @@ export function Icon({ className, name }: { className?: string; name: IconName }
         <line x1="14" y1="16" x2="14" y2="20" />
       </>
     ),
+    pulse: <><circle cx="12" cy="12" r="8.5" /><path d="M7 12h2l1.5-3 3 6 1.5-3H17" /></>,
+    puzzle: <path d="M9 3h3a2 2 0 0 1 4 0h3v4a2 2 0 0 1 0 4v4h-4a2 2 0 0 0-4 0H7v-4a2 2 0 0 0 0-4V3h2Z" />,
     question: <path d="M9.1 9a3 3 0 1 1 4.8 2.4c-1 .7-1.9 1.3-1.9 2.6m0 3h.01M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z" />,
     refresh: <path d="M20 6v5h-5M4 18v-5h5M18.2 9A7 7 0 0 0 6.7 6.8L4 9.5m16 5-2.7 2.7A7 7 0 0 1 5.8 15" />,
     review: (
@@ -249,6 +434,8 @@ export function Icon({ className, name }: { className?: string; name: IconName }
       </>
     ),
     shield: <path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3Z" />,
+    settingsSliders: <><path d="M4 6h8M16 6h4M4 12h3M11 12h9M4 18h10M18 18h2" /><circle cx="14" cy="6" r="2" /><circle cx="9" cy="12" r="2" /><circle cx="16" cy="18" r="2" /></>,
+    stopCircle: <><circle cx="12" cy="12" r="9" /><path d="M9 9h6v6H9z" /></>,
     x: <path d="M18 6 6 18M6 6l12 12" />,
   };
   // paths 映射：图标名称到 SVG path 节点

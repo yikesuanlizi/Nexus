@@ -102,4 +102,54 @@ describe('evaluateAccessRequest', () => {
       target: { kind: 'path', path: 'E:\\langchain\\dexin-agent\\v1.docx' },
     }).decision).toBe('allow');
   });
+
+  it('keeps persistent workspace and thread rules inside their declared scope', () => {
+    const policy: AccessPolicyConfig = {
+      mode: 'chat',
+      workspaceRoot: 'E:\\langchain\\Nexus',
+      persistentRules: [
+        {
+          id: 'workspace-localhost',
+          effect: 'allow',
+          access: 'network',
+          target: { kind: 'network', host: 'localhost:5173' },
+          scope: 'workspace',
+          workspaceRoot: 'E:\\langchain\\Nexus',
+        },
+        {
+          id: 'thread-click',
+          effect: 'allow',
+          access: 'tool_call',
+          target: { kind: 'tool', toolName: 'browser_act:click' },
+          scope: 'thread',
+          threadId: 'thread-1',
+        },
+      ],
+      temporaryGrants: [],
+    };
+
+    expect(evaluateAccessRequest(policy, {
+      ...baseRequest,
+      access: 'network',
+      target: { kind: 'network', host: 'localhost:5173' },
+      workspaceRoot: 'E:\\langchain\\Nexus',
+    }).decision).toBe('allow');
+    expect(evaluateAccessRequest(policy, {
+      ...baseRequest,
+      access: 'network',
+      target: { kind: 'network', host: 'localhost:5173' },
+      workspaceRoot: 'E:\\other-project',
+    }).decision).toBe('prompt');
+    expect(evaluateAccessRequest(policy, {
+      ...baseRequest,
+      access: 'tool_call',
+      target: { kind: 'tool', toolName: 'browser_act:click' },
+    }).decision).toBe('allow');
+    expect(evaluateAccessRequest(policy, {
+      ...baseRequest,
+      threadId: 'thread-2',
+      access: 'tool_call',
+      target: { kind: 'tool', toolName: 'browser_act:click' },
+    }).decision).toBe('prompt');
+  });
 });

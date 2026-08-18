@@ -5,7 +5,9 @@
 //   (create/layout/show/hide/destroy). Users and the agent operate the SAME view;
 //   remote pages never get the Nexus preload or any Nexus IPC.
 import { app, BaseWindow, session, WebContentsView } from 'electron';
-import { join } from 'node:path';
+import { mkdirSync } from 'node:fs';
+import { basename, join } from 'node:path';
+import type { PageGraph } from '@nexus/protocol';
 import type { BrowserDesktopEvent, BrowserTabState, CreateBrowserTabInput, BrowserViewBounds } from '../contracts/browserTypes.js';
 import { BrowserEngineAdapter } from './BrowserEngineAdapter.js';
 
@@ -19,8 +21,27 @@ interface ManagedView {
   url: string;
   title: string;
   visible: boolean;
-  favicon?: string;
   loading: boolean;
+  openedBy: 'user' | 'agent';
+  favicon?: string;
+  navigationEpoch: number;
+  containerBounds: BrowserViewBounds;
+}
+
+export interface BrowserDownloadReceipt {
+  filename: string;
+  path: string;
+  totalBytes: number;
+}
+
+interface BrowserDownloadWaiter {
+  resolve: (receipt: BrowserDownloadReceipt) => void;
+  reject: (reason: Error) => void;
+}
+
+interface BrowserTabWaiter {
+  resolve: () => void;
+  reject: (reason: Error) => void;
 }
 
 export class BrowserViewManager {
@@ -28,6 +49,16 @@ export class BrowserViewManager {
   private readonly host: BaseWindow;
   private readonly emit: (event: BrowserDesktopEvent) => void;
   private nextId = 1;
+  private readonly agentTabByTask = new Map<string, string>();
+  private readonly agentTaskByTab = new Map<string, string>();
+  private readonly agentPopupTabsByTask = new Map<string, Set<string>>();
+  private readonly popupParentByTab = new Map<string, string>();
+  private readonly downloadWaiterByTab = new Map<string, BrowserDownloadWaiter>();
+  private readonly browserTabWaiters = new Set<BrowserTabWaiter>();
+  private readonly pendingBrowserRequestTasks = new Set<string>();
+  // 同一线程必须严格串行，避免同一页面的 CDP 输入交叉；不同线程不应互相
+  // 阻塞，因为它们拥有各自的根标签和页面树。
+  private readonly agentOperationTailByTask = new Map<string, Promise<void>>();
   // 当前活动标签（用户可见 View；Agent 会话绑定它）。
   // — English: the currently active tab (the user-visible view the agent
   //   session binds to).
@@ -61,16 +92,23 @@ export class BrowserViewManager {
     //   failed events forward to the UI.
     browserSession.on('will-download', (_event, item, webContents) => {
       const tabId = this.tabIdFor(webContents);
-      this.emit({ type: 'download-started', tabId, filename: item.getFilename() });
-      item.setSavePath(join(app.getPath('downloads'), item.getFilename()));
+      const filename = basename(item.getFilename()) || 'download';
+      const ownerTaskId = this.agentTaskByTab.get(tabId);
+      const safeTaskId = ownerTaskId?.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 96) || 'manual';
+      const downloadDir = join(app.getPath('downloads'), 'Nexus', safeTaskId);
+      mkdirSync(downloadDir, { recursive: true });
+      const savePath = join(downloadDir, `${Date.now()}-${filename}`);
+      this.emit({ type: 'download-started', tabId, filename });
+      item.setSavePath(savePath);
       item.on('updated', (_e, state) => {
         if (state === 'interrupted') {
-          this.emit({ type: 'download-failed', tabId, filename: item.getFilename() });
+          this.rejectDownloadWaiter(tabId, new Error(`download interrupted: ${filename}`));
+          this.emit({ type: 'download-failed', tabId, filename });
         } else {
           this.emit({
             type: 'download-progress',
             tabId,
-            filename: item.getFilename(),
+            filename,
             receivedBytes: item.getReceivedBytes(),
             totalBytes: item.getTotalBytes(),
           });
@@ -78,9 +116,11 @@ export class BrowserViewManager {
       });
       item.on('done', (_e, state) => {
         if (state === 'completed') {
-          this.emit({ type: 'download-completed', tabId, filename: item.getFilename() });
+          this.resolveDownloadWaiter(tabId, { filename, path: savePath, totalBytes: item.getTotalBytes() });
+          this.emit({ type: 'download-completed', tabId, filename });
         } else {
-          this.emit({ type: 'download-failed', tabId, filename: item.getFilename() });
+          this.rejectDownloadWaiter(tabId, new Error(`download failed: ${filename}`));
+          this.emit({ type: 'download-failed', tabId, filename });
         }
       });
     });
@@ -95,10 +135,52 @@ export class BrowserViewManager {
     return '';
   }
 
+  waitForNextDownload(tabId: string, input: { signal?: AbortSignal; timeoutMs?: number } = {}): Promise<BrowserDownloadReceipt> {
+    if (!this.views.has(tabId)) return Promise.reject(new Error(`unknown tab: ${tabId}`));
+    if (this.downloadWaiterByTab.has(tabId)) return Promise.reject(new Error(`download already pending for tab: ${tabId}`));
+    const timeoutMs = input.timeoutMs ?? 30_000;
+    return new Promise<BrowserDownloadReceipt>((resolve, reject) => {
+      let settled = false;
+      const timeout = setTimeout(() => finish(new Error('download timed out')), timeoutMs);
+      timeout.unref?.();
+      const onAbort = (): void => finish(new Error('download aborted'));
+      const cleanup = (): void => {
+        clearTimeout(timeout);
+        input.signal?.removeEventListener('abort', onAbort);
+        this.downloadWaiterByTab.delete(tabId);
+      };
+      const finish = (result: BrowserDownloadReceipt | Error): void => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        if (result instanceof Error) reject(result);
+        else resolve(result);
+      };
+      if (input.signal?.aborted) {
+        finish(new Error('download aborted'));
+        return;
+      }
+      input.signal?.addEventListener('abort', onAbort, { once: true });
+      this.downloadWaiterByTab.set(tabId, {
+        resolve: (receipt) => finish(receipt),
+        reject: (reason) => finish(reason),
+      });
+    });
+  }
+
+  private resolveDownloadWaiter(tabId: string, receipt: BrowserDownloadReceipt): void {
+    this.downloadWaiterByTab.get(tabId)?.resolve(receipt);
+  }
+
+  private rejectDownloadWaiter(tabId: string, reason: Error): void {
+    this.downloadWaiterByTab.get(tabId)?.reject(reason);
+  }
+
   // 创建并挂载 View，返回 tabId。远程页面无 preload、无 Node 权限。
   // — English: creates and mounts the view; remote pages have no preload/Node access.
-  createTab(input: CreateBrowserTabInput): BrowserTabState {
+  createTab(input: CreateBrowserTabInput, openedBy?: 'user' | 'agent'): BrowserTabState {
     const tabId = `tab-${this.nextId++}`;
+    const source = openedBy ?? input.openedBy ?? (this.pendingBrowserRequestTasks.size > 0 ? 'agent' : 'user');
     const view = new WebContentsView({
       webPreferences: {
         partition: SESSION_PARTITION,
@@ -117,11 +199,15 @@ export class BrowserViewManager {
       title: '',
       visible: true,
       loading: true,
+      openedBy: source,
+      navigationEpoch: 0,
+      containerBounds: input.bounds,
     };
     this.views.set(tabId, managed);
     this.activeTabId = tabId;
     this.host.contentView.addChildView(view);
     this.setBounds(tabId, input.bounds);
+    this.resolveBrowserTabWaiters();
 
     // 页面生命周期事件 → Renderer（Phase 2 子集：loading/title/favicon/navigation/crash）。
     // — English: page lifecycle events → Renderer (Phase 2 subset).
@@ -135,6 +221,7 @@ export class BrowserViewManager {
     });
     view.webContents.on('did-navigate', (_event, url) => {
       managed.url = url;
+      managed.navigationEpoch += 1;
       this.emit({ type: 'did-navigate', tabId, url });
     });
     view.webContents.on('page-title-updated', (_event, title) => {
@@ -188,7 +275,15 @@ export class BrowserViewManager {
     // popup：在新标签打开（禁止独立窗口）。
     // — English: popups open as new tabs (standalone windows are blocked).
     view.webContents.setWindowOpenHandler(({ url }) => {
-      this.createTab({ url, bounds: managed.view.getBounds() });
+      const popup = this.createTab({ url, bounds: managed.containerBounds }, managed.openedBy);
+      const ownerTaskId = this.agentTaskByTab.get(tabId);
+      if (ownerTaskId !== undefined) {
+        this.agentTaskByTab.set(popup.tabId, ownerTaskId);
+        const popupTabs = this.agentPopupTabsByTask.get(ownerTaskId) ?? new Set<string>();
+        popupTabs.add(popup.tabId);
+        this.agentPopupTabsByTask.set(ownerTaskId, popupTabs);
+        this.popupParentByTab.set(popup.tabId, tabId);
+      }
       return { action: 'deny' };
     });
 
@@ -197,20 +292,21 @@ export class BrowserViewManager {
       // — English: load failures surface via did-fail-load; log here only.
       console.error(`[browser] loadURL failed for ${tabId}: ${String(err)}`);
     });
-    this.emit({ type: 'tab-created', tabId, url: input.url });
+    this.emit({ type: 'tab-created', tabId, url: input.url, openedBy: source });
     return this.stateOf(managed);
   }
 
   // 网页四周留边距 + 圆角（视觉上与 Electron 窗口融合更好看）。
   // — English: the web page gets an inset margin and rounded corners so it
   //   blends nicely with the Electron window.
-  private static readonly VIEW_INSET = 8;
-  private static readonly VIEW_RADIUS = 12;
+  private static readonly VIEW_INSET = 16;
+  private static readonly VIEW_RADIUS = 16;
 
   setBounds(tabId: string, bounds: BrowserViewBounds): void {
     const managed = this.views.get(tabId);
     if (managed === undefined) throw new Error(`unknown tab: ${tabId}`);
     const inset = BrowserViewManager.VIEW_INSET;
+    managed.containerBounds = bounds;
     const padded: BrowserViewBounds = {
       x: bounds.x + inset,
       y: bounds.y + inset,
@@ -224,6 +320,10 @@ export class BrowserViewManager {
       // 老版本 Electron 无 setBorderRadius——忽略（仅影响圆角）。
       // — English: older Electron lacks setBorderRadius — ignore (corners only).
     }
+  }
+
+  hasTab(tabId: string): boolean {
+    return this.views.has(tabId);
   }
 
   setVisible(tabId: string, visible: boolean): void {
@@ -241,8 +341,16 @@ export class BrowserViewManager {
   navigate(tabId: string, url: string): void {
     const managed = this.views.get(tabId);
     if (managed === undefined) throw new Error(`unknown tab: ${tabId}`);
-    managed.url = url;
-    void managed.view.webContents.loadURL(url);
+    // 底层兜底规范化：无协议时 localhost/回环/IP 补 http://（与 UI/BrowserTool 一致）。
+    // — English: bottom-line URL normalization — localhost/loopback/IPs get
+    //   http:// when the scheme is missing (same as UI/BrowserTool).
+    const normalized = /^[a-z][a-z0-9+.-]*:\/\//i.test(url)
+      ? url
+      : /^(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)(:\d+)?$|^\d{1,3}(\.\d{1,3}){3}(:\d+)?$/.test(url.split(/[/?#]/)[0] ?? '')
+        ? `http://${url}`
+        : `https://${url}`;
+    managed.url = normalized;
+    void managed.view.webContents.loadURL(normalized);
   }
 
   // 激活标签：隐藏其余 View，目标保持可见并置于最前（不抢其它面板焦点）。
@@ -340,11 +448,37 @@ export class BrowserViewManager {
     return [...this.views.values()].map((m) => this.stateOf(m));
   }
 
+  // 隐藏工作台只移除原生 View，不销毁标签或 Agent 的 pageId 绑定。
+  // 这样用户可以收起右侧栏，Agent 后续仍能继续操作同一页面。
+  hideAll(): void {
+    for (const managed of this.views.values()) {
+      if (!managed.visible) continue;
+      managed.visible = false;
+      this.host.contentView.removeChildView(managed.view);
+      this.emit({ type: 'tab-visible', tabId: managed.tabId, visible: false });
+    }
+  }
+
   // 关闭标签立即回收 View；不存在不可见页面持续占用。
   // — English: closing a tab recycles its view immediately.
   destroy(tabId: string): void {
     const managed = this.views.get(tabId);
     if (managed === undefined) return;
+    this.rejectDownloadWaiter(tabId, new Error('browser tab closed'));
+    const ownerTaskId = this.agentTaskByTab.get(tabId);
+    if (ownerTaskId !== undefined) {
+      this.agentTaskByTab.delete(tabId);
+      this.agentPopupTabsByTask.get(ownerTaskId)?.delete(tabId);
+      this.popupParentByTab.delete(tabId);
+      if (this.agentTabByTask.get(ownerTaskId) === tabId) {
+        this.agentTabByTask.delete(ownerTaskId);
+        for (const popupTabId of this.agentPopupTabsByTask.get(ownerTaskId) ?? []) {
+          this.agentTaskByTab.delete(popupTabId);
+          this.popupParentByTab.delete(popupTabId);
+        }
+        this.agentPopupTabsByTask.delete(ownerTaskId);
+      }
+    }
     this.views.delete(tabId);
     this.host.contentView.removeChildView(managed.view);
     this.adapters.get(managed.view.webContents.id)?.detach();
@@ -357,6 +491,7 @@ export class BrowserViewManager {
   // 退出时回收全部 View（无残留进程）。
   // — English: recycle every view on shutdown (no residual processes).
   dispose(): void {
+    this.rejectBrowserTabWaiters(new Error('browser manager disposed'));
     for (const tabId of [...this.views.keys()]) {
       this.destroy(tabId);
     }
@@ -378,6 +513,149 @@ export class BrowserViewManager {
     return { tabId, view: this.viewFor(tabId) };
   }
 
+  private waitForBrowserTab(taskId: string, input: { signal?: AbortSignal } = {}): Promise<void> {
+    if (this.views.size > 0) return Promise.resolve();
+    return new Promise<void>((resolve, reject) => {
+      let settled = false;
+      let finish: (reason?: Error) => void = () => undefined;
+      const waiter: BrowserTabWaiter = {
+        resolve: () => finish(),
+        reject: (reason) => finish(reason),
+      };
+      const timeout = setTimeout(() => finish(new Error('浏览器工作台未在 30 秒内就绪')), 30_000);
+      timeout.unref?.();
+      const onAbort = (): void => finish(new Error('等待浏览器工作台时已取消'));
+      const cleanup = (): void => {
+        clearTimeout(timeout);
+        input.signal?.removeEventListener('abort', onAbort);
+        this.browserTabWaiters.delete(waiter);
+      };
+      finish = (reason?: Error): void => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        if (reason !== undefined) {
+          this.pendingBrowserRequestTasks.delete(taskId);
+          reject(reason);
+        } else resolve();
+      };
+      if (input.signal?.aborted) {
+        finish(new Error('等待浏览器工作台时已取消'));
+        return;
+      }
+      this.browserTabWaiters.add(waiter);
+      this.pendingBrowserRequestTasks.add(taskId);
+      input.signal?.addEventListener('abort', onAbort, { once: true });
+      this.emit({ type: 'agent-browser-requested', taskId });
+    });
+  }
+
+  hasPendingAgentBrowserRequest(): boolean {
+    return this.pendingBrowserRequestTasks.size > 0;
+  }
+
+  private resolveBrowserTabWaiters(): void {
+    this.pendingBrowserRequestTasks.clear();
+    for (const waiter of [...this.browserTabWaiters]) {
+      waiter.resolve();
+    }
+  }
+
+  private rejectBrowserTabWaiters(reason: Error): void {
+    this.pendingBrowserRequestTasks.clear();
+    for (const waiter of [...this.browserTabWaiters]) {
+      waiter.reject(reason);
+    }
+  }
+
+  async acquireAgentTab(taskId: string, input: { signal?: AbortSignal } = {}): Promise<{ tabId: string; view: WebContentsView }> {
+    const existingTabId = this.agentTabByTask.get(taskId);
+    if (existingTabId !== undefined && this.views.has(existingTabId)) {
+      return { tabId: existingTabId, view: this.viewFor(existingTabId) };
+    }
+
+    await this.waitForBrowserTab(taskId, input);
+    const active = this.activeTabOrFirst();
+    if (!this.agentTaskByTab.has(active.tabId)) {
+      this.agentTabByTask.set(taskId, active.tabId);
+      this.agentTaskByTab.set(active.tabId, taskId);
+      return active;
+    }
+
+    const activeManaged = this.views.get(active.tabId);
+    if (activeManaged === undefined) throw new Error(`unknown tab: ${active.tabId}`);
+    const tab = this.createTab({ url: 'about:blank', bounds: activeManaged.containerBounds }, 'agent');
+    this.activateTab(tab.tabId);
+    this.agentTabByTask.set(taskId, tab.tabId);
+    this.agentTaskByTab.set(tab.tabId, taskId);
+    return { tabId: tab.tabId, view: this.viewFor(tab.tabId) };
+  }
+
+  agentTabForPage(taskId: string, pageId?: string): { tabId: string; view: WebContentsView } {
+    const rootTabId = this.agentTabByTask.get(taskId);
+    if (rootTabId === undefined || !this.views.has(rootTabId)) {
+      throw new Error(`browser tab unavailable for task: ${taskId}`);
+    }
+    const tabId = pageId ?? rootTabId;
+    const isTaskPage = tabId === rootTabId || this.agentPopupTabsByTask.get(taskId)?.has(tabId) === true;
+    if (!isTaskPage || !this.views.has(tabId)) {
+      throw new Error(`browser page unavailable for task: ${taskId}`);
+    }
+    return { tabId, view: this.viewFor(tabId) };
+  }
+
+  agentPageGraph(taskId: string): PageGraph {
+    const rootTabId = this.agentTabByTask.get(taskId);
+    if (rootTabId === undefined || !this.views.has(rootTabId)) {
+      throw new Error(`browser tab unavailable for task: ${taskId}`);
+    }
+    const tabIds = [rootTabId, ...(this.agentPopupTabsByTask.get(taskId) ?? [])]
+      .filter((tabId) => this.views.has(tabId));
+    const activePageId = this.activeTabId !== null && tabIds.includes(this.activeTabId)
+      ? this.activeTabId
+      : rootTabId;
+    return {
+      activePageId,
+      pages: tabIds.map((tabId) => {
+        const managed = this.views.get(tabId)!;
+        const openerPageId = this.popupParentByTab.get(tabId);
+        return {
+          pageId: tabId,
+          ...(openerPageId === undefined ? {} : { openerPageId }),
+          openedBy: managed.openedBy,
+          url: managed.url,
+          title: managed.title,
+          state: tabId === activePageId ? 'active' : 'background',
+          navigationEpoch: managed.navigationEpoch,
+        };
+      }),
+    };
+  }
+
+  async runAgentOperation<T>(taskId: string, pageId: string | undefined, operation: () => Promise<T>): Promise<T> {
+    let release: () => void = () => undefined;
+    const previous = this.agentOperationTailByTask.get(taskId) ?? Promise.resolve();
+    const tail = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    this.agentOperationTailByTask.set(taskId, tail);
+    await previous;
+    try {
+      const page = this.agentTabForPage(taskId, pageId);
+      if (!this.views.get(page.tabId)?.visible) {
+        // 收起的工作台不会终止会话；下一次 Agent 操作会请求 Renderer 恢复它。
+        this.emit({ type: 'agent-browser-requested', taskId });
+      }
+      this.activateTab(page.tabId);
+      return await operation();
+    } finally {
+      release();
+      if (this.agentOperationTailByTask.get(taskId) === tail) {
+        this.agentOperationTailByTask.delete(taskId);
+      }
+    }
+  }
+
   destroyAll(): void {
     this.dispose();
   }
@@ -389,6 +667,7 @@ export class BrowserViewManager {
       title: managed.title,
       visible: managed.visible,
       loading: managed.loading,
+      openedBy: managed.openedBy,
       favicon: managed.favicon,
     };
   }

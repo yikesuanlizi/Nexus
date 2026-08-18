@@ -89,7 +89,11 @@ app.whenReady().then(() => {
     y: windowBounds.y,
     title: 'Nexus',
     autoHideMenuBar: true,
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#0f2026' : '#e7f4f6',
+    // 延迟显示：等 React 挂载后再 show（见 showWhenReady），避免空白窗口。
+    // — English: keep the window hidden until React mounts (see showWhenReady),
+    //   so the user never sees a blank window.
+    show: false,
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#202020' : '#f3f3f3',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -107,6 +111,13 @@ app.whenReady().then(() => {
     }
   };
   const browserManager = new BrowserViewManager({ host, emit });
+  // 首次 Agent 请求可能早于 Renderer 的事件订阅。主窗口加载完成后重发仍待
+  // 处理的请求，确保工作台会自动展开而不会让 Agent 卡在无标签页状态。
+  host.webContents.on('did-finish-load', () => {
+    if (browserManager.hasPendingAgentBrowserRequest()) {
+      emit({ type: 'agent-browser-requested', taskId: '' });
+    }
+  });
 
   createMainWindow({ host });
 
@@ -168,6 +179,21 @@ app.whenReady().then(() => {
   });
 
   if (LOAD_MODE === 'dev') {
+    // dev 模式：vite 可能尚未就绪，did-fail-load 自动重试（最多 20 次）。
+    // — English: dev mode — vite may not be ready yet; retry on did-fail-load
+    //   (up to 20 times).
+    let devRetries = 0;
+    host.webContents.on('did-fail-load', (_event, code, desc) => {
+      if (LOAD_MODE === 'dev' && devRetries < 20) {
+        devRetries += 1;
+        console.error(`[electron] load failed (${code} ${desc}) — retry ${devRetries}/20`);
+        setTimeout(() => {
+          if (!host.isDestroyed()) {
+            void host.loadURL(DEV_UI_URL);
+          }
+        }, 500);
+      }
+    });
     void host.loadURL(DEV_UI_URL);
   } else if (LOAD_MODE === 'phase0') {
     void host.loadFile(join(__dirname, '../phase0/renderer.html'));
@@ -189,6 +215,33 @@ app.whenReady().then(() => {
     });
     void host.loadURL('app://bundle/index.html');
   }
+
+  // 窗口延迟显示：等 React 挂载（#root 有内容）后再 show，避免启动时空白窗口。
+  // 15s 兑底强制显示（dev 首屏编译/网络异常时不至于永远不出现）。
+  // — English: delay showing the window until React mounts (#root has
+  //   children), so the user never sees a blank window. A 15s fallback forces
+  //   show (dev first-compile/network hiccups cannot leave it hidden forever).
+  const showWhenReady = (): void => {
+    const startedAt = Date.now();
+    const tick = (): void => {
+      if (host.isDestroyed() || host.isVisible()) return;
+      if (Date.now() - startedAt > 15_000) {
+        host.show();
+        return;
+      }
+      host.webContents.executeJavaScript('Boolean(document.querySelector("#root")?.childElementCount)').then((hasContent: boolean) => {
+        if (hasContent) {
+          host.show();
+        } else {
+          setTimeout(tick, 100);
+        }
+      }).catch(() => {
+        setTimeout(tick, 100);
+      });
+    };
+    tick();
+  };
+  host.webContents.once('did-finish-load', showWhenReady);
 
   markReady();
 });

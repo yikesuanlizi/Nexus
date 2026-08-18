@@ -4,7 +4,7 @@ import { type ThreadState } from '@nexus/runtime';
 import { addCustomProvider, listAllProviders, type ModelGateway } from '@nexus/model-gateway';
 import { createStore, resolveStorageOptions } from '@nexus/storage';
 import { forkThread } from '@nexus/memory';
-import type { ThreadEvent, ThreadId, ThreadItem, TurnMeta, UserInput } from '@nexus/protocol';
+import type { AccessPolicyConfig, AccessRequest, AccessRule, PersistentAccessScope, ThreadEvent, ThreadId, ThreadItem, TurnMeta, UserInput } from '@nexus/protocol';
 import { buildAgentCard, type AgentRuntimePort } from '@nexus/protocol';
 import { createA2AHandler, handleA2ARoute, type A2AHandler } from './a2a/a2aRoute.js';
 import { WebApprovalBroker } from './services/approval.js';
@@ -15,6 +15,7 @@ import { installGracefulShutdown } from './runtime/shutdown.js';
 import { handlePickWorkspaceDirectory } from './routes/workspacePicker.js';
 import { autoStartDingtalkForTenant, handleBotRoute } from './routes/botRoute.js';
 import { handleWorkspaceFilesRoute } from './routes/workspaceFiles.js';
+import { handleTerminalRoute } from './routes/terminal.js';
 import { handleSettingsRoute } from './routes/settingsRoute.js';
 import { handleWorkflowRoute } from './routes/workflowRoute.js';
 import { handleRunMonitorRoute } from './routes/runMonitorRoute.js';
@@ -60,6 +61,38 @@ function publishEvent(event: ThreadEvent, tenantId: string = DEFAULT_TENANT_ID):
   for (const client of clients) {
     client.write(line);
   }
+}
+
+function persistentRuleFromApproval(request: AccessRequest, scope: PersistentAccessScope): AccessRule {
+  const createdAt = new Date().toISOString();
+  return {
+    id: `approval_allow_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+    effect: 'allow',
+    access: request.access,
+    target: request.target,
+    scope,
+    ...(scope === 'thread' ? { threadId: request.threadId } : {}),
+    ...(scope === 'workspace' && request.workspaceRoot ? { workspaceRoot: request.workspaceRoot } : {}),
+    reason: '通过审批面板允许类似操作',
+    createdAt,
+    updatedAt: createdAt,
+  };
+}
+
+function appendPersistentRule(policy: AccessPolicyConfig, rule: AccessRule): AccessPolicyConfig {
+  const alreadyPresent = policy.persistentRules.some((current) =>
+    current.effect === rule.effect
+    && current.access === rule.access
+    && current.scope === rule.scope
+    && current.threadId === rule.threadId
+    && current.workspaceRoot === rule.workspaceRoot
+    && JSON.stringify(current.target) === JSON.stringify(rule.target),
+  );
+  return {
+    ...policy,
+    persistentRules: alreadyPresent ? policy.persistentRules : [...policy.persistentRules, rule],
+    temporaryGrants: [],
+  };
 }
 
 const tenantRuntime = createTenantRuntime({
@@ -345,6 +378,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const {
     deleteModelPreset,
     getDefaultRunConfig,
+    getGlobalAccessPolicy,
     getThreadAccessPolicy,
     getThreadConfigOverrides,
     getThreadRunConfig,
@@ -378,6 +412,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     publishEvent: publishTenantEvent,
   })) return;
   if (await handleWorkspaceFilesRoute({ req, res, url })) return;
+  if (await handleTerminalRoute({ req, res, url })) return;
 
   // A2A 标准发现路径 — /.well-known/agent-card.json
   // A2A 规范要求 Agent Card 在此路径暴露，SDK 的 ClientFactory.createFromUrl 默认查找此路径
@@ -608,11 +643,43 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   }
 
   if (req.method === 'POST' && segments[0] === 'api' && segments[1] === 'approvals' && segments[2]) {
-    const body = await readJson<{ approved?: boolean; reason?: string; temporaryScope?: 'tool_call' | 'turn' | 'session' }>(req);
+    const body = await readJson<{
+      approved?: boolean;
+      reason?: string;
+      temporaryScope?: 'tool_call' | 'turn' | 'session';
+      persistentScope?: PersistentAccessScope;
+    }>(req);
     const temporaryScope = body.temporaryScope === 'turn' || body.temporaryScope === 'session' || body.temporaryScope === 'tool_call'
       ? body.temporaryScope
       : undefined;
-    const ok = approvalBroker.decideWithScope(segments[2], body.approved === true, body.reason, temporaryScope);
+    const persistentScope = body.persistentScope === 'thread' || body.persistentScope === 'workspace' || body.persistentScope === 'global'
+      ? body.persistentScope
+      : undefined;
+    const approval = approvalBroker.getPending(segments[2]);
+    if (!approval) { sendError(res, 404, 'Approval request not found'); return; }
+    if (body.approved === true && persistentScope) {
+      const accessRequest = approval.accessRequest;
+      if (!accessRequest) {
+        sendError(res, 400, 'This approval cannot be persisted as an access rule');
+        return;
+      }
+      const rule = persistentRuleFromApproval(accessRequest, persistentScope);
+      if (persistentScope === 'thread') {
+        const current = await getThreadAccessPolicy(accessRequest.threadId);
+        const base = current ?? {
+          mode: (await getThreadRunConfig(accessRequest.threadId)).accessPolicy.mode,
+          workspaceRoot: accessRequest.workspaceRoot ?? '',
+          persistentRules: [],
+          temporaryGrants: [],
+        };
+        await saveThreadAccessPolicy(accessRequest.threadId, appendPersistentRule(base, rule));
+      } else {
+        const current = await getGlobalAccessPolicy();
+        await saveGlobalAccessPolicy(appendPersistentRule(current, rule));
+        resetTenantDefaultAgent();
+      }
+    }
+    const ok = approvalBroker.decideWithScope(segments[2], body.approved === true, body.reason, temporaryScope, persistentScope);
     if (!ok) { sendError(res, 404, 'Approval request not found'); return; }
     sendJson(res, 200, { ok: true });
     return;
@@ -750,7 +817,11 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
         }, tenantContext.tenantId);
       }
       const agent = (await createTenantAgent(config)).agent;
-      const result = await agent.runTurn(threadId, buildUserInputFromTurnRequest(body));
+      const result = await agent.runTurn(threadId, await buildUserInputFromTurnRequest(body, {
+        threadId,
+        workspaceRoot: config.workspaceRoot,
+        dataDir: config.dataDir,
+      }));
       sendJson(res, 200, result);
       return;
     }

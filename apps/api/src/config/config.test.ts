@@ -282,7 +282,7 @@ describe('thread config overrides', () => {
     expect(overrides).toEqual({});
   });
 
-  it('filters input to only provider, model, and baseUrl', async () => {
+  it('filters input to supported thread choices', async () => {
     const store = new FakeThreadStore();
     const repo = createConfigRepository(store as unknown as ThreadStore);
     const threadId = 'thread-overrides-2' as ThreadId;
@@ -301,10 +301,11 @@ describe('thread config overrides', () => {
       provider: 'openai',
       model: 'gpt-5',
       baseUrl: 'https://example.test/v1',
+      permissions: 'danger_full_access',
     });
   });
 
-  it('persists only the three whitelisted fields', async () => {
+  it('persists model and execution choices', async () => {
     const store = new FakeThreadStore();
     const repo = createConfigRepository(store as unknown as ThreadStore);
     const threadId = 'thread-overrides-3' as ThreadId;
@@ -314,6 +315,8 @@ describe('thread config overrides', () => {
       model: 'claude-3-5-sonnet',
       baseUrl: 'https://api.anthropic.com',
       permissions: 'workspace',
+      reasoningEffort: 'high',
+      runProfile: 'runtime_os',
     });
 
     const stored = await repo.getThreadConfigOverrides(threadId);
@@ -321,8 +324,28 @@ describe('thread config overrides', () => {
       provider: 'anthropic',
       model: 'claude-3-5-sonnet',
       baseUrl: 'https://api.anthropic.com',
+      permissions: 'workspace',
+      reasoningEffort: 'high',
+      runProfile: 'runtime_os',
     });
-    expect(stored).not.toHaveProperty('permissions');
+  });
+
+  it('merges concurrent partial updates instead of dropping fields', async () => {
+    const store = new FakeThreadStore();
+    const repo = createConfigRepository(store as unknown as ThreadStore);
+    const threadId = 'thread-overrides-concurrent' as ThreadId;
+
+    const [permissions, reasoning] = await Promise.all([
+      repo.updateThreadConfigOverrides(threadId, { permissions: 'read_only' }),
+      repo.updateThreadConfigOverrides(threadId, { reasoningEffort: 'low' }),
+    ]);
+
+    expect(permissions).toMatchObject({ permissions: 'read_only' });
+    expect(reasoning).toMatchObject({ permissions: 'read_only', reasoningEffort: 'low' });
+    await expect(repo.getThreadConfigOverrides(threadId)).resolves.toEqual({
+      permissions: 'read_only',
+      reasoningEffort: 'low',
+    });
   });
 
   it('merges overrides into thread run config', async () => {
@@ -335,11 +358,17 @@ describe('thread config overrides', () => {
     await repo.updateThreadConfigOverrides(threadId, {
       provider: 'openai',
       model: 'gpt-5',
+      permissions: 'danger_full_access',
+      reasoningEffort: 'high',
+      runProfile: 'runtime_os',
     });
 
     const config = await repo.getThreadRunConfig(threadId);
 
     expect(config.provider).toBe('openai');
     expect(config.model).toBe('gpt-5');
+    expect(config.permissions).toBe('danger_full_access');
+    expect(config.reasoningEffort).toBe('high');
+    expect(config.runProfile).toBe('runtime_os');
   });
 });

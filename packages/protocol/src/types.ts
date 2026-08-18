@@ -3,6 +3,7 @@ import type {
   AccessEffect,
   AccessRequest,
   AccessRuleScope,
+  PersistentAccessScope,
   TemporaryAccessScope,
 } from './accessPolicy.js';
 
@@ -129,7 +130,7 @@ export interface MultimodalInput {
 export type InputPart =
   | { type: 'text'; text: string }
   | { type: 'image_url'; image_url: { url: string; detail?: 'low' | 'high' } }
-  | { type: 'image_path'; path: string };
+  | { type: 'image_path'; path: string; name?: string; mimeType?: string; url?: string };
 
 // ─── Item ────────────────────────────────────────────────────────────────────
 // Item（条目）：回合内的最小可记录单元，存到 JSONL 持久化
@@ -172,6 +173,7 @@ export interface UserMessageItem {
   /** P6.3: 关联的 runId，用于 run monitor timeline 严格按 run 过滤 */
   // — Chinese: associated runId for strict run-scoped timeline filtering
   runId?: string;
+  attachments?: Array<{ name: string; path: string; mimeType?: string; url?: string }>;
 }
 
 export type ProviderAssistantFrame =
@@ -1366,6 +1368,7 @@ export interface ApprovalResponse {
   approved: boolean;
   reason?: string;
   temporaryScope?: TemporaryAccessScope;
+  persistentScope?: PersistentAccessScope;
 }
 
 // ─── System Monitor ──────────────────────────────────────────────────────────

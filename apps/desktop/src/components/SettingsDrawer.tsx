@@ -636,6 +636,7 @@ export function SettingsDrawer({
             setConfig={setConfig}
             markDirty={settings.markDirty}
             dirtyFields={settings.dirtyFields}
+            onSave={settings.handleSave}
           />
         );
       case 'about':

@@ -7,7 +7,10 @@ import { resizeTextareaToContent } from '../shared/composer.js';
 import { t } from '../shared/i18n.js';
 import { DropdownSelect } from './DropdownSelect.js';
 import { Icon } from './Icon.js';
+import { IconParkIcon } from './IconParkIcon.js';
+import { ModelBrandIcon } from './ModelBrandIcon.js';
 import type { BotConfig, BotStatus, ModelPreset } from '../shared/types.js';
+import type { ThreadConfigOverrides } from '../api/threadConfigClient.js';
 
 export type RemoteAssistantPlatform = 'weixin' | 'dingtalk';
 
@@ -21,9 +24,16 @@ export const COMPOSER_HISTORY_STORAGE_KEY = 'nexus.composer.history.v1';
 export const COMPOSER_DRAFT_STORAGE_KEY = 'nexus.composer.draft.v1';
 const COMPOSER_HISTORY_LIMIT = 100;
 
+type FileMentionEntry = {
+  kind: 'directory' | 'file';
+  name: string;
+  path: string;
+};
+
 export function ComposerBar({
   activeSlashOption,
   activeThreadId,
+  addFileReference = () => undefined,
   applyModelPreset,
   botConfig,
   botStatus,
@@ -38,9 +48,12 @@ export function ComposerBar({
   handlePaste,
   images,
   input,
+  fileReferences = [],
   modelPresets,
   openRemoteAssistants,
+  persistThreadConfigOverrides = async () => undefined,
   removeImage,
+  removeFileReference = () => undefined,
   rightPaneVisible,
   selectSlashOption,
   setActiveSlashOption,
@@ -52,9 +65,11 @@ export function ComposerBar({
   submitComposer,
   workflowMode = false,
   workflowPlanning = false,
+  workspaceRoot = '',
 }: {
   activeSlashOption: SlashCommandOption | null;
   activeThreadId: string;
+  addFileReference?: (path: string) => void;
   applyModelPreset: (preset: ModelPreset) => void;
   botConfig: BotConfig | null;
   botStatus: BotStatus | null;
@@ -69,9 +84,12 @@ export function ComposerBar({
   handlePaste: (event: React.ClipboardEvent<HTMLTextAreaElement>) => void;
   images: Array<{ name: string; dataUrl: string }>;
   input: string;
+  fileReferences?: string[];
   modelPresets: ModelPreset[];
   openRemoteAssistants: (platform: RemoteAssistantPlatform) => void;
+  persistThreadConfigOverrides?: (overrides: ThreadConfigOverrides) => Promise<void>;
   removeImage: (index: number) => void;
+  removeFileReference?: (path: string) => void;
   rightPaneVisible: boolean;
   selectSlashOption: (option: PaletteOption) => void;
   setActiveSlashOption: (option: SlashCommandOption | null) => void;
@@ -83,10 +101,14 @@ export function ComposerBar({
   submitComposer: () => Promise<void>;
   workflowMode?: boolean;
   workflowPlanning?: boolean;
+  workspaceRoot?: string;
 }) {
   const historyRef = React.useRef<string[]>([]);
   const [historyCursor, setHistoryCursor] = React.useState<number | null>(null);
   const [assistantMenuOpen, setAssistantMenuOpen] = React.useState(false);
+  const [fileMentions, setFileMentions] = React.useState<FileMentionEntry[]>([]);
+  const [fileMentionIndex, setFileMentionIndex] = React.useState(0);
+  const [fileMentionDirectory, setFileMentionDirectory] = React.useState('');
   const remoteBinding = remoteBindingView(botConfig, botStatus, activeThreadId, config.locale);
   const matchedModelPreset = modelPresets.find((preset) => modelPresetMatchesConfig(preset, config));
   const modelPresetValue = matchedModelPreset?.id ?? '__current__';
@@ -95,7 +117,7 @@ export function ComposerBar({
     : [{
       value: '__current__',
       label: config.model,
-      detail: modelPresetSummary(config),
+      icon: <ModelBrandIcon model={config.model} provider={config.provider} />,
       title: modelPresetTooltip(config),
       current: true,
     }];
@@ -104,7 +126,7 @@ export function ComposerBar({
     ...modelPresets.map((preset) => ({
       value: preset.id,
       label: preset.name,
-      detail: modelPresetSummary({ ...config, ...preset.config }),
+      icon: <ModelBrandIcon model={preset.config.model ?? config.model} provider={preset.config.provider ?? config.provider} />,
       title: modelPresetTooltip({ ...config, ...preset.config }),
       group: config.locale === 'zh' ? '已保存' : 'Saved',
       current: matchedModelPreset?.id === preset.id,
@@ -117,6 +139,86 @@ export function ComposerBar({
     !workflowMode && activeSlashOption ? 'active' : '',
     urlTokens.length > 0 ? 'withTokens' : '',
   ].filter(Boolean).join(' ');
+  const fileMentionMatch = !workflowMode ? input.match(/(?:^|\s)@([^\s@"]*)$/) : null;
+  const fileMentionQuery = fileMentionMatch?.[1] ?? '';
+
+  React.useEffect(() => {
+    if (!fileMentionMatch || !workspaceRoot) {
+      setFileMentions([]);
+      return undefined;
+    }
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => {
+      const params = new URLSearchParams({ root: workspaceRoot });
+      if (fileMentionQuery) params.set('query', fileMentionQuery);
+      else if (fileMentionDirectory) params.set('path', fileMentionDirectory);
+      fetch(`/api/workspaces/files?${params}`, { signal: controller.signal })
+        .then((response) => response.ok ? response.json() : Promise.reject(new Error('File search failed')))
+        .then((data: { entries?: FileMentionEntry[] }) => {
+          setFileMentions((data.entries ?? []).filter((entry) => entry.kind === 'file' || entry.kind === 'directory'));
+          setFileMentionIndex(0);
+        })
+        .catch(() => {
+          if (!controller.signal.aborted) setFileMentions([]);
+        });
+    }, 120);
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [fileMentionQuery, fileMentionDirectory, Boolean(fileMentionMatch), workspaceRoot]);
+
+  function insertFileMention(path: string): void {
+    if (!fileMentionMatch) return;
+    updateComposerInput(input.slice(0, fileMentionMatch.index! + fileMentionMatch[0].lastIndexOf('@')));
+    addFileReference(path);
+    setFileMentions([]);
+    window.requestAnimationFrame(() => composerInputRef.current?.focus());
+  }
+
+  function openFileMentionDirectory(path: string): void {
+    setFileMentionDirectory(path);
+    setFileMentionIndex(0);
+  }
+
+  function moveToFileMentionParent(): void {
+    setFileMentionDirectory((current) => current.includes('/') ? current.slice(0, current.lastIndexOf('/')) : '');
+    setFileMentionIndex(0);
+  }
+
+  function startComposerResize(event: React.PointerEvent<HTMLElement>): void {
+    const textarea = composerInputRef.current;
+    if (!textarea) return;
+    event.preventDefault();
+    const startY = event.clientY;
+    const startHeight = textarea.getBoundingClientRect().height;
+    const composer = textarea.closest<HTMLElement>('.composer');
+    const minHeight = 44;
+    const maxHeight = Math.min(420, Math.floor(window.innerHeight * 0.42));
+    const controls = composer?.querySelector<HTMLElement>('.composerBottom');
+    const viewportBottom = Math.min(window.innerHeight, document.documentElement.clientHeight) - 8;
+    const maximumControlsBottom = Math.min(controls?.getBoundingClientRect().bottom ?? viewportBottom, viewportBottom);
+    const onMove = (moveEvent: PointerEvent) => {
+      const nextHeight = Math.max(minHeight, Math.min(maxHeight, startHeight + startY - moveEvent.clientY));
+      textarea.dataset.userResized = 'true';
+      textarea.style.height = `${Math.round(nextHeight)}px`;
+
+      // Keep the composer controls inside the live viewport even when zoom or layout changes.
+      const visibleBottom = controls?.getBoundingClientRect().bottom ?? composer?.getBoundingClientRect().bottom ?? 0;
+      const overflow = Math.max(0, visibleBottom - maximumControlsBottom);
+      if (overflow > 0) {
+        textarea.style.height = `${Math.round(Math.max(minHeight, nextHeight - overflow))}px`;
+      }
+    };
+    const onEnd = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onEnd);
+      window.removeEventListener('pointercancel', onEnd);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onEnd);
+    window.addEventListener('pointercancel', onEnd);
+  }
 
   React.useEffect(() => {
     historyRef.current = readComposerHistory();
@@ -176,6 +278,14 @@ export function ComposerBar({
     openRemoteAssistants(platform);
   }
 
+  function updateThreadChoice<K extends 'permissions' | 'reasoningEffort' | 'runProfile'>(
+    key: K,
+    value: NonNullable<ThreadConfigOverrides[K]>,
+  ): void {
+    setConfig((current) => ({ ...current, [key]: value }));
+    void persistThreadConfigOverrides({ [key]: value } as Pick<ThreadConfigOverrides, K>);
+  }
+
   const sendButtonClassName = ['sendButton', busy || workflowPlanning ? 'busy' : '', busy ? 'stopButton' : '', workflowPlanning ? 'planningButton' : ''].filter(Boolean).join(' ');
 
   return (
@@ -213,6 +323,21 @@ export function ComposerBar({
             </div>
           ) : null}
           <div className={commandInputClassName}>
+            {fileMentionMatch && fileMentions.length > 0 ? (
+              <div className="fileMentionPalette" role="listbox" aria-label={config.locale === 'zh' ? '项目文件' : 'Project files'}>
+                <div className="fileMentionPaletteHeader">
+                  <span>{fileMentionDirectory || (fileMentionQuery ? (config.locale === 'zh' ? '搜索项目文件' : 'Search project files') : (config.locale === 'zh' ? '项目根目录' : 'Project root'))}</span>
+                  {fileMentionDirectory ? <button type="button" onClick={moveToFileMentionParent} title={config.locale === 'zh' ? '返回上级目录' : 'Parent directory'} aria-label={config.locale === 'zh' ? '返回上级目录' : 'Parent directory'}><Icon name="chevron" /></button> : null}
+                </div>
+                {fileMentions.map((file, index) => (
+                  <button className={index === fileMentionIndex ? 'active' : ''} key={file.path} type="button" role="option" aria-selected={index === fileMentionIndex} onClick={() => file.kind === 'directory' ? openFileMentionDirectory(file.path) : insertFileMention(file.path)}>
+                    <Icon name={file.kind === 'directory' ? 'folder' : 'file'} />
+                    <span><strong>{file.name}</strong><small>{file.path}</small></span>
+                    {file.kind === 'directory' ? <Icon name="chevronRight" /> : null}
+                  </button>
+                ))}
+              </div>
+            ) : null}
             {!workflowMode && activeSlashOption ? (
               <div className="commandInputMeta">
                 <div className="commandChip" title={activeSlashOption.command.trim()}>
@@ -240,6 +365,14 @@ export function ComposerBar({
                 ))}
               </div>
             ) : null}
+            {fileReferences.length > 0 ? (
+              <div className="commandFileTokenRow" aria-label={config.locale === 'zh' ? '已引用文件' : 'Referenced files'}>
+                {fileReferences.map((path) => (
+                  <span className="commandFileToken" key={path} title={path}><Icon name="file" /><span>@{path}</span><button type="button" onClick={() => removeFileReference(path)} title={config.locale === 'zh' ? '移除引用' : 'Remove reference'} aria-label={config.locale === 'zh' ? '移除引用' : 'Remove reference'}><Icon name="x" /></button></span>
+                ))}
+              </div>
+            ) : null}
+            <div className="composerResizeHandle" onPointerDown={startComposerResize} role="separator" title={config.locale === 'zh' ? '向上拖拽扩大输入框' : 'Drag up to expand composer'} aria-label={config.locale === 'zh' ? '拖拽调整输入框高度' : 'Drag to resize composer'} />
             <textarea
               ref={composerInputRef}
               value={input}
@@ -248,6 +381,35 @@ export function ComposerBar({
               onInput={() => resizeTextareaToContent(composerInputRef.current)}
               onPaste={handlePaste}
               onKeyDown={(event) => {
+                if (fileMentionMatch && fileMentions.length > 0) {
+                  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                    event.preventDefault();
+                    setFileMentionIndex((current) => event.key === 'ArrowDown' ? (current + 1) % fileMentions.length : (current - 1 + fileMentions.length) % fileMentions.length);
+                    return;
+                  }
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    const selected = fileMentions[fileMentionIndex];
+                    if (selected.kind === 'directory') openFileMentionDirectory(selected.path);
+                    else insertFileMention(selected.path);
+                    return;
+                  }
+                  if (event.key === 'ArrowRight' && fileMentions[fileMentionIndex]?.kind === 'directory') {
+                    event.preventDefault();
+                    openFileMentionDirectory(fileMentions[fileMentionIndex].path);
+                    return;
+                  }
+                  if (event.key === 'ArrowLeft' && fileMentionDirectory && !fileMentionQuery) {
+                    event.preventDefault();
+                    moveToFileMentionParent();
+                    return;
+                  }
+                  if (event.key === 'Escape') {
+                    event.preventDefault();
+                    setFileMentions([]);
+                    return;
+                  }
+                }
                 if (event.key === 'ArrowUp' && browseComposerHistory('up')) {
                   event.preventDefault();
                   return;
@@ -267,8 +429,8 @@ export function ComposerBar({
             />
           </div>
         </div>
-        <button className={sendButtonClassName} onClick={() => busy ? void stopTurn() : actionBusy ? undefined : void handleSubmitComposer()} disabled={workflowBusy || actionBusy || (!busy && (!input.trim() && images.length === 0))} title={workflowBusy ? (config.locale === 'zh' ? '生成计划中' : 'Planning workflow') : busy ? t(config.locale, 'stop') : t(config.locale, 'send')} aria-label={workflowBusy ? (config.locale === 'zh' ? '生成计划中' : 'Planning workflow') : busy ? t(config.locale, 'stop') : t(config.locale, 'send')}>
-          <Icon name={workflowBusy ? 'refresh' : busy ? 'stop' : 'send'} />
+        <button className={sendButtonClassName} onClick={() => busy ? void stopTurn() : actionBusy ? undefined : void handleSubmitComposer()} disabled={workflowBusy || actionBusy || (!busy && (!input.trim() && images.length === 0 && fileReferences.length === 0))} title={workflowBusy ? (config.locale === 'zh' ? '生成计划中' : 'Planning workflow') : busy ? t(config.locale, 'stop') : t(config.locale, 'send')} aria-label={workflowBusy ? (config.locale === 'zh' ? '生成计划中' : 'Planning workflow') : busy ? t(config.locale, 'stop') : t(config.locale, 'send')}>
+          <Icon name={workflowBusy ? 'refresh' : busy ? 'stopCircle' : 'send'} />
         </button>
       </div>
       <div className={workflowMode ? 'composerBottom workflowMode' : 'composerBottom'}>
@@ -281,21 +443,6 @@ export function ComposerBar({
           </div>
         ) : (
         <>
-          <div className="composerMeta">
-          <DropdownSelect
-            ariaLabel={config.locale === 'zh' ? '模型配置' : 'Model preset'}
-            className="modelPresetSelect"
-            title={config.locale === 'zh' ? '模型配置' : 'Model preset'}
-            value={modelPresetValue}
-            onChange={(presetId) => {
-              if (presetId === '__current__') return;
-              const preset = modelPresets.find((item) => item.id === presetId);
-              if (preset) applyModelPreset(preset);
-            }}
-            options={modelPresetOptions}
-          />
-          </div>
-          <div className="composerActions">
           <div className="remoteAssistantPicker">
             <button
               className={`weixinBindingButton remoteBindingButton ${remoteBinding.tone}`}
@@ -309,7 +456,7 @@ export function ComposerBar({
               {remoteBinding.boundPlatforms.length > 0 ? (
                 remoteBinding.boundPlatforms.map((platform) => <RemotePlatformIcon key={platform} platform={platform} />)
               ) : (
-                <span className="remoteBindingRobot" aria-hidden="true"><Icon name="puppet" /></span>
+                <span className="remoteBindingRobot" aria-hidden="true"><Icon name="assistant" /></span>
               )}
             </button>
             {assistantMenuOpen ? (
@@ -333,11 +480,26 @@ export function ComposerBar({
           </div>
           <label className="fileButton" title={t(config.locale, 'attachImage')} aria-label={t(config.locale, 'attachImage')}>
             <input type="file" accept="image/*" multiple onChange={handleFileSelect} hidden />
-            <Icon name="clip" />
+            <Icon name="images" />
           </label>
-          <DropdownSelect ariaLabel={t(config.locale, 'mode')} className="modeSelect" title={t(config.locale, 'mode')} value={config.permissions} onChange={(permissions) => setConfig({ ...config, permissions })} options={[{ value: 'read_only', label: config.locale === 'zh' ? '只读' : 'Read' }, { value: 'workspace', label: config.locale === 'zh' ? '默认' : 'Default' }, { value: 'danger_full_access', label: config.locale === 'zh' ? '自主' : 'Auto' }]} />
-          <DropdownSelect ariaLabel={config.locale === 'zh' ? '思考程度' : 'Reasoning effort'} className="modeSelect reasoningSelect" title={config.locale === 'zh' ? '思考程度' : 'Reasoning effort'} value={config.reasoningEffort} onChange={(reasoningEffort) => setConfig({ ...config, reasoningEffort })} options={[{ value: 'low', label: config.locale === 'zh' ? '快速' : 'Fast' }, { value: 'medium', label: config.locale === 'zh' ? '均衡' : 'Balanced' }, { value: 'high', label: config.locale === 'zh' ? '深度' : 'Deep' }]} />
-          <DropdownSelect ariaLabel={config.locale === 'zh' ? '运行模式' : 'Run profile'} className="modeSelect runProfileSelect" title={config.locale === 'zh' ? '运行模式' : 'Run profile'} value={(config.runProfile as string) === 'harness' ? 'runtime_os' : config.runProfile} onChange={(runProfile) => setConfig({ ...config, runProfile })} options={[{ value: 'cache_first', label: runProfileLabel('cache_first', config.locale) }, { value: 'runtime_os', label: runProfileLabel('runtime_os', config.locale) }]} />
+          <div className="composerMeta">
+          <DropdownSelect
+            ariaLabel={config.locale === 'zh' ? '模型配置' : 'Model preset'}
+            className="modelPresetSelect"
+            title={config.locale === 'zh' ? '模型配置' : 'Model preset'}
+            value={modelPresetValue}
+            onChange={(presetId) => {
+              if (presetId === '__current__') return;
+              const preset = modelPresets.find((item) => item.id === presetId);
+              if (preset) applyModelPreset(preset);
+            }}
+            options={modelPresetOptions}
+          />
+          </div>
+          <div className="composerActions">
+          <DropdownSelect ariaLabel={config.locale === 'zh' ? '权限模式' : 'Permission mode'} className="modeSelect permissionSelect" title={config.locale === 'zh' ? '权限模式' : 'Permission mode'} value={config.permissions} onChange={(permissions) => updateThreadChoice('permissions', permissions as NonNullable<ThreadConfigOverrides['permissions']>)} options={[{ value: 'read_only', label: config.locale === 'zh' ? '只读审阅' : 'Read only', icon: <IconParkIcon name="lock" /> }, { value: 'workspace', label: config.locale === 'zh' ? '工作区写入' : 'Workspace write', icon: <IconParkIcon name="protect" /> }, { value: 'danger_full_access', label: config.locale === 'zh' ? '完全自主' : 'Full autonomy', icon: <IconParkIcon name="rocket" /> }]} />
+          <DropdownSelect ariaLabel={config.locale === 'zh' ? '思考程度' : 'Reasoning effort'} className="modeSelect reasoningSelect" title={config.locale === 'zh' ? '思考程度' : 'Reasoning effort'} value={config.reasoningEffort} onChange={(reasoningEffort) => updateThreadChoice('reasoningEffort', reasoningEffort as NonNullable<ThreadConfigOverrides['reasoningEffort']>)} options={[{ value: 'low', label: config.locale === 'zh' ? '快速' : 'Fast', icon: <IconParkIcon name="lightning" /> }, { value: 'medium', label: config.locale === 'zh' ? '均衡' : 'Balanced', icon: <IconParkIcon name="brain" /> }, { value: 'high', label: config.locale === 'zh' ? '深度' : 'Deep', icon: <IconParkIcon name="magic" /> }]} />
+          <DropdownSelect ariaLabel={config.locale === 'zh' ? '运行' : 'Run'} className="modeSelect runProfileSelect" title={config.locale === 'zh' ? '运行' : 'Run'} value={(config.runProfile as string) === 'harness' ? 'runtime_os' : config.runProfile} onChange={(runProfile) => updateThreadChoice('runProfile', runProfile as NonNullable<ThreadConfigOverrides['runProfile']>)} options={[{ value: 'cache_first', label: runProfileLabel('cache_first', config.locale), icon: <IconParkIcon name="speed" /> }, { value: 'runtime_os', label: runProfileLabel('runtime_os', config.locale), icon: <IconParkIcon name="play" /> }]} />
           </div>
         </>
         )}

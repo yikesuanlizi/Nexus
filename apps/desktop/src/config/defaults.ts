@@ -21,6 +21,7 @@ export const defaultConfig: RunConfig = {
   webProvider: 'native_fetch',
   webProviderKeySource: 'config',
   reasoningEffort: 'medium',
+  maxIterations: 100,
   runProfile: 'runtime_os',
   memoryEnabled: true,
   autoExtractMemories: true,

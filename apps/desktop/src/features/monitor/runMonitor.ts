@@ -146,25 +146,45 @@ export function useRunMonitor(options: {
     try {
       const threadsUrl = adminMode ? '/api/admin/runs/threads' : '/api/runs/threads';
       const threadsResponse = await fetch(threadsUrl, { headers, signal: controller.signal });
+      let scopedThreadIds: Set<string> | null = !adminMode && threadId
+        ? new Set([threadId, ...threadIds])
+        : null;
       let nextThreads: ThreadWithRuns[] = [];
       if (threadsResponse.ok && !controller.signal.aborted) {
         const threadsData = (await threadsResponse.json()) as { threads?: ThreadWithRuns[] };
-        nextThreads = threadsData.threads ?? [];
+        const allThreads = threadsData.threads ?? [];
+        // 普通对话只展示当前主任务及其子 Agent；管理员监控仍保留全局线程视图。
+        if (scopedThreadIds) {
+          let changed = true;
+          while (changed) {
+            changed = false;
+            for (const thread of allThreads) {
+              if (thread.parentThreadId && scopedThreadIds.has(thread.parentThreadId) && !scopedThreadIds.has(thread.threadId)) {
+                scopedThreadIds.add(thread.threadId);
+                changed = true;
+              }
+            }
+          }
+        }
+        nextThreads = scopedThreadIds
+          ? allThreads.filter((thread) => scopedThreadIds.has(thread.threadId))
+          : allThreads;
       }
       dispatch({ type: 'threads.loaded', requestId, threads: nextThreads });
       if (controller.signal.aborted) return [];
 
       const validThreadIds = new Set(nextThreads.map((t) => t.threadId));
+      const scopedRunIds = scopedThreadIds ? [...scopedThreadIds] : [];
       const runsUrl = adminMode
         ? '/api/admin/runs?limit=200'
-        : threadIds.length > 0
+        : scopedRunIds.length > 0
           ? ''
           : threadId
           ? `/api/runs?threadId=${encodeURIComponent(threadId)}&limit=80`
           : '/api/runs?limit=20';
       let allRuns: RunRecord[] = [];
-      if (threadIds.length > 0 && !adminMode) {
-        const responses = await Promise.all([...new Set([threadId, ...threadIds].filter(Boolean))].map((id) =>
+      if (!adminMode && scopedRunIds.length > 0) {
+        const responses = await Promise.all(scopedRunIds.map((id) =>
           fetch(`/api/runs?threadId=${encodeURIComponent(id)}&limit=80`, { headers, signal: controller.signal }),
         ));
         const data = await Promise.all(responses.filter((response) => response.ok).map((response) => response.json() as Promise<{ runs?: RunRecord[] }>));

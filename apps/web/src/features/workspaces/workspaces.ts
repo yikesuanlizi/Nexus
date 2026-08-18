@@ -178,10 +178,8 @@ export function buildWorkspaceThreadGroups(options: {
     return matchingThreads.length > 0;
   });
 
-  return groups.sort((a, b) => {
-    const aCurrent = workspaceKey(a.workspaceRoot) === workspaceKey(currentRoot);
-    const bCurrent = workspaceKey(b.workspaceRoot) === workspaceKey(currentRoot);
-    if (aCurrent !== bCurrent) return aCurrent ? -1 : 1;
-    return a.label.localeCompare(b.label);
-  });
+  // 当前线程切换会同步其工作区配置；不能再用 currentRoot 调整顺序，
+  // 否则选中任意对话都会把整个工作区组顶到列表第一项。
+  // 组顺序只由稳定的工作区名称决定，选择只改变行的 active 状态。
+  return groups.sort((a, b) => a.label.localeCompare(b.label));
 }

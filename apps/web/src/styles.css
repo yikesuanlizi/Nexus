@@ -109,6 +109,217 @@
   }
 }
 
+/* 文件树图标：按文件类型使用稳定的 VS Code 风格色彩，不改变行布局 */
+.appShell .workspaceFileRow {
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+}
+.appShell .workspaceFileLeading {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 2px;
+  min-width: 0;
+  color: var(--nx-text-faint);
+}
+.appShell .workspaceFileLeading > svg:first-child:not(:only-child) {
+  width: 11px;
+  height: 11px;
+  flex: 0 0 11px;
+}
+.appShell .workspaceFileIcon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  stroke-width: 1.7;
+}
+.appShell .workspaceFileIcon.folder { color: #d99a32; }
+.appShell .workspaceFileIcon.code { color: #4c8dca; }
+.appShell .workspaceFileIcon.config { color: #bf8b36; }
+.appShell .workspaceFileIcon.text { color: #6c91ad; }
+.appShell .workspaceFileIcon.image { color: #a46ec4; }
+.appShell .workspaceFileIcon.pdf { color: #c65b61; }
+.appShell .workspaceFileIcon.spreadsheet { color: #4b9b73; }
+.appShell .workspaceFileIcon.archive { color: #9a7a52; }
+.appShell .workspaceFileIcon.office { color: #bd6e4b; }
+.appShell .workspaceFileIcon.generic { color: var(--nx-text-faint); }
+.appShell .workspaceFileIcon.language-python { color: #3776ab; }
+.appShell .workspaceFileIcon.language-markdown { color: #3f4650; }
+.appShell .workspaceFileIcon.language-git { color: #f05032; }
+.appShell .workspaceFileIcon.language-npm { color: #cb3837; }
+.appShell .workspaceFileIcon.language-php { color: #777bb4; }
+.appShell .workspaceFileIcon.language-go { color: #00add8; }
+.appShell .workspaceFileIcon.language-java { color: #b07219; }
+.appShell .workspaceFileIcon.language-javascript { color: #c9a227; }
+.appShell .workspaceFileIcon.language-react { color: #149eca; }
+.appShell .workspaceFileIcon.language-typescript { color: #3178c6; }
+.appShell .workspaceFileIcon.language-vue { color: #42b883; }
+.appShell .workspaceFileIcon.language-html { color: #e34c26; }
+.appShell .workspaceFileIcon.language-css { color: #2965f1; }
+.appShell .workspaceFileIcon.language-rust { color: #b7410e; }
+.appShell .workspaceFileIcon.language-c { color: #5c6bc0; }
+.appShell .workspaceFileIcon.language-shell { color: #5da639; }
+.appShell .workspaceFileIcon.language-sql { color: #e38c00; }
+.appShell .workspaceFileIcon.language-docker { color: #2496ed; }
+
+.appShell.theme-dark .workspaceFileIcon.folder,
+.appShell.theme-system .workspaceFileIcon.folder { color: #e0aa4e; }
+.appShell.theme-dark .workspaceFileIcon.code,
+.appShell.theme-system .workspaceFileIcon.code { color: #79a9df; }
+.appShell.theme-dark .workspaceFileIcon.config,
+.appShell.theme-system .workspaceFileIcon.config { color: #d6aa58; }
+.appShell.theme-dark .workspaceFileIcon.text,
+.appShell.theme-system .workspaceFileIcon.text { color: #8fb0c8; }
+.appShell.theme-dark .workspaceFileIcon.image,
+.appShell.theme-system .workspaceFileIcon.image { color: #bd8bd4; }
+.appShell.theme-dark .workspaceFileIcon.pdf,
+.appShell.theme-system .workspaceFileIcon.pdf { color: #df7b80; }
+.appShell.theme-dark .workspaceFileIcon.spreadsheet,
+.appShell.theme-system .workspaceFileIcon.spreadsheet { color: #70ba92; }
+.appShell:is(.theme-dark, .theme-system) .workspaceFileIcon.language-python { color: #66a9dc; }
+.appShell:is(.theme-dark, .theme-system) .workspaceFileIcon.language-markdown { color: #c3cad3; }
+.appShell:is(.theme-dark, .theme-system) .workspaceFileIcon.language-git { color: #ff8066; }
+.appShell:is(.theme-dark, .theme-system) .workspaceFileIcon.language-npm { color: #f06b6a; }
+.appShell:is(.theme-dark, .theme-system) .workspaceFileIcon.language-php { color: #aeb3ea; }
+.appShell:is(.theme-dark, .theme-system) .workspaceFileIcon.language-go { color: #46c7e9; }
+.appShell:is(.theme-dark, .theme-system) .workspaceFileIcon.language-java { color: #e2a64d; }
+.appShell:is(.theme-dark, .theme-system) .workspaceFileIcon.language-javascript { color: #f0d56a; }
+.appShell:is(.theme-dark, .theme-system) .workspaceFileIcon.language-react { color: #61dafb; }
+.appShell:is(.theme-dark, .theme-system) .workspaceFileIcon.language-typescript { color: #72a9e7; }
+.appShell:is(.theme-dark, .theme-system) .workspaceFileIcon.language-vue { color: #6bd3a0; }
+.appShell:is(.theme-dark, .theme-system) .workspaceFileIcon.language-html { color: #f18b6b; }
+.appShell:is(.theme-dark, .theme-system) .workspaceFileIcon.language-css { color: #7f9cff; }
+.appShell:is(.theme-dark, .theme-system) .workspaceFileIcon.language-rust { color: #df8c66; }
+.appShell:is(.theme-dark, .theme-system) .workspaceFileIcon.language-c { color: #a6b2f2; }
+.appShell:is(.theme-dark, .theme-system) .workspaceFileIcon.language-shell { color: #96d06e; }
+.appShell:is(.theme-dark, .theme-system) .workspaceFileIcon.language-sql { color: #f0b34a; }
+.appShell:is(.theme-dark, .theme-system) .workspaceFileIcon.language-docker { color: #65b8ef; }
+
+/* 对话轮次提示器：贴在转录区左侧，不参与消息布局。 */
+.appShell .turnRailAnchor {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  align-self: flex-start;
+  width: 0;
+  height: var(--turn-rail-viewport-height);
+  flex: 0 0 var(--turn-rail-viewport-height);
+  margin-bottom: calc(-1 * var(--turn-rail-viewport-height) - 16px);
+  overflow: visible;
+  pointer-events: none;
+}
+
+.appShell .turnRail {
+  position: absolute;
+  top: 50%;
+  left: -24px;
+  width: 28px;
+  height: var(--turn-rail-height);
+  z-index: 12;
+  transform: translateY(-50%);
+  pointer-events: auto;
+}
+
+.appShell .turnRailMarker {
+  position: absolute;
+  left: 0;
+  display: flex;
+  align-items: center;
+  width: 28px;
+  height: 14px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.appShell .turnRailMarker:focus-visible {
+  outline: 1px solid color-mix(in srgb, var(--nx-brand) 70%, transparent);
+  outline-offset: 2px;
+}
+
+.appShell .turnRailLine {
+  display: block;
+  width: var(--turn-rail-line-width);
+  height: 2px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--nx-text-muted) 62%, transparent);
+  opacity: .72;
+  transition: width 150ms ease, opacity 150ms ease, background-color 150ms ease;
+}
+
+.appShell .turnRailMarker:hover .turnRailLine,
+.appShell .turnRailMarker.active .turnRailLine {
+  background: var(--nx-text-primary);
+  opacity: 1;
+}
+
+.appShell .turnRailMarker.current .turnRailLine {
+  background: var(--nx-brand);
+  opacity: 1;
+}
+
+.appShell .turnRailTooltip {
+  position: absolute;
+  top: 50%;
+  left: 30px;
+  display: grid;
+  gap: 4px;
+  width: min(360px, calc(100vw - 96px));
+  padding: 7px 9px;
+  border: 1px solid var(--nx-control-border);
+  border-radius: 7px;
+  background: var(--nx-surface-panel);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--nx-text-primary) 12%, transparent);
+  color: var(--nx-text-primary);
+  opacity: 0;
+  pointer-events: auto;
+  transform: translate(-4px, -50%);
+  transition: opacity 120ms ease, transform 120ms ease, visibility 120ms ease;
+  visibility: hidden;
+}
+
+.appShell .turnRailMarker:hover .turnRailTooltip,
+.appShell .turnRailMarker.active .turnRailTooltip,
+.appShell .turnRailMarker:focus-visible .turnRailTooltip {
+  opacity: 1;
+  transform: translate(0, -50%);
+  visibility: visible;
+}
+
+.appShell .turnRailTooltipRow {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 6px;
+  min-width: 0;
+  line-height: 1.35;
+  text-align: left;
+}
+
+.appShell .turnRailTooltipLabel {
+  color: var(--nx-text-faint);
+  font-size: 11px;
+}
+
+.appShell .turnRailTooltipText {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--nx-text-primary);
+  font-size: 12px;
+  text-overflow: clip;
+  white-space: nowrap;
+  -webkit-mask-image: linear-gradient(to right, #000 0%, #000 78%, transparent 100%);
+  mask-image: linear-gradient(to right, #000 0%, #000 78%, transparent 100%);
+}
+
+.appShell .transcriptTurnAnchor {
+  min-width: 0;
+  scroll-margin-top: 18px;
+}
+
 @layer components {
   .settingsDrawer .modelSettingsPanel {
     display: grid;
@@ -361,6 +572,465 @@
     .settingsDrawer .modelPresetActionButtons {
       justify-content: flex-end;
     }
+  }
+}
+
+/* 具体任务时间线使用单侧状态线；不再把每条事件包成整圈卡片。 */
+@layer components {
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) .runMonitorPanel .traceRow {
+    border: 0 !important;
+    border-left: 1px solid var(--final-ui-border, #d8dee6) !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    background-image: none !important;
+    box-shadow: none !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) .runMonitorPanel .traceRow:is(:hover, .traceRow--selected, .traceRow--jumped) {
+    border: 0 !important;
+    border-left: 2px solid var(--final-ui-border-strong) !important;
+    border-radius: 0 !important;
+    background: var(--final-ui-hover) !important;
+    background-image: none !important;
+    box-shadow: none !important;
+  }
+
+  .runThreadGroup__header {
+    display: flex !important;
+    align-items: center;
+  }
+
+  .runThreadGroup__title {
+    flex: 1 1 auto;
+  }
+
+  .runThreadGroup__agentMarker {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 42%;
+    overflow: hidden;
+    color: var(--final-ui-muted, #64748b);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 10px;
+    font-weight: 700;
+  }
+
+  .runThreadGroup__children {
+    display: grid;
+    gap: 4px;
+    margin-left: 12px;
+    padding-left: 8px;
+    border-left: 1px solid var(--final-ui-border, #d8dee6);
+  }
+
+  .runThreadGroup--child .runThreadGroup__header {
+    min-height: 32px;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+}
+
+/* 结构简化：工作台内容只保留必要的层级和分隔线，避免旧主题规则重新
+   引入蓝色背景、粗外框和卡片套卡片。 */
+@layer components {
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) {
+    --structure-surface: var(--final-ui-surface);
+    --structure-raised: var(--final-ui-raised);
+    --structure-hover: var(--final-ui-hover);
+    --structure-border: var(--final-ui-border);
+    --structure-border-strong: var(--final-ui-border-strong);
+  }
+
+  main.appShell.theme-light .workbenchFooter {
+    border: 0 !important;
+    border-top: 1px solid #d6dee7 !important;
+    border-radius: 0 !important;
+    background: #f1f3f5 !important;
+    background-image: none !important;
+    box-shadow: none !important;
+  }
+
+  main.appShell:is(.theme-dark, .theme-system) .workbenchFooter {
+    border: 0 !important;
+    border-top: 1px solid #30353b !important;
+    border-radius: 0 !important;
+    background: #202328 !important;
+    background-image: none !important;
+    box-shadow: none !important;
+  }
+
+  main.appShell.theme-light .workbenchFooter input[type="checkbox"] {
+    accent-color: #64748b !important;
+  }
+
+  main.appShell:is(.theme-dark, .theme-system) .workbenchFooter input[type="checkbox"] {
+    accent-color: #aeb5bd !important;
+  }
+
+  /* 工具调用是时间线内容，不再使用左线、顶部横线或圆角框。 */
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) :is(
+    .toolBatchDetails, .message.tool, .message.inlineTool,
+    .internalItemDetails, .childActivityReasoning
+  ) {
+    margin-block: 3px !important;
+    border: 0 !important;
+    border-left: 0 !important;
+    border-top: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    background-image: none !important;
+    box-shadow: none !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) :is(
+    .toolBatchDetails > summary, .message.tool > summary,
+    .message.inlineTool > summary, .internalItemDetails > summary,
+    .childActivityReasoning > summary
+  ) {
+    margin: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) :is(
+    .message.tool > pre, .message.inlineTool > pre,
+    .internalItemDetails pre, .childActivityReasoningText
+  ) {
+    margin-inline-start: 0 !important;
+    padding-inline-start: 0 !important;
+    border: 0 !important;
+    border-top: 0 !important;
+    background: transparent !important;
+  }
+
+  /* 涉及文件：外层只负责排版，行内使用同色底和轻分隔线。 */
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) .turnFileSummary {
+    margin-top: 8px !important;
+    padding: 8px 0 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    background-image: none !important;
+    box-shadow: none !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) .turnFileSummaryRows {
+    gap: 0 !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) .turnFileSummaryRow {
+    min-width: 0 !important;
+    border: 0 !important;
+    border-bottom: 1px solid var(--structure-border) !important;
+    border-radius: 0 !important;
+    background: var(--structure-surface) !important;
+    background-image: none !important;
+    box-shadow: none !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) .turnFileSummaryRow:hover {
+    background: var(--structure-hover) !important;
+  }
+
+  /* 文件树和预览各保留一层边界，预览内部不再套第二个大框。 */
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) .workspaceFiles,
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) .workspaceFileBody {
+    border: 0 !important;
+    background: var(--structure-surface) !important;
+    background-image: none !important;
+    box-shadow: none !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) :is(
+    .workspaceFileTreePane, .workspacePreviewPane
+  ) {
+    border: 1px solid var(--structure-border) !important;
+    border-radius: 8px !important;
+    background: var(--structure-raised) !important;
+    background-image: none !important;
+    box-shadow: none !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) .workspacePreview {
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    background-image: none !important;
+    box-shadow: none !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) .workspaceFileRow {
+    border: 0 !important;
+    border-bottom: 1px solid transparent !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    background-image: none !important;
+    box-shadow: none !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) :is(
+    .workspaceFileRow:hover, .workspaceFileRow.active, .workspaceFileRow.spotlight
+  ) {
+    border: 0 !important;
+    border-bottom: 1px solid var(--structure-border-strong) !important;
+    border-radius: 0 !important;
+    background: var(--structure-hover) !important;
+    background-image: none !important;
+    box-shadow: none !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) .workspaceFileSearch {
+    border: 1px solid var(--structure-border) !important;
+    border-radius: 6px !important;
+    background: var(--structure-surface) !important;
+    background-image: none !important;
+    box-shadow: none !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) .workspacePreviewTabs button {
+    border: 0 !important;
+    border-bottom: 1px solid transparent !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    background-image: none !important;
+    box-shadow: none !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) .workspacePreviewTabs button:is(:hover, .active) {
+    border-bottom-color: var(--structure-border-strong) !important;
+    background: var(--structure-hover) !important;
+  }
+
+  /* 只有固定活动/智能体时，右栏保留合理最小宽度；内容本身始终可收缩。 */
+  @media (min-width: 900px) {
+    main.appShell .workbenchPane:not(:has(.workbenchDynamicTab)) {
+      min-width: 248px;
+    }
+  }
+
+  main.appShell .workbenchAgents,
+  main.appShell .workbenchAgents .agentStage,
+  main.appShell .workbenchAgents .agentStageAvatarCard,
+  main.appShell .workbenchAgents .agentStageCard,
+  main.appShell .workbenchAgents .agentStageAvatarInfo {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  main.appShell .workbenchAgents .agentStageAvatarCard {
+    width: 100% !important;
+    grid-template-columns: minmax(44px, 52px) minmax(0, 1fr) !important;
+  }
+
+  main.appShell :is(.agentStageAvatarInfo strong, .agentStageAvatarInfo p, .agentStageStatusLine) {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  main.appShell :is(.agentStageAvatarCard, .agentStageCard)[data-selected="true"] {
+    outline: none !important;
+    border: 1px solid var(--structure-border-strong) !important;
+    box-shadow: none !important;
+  }
+
+  /* 浅色设置导航提高对比，但保持无蓝色、无粗边。 */
+  main.appShell.theme-light .settingsLayer.theme-light .settingsDrawer .settingsNav :is(button:hover:not(:disabled), a:hover:not(:disabled)) {
+    border-color: transparent !important;
+    background: #eef1f4 !important;
+    color: #34404c !important;
+  }
+
+  main.appShell.theme-light .settingsLayer.theme-light .settingsDrawer .settingsNav :is(button.active, a.active) {
+    border-color: transparent !important;
+    background: #e1e5ea !important;
+    color: #1f2933 !important;
+  }
+
+  main.appShell.theme-light .settingsLayer.theme-light .settingsDrawer .settingsNav :is(button.active, a.active) .settingsNavIcon {
+    color: #1f2933 !important;
+  }
+}
+
+main.appShell.theme-light .settingsLayer.theme-light .settingsDrawer .settingsNav :is(button:hover:not(:disabled), a:hover:not(:disabled)) {
+  --nx-settings-panel: #eef1f4 !important;
+  --final-ui-hover: #eef1f4 !important;
+  border: 1px solid transparent !important;
+  background: #eef1f4 !important;
+  background-image: none !important;
+  color: #34404c !important;
+  box-shadow: none !important;
+}
+
+main.appShell.theme-light .settingsLayer.theme-light .settingsDrawer .settingsNav :is(button.active, a.active) {
+  --nx-settings-panel: #e1e5ea !important;
+  --nx-settings-brand-soft: #e1e5ea !important;
+  --final-ui-hover: #e1e5ea !important;
+  border: 1px solid transparent !important;
+  background: #e1e5ea !important;
+  background-image: none !important;
+  color: #1f2933 !important;
+  box-shadow: none !important;
+}
+
+main.appShell.theme-light .settingsLayer.theme-light .settingsDrawer .settingsNav :is(button.active, a.active) .settingsNavIcon {
+  color: #1f2933 !important;
+}
+
+/* 监控左侧运行列表使用单侧状态线，避免每一项都成为独立卡片。 */
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .runExplorer :is(.runThreadGroup__header, .runEntry) {
+  border: 0 !important;
+  border-left: 2px solid transparent !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .runExplorer :is(.runThreadGroup__header:hover, .runEntry:hover, .runEntry--selected) {
+  border: 0 !important;
+  border-left: 2px solid var(--final-ui-border-strong) !important;
+  border-radius: 0 !important;
+  background: var(--final-ui-hover) !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+/* Remove the remaining legacy blue states from nested workbench content and
+   monitor details. Keep semantic success/error colors intact. */
+@layer components {
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) .settingsLayer .settingsDrawer :is(
+    .settingsNav button.active, .settingsNav a.active,
+    .settingsNav button:hover:not(:disabled), .settingsNav a:hover:not(:disabled)
+  ) {
+    border-color: transparent !important;
+    background: var(--final-ui-hover) !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    outline: none !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) .settingsLayer .settingsDrawer :is(
+    .settingsHeader .iconButton:hover:not(:disabled),
+    .settingsThemeToggle:hover:not(:disabled), .settingsCloseButton:hover:not(:disabled)
+  ) {
+    border-color: var(--final-ui-border) !important;
+    background: var(--final-ui-hover) !important;
+    background-image: none !important;
+    color: var(--final-ui-text) !important;
+    box-shadow: none !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) .settingsLayer .settingsDrawer .scopeApplyActions {
+    border: 0 !important;
+    border-top: 0 !important;
+    background: transparent !important;
+    background-image: none !important;
+    box-shadow: none !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) .settingsLayer .settingsDrawer .scopeApplyActions .solidButton {
+    border: 1px solid var(--final-ui-border-strong) !important;
+    background: var(--final-ui-raised) !important;
+    background-image: none !important;
+    color: var(--final-ui-text) !important;
+    box-shadow: none !important;
+    outline: none !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) :is(
+    .workspacePreview pre, .workspacePreview pre code,
+    .workspacePreview .workspaceSourcePreview,
+    .workspacePreview .workspaceMarkdownPreview,
+    .workspacePreview .workspaceRenderedPreview,
+    .workspacePreview .workspaceOfficePreview,
+    .workspacePreview .workspaceHtmlPreview,
+    .workspacePreview .workspaceSourcePreview :where(*),
+    .workspacePreview .workspaceMarkdownPreview :where(*),
+    .workspacePreview .workspaceRenderedPreview :where(*),
+    .workspacePreview .workspaceOfficePreview :where(*),
+    .workspacePreview .workspaceHtmlPreview :where(*)
+  ) {
+    border-color: var(--final-ui-border) !important;
+    background: var(--final-ui-control) !important;
+    background-image: none !important;
+    color: var(--final-ui-text) !important;
+    box-shadow: none !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) :is(
+    .workspacePreview pre code, .workspacePreview :where(code):not(pre code)
+  ) {
+    border-color: transparent !important;
+    background: var(--final-ui-hover) !important;
+    color: var(--final-ui-text) !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) .workspaceFileContextMenu button:hover,
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) .workspaceFileContextMenu button:focus-visible,
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) .workspaceFilesHeaderActions .miniIconButton.active {
+    border-color: var(--final-ui-border-strong) !important;
+    background: var(--final-ui-hover) !important;
+    background-image: none !important;
+    color: var(--final-ui-text) !important;
+    box-shadow: none !important;
+    outline: none !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) :is(
+    .runMonitorPanel pre, .runMonitorPanel pre code,
+    .runMonitorPanel .inspectorPre, .runMonitorPanel .traceInspector__jsonPre,
+    .runMonitorPanel .taskRuntimePanel
+  ) {
+    border-color: var(--final-ui-border) !important;
+    background: var(--final-ui-control) !important;
+    background-image: none !important;
+    color: var(--final-ui-text) !important;
+    box-shadow: none !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) :is(
+    .runEntry--selected, .traceRow--selected, .traceChip--active,
+    .runMonitorTab--active, .runMonitorStat--running
+  ) {
+    border-color: var(--final-ui-border-strong) !important;
+    background: var(--final-ui-hover) !important;
+    background-image: none !important;
+    color: var(--final-ui-text) !important;
+    box-shadow: none !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) :is(
+    .agentStageVerified, .agentStageAvatarInfo > span, .agentStageStatusLine,
+    .childActivityReasoning > summary svg
+  ) {
+    color: var(--final-ui-muted) !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) :is(
+    .agentStageAvatarInfo span em, .taskRuntimeStep.running .taskRuntimeStepMarker
+  ) {
+    background: var(--final-ui-border-strong) !important;
+    box-shadow: none !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) .taskRuntimeStatus.running,
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) .taskRuntimeChunk span {
+    border-color: var(--final-ui-border) !important;
+    background: var(--final-ui-hover) !important;
+    color: var(--final-ui-text) !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) :is(
+    .settingsHelpSectionNum, .settingsHelpListItem::before,
+    .gitNexusHelpModalWelcome, .gitNexusHelpTips .gitNexusHelpSectionTitle
+  ) {
+    background-color: var(--final-ui-hover) !important;
+    border-color: var(--final-ui-border) !important;
+    color: var(--final-ui-text) !important;
   }
 }
 
@@ -9935,28 +10605,64 @@
 
   .composer textarea {
     min-height: 44px;
-    max-height: 180px;
+    max-height: min(420px, 42vh);
     padding: 10px 4px;
     border: 0;
     background: transparent;
     color: var(--nx-text);
-    resize: none;
+    resize: vertical;
   }
 
   .commandInputRow textarea {
     min-height: 44px;
-    max-height: 180px;
+    max-height: min(420px, 42vh);
     padding: 4px 2px 2px;
     border: 0;
     background: transparent;
     color: var(--nx-text);
-    resize: none;
+    resize: vertical;
   }
 
   .commandInputRow textarea::placeholder,
   .composer textarea::placeholder {
     color: var(--nx-faint);
   }
+
+  .fileMentionPalette {
+    display: grid;
+    gap: 2px;
+    max-height: 220px;
+    overflow: auto;
+    padding: 4px;
+    border: 1px solid var(--nx-border);
+    border-radius: 8px;
+    background: var(--nx-surface);
+  }
+
+  .fileMentionPalette button {
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr);
+    gap: 8px;
+    align-items: center;
+    min-width: 0;
+    padding: 7px 8px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--nx-text);
+    text-align: left;
+  }
+
+  .fileMentionPalette button:hover,
+  .fileMentionPalette button.active { background: var(--nx-hover); }
+  .fileMentionPalette button span { min-width: 0; display: grid; gap: 2px; }
+  .fileMentionPalette button strong,
+  .fileMentionPalette button small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fileMentionPalette button small { color: var(--nx-muted); }
+
+  .persistedAttachmentStrip { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .persistedAttachmentStrip img { width: 72px; height: 72px; object-fit: cover; border-radius: 5px; border: 1px solid var(--nx-border); }
+  .persistedAttachmentStrip span { color: var(--nx-muted); font-size: 12px; }
 
   .composerBottom {
     display: flex;
@@ -15677,11 +16383,14 @@
 }
 
 .approvalPanelFloating {
-  position: fixed;
-  right: 24px;
-  bottom: 24px;
+  position: relative;
+  grid-column: 1;
+  grid-row: 3;
+  justify-self: center;
+  align-self: end;
   z-index: 70;
-  width: min(520px, calc(100vw - 48px));
+  width: min(680px, calc(100% - 48px));
+  margin-bottom: 12px;
   display: grid;
   gap: 12px;
   border: 0;
@@ -15739,6 +16448,7 @@
 
 .approvalPanelFooter {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 10px;
 }
@@ -20366,7 +21076,8 @@
   text-transform: uppercase;
 }
 .appShell .reasoningDetails > summary::-webkit-details-marker { display: none; }
-.appShell .reasoningDetails > summary::before { content: 'THINK'; font-size: 10px; }
+.appShell .reasoningDetails > summary::before { content: 'THINKING'; font-size: 10px; }
+.appShell .reasoningDetails .reasoningElapsed { font-size: 10px; font-weight: 600; letter-spacing: .02em; text-transform: none; color: var(--nx-text-faint); font-variant-numeric: tabular-nums; }
 .appShell .reasoningDetails > summary::after {
   width: 3px;
   height: 3px;
@@ -20436,22 +21147,23 @@
 .appShell .toolBatchDetails > summary {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
+  justify-content: flex-start;
+  gap: 5px;
   min-height: 22px;
   padding: 0 8px 0 10px;
   color: var(--nx-text-faint);
   cursor: pointer;
   font-size: 11px;
 }
-.appShell .toolBatchIcon { display: grid; width: 15px; height: 15px; margin-right: auto; place-items: center; color: var(--nx-text-faint); }
+.appShell .toolBatchIcon { display: grid; width: 15px; height: 15px; place-items: center; color: var(--nx-text-faint); }
 .appShell .toolBatchIcon svg { width: 14px; height: 14px; }
 .appShell .toolBatchDetails > summary::-webkit-details-marker { display: none; }
 .appShell .toolBatchDetails > summary::marker { content: ''; }
 .appShell .toolBatchChevron { display: grid; width: 14px; height: 14px; place-items: center; color: var(--nx-text-faint); transition: transform .16s ease; }
 .appShell .toolBatchChevron svg { width: 14px; height: 14px; }
+.appShell .toolBatchStats { color: var(--nx-text-faint); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.appShell .toolElapsed { color: var(--nx-text-faint); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .appShell .toolBatchDetails[open] .toolBatchChevron { transform: rotate(90deg); }
-.appShell .toolBatchCount { min-width: 12px; color: var(--nx-text-faint); font-size: 11px; font-variant-numeric: tabular-nums; text-align: right; }
 .appShell .toolBatchItems { display: grid; gap: 2px; margin: 4px 0 0 10px; }
 
 .appShell .codeBlock {
@@ -20503,4 +21215,2357 @@
   border-color: var(--nx-control-border);
   background: var(--nx-surface-panel);
   box-shadow: none;
+}
+
+.appShell .reasoningDetails > summary::before {
+  content: 'THINK';
+}
+
+.appShell .reasoningDetails[data-running="true"] > summary::before {
+  content: 'THINKING';
+}
+
+/* Settings density: normalize every checkbox and keep controls visually compact. */
+.settingsLayer .settingsDrawer input[type="checkbox"] {
+  appearance: auto !important;
+  inline-size: 16px !important;
+  block-size: 16px !important;
+  min-inline-size: 16px !important;
+  max-inline-size: 16px !important;
+  min-block-size: 16px !important;
+  max-block-size: 16px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  accent-color: var(--nx-settings-accent, #356fcb);
+}
+
+.settingsLayer .settingsDrawer .settingsToggleRow > input[type="checkbox"],
+.settingsLayer .settingsDrawer .settingsToggleTrack > input[type="checkbox"] {
+  position: absolute !important;
+  inline-size: 1px !important;
+  block-size: 1px !important;
+  min-inline-size: 1px !important;
+  max-inline-size: 1px !important;
+  min-block-size: 1px !important;
+  max-block-size: 1px !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  opacity: 0 !important;
+  overflow: hidden !important;
+  clip: rect(0 0 0 0) !important;
+  clip-path: inset(50%) !important;
+  white-space: nowrap !important;
+}
+
+.settingsLayer .settingsDrawer .settingsToggleRow {
+  min-block-size: 52px !important;
+  padding: 11px 0 !important;
+  gap: 12px !important;
+}
+
+.settingsLayer .settingsDrawer .settingsToggleRow:focus-within {
+  outline: 2px solid color-mix(in srgb, var(--nx-settings-accent, #356fcb) 32%, transparent);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+.settingsLayer .settingsDrawer .settingsToggleContent {
+  flex: 1 1 auto;
+  gap: 3px !important;
+}
+
+.settingsLayer .settingsDrawer .settingsSectionBlock {
+  gap: 16px !important;
+  margin-block: 0 18px !important;
+  padding: 18px 20px !important;
+}
+
+.settingsLayer .settingsDrawer .settingsSectionBlock + .settingsSectionBlock {
+  margin-top: 18px !important;
+}
+
+.settingsLayer .settingsDrawer .settingsToggleList {
+  gap: 0 !important;
+  margin-top: 2px;
+  padding-inline: 16px !important;
+}
+
+.settingsLayer .settingsDrawer .settingsFormGrid {
+  gap: 18px 20px !important;
+}
+
+.settingsLayer .settingsDrawer .formGrid.modelSettingsList {
+  gap: 16px 20px !important;
+}
+
+.settingsLayer .settingsDrawer .settingsSectionHeader {
+  margin-bottom: 16px !important;
+}
+
+/* Final component-layer override: legacy important rules must not collapse the settings rhythm. */
+@layer components {
+  .settingsLayer .settingsDrawer input[type="checkbox"] {
+    appearance: auto !important;
+    inline-size: 16px !important;
+    block-size: 16px !important;
+    min-inline-size: 16px !important;
+    max-inline-size: 16px !important;
+    min-block-size: 16px !important;
+    max-block-size: 16px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    accent-color: var(--nx-settings-accent, #356fcb) !important;
+  }
+
+  .settingsLayer .settingsDrawer .settingsToggleRow > input[type="checkbox"],
+  .settingsLayer .settingsDrawer .settingsToggleTrack > input[type="checkbox"] {
+    position: absolute !important;
+    inline-size: 1px !important;
+    block-size: 1px !important;
+    min-inline-size: 1px !important;
+    max-inline-size: 1px !important;
+    min-block-size: 1px !important;
+    max-block-size: 1px !important;
+    margin: -1px !important;
+    padding: 0 !important;
+    opacity: 0 !important;
+    overflow: hidden !important;
+    clip: rect(0 0 0 0) !important;
+    clip-path: inset(50%) !important;
+    white-space: nowrap !important;
+  }
+
+  .settingsLayer .settingsDrawer .settingsSectionBlock {
+    gap: 18px !important;
+    margin: 18px 0 !important;
+    padding: 20px 24px !important;
+  }
+
+  .settingsLayer .settingsDrawer .settingsSectionBlock:first-child,
+  .settingsLayer .settingsDrawer .settingsPageHeader + .settingsSectionBlock {
+    margin-top: 20px !important;
+  }
+
+  .settingsLayer .settingsDrawer .settingsToggleList {
+    margin: 0 !important;
+    padding-inline: 18px !important;
+  }
+
+  .settingsLayer .settingsDrawer .settingsToggleRow {
+    min-block-size: 54px !important;
+    padding: 13px 0 !important;
+    gap: 14px !important;
+  }
+
+  .settingsLayer .settingsDrawer .settingsFormGrid,
+  .settingsLayer .settingsDrawer .formGrid.modelSettingsList {
+    gap: 20px 22px !important;
+  }
+
+  .settingsLayer .settingsDrawer .settingsSectionHeader {
+    margin-bottom: 18px !important;
+  }
+}
+
+/* Settings spacing contract: keep every settings group away from its border. */
+@layer components {
+  .settingsLayer .settingsDrawer .settingsSectionBlock {
+    box-sizing: border-box !important;
+    width: 100% !important;
+    margin: 0 0 24px !important;
+    padding: 24px 28px !important;
+    gap: 16px !important;
+    border: 1px solid var(--nx-settings-border, #dce2eb) !important;
+    border-radius: 12px !important;
+    background: var(--nx-settings-panel, #ffffff) !important;
+  }
+
+  .settingsLayer .settingsDrawer .settingsSectionBlock:first-child,
+  .settingsLayer .settingsDrawer .settingsPageHeader + .settingsSectionBlock {
+    margin-top: 24px !important;
+  }
+
+  .settingsLayer .settingsDrawer .settingsSectionBlock:last-child {
+    margin-bottom: 0 !important;
+  }
+
+  .settingsLayer .settingsDrawer .settingsSectionBlock > .settingsSectionHeader {
+    margin: 0 !important;
+  }
+
+  .settingsLayer .settingsDrawer .settingsFormGrid,
+  .settingsLayer .settingsDrawer .formGrid.modelSettingsList {
+    gap: 20px 24px !important;
+  }
+
+  .settingsLayer .settingsDrawer .settingsFieldLabel {
+    margin-bottom: 8px !important;
+  }
+
+  .settingsLayer .settingsDrawer .settingsToggleList {
+    margin: 0 !important;
+    padding: 0 8px !important;
+  }
+
+.settingsLayer .settingsDrawer .settingsToggleRow {
+    min-block-size: 54px !important;
+    padding: 14px 0 !important;
+  }
+}
+
+/* Terminal utility panel. */
+.workbenchTerminal.workbenchPanel {
+  padding: 0;
+  overflow: hidden;
+}
+
+.terminalPanel {
+  --terminal-canvas: #ffffff;
+  --terminal-text: #1d1d1f;
+  --terminal-muted: #5b5f66;
+  --terminal-error: #b42318;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  background: var(--terminal-canvas);
+  color: var(--terminal-text);
+}
+
+.terminalOutput {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+  font: inherit;
+}
+
+.terminalOutput .xterm {
+  width: 100%;
+  height: 100%;
+  padding: 10px 12px;
+  box-sizing: border-box;
+}
+
+.terminalOutput .xterm-viewport,
+.terminalOutput .xterm-screen {
+  background: transparent !important;
+}
+
+.terminalSystemMessage {
+  margin-bottom: 8px;
+  color: var(--terminal-muted);
+}
+
+.terminalEntry + .terminalEntry {
+  margin-top: 4px;
+}
+
+.terminalCommand {
+  color: var(--terminal-text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.terminalCommand span {
+  color: var(--terminal-text);
+}
+
+.terminalOutput pre {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.terminalStdout {
+  color: var(--terminal-text);
+}
+
+.terminalStderr,
+.terminalExitError {
+  color: var(--terminal-error);
+}
+
+.terminalPrompt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  margin: 4px 0 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--terminal-text);
+  font: inherit;
+}
+
+.terminalPromptPath {
+  min-width: min-content;
+  max-width: 72%;
+  overflow: hidden;
+  color: var(--terminal-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terminalPrompt input {
+  min-width: 0;
+  flex: 1 1 auto;
+  height: 24px;
+  padding: 0;
+  border: 0 !important;
+  outline: 0 !important;
+  background: transparent;
+  box-shadow: none !important;
+  caret-color: var(--terminal-text);
+  color: var(--terminal-text);
+  font: inherit;
+}
+
+.terminalPrompt input:hover,
+.terminalPrompt input:focus {
+  border: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+}
+
+.appShell.theme-dark .terminalPanel {
+  --terminal-canvas: #0c0c0c;
+  --terminal-text: #f3f3f3;
+  --terminal-muted: #9ea4ad;
+  --terminal-error: #ff8d8d;
+}
+
+@media (prefers-color-scheme: dark) {
+  .appShell.theme-system .terminalPanel {
+    --terminal-canvas: #0c0c0c;
+    --terminal-text: #f3f3f3;
+    --terminal-muted: #9ea4ad;
+    --terminal-error: #ff8d8d;
+  }
+}
+.workspaceFileContextMenu {
+  position: fixed;
+  z-index: 10000;
+  min-width: 220px;
+  padding: 6px;
+  border: 1px solid var(--border, rgba(148, 163, 184, 0.32));
+  border-radius: 10px;
+  background: var(--surface, #ffffff);
+  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.24);
+  color: var(--text, #0f172a);
+}
+
+.workspaceFileContextMenu button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.workspaceFileContextMenu button:hover,
+.workspaceFileContextMenu button:focus-visible {
+  background: color-mix(in srgb, var(--accent, #3b82f6) 14%, transparent);
+  outline: none;
+}
+
+.workspaceFileContextMenu svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  opacity: 0.82;
+}
+
+.appShell.theme-dark .workspaceFileContextMenu {
+  border-color: #29445e;
+  background: #0d1b2a;
+  color: #e6f0f8;
+  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.42);
+}
+
+.appShell.theme-dark .workspaceFileContextMenu button:hover,
+.appShell.theme-dark .workspaceFileContextMenu button:focus-visible {
+  background: #18344b;
+}
+
+/* 输入框使用显式拖拽条，避免浏览器右下角缩放角标被发送按钮遮挡。 */
+.appShell .composer .composerResizeHandle {
+  display: grid;
+  height: 14px;
+  place-items: center;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.appShell .composer .composerResizeHandle span {
+  position: relative;
+  width: 32px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--nx-border);
+}
+
+.appShell .composer .composerResizeHandle span::before,
+.appShell .composer .composerResizeHandle span::after {
+  position: absolute;
+  left: 0;
+  width: 32px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--nx-border);
+  content: '';
+}
+
+.appShell .composer .composerResizeHandle span::before { top: -4px; }
+.appShell .composer .composerResizeHandle span::after { top: 4px; }
+
+.appShell .composer .composerResizeHandle:hover span,
+.appShell .composer .composerResizeHandle:hover span::before,
+.appShell .composer .composerResizeHandle:hover span::after { background: var(--nx-accent); }
+
+.appShell .composer textarea,
+.appShell .commandInputRow textarea { resize: none; }
+
+.appShell .fileMentionPalette {
+  gap: 1px;
+  max-height: min(300px, 38vh);
+  padding: 5px;
+  border-color: var(--nx-control-border);
+  background: var(--nx-panel);
+}
+
+.appShell .fileMentionPaletteHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 28px;
+  padding: 0 5px 4px;
+  border-bottom: 1px solid var(--nx-border);
+  color: var(--nx-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.appShell .fileMentionPaletteHeader > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.appShell .fileMentionPaletteHeader button {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--nx-muted);
+}
+
+.appShell .fileMentionPaletteHeader button:hover { background: var(--nx-hover); color: var(--nx-text); }
+.appShell .fileMentionPaletteHeader button svg { width: 14px; height: 14px; transform: rotate(90deg); }
+
+.appShell .fileMentionPalette > [role="option"] {
+  grid-template-columns: 17px minmax(0, 1fr) 14px;
+  gap: 7px;
+  min-height: 34px;
+  padding: 5px 7px;
+  border-radius: 5px;
+  font-size: 13px;
+}
+
+.appShell .fileMentionPalette > [role="option"] > svg { width: 16px; height: 16px; color: var(--nx-muted); }
+.appShell .fileMentionPalette > [role="option"] > svg:last-child { color: var(--nx-faint); }
+.appShell .fileMentionPalette > [role="option"] strong { font-size: 13px; font-weight: 600; line-height: 1.2; }
+.appShell .fileMentionPalette > [role="option"] small { font-size: 11px; line-height: 1.15; }
+
+.appShell .commandFileTokenRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 1px 0 4px;
+}
+
+.appShell .commandFileToken {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  gap: 5px;
+  padding: 3px 7px;
+  border: 1px solid color-mix(in srgb, var(--nx-accent) 55%, var(--nx-control-border));
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--nx-accent) 10%, transparent);
+  color: var(--nx-text);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.appShell .commandFileToken svg { width: 13px; height: 13px; flex: 0 0 13px; color: var(--nx-accent); }
+.appShell .commandFileToken > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.appShell .commandFileToken button { display: grid; width: 16px; height: 16px; place-items: center; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--nx-muted); }
+.appShell .commandFileToken button:hover { background: var(--nx-hover); color: var(--nx-text); }
+.appShell .commandFileToken button svg { width: 11px; height: 11px; flex-basis: 11px; color: currentColor; }
+
+.appShell .commandInputRow { position: relative; }
+
+.appShell .composer .composerResizeHandle {
+  position: absolute;
+  z-index: 2;
+  top: -6px;
+  right: 0;
+  left: 0;
+  display: block;
+  width: auto !important;
+  min-width: 0 !important;
+  height: 12px;
+  margin: 0;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0;
+  background: transparent !important;
+  box-shadow: none !important;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.appShell .composer .composerResizeHandle::after {
+  position: absolute;
+  top: 5px;
+  right: 8px;
+  left: 8px;
+  height: 1px;
+  background: transparent;
+  content: '';
+  transition: background 120ms ease;
+}
+
+.appShell .composer .composerResizeHandle:hover::after { background: var(--nx-accent); }
+
+/* assistant-ui inspired chat surface: neutral canvas, unframed agent replies, compact composer. */
+.appShell {
+  --nx-chat-canvas: #f7f7f5;
+  --nx-chat-paper: #ffffff;
+  --nx-chat-field: rgba(24, 25, 27, .045);
+  --nx-chat-ink: #202124;
+  --nx-chat-muted: #73777f;
+  --nx-chat-line: rgba(24, 25, 27, .10);
+}
+
+.appShell.theme-dark,
+.appShell.theme-system {
+  --nx-chat-canvas: #10151b;
+  --nx-chat-paper: #171d24;
+  --nx-chat-field: rgba(255, 255, 255, .065);
+  --nx-chat-ink: #edf2f7;
+  --nx-chat-muted: #9aa6b2;
+  --nx-chat-line: rgba(219, 231, 242, .14);
+}
+
+.appShell .workspace,
+.appShell .transcript {
+  background: var(--nx-chat-canvas) !important;
+}
+
+.appShell .messageBlock.agent {
+  max-width: min(840px, 100%);
+}
+
+.appShell .messageBlock.agent > .message.agent {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--nx-chat-ink);
+}
+
+.appShell .messageBlock.user > .message.user {
+  border: 0 !important;
+  border-radius: 18px !important;
+  background: #202124 !important;
+  color: #f7f8fa !important;
+  box-shadow: none !important;
+}
+
+.appShell .messageBlock.user > .message.user :is(strong, h1, h2, h3, h4, h5, h6, code, a) {
+  color: inherit !important;
+}
+
+.appShell .messageBlock.agent .messageActions,
+.appShell .messageBlock.user .messageActions {
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+
+.appShell .messageBlock:hover .messageActions,
+.appShell .messageBlock:focus-within .messageActions {
+  opacity: 1;
+}
+
+.appShell .message.tool,
+.appShell .message.error,
+.appShell .toolBatchDetails,
+.appShell .internalItemDetails {
+  border-color: var(--nx-chat-line) !important;
+  border-radius: 12px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.appShell .toolSummary {
+  color: var(--nx-chat-muted);
+}
+
+.appShell .composer,
+.appShell.theme-light .composer {
+  width: min(calc(100% - 40px), 880px);
+  padding: 8px !important;
+  border: 1px solid #e5e7ea !important;
+  border-radius: 10px !important;
+  background: #ffffff !important;
+  box-shadow: none !important;
+}
+
+.appShell .commandInputRow,
+.appShell.theme-light .commandInputRow {
+  min-height: 48px;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.appShell .composer textarea,
+.appShell .commandInputRow textarea {
+  background: transparent !important;
+}
+
+.appShell .composerInner {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+.appShell .commandInputRow:focus-within,
+.appShell.theme-light .commandInputRow:focus-within {
+  border: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+.appShell .commandInputRow textarea:focus {
+  border: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+.appShell .composer textarea,
+.appShell .commandInputRow textarea {
+  color: var(--nx-chat-ink);
+}
+
+.appShell .composerBottom {
+  gap: 4px;
+  min-height: 30px;
+  margin-top: 6px;
+  border-top: 0;
+}
+
+.appShell .composerBottom .dropdownButton,
+.appShell .composerBottom .fileButton,
+.appShell .composerBottom .assistantButton {
+  border-color: transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--nx-chat-muted);
+}
+
+.appShell .composerBottom :is(.dropdownButton, .fileButton, .assistantButton):hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--nx-chat-field);
+  color: var(--nx-chat-ink);
+}
+
+.appShell .sendButton {
+  width: 34px;
+  height: 34px;
+  border: 0 !important;
+  border-radius: 999px;
+  background: var(--nx-brand) !important;
+  box-shadow: none !important;
+}
+
+.appShell:is(.theme-dark, .theme-system) :is(.workspace, .transcript) {
+  background: var(--nx-chat-canvas) !important;
+  background-color: var(--nx-chat-canvas) !important;
+  background-image: none !important;
+}
+
+.appShell.appShell:is(.theme-dark, .theme-system) :is(.workspace, .transcript) {
+  background: var(--nx-chat-canvas) !important;
+  background-color: var(--nx-chat-canvas) !important;
+  background-image: none !important;
+}
+
+.appShell:is(.theme-dark, .theme-system) .composer {
+  background: var(--nx-chat-paper) !important;
+}
+
+.appShell:is(.theme-dark, .theme-system) .commandInputRow {
+  background: var(--nx-chat-field) !important;
+}
+
+/* Deep grayscale theme: reserve color for status icons only. */
+.appShell.theme-dark,
+.appShell.theme-system {
+  --nx-surface-canvas: #101214;
+  --nx-surface-raised: #17191c;
+  --nx-surface-panel: #1c1f23;
+  --nx-surface-overlay: #22262b;
+  --nx-control-bg: #202328;
+  --nx-control-border: #30353b;
+  --nx-text-primary: #eceff2;
+  --nx-text-muted: #a6adb5;
+  --nx-text-faint: #747c85;
+  --nx-accent: #aeb5bd;
+  --nx-accent-soft: #2a2e33;
+  --nx-brand: #aeb5bd;
+  --nx-brand-soft: #2a2e33;
+  --nx-chat-canvas: #101214;
+  --nx-chat-paper: #17191c;
+  --nx-chat-field: rgba(255, 255, 255, .065);
+  --nx-chat-ink: #eceff2;
+  --nx-chat-muted: #a6adb5;
+  --nx-chat-line: rgba(219, 231, 242, .12);
+}
+
+.appShell:is(.theme-dark, .theme-system) :is(.conversationPane, .threadListPanel, .topbar, .eventPane, .workbenchPane, .workbenchContent, .workbenchPanel, .browserWorkbench, .terminalPanel, .workspaceFiles, .workspaceFileTreePane, .workspacePreviewPane, .workspacePreview) {
+  border-color: var(--nx-control-border) !important;
+  background: var(--nx-surface-raised) !important;
+  color: var(--nx-text-primary);
+}
+
+.appShell:is(.theme-dark, .theme-system) :is(.composer, .commandInputRow, .message, .toastNotice, .toolBatchDetails, .internalItemDetails, .workspaceFileError, .gitNexusError, .gitNexusResultError) {
+  border-width: 1px !important;
+}
+
+.appShell:is(.theme-dark, .theme-system) .composer,
+.appShell:is(.theme-dark, .theme-system) .commandInputRow {
+  background: var(--nx-chat-paper) !important;
+  border-color: var(--nx-control-border) !important;
+}
+
+.appShell:is(.theme-dark, .theme-system) .commandInputRow {
+  background: var(--nx-chat-field) !important;
+  border-color: transparent !important;
+}
+
+.appShell:is(.theme-dark, .theme-system) :is(.topbar .iconButton, .topbar .themeQuickButton, .panelButton, .dropdownButton, .fileButton) {
+  border-color: transparent !important;
+  background: transparent !important;
+  color: var(--nx-text-muted) !important;
+}
+
+.appShell:is(.theme-dark, .theme-system) :is(.topbar .iconButton, .topbar .themeQuickButton, .panelButton, .dropdownButton, .fileButton):hover:not(:disabled) {
+  border-color: transparent !important;
+  background: var(--nx-chat-field) !important;
+  color: var(--nx-text-primary) !important;
+}
+
+.appShell :is(.message.error, .assistantTurnError, .childActivityError) {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: fit-content;
+  max-width: min(680px, 100%);
+  margin: 8px 0;
+  padding: 9px 12px;
+  border: 1px solid var(--nx-chat-line) !important;
+  border-radius: 12px !important;
+  background: var(--nx-chat-field) !important;
+  color: var(--nx-chat-ink) !important;
+  box-shadow: none !important;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.appShell :is(.message.error, .assistantTurnError, .childActivityError) > svg {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  color: #ef4444;
+  stroke-width: 2.25;
+}
+
+.appShell .assistantTurnError,
+.appShell .childActivityError {
+  animation: nexusErrorNoticeDismiss 5.8s ease forwards;
+}
+
+.appShell .toastNotice {
+  inset: auto auto 86px 50%;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(520px, calc(100vw - 32px));
+  padding: 9px 13px;
+  transform: translateX(-50%);
+  border: 1px solid var(--nx-chat-line) !important;
+  border-radius: 14px;
+  background: var(--nx-chat-paper) !important;
+  color: var(--nx-chat-ink) !important;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .22) !important;
+  font-size: 12px;
+  font-weight: 550;
+}
+
+.appShell .toastNotice > svg {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  color: #ef4444;
+  stroke-width: 2.25;
+}
+
+.appShell :is(.workspaceFileError, .gitNexusError, .gitNexusResultError) {
+  border: 1px solid var(--nx-chat-line) !important;
+  border-radius: 10px !important;
+  background: var(--nx-chat-field) !important;
+  color: var(--nx-chat-ink) !important;
+  animation: nexusErrorNoticeDismiss 5.8s ease forwards;
+}
+
+@keyframes nexusErrorNoticeDismiss {
+  0%, 72% { opacity: 1; max-height: 180px; margin-block: 8px; overflow: hidden; }
+  100% { opacity: 0; max-height: 0; margin-block: 0; padding-block: 0; border-width: 0 !important; border-color: transparent !important; overflow: hidden; pointer-events: none; }
+}
+
+@layer components {
+  .appShell.theme-dark :is(.workspace, .transcript, .workflowGraph, .workflowCanvasShell),
+  .appShell.theme-system :is(.workspace, .transcript, .workflowGraph, .workflowCanvasShell) {
+    background: #101214 !important;
+    background-color: #101214 !important;
+    background-image: none !important;
+  }
+
+  .appShell.theme-dark :is(.conversationPane, .threadListPanel, .topbar, .rail, .eventPane, .workbenchPane, .workbenchContent, .workbenchPanel, .browserWorkbench, .terminalPanel, .workspaceFiles, .workspaceFileTreePane, .workspacePreviewPane, .workspacePreview),
+  .appShell.theme-system :is(.conversationPane, .threadListPanel, .topbar, .rail, .eventPane, .workbenchPane, .workbenchContent, .workbenchPanel, .browserWorkbench, .terminalPanel, .workspaceFiles, .workspaceFileTreePane, .workspacePreviewPane, .workspacePreview) {
+    background: #17191c !important;
+    background-color: #17191c !important;
+    background-image: none !important;
+    border-color: #30353b !important;
+  }
+
+  .appShell.theme-dark :is(.composer, .workbenchActivityCard, .agentStagePanel, .agentInspector),
+  .appShell.theme-system :is(.composer, .workbenchActivityCard, .agentStagePanel, .agentInspector) {
+    background: #17191c !important;
+    background-color: #17191c !important;
+    border-color: #30353b !important;
+  }
+
+  .appShell.theme-dark .commandInputRow,
+  .appShell.theme-system .commandInputRow {
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    background-color: transparent !important;
+    border-color: transparent !important;
+  }
+
+  .appShell.theme-dark .settingsLayer .settingsDrawer,
+  .appShell.theme-system .settingsLayer .settingsDrawer,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .settingsContent,
+  .appShell.theme-system .settingsLayer .settingsDrawer .settingsContent {
+    background: #17191c !important;
+    background-color: #17191c !important;
+    border-color: #30353b !important;
+  }
+
+  .appShell.theme-dark .settingsLayer .settingsDrawer .settingsRail,
+  .appShell.theme-system .settingsLayer .settingsDrawer .settingsRail,
+  .appShell.theme-dark .settingsLayer .settingsDrawer .settingsNav,
+  .appShell.theme-system .settingsLayer .settingsDrawer .settingsNav {
+    background: #141619 !important;
+    background-color: #141619 !important;
+    border-color: #30353b !important;
+  }
+
+  .appShell.theme-dark :is(.settingsCard, .settingsCardCompact, .providerCard, .presetPanel),
+  .appShell.theme-system :is(.settingsCard, .settingsCardCompact, .providerCard, .presetPanel) {
+    background: #1d2024 !important;
+    background-color: #1d2024 !important;
+    border-color: #30353b !important;
+  }
+}
+
+/* 最终深灰主题覆盖：聊天工作区不再暴露旧的蓝黑底色。 */
+.appShell.theme-dark,
+.appShell.theme-system {
+  background: #101214 !important;
+  background-color: #101214 !important;
+  background-image: none !important;
+}
+
+.appShell.theme-dark :is(.composerInner, .composerInner textarea),
+.appShell.theme-system :is(.composerInner, .composerInner textarea) {
+  background: #17191c !important;
+  background-color: #17191c !important;
+  background-image: none !important;
+}
+
+.appShell:is(.theme-dark, .theme-system) .composer {
+  padding: 8px !important;
+  border: 1px solid #30353b !important;
+  border-radius: 10px !important;
+  background: #17191c !important;
+  box-shadow: none !important;
+}
+
+.appShell:is(.theme-dark, .theme-system) .commandInputRow {
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+.appShell .composer .composerResizeHandle::after,
+.appShell .composer .composerResizeHandle:hover::after {
+  background: transparent !important;
+}
+
+.appShell.theme-dark .sidebarScrim,
+.appShell.theme-system .sidebarScrim {
+  background: rgba(16, 18, 20, .72) !important;
+}
+
+.appShell :is(.message.error, .assistantTurnError, .childActivityError) {
+  animation: nexusErrorNoticeDismiss 5.8s ease forwards;
+}
+
+/* 全局深色主题收口：设置层、工作台控件和旧兼容样式统一使用深灰，不再泄露蓝黑色。 */
+.appShell:is(.theme-dark, .theme-system) {
+  --nx-surface-canvas: #101214;
+  --nx-surface-raised: #17191c;
+  --nx-surface-panel: #1c1f23;
+  --nx-surface-overlay: #22262b;
+  --nx-control-bg: #202328;
+  --nx-control-border: #30353b;
+  --nx-text-primary: #eceff2;
+  --nx-text-muted: #a6adb5;
+  --nx-text-faint: #747c85;
+  --nx-accent: #aeb5bd;
+  --nx-accent-soft: #2a2e33;
+  --nx-brand: #aeb5bd;
+  --nx-brand-soft: #2a2e33;
+}
+
+.appShell:is(.theme-dark, .theme-system) .settingsLayer,
+.appShell:is(.theme-dark, .theme-system) .settingsLayer.theme-dark,
+.appShell:is(.theme-dark, .theme-system) .settingsLayer .settingsDrawer,
+.appShell:is(.theme-dark, .theme-system) .settingsLayer .settingsHeader,
+.appShell:is(.theme-dark, .theme-system) .settingsLayer .settingsTopbar,
+.appShell:is(.theme-dark, .theme-system) .settingsLayer .settingsBody,
+.appShell:is(.theme-dark, .theme-system) .settingsLayer .settingsContent,
+.appShell:is(.theme-dark, .theme-system) .settingsLayer .settingsFieldset {
+  background: #17191c !important;
+  background-color: #17191c !important;
+  background-image: none !important;
+  border-color: #30353b !important;
+  color: #eceff2 !important;
+}
+
+.appShell:is(.theme-dark, .theme-system) .settingsLayer .settingsRail,
+.appShell:is(.theme-dark, .theme-system) .settingsLayer .settingsNav {
+  background: #141619 !important;
+  background-color: #141619 !important;
+  background-image: none !important;
+  border-color: #30353b !important;
+}
+
+.appShell:is(.theme-dark, .theme-system) .settingsLayer :is(.settingsCard, .settingsCardCompact, .providerCard, .presetPanel, .settingsSectionBlock, .settingsRowCard, .settingsMiniCard, .pluginCard, .pluginRowCard, .cluster, .rowCard, .memoryRecordCard, .memoryAdvancedPanel, .settingsToggleList, .settingsSegmented, .settingsModelCurrent, .settingsInfoBlock, .settingsConfirmPanel, .modelConfigurationBlock, .modelPresetManagementCard) {
+  background: #1d2024 !important;
+  background-color: #1d2024 !important;
+  background-image: none !important;
+  border-color: #30353b !important;
+  color: #eceff2 !important;
+  box-shadow: none !important;
+}
+
+.appShell:is(.theme-dark, .theme-system) .settingsLayer :is(input, select, textarea, .dropdownButton, .pluginSearchField, .pluginRowCardInput, .settingsInput, .settingsField input, .settingsField select, .settingsField textarea) {
+  background: #202328 !important;
+  background-color: #202328 !important;
+  background-image: none !important;
+  border-color: #30353b !important;
+  color: #eceff2 !important;
+  box-shadow: none !important;
+}
+
+.appShell:is(.theme-dark, .theme-system) .settingsLayer :is(input, select, textarea, .dropdownButton):focus {
+  border-color: #707983 !important;
+  box-shadow: 0 0 0 2px rgba(174, 181, 189, .16) !important;
+}
+
+.appShell:is(.theme-dark, .theme-system) .settingsLayer :is(.solidButton, .settingsPageActions button.primary, .settingsPageHeaderAction.primary) {
+  background: #2a2e33 !important;
+  background-image: none !important;
+  border-color: #454b53 !important;
+  color: #f2f4f6 !important;
+  box-shadow: none !important;
+}
+
+.appShell:is(.theme-dark, .theme-system) .settingsLayer :is(.settingsNav button, .settingsNav a) {
+  background: transparent !important;
+  border-color: transparent !important;
+  color: #a6adb5 !important;
+}
+
+.appShell:is(.theme-dark, .theme-system) .settingsLayer :is(.settingsNav button, .settingsNav a).active,
+.appShell:is(.theme-dark, .theme-system) .settingsLayer :is(.settingsNav button, .settingsNav a):hover {
+  background: #2a2e33 !important;
+  border-color: #454b53 !important;
+  color: #eceff2 !important;
+  box-shadow: none !important;
+}
+
+.appShell:is(.theme-dark, .theme-system) .settingsLayer :is(.settingsBrandMark, .settingsNavIcon, .settingsPageHeaderEyebrow, .settingsNav button.active .settingsNavIcon) {
+  color: #b7bec6 !important;
+}
+
+.appShell:is(.theme-dark, .theme-system) .settingsLayer .settingsBrandMark {
+  background: #30353b !important;
+  border-color: #454b53 !important;
+}
+
+.appShell:is(.theme-dark, .theme-system) .settingsLayer .settingsNotice,
+.appShell:is(.theme-dark, .theme-system) .settingsLayer .scopeApplyActions,
+.appShell:is(.theme-dark, .theme-system) .settingsLayer .modelKeyStatusLine {
+  background: #22262b !important;
+  background-image: none !important;
+  border-color: #30353b !important;
+  color: #a6adb5 !important;
+}
+
+.appShell:is(.theme-dark, .theme-system) :is(.browserAddress, .browserToolbar, .browserTabStrip, .miniIconButton) {
+  background: #1c1f23 !important;
+  background-color: #1c1f23 !important;
+  background-image: none !important;
+  border-color: #30353b !important;
+  color: #eceff2 !important;
+}
+
+.appShell:is(.theme-dark, .theme-system) :is(.xterm, .xterm-viewport, .xterm-screen, .xterm-helper-textarea) {
+  background: #0c0c0c !important;
+  background-color: #0c0c0c !important;
+  background-image: none !important;
+}
+
+/* 覆盖旧蓝色主题规则（提高选择器优先级，避免被兼容层反压）。 */
+main.appShell.theme-dark .settingsLayer.theme-dark,
+main.appShell.theme-system .settingsLayer.theme-dark {
+  background: #101214 !important;
+  background-color: #101214 !important;
+  background-image: none !important;
+}
+
+main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer,
+main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer,
+main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer .settingsHeader,
+main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer .settingsHeader,
+main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer .settingsTopbar,
+main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer .settingsTopbar,
+main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer .settingsBody,
+main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer .settingsBody,
+main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer .settingsContent,
+main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer .settingsContent,
+main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer .settingsFieldset,
+main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer .settingsFieldset {
+  background: #17191c !important;
+  background-color: #17191c !important;
+  background-image: none !important;
+  border-color: #30353b !important;
+  color: #eceff2 !important;
+}
+
+main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer .settingsRail,
+main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer .settingsRail,
+main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer .settingsNav,
+main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer .settingsNav {
+  background: #141619 !important;
+  background-color: #141619 !important;
+  background-image: none !important;
+  border-color: #30353b !important;
+}
+
+main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer :is(.settingsCard, .settingsCardCompact, .providerCard, .presetPanel, .settingsSectionBlock, .settingsRowCard, .settingsMiniCard, .pluginCard, .pluginRowCard, .cluster, .rowCard, .memoryRecordCard, .memoryAdvancedPanel, .settingsToggleList, .settingsSegmented, .settingsModelCurrent, .settingsInfoBlock, .settingsConfirmPanel, .modelConfigurationBlock, .modelPresetManagementCard),
+main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer :is(.settingsCard, .settingsCardCompact, .providerCard, .presetPanel, .settingsSectionBlock, .settingsRowCard, .settingsMiniCard, .pluginCard, .pluginRowCard, .cluster, .rowCard, .memoryRecordCard, .memoryAdvancedPanel, .settingsToggleList, .settingsSegmented, .settingsModelCurrent, .settingsInfoBlock, .settingsConfirmPanel, .modelConfigurationBlock, .modelPresetManagementCard) {
+  background: #1d2024 !important;
+  background-color: #1d2024 !important;
+  background-image: none !important;
+  border-color: #30353b !important;
+  color: #eceff2 !important;
+  box-shadow: none !important;
+}
+
+main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer :is(input, select, textarea, .dropdownButton, .pluginSearchField, .pluginRowCardInput),
+main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer :is(input, select, textarea, .dropdownButton, .pluginSearchField, .pluginRowCardInput) {
+  background: #202328 !important;
+  background-color: #202328 !important;
+  background-image: none !important;
+  border-color: #30353b !important;
+  color: #eceff2 !important;
+  box-shadow: none !important;
+}
+
+main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer :is(.solidButton, .settingsPageActions button.primary, .settingsPageHeaderAction.primary),
+main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer :is(.solidButton, .settingsPageActions button.primary, .settingsPageHeaderAction.primary) {
+  background: #2a2e33 !important;
+  background-image: none !important;
+  border-color: #454b53 !important;
+  color: #f2f4f6 !important;
+  box-shadow: none !important;
+}
+
+/* Important declarations in the legacy component layer outrank unlayered
+   important rules, so keep this final neutral palette in that same layer. */
+@layer components {
+  main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer,
+  main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer,
+  main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer .settingsHeader,
+  main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer .settingsHeader,
+  main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer .settingsBody,
+  main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer .settingsBody,
+  main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer .settingsContent,
+  main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer .settingsContent,
+  main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer .settingsFieldset,
+  main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer .settingsFieldset {
+    background: #17191c !important;
+    background-color: #17191c !important;
+    background-image: none !important;
+    border-color: #30353b !important;
+    color: #eceff2 !important;
+  }
+
+  main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer .settingsRail,
+  main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer .settingsRail,
+  main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer .settingsNav,
+  main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer .settingsNav {
+    background: #141619 !important;
+    background-color: #141619 !important;
+    background-image: none !important;
+    border-color: #30353b !important;
+  }
+
+  main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer :is(.settingsCard, .settingsCardCompact, .providerCard, .presetPanel, .settingsSectionBlock, .settingsRowCard, .settingsMiniCard, .pluginCard, .pluginRowCard, .cluster, .rowCard, .memoryRecordCard, .memoryAdvancedPanel, .settingsToggleList, .settingsSegmented, .settingsModelCurrent, .settingsInfoBlock, .settingsConfirmPanel, .modelConfigurationBlock, .modelPresetManagementCard),
+  main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer :is(.settingsCard, .settingsCardCompact, .providerCard, .presetPanel, .settingsSectionBlock, .settingsRowCard, .settingsMiniCard, .pluginCard, .pluginRowCard, .cluster, .rowCard, .memoryRecordCard, .memoryAdvancedPanel, .settingsToggleList, .settingsSegmented, .settingsModelCurrent, .settingsInfoBlock, .settingsConfirmPanel, .modelConfigurationBlock, .modelPresetManagementCard) {
+    background: #1d2024 !important;
+    background-color: #1d2024 !important;
+    background-image: none !important;
+    border-color: #30353b !important;
+    color: #eceff2 !important;
+    box-shadow: none !important;
+  }
+
+  main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer :is(input, select, textarea, .dropdownButton, .pluginSearchField, .pluginRowCardInput),
+  main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer :is(input, select, textarea, .dropdownButton, .pluginSearchField, .pluginRowCardInput) {
+    background: #202328 !important;
+    background-color: #202328 !important;
+    background-image: none !important;
+    border-color: #30353b !important;
+    color: #eceff2 !important;
+    box-shadow: none !important;
+  }
+
+  main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer :is(.solidButton, .settingsPageActions button.primary, .settingsPageHeaderAction.primary),
+  main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer :is(.solidButton, .settingsPageActions button.primary, .settingsPageHeaderAction.primary) {
+    background: #2a2e33 !important;
+    background-image: none !important;
+    border-color: #454b53 !important;
+    color: #f2f4f6 !important;
+    box-shadow: none !important;
+  }
+
+  main.appShell.theme-dark #root,
+  main.appShell.theme-system #root {
+    color: #eceff2 !important;
+    border-color: #30353b !important;
+  }
+
+  main.appShell.theme-dark .composer textarea,
+  main.appShell.theme-system .composer textarea,
+  main.appShell.theme-dark .commandInputRow textarea,
+  main.appShell.theme-system .commandInputRow textarea {
+    border-color: #30353b !important;
+  }
+
+  main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer .settingsNavLabel,
+  main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer .settingsNavLabel,
+  main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer .modelKeyLayout,
+  main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer .modelKeyLayout {
+    color: #a6adb5 !important;
+  }
+
+  main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer .modelKeyLayout,
+  main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer .modelKeyLayout {
+    background: #1d2024 !important;
+    border-color: #30353b !important;
+  }
+
+  main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer .settingsNav :is(button, a).active,
+  main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer .settingsNav :is(button, a).active {
+    background: #2a2e33 !important;
+    border-color: #454b53 !important;
+    color: #eceff2 !important;
+    box-shadow: none !important;
+  }
+
+  main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer :is(.settingsToggleTrack, .settingsInlineToggleTrack, .mcpToggle),
+  main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer :is(.settingsToggleTrack, .settingsInlineToggleTrack, .mcpToggle) {
+    background: #30353b !important;
+    border-color: #454b53 !important;
+  }
+
+  main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer :is(.settingsToggleTrack.on, .settingsInlineToggle.on .settingsInlineToggleTrack, .mcpToggle.on),
+  main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer :is(.settingsToggleTrack.on, .settingsInlineToggle.on .settingsInlineToggleTrack, .mcpToggle.on) {
+    background: #59616a !important;
+    border-color: #68717b !important;
+  }
+
+  main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer .settingsNavIcon,
+  main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer .settingsNavIcon,
+  main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer .settingsNavIcon svg,
+  main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer .settingsNavIcon svg,
+  main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer .settingsNavIcon :is(path, use),
+  main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer .settingsNavIcon :is(path, use) {
+    color: #b7bec6 !important;
+    border-color: #b7bec6 !important;
+    stroke: currentColor !important;
+  }
+
+  main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer .settingsBrandSub,
+  main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer .settingsBrandSub {
+    color: #747c85 !important;
+  }
+
+  main.appShell.theme-dark :is(.workspaceThreadMain, .workspaceGroupMain, .scrim),
+  main.appShell.theme-system :is(.workspaceThreadMain, .workspaceGroupMain, .scrim) {
+    border-color: #30353b !important;
+  }
+
+  /* Hover only changes color; movement/scale makes text look heavier. */
+  main.appShell :is(.workbenchTabs button, .panelButton, .rightPaneToggleButton, .sendButton, .settingsPageHeaderAction.primary):hover:not(:disabled) {
+    transform: none !important;
+  }
+}
+
+/* 最终中性色收口：覆盖旧设置、工作区文件和监控层遗留的蓝色及粗边框。 */
+@layer components {
+  main.appShell.theme-light {
+    --final-ui-surface: #ffffff;
+    --final-ui-raised: #f7f8fa;
+    --final-ui-control: #ffffff;
+    --final-ui-hover: #f3f5f7;
+    --final-ui-border: #d6dee7;
+    --final-ui-border-strong: #c1cad5;
+    --final-ui-text: #1f2937;
+    --final-ui-muted: #64748b;
+  }
+
+  main.appShell.theme-dark,
+  main.appShell.theme-system {
+    --final-ui-surface: #17191c;
+    --final-ui-raised: #1d2024;
+    --final-ui-control: #202328;
+    --final-ui-hover: #2a2e33;
+    --final-ui-border: #30353b;
+    --final-ui-border-strong: #454b53;
+    --final-ui-text: #eceff2;
+    --final-ui-muted: #a6adb5;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) .settingsLayer .settingsDrawer :is(
+    .settingsNav button, .settingsNav a
+  ) {
+    border: 1px solid transparent !important;
+    box-shadow: none !important;
+    color: var(--final-ui-muted) !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) .settingsLayer .settingsDrawer :is(
+    .settingsNav button.active, .settingsNav a.active,
+    .settingsNav button:hover:not(:disabled), .settingsNav a:hover:not(:disabled)
+  ) {
+    border: 1px solid var(--final-ui-border) !important;
+    background: var(--final-ui-hover) !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    color: var(--final-ui-text) !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) .settingsLayer .settingsDrawer :is(
+    input, select, textarea, .dropdownButton, .miniIconButton,
+    .settingsPageHeaderAction, .settingsPageActions button, .solidButton
+  ) {
+    border-width: 1px !important;
+    border-style: solid !important;
+    border-color: var(--final-ui-border) !important;
+    box-shadow: none !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) .settingsLayer .settingsDrawer :is(
+    .settingsPageHeaderAction.primary, .settingsPageActions button.primary, .solidButton
+  ) {
+    background: var(--final-ui-raised) !important;
+    background-image: none !important;
+    border-color: var(--final-ui-border-strong) !important;
+    color: var(--final-ui-text) !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) .settingsLayer .settingsDrawer :is(
+    .settingsPageHeaderAction.primary:hover:not(:disabled),
+    .settingsPageActions button.primary:hover:not(:disabled),
+    .solidButton:hover:not(:disabled)
+  ) {
+    background: var(--final-ui-hover) !important;
+    border-color: var(--final-ui-border-strong) !important;
+    color: var(--final-ui-text) !important;
+    transform: none !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) .settingsLayer .settingsDrawer .scopeApplyActions {
+    margin-top: 10px !important;
+    padding-top: 10px !important;
+    border-top: 0 !important;
+    background: transparent !important;
+    background-image: none !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) :is(
+    .workspaceFiles, .workspaceFileBody, .workspaceFileTreePane, .workspacePreviewPane,
+    .workspacePreview, .workspaceFileSearch, .workspacePreviewHeader,
+    .workspacePreviewTabs, .workspaceFilesHeader
+  ) {
+    border-color: var(--final-ui-border) !important;
+    background: var(--final-ui-surface) !important;
+    background-image: none !important;
+    color: var(--final-ui-text) !important;
+    box-shadow: none !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) :is(
+    .workspaceFileSearch, .workspaceFileTreePane, .workspacePreviewPane
+  ) {
+    background: var(--final-ui-raised) !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) :is(
+    .workspaceFileRow, .workspacePreviewTabs button,
+    .workspacePreviewModeSwitch, .workspacePreviewModeSwitch button,
+    .workspacePreviewPathButton
+  ) {
+    border-color: var(--final-ui-border) !important;
+    background: transparent !important;
+    background-image: none !important;
+    color: var(--final-ui-muted) !important;
+    box-shadow: none !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) :is(
+    .workspaceFileRow:hover, .workspaceFileRow.active,
+    .workspacePreviewTabs button:hover:not(:disabled),
+    .workspacePreviewTabs button.active,
+    .workspacePreviewModeSwitch button:hover:not(:disabled),
+    .workspacePreviewModeSwitch button.active
+  ) {
+    border-color: var(--final-ui-border-strong) !important;
+    background: var(--final-ui-hover) !important;
+    color: var(--final-ui-text) !important;
+    box-shadow: none !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) :is(
+    .workspacePreview .workspaceRenderedPreview, .workspacePreview .workspaceMarkdownPreview,
+    .workspacePreview .workspaceSourcePreview, .workspacePreview .workspaceOfficePreview,
+    .workspacePreview .workspaceHtmlPreview
+  ) {
+    background: var(--final-ui-surface) !important;
+    color: var(--final-ui-text) !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) :is(
+    .runMonitorPanel, .runMonitorHeader, .runMonitorBody, .runExplorer,
+    .runExplorer__header, .runExplorer__empty, .runThreadGroup,
+    .runThreadGroup__header, .runEntry, .traceTimeline, .traceInspector,
+    .traceTimeline__header, .traceTimeline__body, .traceTimeline__footer,
+    .traceFilters, .traceChip, .traceRow, .traceInspector__section,
+    .traceInspector__json, .traceControlBtn, .traceLoadMore,
+    .runMonitorStat, .runMonitorInterval, .runMonitorAdminToken
+  ) {
+    border-color: var(--final-ui-border) !important;
+    background: var(--final-ui-surface) !important;
+    background-image: none !important;
+    color: var(--final-ui-text) !important;
+    box-shadow: none !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) :is(
+    .runMonitorHeader, .runExplorer__header, .traceTimeline__header,
+    .traceTimeline__footer, .traceFilters, .runMonitorStat,
+    .runMonitorInterval, .runMonitorAdminToken, .traceChip
+  ) {
+    background: var(--final-ui-raised) !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) :is(
+    .runEntry:hover, .runEntry--selected, .traceRow:hover,
+    .traceRow--selected, .traceChip:hover, .traceChip--active,
+    .runThreadGroup__header:hover
+  ) {
+    border-color: var(--final-ui-border-strong) !important;
+    background: var(--final-ui-hover) !important;
+    color: var(--final-ui-text) !important;
+    box-shadow: none !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) :is(
+    .runMonitorTab--active, .traceRow__lifecycle, .runMonitorStat--running
+  ) {
+    border-color: var(--final-ui-border-strong) !important;
+    color: var(--final-ui-text) !important;
+  }
+
+  /* Legacy theme selectors include both app and drawer theme classes; match that
+     specificity so the neutral palette also wins in the light/dark drawer. */
+  main.appShell.theme-light .settingsLayer.theme-light .settingsDrawer :is(.settingsNav button, .settingsNav a),
+  main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer :is(.settingsNav button, .settingsNav a),
+  main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer :is(.settingsNav button, .settingsNav a) {
+    border: 1px solid transparent !important;
+    box-shadow: none !important;
+    color: var(--final-ui-muted) !important;
+  }
+
+  main.appShell.theme-light .settingsLayer.theme-light .settingsDrawer :is(.settingsNav button.active, .settingsNav a.active, .settingsNav button:hover:not(:disabled), .settingsNav a:hover:not(:disabled)),
+  main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer :is(.settingsNav button.active, .settingsNav a.active, .settingsNav button:hover:not(:disabled), .settingsNav a:hover:not(:disabled)),
+  main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer :is(.settingsNav button.active, .settingsNav a.active, .settingsNav button:hover:not(:disabled), .settingsNav a:hover:not(:disabled)) {
+    border: 1px solid var(--final-ui-border) !important;
+    background: var(--final-ui-hover) !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    color: var(--final-ui-text) !important;
+  }
+
+  main.appShell.theme-light .settingsLayer.theme-light .settingsDrawer :is(input, select, textarea, .dropdownButton, .miniIconButton, .settingsPageHeaderAction, .settingsPageActions button, .solidButton),
+  main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer :is(input, select, textarea, .dropdownButton, .miniIconButton, .settingsPageHeaderAction, .settingsPageActions button, .solidButton),
+  main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer :is(input, select, textarea, .dropdownButton, .miniIconButton, .settingsPageHeaderAction, .settingsPageActions button, .solidButton) {
+    border-width: 1px !important;
+    border-style: solid !important;
+    border-color: var(--final-ui-border) !important;
+    box-shadow: none !important;
+  }
+
+  main.appShell.theme-light .settingsLayer.theme-light .settingsDrawer :is(.settingsHeader .iconButton, .settingsThemeToggle, .settingsCloseButton),
+  main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer :is(.settingsHeader .iconButton, .settingsThemeToggle, .settingsCloseButton),
+  main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer :is(.settingsHeader .iconButton, .settingsThemeToggle, .settingsCloseButton) {
+    border: 1px solid var(--final-ui-border) !important;
+    background: var(--final-ui-surface) !important;
+    background-image: none !important;
+    color: var(--final-ui-muted) !important;
+    box-shadow: none !important;
+  }
+
+  main.appShell.theme-light .settingsLayer.theme-light .settingsDrawer :is(.settingsPageHeaderAction.primary, .settingsPageActions button.primary, .solidButton),
+  main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer :is(.settingsPageHeaderAction.primary, .settingsPageActions button.primary, .solidButton),
+  main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer :is(.settingsPageHeaderAction.primary, .settingsPageActions button.primary, .solidButton) {
+    background: var(--final-ui-raised) !important;
+    background-image: none !important;
+    border-color: var(--final-ui-border-strong) !important;
+    color: var(--final-ui-text) !important;
+  }
+
+  main.appShell.theme-light .settingsLayer.theme-light .settingsDrawer .scopeApplyActions,
+  main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer .scopeApplyActions,
+  main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer .scopeApplyActions {
+    margin-top: 10px !important;
+    padding-top: 10px !important;
+    border-top: 0 !important;
+    background: transparent !important;
+    background-image: none !important;
+  }
+
+  main.appShell.theme-light .settingsLayer.theme-light .settingsDrawer :is(.settingsNav button.active .settingsNavIcon, .settingsNav a.active .settingsNavIcon),
+  main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer :is(.settingsNav button.active .settingsNavIcon, .settingsNav a.active .settingsNavIcon),
+  main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer :is(.settingsNav button.active .settingsNavIcon, .settingsNav a.active .settingsNavIcon) {
+    color: var(--final-ui-text) !important;
+  }
+
+  main.appShell.theme-light .settingsLayer.theme-light .settingsDrawer :is(button, a):focus-visible,
+  main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer :is(button, a):focus-visible,
+  main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer :is(button, a):focus-visible {
+    outline: 1px solid var(--final-ui-border-strong) !important;
+    outline-offset: 1px !important;
+    box-shadow: none !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) :is(
+    .runMonitorCloseBtn, .runExplorer__refresh, .traceInspector__back,
+    .traceInspector__copyBtn, .traceLoadMore, .controlButton,
+    .traceErrorsOnly, .traceTimeline__empty, .runExplorer__empty,
+    .traceInspector__empty
+  ) {
+    border: 1px solid var(--final-ui-border) !important;
+    background: var(--final-ui-raised) !important;
+    background-image: none !important;
+    color: var(--final-ui-muted) !important;
+    box-shadow: none !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) :is(
+    .runMonitorCloseBtn:hover:not(:disabled), .runExplorer__refresh:hover:not(:disabled),
+    .traceInspector__back:hover:not(:disabled), .traceInspector__copyBtn:hover:not(:disabled),
+    .traceLoadMore:hover:not(:disabled), .controlButton:hover:not(:disabled),
+    .traceErrorsOnly:hover:not(:disabled)
+  ) {
+    border-color: var(--final-ui-border-strong) !important;
+    background: var(--final-ui-hover) !important;
+    color: var(--final-ui-text) !important;
+    box-shadow: none !important;
+  }
+
+  main.appShell.theme-light .runMonitorBackdrop {
+    background: rgba(31, 41, 55, .18) !important;
+  }
+
+  main.appShell.theme-dark .runMonitorBackdrop,
+  main.appShell.theme-system .runMonitorBackdrop {
+    background: rgba(0, 0, 0, .52) !important;
+  }
+
+  main.appShell:is(.theme-light, .theme-dark, .theme-system) .runMonitorPanel :is(
+    .traceChip__icon, .traceRow__icon, .runEntry__icon,
+    .runMonitorItemCardIcon, .runMonitorItemCardBadge
+  ) {
+    filter: grayscale(1) !important;
+  }
+}
+
+/* 深色主题最终工作区收口，确保历史组件规则不会重新带出浅色/蓝黑表面。 */
+.appShell:is(.theme-dark, .theme-system) :is(
+  .workbenchOverlay, .workbenchPane, .workbenchContent, .workbenchPanel,
+  .workbenchFiles, .workbenchTerminal, .workbenchBrowser, .workbenchFooter,
+  .workbenchTabs, .workflowSidePane, .workflowPanel, .workflowEditor,
+  .workflowCanvasShell, .workflowCanvasStage, .agentStage, .agentInspector,
+  .agentEmptyState, .agentTree, .traceTimeline, .traceInspector,
+  .gitNexusPanel, .gitNexusResult, .gitNexusGraphShell,
+  .workspaceFiles, .workspaceFileBody, .workspaceFileTreePane,
+  .workspacePreviewPane, .workspacePreviewContent, .workspacePreview,
+  .workspaceRenderedPreview, .workspaceSourcePreview, .workspaceMarkdownPreview,
+  .workspaceHtmlPreview, .workspaceOfficePreview,
+  .workbenchActivityCard, .agentStagePanel, .agentStageCard, .agentTreeNode,
+  .agentInspectorField, .traceRow, .traceInspector__section,
+  .gitNexusStatCard, .gitNexusRelationItem, .gitNexusGraphInspector,
+  .workspaceGroup, .workspaceThreadRow, .workspaceFileRow,
+  .checkpointPanel, .checkpointEntry, .checkpointStat,
+  .workflowNodeBody, .workflowParamSection, .workflowStepWrap
+) {
+  background: var(--nx-surface-panel) !important;
+  background-color: var(--nx-surface-panel) !important;
+  background-image: none !important;
+  border-color: var(--nx-control-border) !important;
+  color: var(--nx-text-primary) !important;
+  box-shadow: none !important;
+}
+
+.appShell:is(.theme-dark, .theme-system) :is(
+  .dropdownMenu, .slashPalette, .fileMentionPalette, .remoteAssistantMenu,
+  .workspaceFileContextMenu, .approvalPanel, .dialogLayer .appDialog,
+  .appDialog, .gitNexusGraphModal, .gitNexusHelpModalContent,
+  .settingsHelpDialog
+) {
+  background: var(--nx-surface-overlay) !important;
+  background-color: var(--nx-surface-overlay) !important;
+  background-image: none !important;
+  border-color: var(--nx-control-border) !important;
+  color: var(--nx-text-primary) !important;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .28) !important;
+}
+
+.appShell:is(.theme-dark, .theme-system) :is(
+  input, select, textarea, .dropdownButton, .modelPresetSelect, .modeSelect,
+  .conversationSearch, .workspaceFileSearch, .gitNexusPathSelect,
+  .pluginSearchField, .pluginRowCardInput, .approvalScopeSelect select,
+  .terminalPrompt input
+) {
+  background: var(--nx-control-bg) !important;
+  background-color: var(--nx-control-bg) !important;
+  background-image: none !important;
+  border-color: var(--nx-control-border) !important;
+  color: var(--nx-text-primary) !important;
+  box-shadow: none !important;
+}
+
+.appShell:is(.theme-dark, .theme-system) :is(
+  .dropdownMenu button, .dropdownOption, .dropdownOptionRow,
+  .remoteAssistantMenu button, .fileMentionPalette [role="option"],
+  .workspaceFileContextMenu button, .approvalPanel button, .appDialog button
+) {
+  background: transparent !important;
+  background-image: none !important;
+  border-color: transparent !important;
+  color: var(--nx-text-primary) !important;
+}
+
+.appShell:is(.theme-dark, .theme-system) :is(
+  .dropdownMenu button:hover:not(:disabled), .dropdownOption:hover,
+  .dropdownOptionRow:hover, .remoteAssistantMenu button:hover:not(:disabled),
+  .fileMentionPalette [role="option"]:hover,
+  .workspaceFileContextMenu button:hover:not(:disabled),
+  .approvalPanel button:hover:not(:disabled), .appDialog button:hover:not(:disabled)
+) {
+  background: var(--nx-hover) !important;
+  background-color: var(--nx-hover) !important;
+  color: var(--nx-text-primary) !important;
+}
+
+.appShell:is(.theme-dark, .theme-system) :is(
+  .settingsPage, .settingsSection, .settingsSectionBlock, .settingsCard,
+  .settingsCardCompact, .providerCard, .presetPanel, .presetItem,
+  .remoteBotCard, .skillItem, .settingsInfoBlock, .settingsToggleList,
+  .settingsSegmented, .settingsModelCurrent, .settingsConfirmPanel,
+  .modelConfigurationBlock, .modelPresetManagementCard, .pluginCatalogShell,
+  .pluginCatalogBlock, .pluginCard, .pluginRowCard, .cluster, .rowCard,
+  .memoryRecordCard, .memoryAdvancedPanel
+) {
+  background: var(--nx-surface-panel) !important;
+  background-color: var(--nx-surface-panel) !important;
+  background-image: none !important;
+  border-color: var(--nx-control-border) !important;
+  color: var(--nx-text-primary) !important;
+  box-shadow: none !important;
+}
+
+.appShell:is(.theme-dark, .theme-system) .terminalPanel,
+.appShell:is(.theme-dark, .theme-system) .terminalOutput {
+  background: #0f1114 !important;
+  background-color: #0f1114 !important;
+  background-image: none !important;
+  border-color: var(--nx-control-border) !important;
+}
+
+.appShell:is(.theme-dark, .theme-system) :is(.xterm, .xterm-viewport, .xterm-screen, .xterm-helper-textarea) {
+  background: #0b0c0e !important;
+  background-color: #0b0c0e !important;
+  background-image: none !important;
+}
+
+/* 历史 nexus111 变量别名也必须指向同一套深灰色，避免未命中组件回退为白/蓝。 */
+.appShell:is(.theme-dark, .theme-system) {
+  --nx-bg: #101214;
+  --nx-sidebar: #141619;
+  --nx-panel: #1d2024;
+  --nx-canvas: #101214;
+  --nx-card: #1d2024;
+  --nx-soft: #22262b;
+  --nx-border: #30353b;
+  --nx-strong-border: #454b53;
+  --nx-text: #eceff2;
+  --nx-muted: #a6adb5;
+  --nx-faint: #747c85;
+  --nx-accent: #aeb5bd;
+  --nx-blue: #aeb5bd;
+  --nx-blue-soft: #2a2e33;
+  --bg-elevated: #22262b;
+  --border-subtle: #30353b;
+  --nx-hover: #2a2e33;
+  --nx-settings-raised: #17191c;
+  --nx-settings-panel: #1d2024;
+  --nx-settings-overlay: #22262b;
+  --nx-settings-control: #202328;
+  --nx-settings-border: #30353b;
+  --nx-settings-border-strong: #454b53;
+  --nx-settings-text: #eceff2;
+  --nx-settings-text-muted: #a6adb5;
+  --nx-settings-text-faint: #747c85;
+  --nx-settings-muted: #a6adb5;
+  --nx-settings-faint: #747c85;
+  --nx-settings-brand: #aeb5bd;
+  --nx-settings-brand-soft: #2a2e33;
+  --nx-settings-accent: #aeb5bd;
+  --nx-settings-focus: #aeb5bd;
+  --nx-settings-focus-soft: rgba(174, 181, 189, .16);
+  --nx-settings-shell: #17191c;
+  --nx-settings-rail: #141619;
+  --nx-settings-panel-subtle: #22262b;
+}
+
+/* 设置层的历史深色选择器带有更高优先级，使用 main 前缀在末尾统一压平。 */
+main.appShell:is(.theme-dark, .theme-system) .settingsLayer,
+main.appShell:is(.theme-dark, .theme-system) .settingsLayer .settingsDrawer,
+main.appShell:is(.theme-dark, .theme-system) .settingsLayer .settingsDrawer .settingsHeader,
+main.appShell:is(.theme-dark, .theme-system) .settingsLayer .settingsDrawer .settingsTopbar,
+main.appShell:is(.theme-dark, .theme-system) .settingsLayer .settingsDrawer .settingsBody,
+main.appShell:is(.theme-dark, .theme-system) .settingsLayer .settingsDrawer .settingsContent,
+main.appShell:is(.theme-dark, .theme-system) .settingsLayer .settingsDrawer .settingsFieldset {
+  background: var(--nx-surface-raised) !important;
+  background-color: var(--nx-surface-raised) !important;
+  background-image: none !important;
+  border-color: var(--nx-control-border) !important;
+  color: var(--nx-text-primary) !important;
+}
+
+main.appShell:is(.theme-dark, .theme-system) .settingsLayer .settingsDrawer .settingsRail,
+main.appShell:is(.theme-dark, .theme-system) .settingsLayer .settingsDrawer .settingsNav {
+  background: var(--nx-surface-canvas) !important;
+  background-color: var(--nx-surface-canvas) !important;
+  background-image: none !important;
+  border-color: var(--nx-control-border) !important;
+}
+
+main.appShell:is(.theme-dark, .theme-system) .settingsLayer .settingsDrawer :is(
+  .settingsPage, .settingsSection, .settingsSectionBlock, .settingsCard,
+  .settingsCardCompact, .providerCard, .presetPanel, .presetItem,
+  .remoteBotCard, .skillItem, .settingsInfoBlock, .settingsToggleList,
+  .settingsSegmented, .settingsModelCurrent, .settingsConfirmPanel,
+  .modelConfigurationBlock, .modelPresetManagementCard, .pluginCatalogShell,
+  .pluginCatalogBlock, .pluginCard, .pluginRowCard, .cluster, .rowCard,
+  .memoryRecordCard, .memoryAdvancedPanel
+) {
+  background: var(--nx-surface-panel) !important;
+  background-color: var(--nx-surface-panel) !important;
+  background-image: none !important;
+  border-color: var(--nx-control-border) !important;
+  color: var(--nx-text-primary) !important;
+  box-shadow: none !important;
+}
+
+main.appShell:is(.theme-dark, .theme-system) .settingsLayer .settingsDrawer :is(
+  input, select, textarea, .dropdownButton, .pluginSearchField,
+  .pluginRowCardInput, .settingsField input, .settingsField select,
+  .settingsField textarea
+) {
+  background: var(--nx-control-bg) !important;
+  background-color: var(--nx-control-bg) !important;
+  background-image: none !important;
+  border-color: var(--nx-control-border) !important;
+  color: var(--nx-text-primary) !important;
+  box-shadow: none !important;
+}
+
+main.appShell:is(.theme-dark, .theme-system) .settingsLayer .settingsDrawer :is(
+  .settingsNav button, .settingsNav a, .settingsPageHeaderAction,
+  .settingsSectionHeaderAction, .settingsHeader .iconButton,
+  .whiteButton, .iconButton, .textButton, .outlineButton, .btn,
+  .miniIconButton, .dropdownOptionAction
+) {
+  background: transparent !important;
+  background-image: none !important;
+  border-color: transparent !important;
+  color: var(--nx-text-muted) !important;
+  box-shadow: none !important;
+}
+
+main.appShell:is(.theme-dark, .theme-system) .settingsLayer .settingsDrawer :is(
+  .settingsNav button.active, .settingsNav a.active,
+  .settingsNav button:hover:not(:disabled), .settingsNav a:hover:not(:disabled),
+  .settingsPageHeaderAction:hover:not(:disabled), .settingsSectionHeaderAction:hover:not(:disabled),
+  .whiteButton:hover:not(:disabled), .iconButton:hover:not(:disabled),
+  .textButton:hover:not(:disabled), .outlineButton:hover:not(:disabled),
+  .btn:hover:not(:disabled), .miniIconButton:hover:not(:disabled),
+  .dropdownOptionAction:hover:not(:disabled)
+) {
+  background: var(--nx-hover) !important;
+  background-color: var(--nx-hover) !important;
+  background-image: none !important;
+  border-color: var(--nx-control-border) !important;
+  color: var(--nx-text-primary) !important;
+  box-shadow: none !important;
+}
+
+main.appShell:is(.theme-dark, .theme-system) .settingsLayer .settingsDrawer :is(
+  .settingsToggleTrack, .settingsInlineToggleTrack, .mcpToggle
+) {
+  background: var(--nx-control-border) !important;
+  border-color: var(--nx-control-border) !important;
+}
+
+main.appShell:is(.theme-dark, .theme-system) .settingsLayer .settingsDrawer :is(
+  .settingsToggleTrack.on, .settingsInlineToggle.on .settingsInlineToggleTrack,
+  .mcpToggle.on
+) {
+  background: #59616a !important;
+  border-color: #68717b !important;
+}
+
+main.appShell:is(.theme-dark, .theme-system) .settingsLayer .settingsDrawer :is(
+  .settingsPageActions button, .settingsPageActions button.primary,
+  .settingsPageHeaderAction.primary, .solidButton
+) {
+  background: #2a2e33 !important;
+  background-color: #2a2e33 !important;
+  background-image: none !important;
+  border-color: #454b53 !important;
+  color: #f2f4f6 !important;
+  box-shadow: none !important;
+}
+
+/* 最终主题契约：浅色也使用中性色，避免旧的 brand/accent 变量把工作区、工具栏
+   和监控重新染成蓝色。所有交互态只改变灰阶表面，不改变尺寸或产生粗外框。 */
+main.appShell.theme-light {
+  --nx-accent: #64748b !important;
+  --nx-accent-soft: #f3f5f7 !important;
+  --nx-brand: #64748b !important;
+  --nx-brand-soft: #f3f5f7 !important;
+  --nx-blue: #64748b !important;
+  --nx-blue-soft: #f3f5f7 !important;
+  --nx-settings-accent: #64748b !important;
+  --nx-settings-brand: #64748b !important;
+  --nx-settings-brand-soft: #f3f5f7 !important;
+  --nx-settings-focus: #64748b !important;
+  --nx-settings-focus-soft: rgba(100, 116, 139, .16) !important;
+  --nx-action-bg: #475569 !important;
+}
+
+main.appShell.theme-dark,
+main.appShell.theme-system {
+  --nx-accent: #aeb5bd !important;
+  --nx-accent-soft: #2a2e33 !important;
+  --nx-brand: #aeb5bd !important;
+  --nx-brand-soft: #2a2e33 !important;
+  --nx-blue: #aeb5bd !important;
+  --nx-blue-soft: #2a2e33 !important;
+  --nx-settings-accent: #aeb5bd !important;
+  --nx-settings-brand: #aeb5bd !important;
+  --nx-settings-brand-soft: #2a2e33 !important;
+  --nx-settings-focus: #aeb5bd !important;
+  --nx-settings-focus-soft: rgba(174, 181, 189, .16) !important;
+  --nx-action-bg: #59616a !important;
+}
+
+main.appShell:is(.theme-light, .theme-dark, .theme-system) :is(
+  .settingsLayer .settingsDrawer :is(button, a),
+  .workspaceThreadRow, .workspaceGroupHeader,
+  .workbenchTabs button, .panelButton, .rightPaneToggleButton,
+  .runMonitorPanel button, .traceChip, .traceErrorsOnly,
+  .settingsButton, .searchLauncher, .themeQuickButton
+):is(:hover, :focus, :focus-visible, :active) {
+  outline: none !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+main.appShell:is(.theme-light, .theme-dark, .theme-system) :is(
+  .workspaceThreadRow.active, .workspaceThreadRow:hover,
+  .workspaceGroupHeader:hover, .rightPaneToggleButton.active,
+  .panelButton.active, .workbenchTabs button.active
+) {
+  border: 1px solid var(--nx-control-border) !important;
+  border-color: var(--nx-control-border) !important;
+  background: var(--nx-accent-soft) !important;
+  background-image: none !important;
+  color: var(--nx-text-primary) !important;
+  box-shadow: none !important;
+}
+
+main.appShell:is(.theme-light, .theme-dark, .theme-system) :is(
+  .workspaceThreadRow, .workspaceGroupHeader,
+  .workbenchTabs button, .panelButton, .rightPaneToggleButton
+) {
+  border-width: 1px !important;
+  border-style: solid !important;
+  border-color: transparent !important;
+}
+
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .sendButton {
+  border: 1px solid var(--nx-control-border) !important;
+  background: var(--nx-action-bg) !important;
+  background-image: none !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .sendButton:hover:not(:disabled),
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .sendButton:active:not(:disabled),
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .sendButton.planningButton {
+  border-color: var(--nx-control-border) !important;
+  background: var(--nx-accent-soft) !important;
+  color: var(--nx-text-primary) !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .usage-item.context i span {
+  background: var(--nx-accent) !important;
+}
+
+main.appShell:is(.theme-light, .theme-dark, .theme-system) :is(
+  .settingsDrawer :is(input, select, textarea, .dropdownButton):focus,
+  .settingsDrawer :is(.dropdownSelect, .settingsField):focus-within,
+  .commandInputRow:focus-within
+) {
+  outline: none !important;
+  border-color: var(--nx-control-border) !important;
+  box-shadow: none !important;
+}
+
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .settingsLayer .settingsDrawer .scopeApplyActions {
+  box-sizing: border-box !important;
+  margin-top: 14px !important;
+  margin-bottom: 8px !important;
+  padding-top: 12px !important;
+  border: 0 !important;
+  border-top: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .settingsLayer .settingsDrawer .scopeApplyActions .solidButton {
+  margin: 0 !important;
+  border: 1px solid var(--nx-control-border) !important;
+  background: var(--nx-accent-soft) !important;
+  background-image: none !important;
+  color: var(--nx-text-primary) !important;
+  box-shadow: none !important;
+}
+
+main.appShell.theme-light .settingsLayer.theme-light .settingsDrawer :is(.settingsNav button.active, .settingsNav a.active, .settingsNav button:hover:not(:disabled), .settingsNav a:hover:not(:disabled)),
+main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer :is(.settingsNav button.active, .settingsNav a.active, .settingsNav button:hover:not(:disabled), .settingsNav a:hover:not(:disabled)),
+main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer :is(.settingsNav button.active, .settingsNav a.active, .settingsNav button:hover:not(:disabled), .settingsNav a:hover:not(:disabled)) {
+  border-color: transparent !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+main.appShell.theme-light .settingsLayer.theme-light .settingsDrawer .settingsNav button.active,
+main.appShell.theme-light .settingsLayer.theme-light .settingsDrawer .settingsNav button:hover:not(:disabled),
+main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer .settingsNav button.active,
+main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer .settingsNav button:hover:not(:disabled),
+main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer .settingsNav button.active,
+main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer .settingsNav button:hover:not(:disabled) {
+  border: 1px solid transparent !important;
+  border-color: transparent !important;
+}
+
+main.appShell.theme-light .settingsLayer.theme-light .settingsDrawer .settingsNav,
+main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer .settingsNav,
+main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer .settingsNav {
+  --final-ui-border: transparent !important;
+  --final-ui-border-strong: transparent !important;
+  --nx-settings-border: transparent !important;
+  --nx-settings-border-strong: transparent !important;
+}
+
+main.appShell.theme-light .settingsLayer.theme-light .settingsDrawer .scopeApplyActions,
+main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer .scopeApplyActions,
+main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer .scopeApplyActions {
+  margin-top: 14px !important;
+  margin-bottom: 8px !important;
+  padding-top: 12px !important;
+  border: 0 !important;
+  border-top: 0 !important;
+  box-shadow: none !important;
+}
+
+main.appShell:is(.theme-light, .theme-dark, .theme-system) :is(
+  .workspaceFiles, .workspaceFileBody, .workspaceFileTreePane,
+  .workspacePreviewPane, .workspacePreview, .workspaceFileSearch,
+  .workspacePreviewHeader, .workspacePreviewTabs, .workspaceFilesHeader,
+  .workspaceFileRow, .workspacePreviewTabs button,
+  .workspacePreviewModeSwitch, .workspacePreviewModeSwitch button,
+  .workspacePreviewPathButton
+) {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+main.appShell:is(.theme-light, .theme-dark, .theme-system) :is(
+  .workspaceFileRow.spotlight, .workspaceFileRow.active,
+  .workspaceFileRow:hover, .workspacePreviewTabs button.active,
+  .workspacePreviewTabs button:hover:not(:disabled),
+  .workspacePreviewModeSwitch button.active,
+  .workspacePreviewModeSwitch button:hover:not(:disabled)
+) {
+  border: 1px solid var(--nx-control-border) !important;
+  border-color: var(--nx-control-border) !important;
+  background: var(--nx-accent-soft) !important;
+  background-image: none !important;
+  color: var(--nx-text-primary) !important;
+  box-shadow: none !important;
+}
+
+main.appShell:is(.theme-light, .theme-dark, .theme-system) :is(
+  .runMonitorPanel, .runMonitorPanel *,
+  .runMonitorPanel *::before, .runMonitorPanel *::after
+) {
+  box-shadow: none !important;
+}
+
+main.appShell:is(.theme-light, .theme-dark, .theme-system) :is(
+  .runMonitorPanel button:hover:not(:disabled),
+  .runMonitorPanel button:focus-visible,
+  .traceChip--active, .traceRow--selected, .runEntry--selected
+) {
+  border-color: var(--nx-control-border) !important;
+  background: var(--nx-accent-soft) !important;
+  background-image: none !important;
+  color: var(--nx-text-primary) !important;
+  outline: none !important;
+}
+
+/* Important declarations in the component layer outrank the legacy component
+   rules; keep these final interaction fixes in the same layer. */
+@layer components {
+  main.appShell.theme-light .settingsLayer.theme-light .settingsDrawer .scopeApplyActions,
+  main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer .scopeApplyActions,
+  main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer .scopeApplyActions {
+    margin-top: 14px !important;
+    margin-bottom: 8px !important;
+    padding-top: 12px !important;
+    border: 0 !important;
+    border-top: 0 !important;
+    box-shadow: none !important;
+  }
+
+  main.appShell.theme-light .settingsLayer.theme-light .settingsDrawer .settingsNav button.active,
+  main.appShell.theme-light .settingsLayer.theme-light .settingsDrawer .settingsNav button:hover:not(:disabled),
+  main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer .settingsNav button.active,
+  main.appShell.theme-dark .settingsLayer.theme-dark .settingsDrawer .settingsNav button:hover:not(:disabled),
+  main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer .settingsNav button.active,
+  main.appShell.theme-system .settingsLayer.theme-dark .settingsDrawer .settingsNav button:hover:not(:disabled) {
+    border: 1px solid transparent !important;
+    border-color: transparent !important;
+    box-shadow: none !important;
+    outline: none !important;
+  }
+}
+
+/* 设置导航最终对比度：浅色选中与悬浮使用明确的灰阶层次。 */
+@layer components {
+  main.appShell.theme-light .settingsLayer.theme-light .settingsDrawer .settingsNav :is(button:hover:not(:disabled), a:hover:not(:disabled)) {
+    border: 1px solid transparent !important;
+    background: #eef1f4 !important;
+    background-image: none !important;
+    color: #34404c !important;
+    box-shadow: none !important;
+  }
+
+  main.appShell.theme-light .settingsLayer.theme-light .settingsDrawer .settingsNav :is(button.active, a.active) {
+    border: 1px solid transparent !important;
+    background: #e1e5ea !important;
+    background-image: none !important;
+    color: #1f2933 !important;
+    box-shadow: none !important;
+  }
+
+  main.appShell.theme-light .settingsLayer.theme-light .settingsDrawer .settingsNav :is(button.active, a.active) .settingsNavIcon {
+    color: #1f2933 !important;
+  }
+}
+
+main.appShell.theme-light .settingsLayer.theme-light .settingsDrawer .settingsNav :is(button:hover:not(:disabled), a:hover:not(:disabled)) {
+  border: 1px solid transparent !important;
+  background: #eef1f4 !important;
+  background-image: none !important;
+  color: #34404c !important;
+  box-shadow: none !important;
+}
+
+main.appShell.theme-light .settingsLayer.theme-light .settingsDrawer .settingsNav :is(button.active, a.active) {
+  border: 1px solid transparent !important;
+  background: #e1e5ea !important;
+  background-image: none !important;
+  color: #1f2933 !important;
+  box-shadow: none !important;
+}
+
+main.appShell.theme-light .settingsLayer.theme-light .settingsDrawer .settingsNav :is(button.active, a.active) .settingsNavIcon {
+  color: #1f2933 !important;
+}
+
+/* 设置页最终节奏：标题线与首块内容分开，内容滚动时保留右侧呼吸空间。 */
+@layer components {
+  .settingsLayer .settingsDrawer .settingsContent {
+    padding: 24px 42px 32px !important;
+  }
+  .settingsLayer .settingsDrawer .settingsFieldset {
+    box-sizing: border-box !important;
+    padding: 8px 18px 24px 0 !important;
+  }
+  .settingsLayer .settingsDrawer .settingsPageHeader {
+    margin-bottom: 16px !important;
+    padding-bottom: 14px !important;
+  }
+  .settingsLayer .settingsDrawer .settingsPageHeaderTitles {
+    gap: 3px !important;
+  }
+  .settingsLayer .settingsDrawer .settingsPageHeaderTitle {
+    margin: 0 !important;
+  }
+  .settingsLayer .settingsDrawer .settingsPageHeader + .settingsSectionBlock,
+  .settingsLayer .settingsDrawer .settingsPageHeader + .settingsCard {
+    margin-top: 0 !important;
+  }
+}
+@media (max-width: 860px) {
+  .settingsLayer .settingsDrawer .settingsContent {
+    padding-inline: 24px !important;
+  }
+  .settingsLayer .settingsDrawer .settingsFieldset {
+    padding-right: 12px !important;
+  }
+}
+
+/* 设置滚动条默认隐藏，悬浮滚动容器时显示短滑块。 */
+@layer components {
+  .settingsLayer .settingsDrawer :is(
+    .settingsFieldset,
+    .settingsRail,
+    .settingsContent,
+    .pluginCatalogShell,
+    .pluginCatalogShell .content,
+    .settingsHelpSectionBody
+  ) {
+    scrollbar-width: thin !important;
+    scrollbar-color: transparent transparent !important;
+  }
+
+  .settingsLayer .settingsDrawer :is(
+    .settingsFieldset,
+    .settingsRail,
+    .settingsContent,
+    .pluginCatalogShell,
+    .pluginCatalogShell .content,
+    .settingsHelpSectionBody
+  ):hover {
+    scrollbar-color: rgba(100, 116, 139, .58) transparent !important;
+  }
+
+  .settingsLayer .settingsDrawer :is(
+    .settingsFieldset,
+    .settingsRail,
+    .settingsContent,
+    .pluginCatalogShell,
+    .pluginCatalogShell .content,
+    .settingsHelpSectionBody
+  )::-webkit-scrollbar {
+    width: 8px !important;
+    height: 8px !important;
+  }
+
+  .settingsLayer .settingsDrawer :is(
+    .settingsFieldset,
+    .settingsRail,
+    .settingsContent,
+    .pluginCatalogShell,
+    .pluginCatalogShell .content,
+    .settingsHelpSectionBody
+  )::-webkit-scrollbar-track {
+    background: transparent !important;
+  }
+
+  .settingsLayer .settingsDrawer :is(
+    .settingsFieldset,
+    .settingsRail,
+    .settingsContent,
+    .pluginCatalogShell,
+    .pluginCatalogShell .content,
+    .settingsHelpSectionBody
+  )::-webkit-scrollbar-thumb {
+    min-height: 38px !important;
+    height: 38px !important;
+    border: 2px solid transparent !important;
+    border-radius: 999px !important;
+    background: transparent !important;
+    background-clip: padding-box !important;
+  }
+
+  .settingsLayer .settingsDrawer :is(
+    .settingsFieldset,
+    .settingsRail,
+    .settingsContent,
+    .pluginCatalogShell,
+    .pluginCatalogShell .content,
+    .settingsHelpSectionBody
+  ):hover::-webkit-scrollbar-thumb {
+    background: linear-gradient(
+      to bottom,
+      rgba(100, 116, 139, .58) 0,
+      rgba(100, 116, 139, .58) 38px,
+      transparent 38px,
+      transparent 100%
+    ) !important;
+    background-clip: padding-box !important;
+    background-size: 100% 38px !important;
+    background-repeat: no-repeat !important;
+    background-position: top !important;
+  }
+}
+
+/* 自定义短指示条承接滚动位置，原生长滑块只保留滚动能力不显示。 */
+@layer components {
+  .settingsLayer .settingsDrawer .settingsContent {
+    position: relative !important;
+  }
+
+  .settingsLayer .settingsDrawer .settingsScrollIndicator {
+    position: absolute !important;
+    z-index: 4 !important;
+    width: 6px !important;
+    height: 38px !important;
+    border-radius: 999px !important;
+    background: transparent !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    touch-action: none !important;
+    user-select: none !important;
+    transition: opacity .16s ease, background-color .16s ease !important;
+  }
+
+  .settingsLayer .settingsDrawer .settingsScrollIndicator.is-scrollable {
+    pointer-events: auto !important;
+    cursor: ns-resize !important;
+  }
+
+  .settingsLayer .settingsDrawer .settingsContent:hover .settingsScrollIndicator.is-scrollable {
+    background: rgba(100, 116, 139, .58) !important;
+    opacity: 1 !important;
+  }
+
+  .settingsLayer .settingsDrawer .settingsScrollIndicator.is-dragging {
+    background: rgba(100, 116, 139, .82) !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    cursor: grabbing !important;
+  }
+
+  .settingsLayer .settingsDrawer :is(
+    .settingsFieldset,
+    .settingsRail,
+    .settingsContent,
+    .pluginCatalogShell,
+    .pluginCatalogShell .content,
+    .settingsHelpSectionBody
+  ) {
+    scrollbar-color: transparent transparent !important;
+  }
+
+  .settingsLayer .settingsDrawer :is(
+    .settingsFieldset,
+    .settingsRail,
+    .settingsContent,
+    .pluginCatalogShell,
+    .pluginCatalogShell .content,
+    .settingsHelpSectionBody
+  )::-webkit-scrollbar-thumb,
+  .settingsLayer .settingsDrawer :is(
+    .settingsFieldset,
+    .settingsRail,
+    .settingsContent,
+    .pluginCatalogShell,
+    .pluginCatalogShell .content,
+    .settingsHelpSectionBody
+  ):hover::-webkit-scrollbar-thumb {
+    background: transparent !important;
+    background-image: none !important;
+  }
+
+  .settingsLayer .settingsDrawer :is(
+    .settingsFieldset,
+    .settingsRail,
+    .settingsContent,
+    .pluginCatalogShell,
+    .pluginCatalogShell .content,
+    .settingsHelpSectionBody
+  )::-webkit-scrollbar-button {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+  }
+
+  .settingsLayer .settingsDrawer :is(
+    .settingsFieldset,
+    .settingsRail,
+    .settingsContent,
+    .pluginCatalogShell,
+    .pluginCatalogShell .content,
+    .settingsHelpSectionBody
+  ) {
+    scrollbar-width: none !important;
+  }
+
+  .settingsLayer .settingsDrawer :is(
+    .settingsFieldset,
+    .settingsRail,
+    .settingsContent,
+    .pluginCatalogShell,
+    .pluginCatalogShell .content,
+    .settingsHelpSectionBody
+  )::-webkit-scrollbar {
+    width: 0 !important;
+    height: 0 !important;
+  }
+}
+
+/* 最终覆盖：状态按钮与输入栏顺序不受旧主题样式影响。 */
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .composerBottom:not(.workflowMode) {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 4px !important;
+}
+
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .composerBottom:not(.workflowMode) > .remoteAssistantPicker,
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .composerBottom:not(.workflowMode) > .fileButton {
+  flex: 0 0 auto !important;
+}
+
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .composerBottom:not(.workflowMode) > .fileButton {
+  order: 1 !important;
+}
+
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .composerBottom:not(.workflowMode) > .remoteAssistantPicker {
+  order: 2 !important;
+}
+
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .composerBottom:not(.workflowMode) > .composerMeta {
+  order: 3 !important;
+  flex: 0 1 auto !important;
+}
+
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .composerBottom:not(.workflowMode) > .composerActions {
+  order: 4 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  margin-left: auto !important;
+  flex: 0 0 auto !important;
+}
+
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .sendButton.busy,
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .sendButton.planningButton {
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: var(--nx-brand) !important;
+  color: var(--nx-surface-canvas) !important;
+  box-shadow: none !important;
+}
+
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .sendButton.busy::after {
+  display: none !important;
 }

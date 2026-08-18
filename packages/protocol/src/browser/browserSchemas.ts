@@ -15,6 +15,7 @@ export const contentProvenanceSchema = z.object({
 export const pageNodeSchema = z.object({
   pageId: z.string().min(1),
   openerPageId: z.string().min(1).optional(),
+  openedBy: z.enum(['user', 'agent']).optional(),
   url: z.string().min(1),
   title: z.string(),
   state: z.enum(['active', 'background', 'closed']),

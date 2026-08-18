@@ -14,6 +14,9 @@ import type {
 } from '@nexus/browser-runtime';
 import type { ActionIntent, ClassifiedError, ContentBlock, FormInfo, Observation, PageGraph, Postcondition } from '@nexus/protocol';
 import type { WebContentsView } from 'electron';
+import { app } from 'electron';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { BrowserEngineAdapter } from './BrowserEngineAdapter.js';
 
 // 元素引用定位信息（观测时 [eN] → 定位；动作时反向解析）。
@@ -48,7 +51,13 @@ const NO_REF_KINDS = new Set(['scroll', 'wait', 'back', 'forward', 'reload', 'na
 export interface ElectronWebContentsRuntimeDeps {
   view: WebContentsView;
   adapter: BrowserEngineAdapter;
+  pageId?: string;
   defaultTimeoutMs?: number;
+  waitForDownload?: (input: { signal?: AbortSignal; timeoutMs: number }) => Promise<{
+    filename: string;
+    path: string;
+    totalBytes: number;
+  }>;
 }
 
 export class ElectronWebContentsRuntime implements BrowserRuntimePort {
@@ -57,22 +66,29 @@ export class ElectronWebContentsRuntime implements BrowserRuntimePort {
   private readonly view: WebContentsView;
   private readonly adapter: BrowserEngineAdapter;
   private readonly defaultTimeoutMs: number;
+  private readonly pageId: string;
+  private readonly waitForDownload?: ElectronWebContentsRuntimeDeps['waitForDownload'];
 
   constructor(deps: ElectronWebContentsRuntimeDeps) {
     this.view = deps.view;
     this.adapter = deps.adapter;
+    this.pageId = deps.pageId ?? 'page-1';
     this.defaultTimeoutMs = deps.defaultTimeoutMs ?? 15_000;
+    this.waitForDownload = deps.waitForDownload;
   }
 
   async start(input: { taskId: string; signal?: AbortSignal }): Promise<BrowserSessionHandle> {
     const taskId = input.taskId;
     const signal = input.signal;
+    const runtimePageId = this.pageId;
     let navigationEpoch = 1;
     let observeCount = 0;
     let refMap = new Map<string, ElementRefInfo>();
     let closed = false;
     let cachedUrl = '';
     let cachedTitle = '';
+    let manualInputVersion = 0;
+    let observedManualInputVersion = 0;
 
     // epoch 随真实导航递增（did-navigate 由 WebContentsView 触发）。
     // — English: the epoch tracks real navigation via did-navigate.
@@ -86,6 +102,15 @@ export class ElectronWebContentsRuntime implements BrowserRuntimePort {
       cachedTitle = title;
     };
     this.view.webContents.on('page-title-updated', onTitle as never);
+    const onManualInput = (_event: Electron.Event, input?: { type?: string }): void => {
+      if (input?.type !== undefined && !['keyDown', 'mouseDown', 'mouseUp', 'mouseWheel', 'contextMenu'].includes(input.type)) return;
+      if (!this.adapter.isDispatchingAgentInput) {
+        manualInputVersion += 1;
+        refMap = new Map();
+      }
+    };
+    this.view.webContents.on('before-input-event', onManualInput as never);
+    this.view.webContents.on('before-mouse-event', onManualInput as never);
 
     const thisView = this.view;
 
@@ -118,12 +143,45 @@ export class ElectronWebContentsRuntime implements BrowserRuntimePort {
       return typeof value === 'string' ? value : cachedUrl;
     };
 
+    const waitForMainFrameReady = async (operationSignal?: AbortSignal): Promise<void> => {
+      if (!this.view.webContents.isLoadingMainFrame()) return;
+      await new Promise<void>((resolve, reject) => {
+        let settled = false;
+        const timeout = setTimeout(() => finish(), this.defaultTimeoutMs);
+        timeout.unref?.();
+        const onStop = (): void => finish();
+        const onAbort = (): void => finish(new Error('任务已取消'));
+        const cleanup = (): void => {
+          clearTimeout(timeout);
+          this.view.webContents.removeListener('did-stop-loading', onStop);
+          operationSignal?.removeEventListener('abort', onAbort);
+        };
+        const finish = (error?: Error): void => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          if (error !== undefined) reject(error);
+          else resolve();
+        };
+        if (operationSignal?.aborted) {
+          finish(new Error('任务已取消'));
+          return;
+        }
+        this.view.webContents.on('did-stop-loading', onStop);
+        operationSignal?.addEventListener('abort', onAbort, { once: true });
+      });
+    };
+
     const observe = async (input?: { signal?: AbortSignal; pageId?: string }): Promise<Observation> => {
       if (closed) throw new Error('session closed');
-      const pageId = input?.pageId ?? 'page-1';
-      if (pageId !== 'page-1') {
+      const pageId = input?.pageId ?? this.pageId;
+      if (pageId !== this.pageId) {
         throw { kind: 'element', code: 'PAGE_NOT_FOUND', message: '页面不存在', retryable: true } satisfies ClassifiedError;
       }
+      throwIfAborted(input?.signal);
+      // 弹窗创建后会先进入临时空文档；等待主 frame 停止加载，避免把 URL
+      // fallback 当成页面标题返回给 Agent。
+      await waitForMainFrameReady(input?.signal);
       throwIfAborted(input?.signal);
 
       const snapshotData = await snapshot();
@@ -164,6 +222,7 @@ export class ElectronWebContentsRuntime implements BrowserRuntimePort {
         });
       }
       refMap = newRefMap;
+      observedManualInputVersion = manualInputVersion;
 
       const contentTypes = new Set<ContentBlock['type']>(['heading', 'paragraph', 'list', 'link', 'table', 'other']);
       const mainContent: ContentBlock[] = [];
@@ -238,7 +297,9 @@ export class ElectronWebContentsRuntime implements BrowserRuntimePort {
               idx += 1;
               if (idx === ${info.index}) {
                 const r = el.getBoundingClientRect();
-                return JSON.stringify({ x: r.x + r.width / 2, y: r.y + r.height / 2, tag: el.tagName.toLowerCase(), name: el.getAttribute('aria-label') || el.textContent });
+                const labelledBy = el.getAttribute('aria-labelledby');
+                const labelledName = labelledBy ? document.getElementById(labelledBy)?.textContent?.trim() : '';
+                return JSON.stringify({ x: r.x + r.width / 2, y: r.y + r.height / 2, tag: el.tagName.toLowerCase(), name: el.getAttribute('aria-label') || el.getAttribute('title') || labelledName || el.textContent });
               }
             }
           }
@@ -248,6 +309,11 @@ export class ElectronWebContentsRuntime implements BrowserRuntimePort {
       if (typeof locator !== 'string' || locator === 'null') return undefined;
       try {
         const parsed = JSON.parse(locator) as { x: number; y: number; tag: string; name?: string };
+        const normalizeName = (value: string): string => value.replace(/\s+/g, ' ').trim();
+        const expectedName = info.name === undefined ? '' : normalizeName(info.name);
+        const actualName = parsed.name === undefined ? '' : normalizeName(parsed.name);
+        const sameName = expectedName === '' || actualName === '' || actualName.includes(expectedName) || expectedName.includes(actualName);
+        if (parsed.tag !== info.tag || !sameName) return undefined;
         return parsed;
       } catch {
         return undefined;
@@ -306,11 +372,14 @@ export class ElectronWebContentsRuntime implements BrowserRuntimePort {
       if (signal?.aborted) {
         return failed({ kind: 'cancelled', code: 'ABORTED', message: '任务已取消', retryable: false });
       }
-      if (intent.pageId !== 'page-1') {
+      if (intent.pageId !== this.pageId) {
         return failed({ kind: 'element', code: 'PAGE_NOT_FOUND', message: '页面不存在', retryable: true });
       }
       if (intent.expectedNavigationEpoch !== navigationEpoch) {
         return failed({ kind: 'element', code: 'STALE_EPOCH', message: '观测已过期，请重新观测', retryable: true });
+      }
+      if (manualInputVersion !== observedManualInputVersion) {
+        return failed({ kind: 'element', code: 'USER_INTERVENED', message: '用户已操作页面，请重新观察', retryable: true });
       }
 
       const beforeEpoch = navigationEpoch;
@@ -349,7 +418,55 @@ export class ElectronWebContentsRuntime implements BrowserRuntimePort {
             if (point !== undefined) {
               await this.adapter.click({ tabId: taskId, x: point.x, y: point.y });
             }
+            if (intent.arguments.replace !== false) {
+              await this.adapter.pressKey('a', ['Control']);
+              await this.adapter.pressKey('Backspace');
+            }
             await this.adapter.insertText(text);
+            break;
+          }
+          case 'press': {
+            const key = typeof intent.arguments.key === 'string' ? intent.arguments.key.trim() : '';
+            if (key === '') return failed({ kind: 'page', code: 'BAD_ARG', message: 'key 缺失', retryable: false });
+            if (point !== undefined) {
+              await this.adapter.click({ tabId: taskId, x: point.x, y: point.y });
+            }
+            const modifiers = Array.isArray(intent.arguments.modifiers)
+              ? intent.arguments.modifiers.filter((value): value is string => typeof value === 'string')
+              : [];
+            await this.adapter.pressKey(key, modifiers);
+            break;
+          }
+          case 'select': {
+            if (point === undefined) return failed({ kind: 'element', code: 'ELEMENT_NOT_FOUND', message: '元素不存在', retryable: true });
+            const value = typeof intent.arguments.value === 'string' ? intent.arguments.value : '';
+            const info = intent.targetRef === undefined ? undefined : refMap.get(intent.targetRef);
+            if (info === undefined || value === '') {
+              return failed({ kind: 'page', code: 'BAD_ARG', message: 'select 需要有效元素和值', retryable: false });
+            }
+            const selected = await this.adapter.evaluate({
+              tabId: taskId,
+              expression: `(() => {
+                const selectors = ['a[href]', 'button', 'input', 'select', 'textarea', '[role="button"]', '[role="link"]'];
+                const seen = new Set(); let idx = 0;
+                for (const selector of selectors) for (const el of document.querySelectorAll(selector)) {
+                  if (seen.has(el)) continue; seen.add(el);
+                  const rect = el.getBoundingClientRect(); const style = getComputedStyle(el);
+                  if (!(rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none')) continue;
+                  idx += 1;
+                  if (idx === ${info.index} && el instanceof HTMLSelectElement) {
+                    el.value = ${JSON.stringify(value)};
+                    el.dispatchEvent(new Event('input', { bubbles: true }));
+                    el.dispatchEvent(new Event('change', { bubbles: true }));
+                    return el.value;
+                  }
+                }
+                return null;
+              })()`,
+            });
+            if (selected === null || selected === undefined) {
+              return failed({ kind: 'element', code: 'SELECT_FAILED', message: '无法选择该选项', retryable: true });
+            }
             break;
           }
           case 'wait': {
@@ -363,12 +480,15 @@ export class ElectronWebContentsRuntime implements BrowserRuntimePort {
             break;
           }
           case 'screenshot': {
-            // 截图经 CDP Page.captureScreenshot 返回 base64（Phase 2 不再走数据 URL 传输）。
-            // — English: screenshots via CDP Page.captureScreenshot (base64 artifact ref).
             await this.adapter.attach();
             const shot = await this.view.webContents.debugger.sendCommand('Page.captureScreenshot', { format: 'png' });
             const data = shot.data as string | undefined;
             if (typeof data !== 'string') return failed({ kind: 'page', code: 'SHOT_FAILED', message: '截图失败', retryable: true });
+            const safeTaskId = taskId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 96) || 'task';
+            const artifactDir = join(app.getPath('userData'), 'artifacts', 'browser', safeTaskId);
+            await mkdir(artifactDir, { recursive: true });
+            const artifactPath = join(artifactDir, `${Date.now()}-${actionId.replace(/[^a-zA-Z0-9_-]/g, '_')}.png`);
+            await writeFile(artifactPath, Buffer.from(data, 'base64'));
             return {
               status: 'committed',
               evidence: {
@@ -376,7 +496,31 @@ export class ElectronWebContentsRuntime implements BrowserRuntimePort {
                 verifiedAt: Date.now(),
                 checks: await evaluatePostconditions(intent.postcondition, beforeEpoch),
                 observed: { url: await currentUrl(), title: cachedTitle, navigationEpoch },
-                externalEvidence: { screenshot: `data:image/png;base64,${data.slice(0, 64)}…` },
+                externalEvidence: { screenshotPath: artifactPath },
+              },
+            };
+          }
+          case 'download': {
+            const url = typeof intent.arguments.url === 'string' ? intent.arguments.url : '';
+            if (url === '') return failed({ kind: 'page', code: 'BAD_ARG', message: 'url 缺失', retryable: false });
+            if (this.waitForDownload === undefined) {
+              return failed({ kind: 'page', code: 'DOWNLOAD_UNAVAILABLE', message: '下载管理器不可用', retryable: false });
+            }
+            const download = this.waitForDownload({ signal, timeoutMs: this.defaultTimeoutMs });
+            this.view.webContents.downloadURL(url);
+            const receipt = await download;
+            return {
+              status: 'committed',
+              evidence: {
+                actionId,
+                verifiedAt: Date.now(),
+                checks: [{ postcondition: JSON.stringify(intent.postcondition), passed: true }],
+                observed: { url: await currentUrl(), title: cachedTitle, navigationEpoch },
+                externalEvidence: {
+                  downloadFilename: receipt.filename,
+                  downloadPath: receipt.path,
+                  downloadBytes: String(receipt.totalBytes),
+                },
               },
             };
           }
@@ -418,14 +562,16 @@ export class ElectronWebContentsRuntime implements BrowserRuntimePort {
         closed = true;
         thisView.webContents.removeListener('did-navigate', onNavigate as never);
         thisView.webContents.removeListener('page-title-updated', onTitle as never);
+        thisView.webContents.removeListener('before-input-event', onManualInput as never);
+        thisView.webContents.removeListener('before-mouse-event', onManualInput as never);
         void reason;
       },
       currentPageGraph(): PageGraph {
         return {
-          activePageId: 'page-1',
+          activePageId: runtimePageId,
           pages: [
             {
-              pageId: 'page-1',
+              pageId: runtimePageId,
               url: cachedUrl,
               title: cachedTitle,
               state: 'active',
@@ -435,12 +581,15 @@ export class ElectronWebContentsRuntime implements BrowserRuntimePort {
         };
       },
       observe: (input) => observe(input),
-      navigate: async (input) => {
+      navigate: async (input: { url: string; signal?: AbortSignal; pageId?: string }) => {
+        if (input.pageId !== undefined && input.pageId !== this.pageId) {
+          throw { kind: 'element', code: 'PAGE_NOT_FOUND', message: '页面不存在', retryable: true } satisfies ClassifiedError;
+        }
         throwIfAborted(input.signal);
         await this.view.webContents.loadURL(input.url);
         navigationEpoch += 1;
         refMap = new Map();
-        return observe({ signal: input.signal });
+        return observe({ signal: input.signal, pageId: this.pageId });
       },
       act,
     };

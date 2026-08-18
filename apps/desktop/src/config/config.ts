@@ -42,6 +42,7 @@ export interface RunConfig {
   webProvider: WebProviderMode;
   webProviderKeySource: SecretSource;
   reasoningEffort: ReasoningEffort;
+  maxIterations: number;
   modelContextTokens?: number;
   modelMaxOutputTokens?: number;
   runProfile: RunProfile;
@@ -86,6 +87,7 @@ const USER_FIELDS: Array<keyof RunConfig> = [
   'webProvider',
   'webProviderKeySource',
   'reasoningEffort',
+  'maxIterations',
   'modelContextTokens',
   'modelMaxOutputTokens',
   'runProfile',
@@ -131,6 +133,7 @@ export function mergeRunConfigDefaults(
     episodeFtsCandidateLimit: 40,
     episodeRerankEnabled: false,
     systemMonitorEnabled: false,
+    maxIterations: 100,
     maxConcurrency: 4,
     toolTimeoutSeconds: 120,
     memoryThresholdPercent: 85,

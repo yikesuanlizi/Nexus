@@ -51,6 +51,7 @@ const DEFAULT_MODEL_BY_PROVIDER: Record<string, string> = {
   baidu: 'ernie-4.0-turbo-8k',
   volcengine: 'doubao-seed-1-6',
   siliconflow: 'deepseek-ai/DeepSeek-V3',
+  giteeai: 'Qwen/Qwen2.5-72B-Instruct',
   groq: 'llama-3.3-70b-versatile',
   together: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
   openrouter: 'openai/gpt-4o',

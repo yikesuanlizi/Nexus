@@ -1,10 +1,10 @@
 import type { ApprovalHandler } from '@nexus/sandbox';
-import type { ApprovalLogEntry, ApprovalRequest, TemporaryAccessScope } from '@nexus/protocol';
+import type { ApprovalLogEntry, ApprovalRequest, PersistentAccessScope, TemporaryAccessScope } from '@nexus/protocol';
 
 interface PendingApproval {
   request: ApprovalRequest;
   requestedAt: string;
-  resolve: (response: { approved: boolean; reason?: string; temporaryScope?: TemporaryAccessScope }) => void;
+  resolve: (response: { approved: boolean; reason?: string; temporaryScope?: TemporaryAccessScope; persistentScope?: PersistentAccessScope }) => void;
   timer: ReturnType<typeof setTimeout>;
 }
 
@@ -17,7 +17,7 @@ export class WebApprovalBroker implements ApprovalHandler {
     private readonly onResolved?: (entry: ApprovalLogEntry) => void,
   ) {}
 
-  requestApproval(req: ApprovalRequest): Promise<{ approved: boolean; reason?: string; temporaryScope?: TemporaryAccessScope }> {
+  requestApproval(req: ApprovalRequest): Promise<{ approved: boolean; reason?: string; temporaryScope?: TemporaryAccessScope; persistentScope?: PersistentAccessScope }> {
     return new Promise((resolve) => {
       const requestedAt = new Date().toISOString();
       const timer = setTimeout(() => {
@@ -37,17 +37,32 @@ export class WebApprovalBroker implements ApprovalHandler {
     return [...this.pending.values()].map((entry) => entry.request);
   }
 
+  getPending(requestId: string): ApprovalRequest | undefined {
+    return this.pending.get(requestId)?.request;
+  }
+
   decide(requestId: string, approved: boolean, reason?: string): boolean {
     return this.decideWithScope(requestId, approved, reason);
   }
 
-  decideWithScope(requestId: string, approved: boolean, reason?: string, temporaryScope?: TemporaryAccessScope): boolean {
+  decideWithScope(
+    requestId: string,
+    approved: boolean,
+    reason?: string,
+    temporaryScope?: TemporaryAccessScope,
+    persistentScope?: PersistentAccessScope,
+  ): boolean {
     const entry = this.pending.get(requestId);
     if (!entry) return false;
     clearTimeout(entry.timer);
     this.pending.delete(requestId);
     this.record(entry.request, entry.requestedAt, approved, reason, approved ? 'approved' : 'denied');
-    entry.resolve(temporaryScope ? { approved, reason, temporaryScope } : { approved, reason });
+    entry.resolve({
+      approved,
+      reason,
+      ...(temporaryScope ? { temporaryScope } : {}),
+      ...(persistentScope ? { persistentScope } : {}),
+    });
     return true;
   }
 

@@ -24,6 +24,8 @@ import type {
   AccessDecision,
   AccessPolicyConfig,
   AccessRequest,
+  AccessRule,
+  PersistentAccessScope,
   TemporaryAccessGrant,
   TemporaryAccessScope,
 } from '@nexus/protocol';
@@ -439,7 +441,7 @@ export class AgentLoop {
       tools: config.tools ?? createDefaultRegistry(),
       mcpTools: config.mcpTools ?? [],
       approvalHandler: config.approvalHandler ?? new DenyAllApprovalHandler(),
-      maxIterations: config.maxIterations ?? 20,
+      maxIterations: config.maxIterations ?? 100,
       systemPrompt: config.systemPrompt ?? this.i18n.t(systemPromptKey(locale)),
       skills: config.skills ?? new LocalSkillRegistry(),
       hooks: config.hooks ?? new LocalHookRegistry(),
@@ -891,7 +893,11 @@ export class AgentLoop {
     turnId: TurnId,
     request: AccessRequest,
   ): Promise<AccessDecision> {
-    const decision = evaluateAccessRequest(this.runtimeAccessPolicy, request);
+    const scopedRequest: AccessRequest = {
+      ...request,
+      workspaceRoot: request.workspaceRoot ?? this.config.workspaceRoot,
+    };
+    const decision = evaluateAccessRequest(this.runtimeAccessPolicy, scopedRequest);
     await this.appendAccessDecisionEvent(turnId, decision);
     if (decision.decision !== 'prompt') return decision;
 
@@ -902,12 +908,12 @@ export class AgentLoop {
       threadId,
       turnId,
       itemId,
-      kind: approvalKindForAccessRequest(request),
-      description: request.description,
-      payload: request.target,
+      kind: approvalKindForAccessRequest(scopedRequest),
+      description: scopedRequest.description,
+      payload: scopedRequest.target,
       decision: 'prompt' as const,
       justification: decision.justification,
-      accessRequest: request,
+      accessRequest: scopedRequest,
       temporaryGrantOptions: temporaryGrantOptionsForLocale(this.config.locale),
     };
 
@@ -922,42 +928,50 @@ export class AgentLoop {
       payload: approvalReq.payload,
       decision: 'prompt',
       justification: decision.justification,
-      accessRequest: request,
+      accessRequest: scopedRequest,
       temporaryGrantOptions: approvalReq.temporaryGrantOptions,
     });
 
     await this.appendRunMonitorEvent(turnId, {
       category: 'approval',
       type: 'approval.required',
-      message: request.description,
-      toolName: request.toolName,
+      message: scopedRequest.description,
+      toolName: scopedRequest.toolName,
       metadata: {
         requestId,
         status: 'required',
         kind: approvalReq.kind,
-        access: request.access,
-        target: request.target,
-        toolName: request.toolName,
+        access: scopedRequest.access,
+        target: scopedRequest.target,
+        toolName: scopedRequest.toolName,
       },
     });
 
     const approval = await this.config.approvalHandler.requestApproval(approvalReq);
     const temporaryScope = approval.temporaryScope ?? 'tool_call';
-    const grant = this.createTemporaryGrant(request, approval.approved ? 'allow' : 'deny', temporaryScope);
+    const grant = this.createTemporaryGrant(scopedRequest, approval.approved ? 'allow' : 'deny', temporaryScope);
     this.runtimeAccessPolicy.temporaryGrants.push(grant);
+    if (approval.approved && approval.persistentScope) {
+      // API 端已先落盘规则；当前 Agent 也立即持有等价规则，避免同一轮后续同类
+      // 操作再次等待审批。下一次创建 Agent 时会从持久化配置重新加载该规则。
+      this.runtimeAccessPolicy.persistentRules.push(
+        this.createRuntimePersistentRule(scopedRequest, approval.persistentScope),
+      );
+    }
 
     await this.appendRunMonitorEvent(turnId, {
       category: 'approval',
       type: approval.approved ? 'access.temporary_grant' : 'access.temporary_deny',
       level: approval.approved ? 'info' : 'warning',
-      message: approval.approved ? `Temporary access granted for ${request.toolName ?? request.access}` : `Temporary access denied for ${request.toolName ?? request.access}`,
-      toolName: request.toolName,
+      message: approval.approved ? `Temporary access granted for ${scopedRequest.toolName ?? scopedRequest.access}` : `Temporary access denied for ${scopedRequest.toolName ?? scopedRequest.access}`,
+      toolName: scopedRequest.toolName,
       metadata: {
         requestId,
         scope: temporaryScope,
-        access: request.access,
-        target: request.target,
-        toolName: request.toolName,
+        persistentScope: approval.persistentScope,
+        access: scopedRequest.access,
+        target: scopedRequest.target,
+        toolName: scopedRequest.toolName,
         grantId: grant.id,
       },
     });
@@ -965,7 +979,7 @@ export class AgentLoop {
     if (approval.approved) {
       return {
         decision: 'allow',
-        request,
+        request: scopedRequest,
         source: 'temporary_grant',
         matchedRuleId: grant.id,
         matchedRuleScope: grant.scope,
@@ -975,7 +989,7 @@ export class AgentLoop {
 
     return {
       decision: 'deny',
-      request,
+        request: scopedRequest,
       source: 'temporary_grant',
       matchedRuleId: grant.id,
       matchedRuleScope: grant.scope,
@@ -998,6 +1012,22 @@ export class AgentLoop {
       turnId: request.turnId,
       toolCallId: request.toolCallId,
       createdAt: new Date().toISOString(),
+    };
+  }
+
+  private createRuntimePersistentRule(request: AccessRequest, scope: PersistentAccessScope): AccessRule {
+    const now = new Date().toISOString();
+    return {
+      id: `runtime_persistent_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      effect: 'allow',
+      access: request.access,
+      target: request.target,
+      scope,
+      ...(scope === 'thread' ? { threadId: request.threadId } : {}),
+      ...(scope === 'workspace' && request.workspaceRoot ? { workspaceRoot: request.workspaceRoot } : {}),
+      reason: '当前运行中由审批授予的类似操作规则',
+      createdAt: now,
+      updatedAt: now,
     };
   }
 
@@ -2367,6 +2397,11 @@ export class AgentLoop {
       turnId,
       text: userInputToText(userInput),
       timestamp: turn.startedAt,
+      ...(userInput.type === 'multimodal' ? {
+        attachments: userInput.parts
+          .filter((part): part is Extract<typeof part, { type: 'image_path' }> => part.type === 'image_path')
+          .map((part) => ({ name: part.name ?? path.basename(part.path), path: part.path, mimeType: part.mimeType, url: part.url })),
+      } : {}),
     };
     const collectedItems: ThreadItem[] = [userItem];
     this.emitItem(threadId, turnId, userItem);
@@ -4694,6 +4729,9 @@ export class AgentLoop {
           contentParts.push({ type: 'text', text: part.text });
         } else if (part.type === 'image_url') {
           contentParts.push({ type: 'image_url', image_url: { url: part.image_url.url } });
+        } else if (part.type === 'image_path') {
+          const dataUrl = await imagePathToDataUrl(part.path, part.mimeType);
+          if (dataUrl) contentParts.push({ type: 'image_url', image_url: { url: dataUrl } });
         }
       }
       if (turnInstruction) {
@@ -6772,6 +6810,18 @@ function userInputToText(input: UserInput): string {
     })
     .filter(Boolean)
     .join('\n');
+}
+
+async function imagePathToDataUrl(filePath: string, declaredMimeType?: string): Promise<string | null> {
+  try {
+    const content = await fs.readFile(filePath);
+    if (content.byteLength === 0 || content.byteLength > 20 * 1024 * 1024) return null;
+    const extension = path.extname(filePath).slice(1).toLowerCase();
+    const mimeType = declaredMimeType || ({ jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml' }[extension] ?? 'application/octet-stream');
+    return `data:${mimeType};base64,${content.toString('base64')}`;
+  } catch {
+    return null;
+  }
 }
 
 function userInputModeInstruction(input: UserInput): string {

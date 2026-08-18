@@ -12,6 +12,7 @@ export interface BrowserViewBounds {
 export interface CreateBrowserTabInput {
   url: string;
   bounds: BrowserViewBounds;
+  openedBy?: 'user' | 'agent';
 }
 
 export interface BrowserTabState {
@@ -20,6 +21,7 @@ export interface BrowserTabState {
   title: string;
   visible: boolean;
   loading: boolean;
+  openedBy?: 'user' | 'agent';
   favicon?: string;
 }
 
@@ -40,7 +42,8 @@ export interface BrowserClickInput {
 }
 
 export type BrowserDesktopEvent =
-  | { type: 'tab-created'; tabId: string; url: string }
+  | { type: 'agent-browser-requested'; taskId: string }
+  | { type: 'tab-created'; tabId: string; url: string; openedBy?: 'user' | 'agent' }
   | { type: 'tab-closed'; tabId: string }
   | { type: 'tab-visible'; tabId: string; visible: boolean }
   | { type: 'did-navigate'; tabId: string; url: string }

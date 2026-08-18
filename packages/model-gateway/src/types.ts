@@ -77,6 +77,7 @@ export const DEFAULT_BASE_URLS: Record<string, string> = {
   ollama: 'http://localhost:11434/v1',
   lmstudio: 'http://localhost:1234/v1',
   vllm: 'http://localhost:8000/v1',
+  giteeai: 'https://ai.gitee.com/v1',
   openai_compatible: 'http://localhost:8080/v1',
   anthropic: 'https://api.anthropic.com/v1',
 };

@@ -35,7 +35,7 @@
 // — English: behavior contract — numbered above (start, payloads, frame
 //   matching, cancellation, seq, idempotency, timeout).
 // ============================================================================
-import { observationSchema } from '@nexus/protocol';
+import { observationSchema, pageGraphSchema } from '@nexus/protocol';
 import type { ActionIntent, ClassifiedError, Observation, PageGraph } from '@nexus/protocol';
 import type { ActionEvidence, ActionResult, BrowserSessionHandle } from '../port.js';
 import { ipcCodec } from '../ipc/codec.js';
@@ -60,6 +60,10 @@ export interface SidecarClientOptions {
   // browser.action_status 事件回调（payload 为事件帧载荷）。
   // — English: browser.action_status event callback (payload is the event frame payload).
   onActionStatus?: (payload: unknown) => void;
+}
+
+export interface SidecarBrowserSessionHandle extends BrowserSessionHandle {
+  listPages(input?: { signal?: AbortSignal }): Promise<PageGraph>;
 }
 
 const DEFAULT_TIMEOUT_MS = 30000;
@@ -151,7 +155,7 @@ interface PendingCommand {
   reject: (error: ClassifiedError) => void;
 }
 
-export function createSidecarClient(options: SidecarClientOptions): Promise<BrowserSessionHandle> {
+export function createSidecarClient(options: SidecarClientOptions): Promise<SidecarBrowserSessionHandle> {
   const { taskId, transport, signal, onActionStatus } = options;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
@@ -311,7 +315,7 @@ export function createSidecarClient(options: SidecarClientOptions): Promise<Brow
     }
   }
 
-  const handle: BrowserSessionHandle = {
+  const handle: SidecarBrowserSessionHandle = {
     get sessionId(): string {
       return sessionId ?? SESSION_PLACEHOLDER;
     },
@@ -351,6 +355,16 @@ export function createSidecarClient(options: SidecarClientOptions): Promise<Brow
       };
     },
 
+    async listPages(input?: { signal?: AbortSignal }): Promise<PageGraph> {
+      assertOpen();
+      const payload = await sendCommand('browser.page_graph', {}, { signal: input?.signal });
+      const parsed = pageGraphSchema.safeParse(payload);
+      if (!parsed.success) {
+        throw badResponseError(`invalid page graph response: ${parsed.error.message}`);
+      }
+      return parsed.data;
+    },
+
     async observe(input?: { signal?: AbortSignal; pageId?: string }): Promise<Observation> {
       assertOpen();
       const payload = await sendCommand(
@@ -366,9 +380,13 @@ export function createSidecarClient(options: SidecarClientOptions): Promise<Brow
       return parsed.data;
     },
 
-    async navigate(input: { url: string; signal?: AbortSignal }): Promise<Observation> {
+    async navigate(input: { url: string; signal?: AbortSignal; pageId?: string }): Promise<Observation> {
       assertOpen();
-      const payload = await sendCommand('browser.navigate', { url: input.url }, { signal: input.signal });
+      const payload = await sendCommand(
+        'browser.navigate',
+        input.pageId === undefined ? { url: input.url } : { url: input.url, pageId: input.pageId },
+        { signal: input.signal },
+      );
       const parsed = observationSchema.safeParse(payload);
       if (!parsed.success) {
         throw badResponseError(`invalid observation response: ${parsed.error.message}`);
@@ -392,7 +410,7 @@ export function createSidecarClient(options: SidecarClientOptions): Promise<Brow
   // 超时/abort 由 sendCommand 处理。
   // — English: session.start goes out immediately (seq=1) — ok → handle;
   //   error → kind 'page'; timeout/abort handled inside sendCommand.
-  async function start(): Promise<BrowserSessionHandle> {
+  async function start(): Promise<SidecarBrowserSessionHandle> {
     const payload = await sendCommand('session.start', { taskId }, {});
     const p = payload as { sessionId?: unknown };
     sessionId = typeof p.sessionId === 'string' ? p.sessionId : SESSION_PLACEHOLDER;

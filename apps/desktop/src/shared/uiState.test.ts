@@ -9,15 +9,17 @@ describe('useRightPaneSizing', () => {
   it('keeps activity and agents compact while files and browser have dedicated wide panes', () => {
     const source = readFileSync(join(here, 'uiState.ts'), 'utf-8');
 
-    expect(source).toContain("export type RightPaneSizingMode = 'standard' | 'files' | 'browser' | 'workflow'");
+    expect(source).toContain("export type RightPaneSizingMode = 'standard' | 'files' | 'browser' | 'terminal' | 'workflow'");
     expect(source).not.toContain('RightPaneTab');
     expect(source).toContain('function defaultStandardPaneWidth(): number');
     expect(source).toContain('return 316;');
     expect(source).toContain('function defaultFilesPaneWidth(): number');
     expect(source).toContain('function defaultBrowserPaneWidth(): number');
+    expect(source).toContain('function defaultTerminalPaneWidth(): number');
     expect(source).toContain("localStorage.getItem('nexus.standardPaneWidth')");
     expect(source).toContain("localStorage.getItem('nexus.filesPaneWidth')");
     expect(source).toContain("localStorage.getItem('nexus.browserPaneWidth')");
+    expect(source).toContain("localStorage.getItem('nexus.terminalPaneWidth')");
     expect(source).not.toContain('[mode, tab]');
   });
 });

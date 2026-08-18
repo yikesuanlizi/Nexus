@@ -70,7 +70,13 @@ export const inputPartSchema = z.discriminatedUnion('type', [
       detail: z.enum(['low', 'high']).optional(),
     }),
   }),
-  z.object({ type: z.literal('image_path'), path: z.string() }),
+  z.object({
+    type: z.literal('image_path'),
+    path: z.string(),
+    name: z.string().optional(),
+    mimeType: z.string().optional(),
+    url: z.string().optional(),
+  }),
 ]);
 
 // 多模态输入 schema
@@ -184,6 +190,12 @@ export const agentMessageItemSchema = z.object({
   // 实施点 2：harness turn 产生的普通 items 打 harnessRunId 标记
   harnessRunId: z.string().optional(),
   harnessIteration: z.number().int().min(0).optional(),
+  attachments: z.array(z.object({
+    name: z.string(),
+    path: z.string(),
+    mimeType: z.string().optional(),
+    url: z.string().optional(),
+  })).optional(),
 });
 
 // 用户消息条目 schema
@@ -1016,4 +1028,5 @@ export const approvalResponseSchema = z.object({
   approved: z.boolean(),
   reason: z.string().optional(),
   temporaryScope: temporaryAccessScopeSchema.optional(),
+  persistentScope: accessRuleScopeSchema.optional(),
 });

@@ -23,6 +23,8 @@ interface CdpError {
 export class BrowserEngineAdapter {
   private readonly view: WebContentsView;
   private attached = false;
+  private agentInputDepth = 0;
+  private lastAgentPointer: { x: number; y: number } | undefined;
 
   constructor(view: WebContentsView) {
     this.view = view;
@@ -42,6 +44,19 @@ export class BrowserEngineAdapter {
 
   get isAttached(): boolean {
     return this.attached;
+  }
+
+  get isDispatchingAgentInput(): boolean {
+    return this.agentInputDepth > 0;
+  }
+
+  private async dispatchAgentInput(operation: () => Promise<void>): Promise<void> {
+    this.agentInputDepth += 1;
+    try {
+      await operation();
+    } finally {
+      this.agentInputDepth -= 1;
+    }
   }
 
   // 在用户可见的同页面执行脚本：读取输入值、获取 DOM 状态、执行点击等。
@@ -68,32 +83,141 @@ export class BrowserEngineAdapter {
     return result.value;
   }
 
-  // CDP Input 事件驱动真实点击（用户在同一 View 立即可见）。
-  // — English: real clicks via CDP Input events (immediately visible to the user).
+  // CDP Input 事件驱动真实点击（用户在同一 View 立即可见）。虚拟指针只是对
+  // Agent 输入的可见反馈；最终仍由同一个 CDP 鼠标事件完成点击。
+  // — English: real clicks via CDP Input events. The cursor is a visible
+  // indicator for agent input; the actual click remains a CDP mouse event.
   async click(input: BrowserClickInput): Promise<void> {
     await this.attach();
     const { x, y } = input;
-    await this.view.webContents.debugger.sendCommand('Input.dispatchMouseEvent', {
-      type: 'mousePressed',
-      x,
-      y,
-      button: 'left',
-      clickCount: 1,
+    await this.dispatchAgentInput(async () => {
+      await this.moveAgentPointer(x, y);
+      await this.view.webContents.debugger.sendCommand('Input.dispatchMouseEvent', {
+        type: 'mousePressed', x, y, button: 'left', clickCount: 1,
+      });
+      await this.flashAgentPointer(x, y);
+      await this.view.webContents.debugger.sendCommand('Input.dispatchMouseEvent', {
+        type: 'mouseReleased', x, y, button: 'left', clickCount: 1,
+      });
     });
-    await this.view.webContents.debugger.sendCommand('Input.dispatchMouseEvent', {
-      type: 'mouseReleased',
-      x,
-      y,
-      button: 'left',
-      clickCount: 1,
-    });
+  }
+
+  private async moveAgentPointer(x: number, y: number): Promise<void> {
+    const from = this.lastAgentPointer ?? {
+      x: Math.max(16, x - 96),
+      y: Math.max(16, y - 64),
+    };
+    const distance = Math.hypot(x - from.x, y - from.y);
+    const durationMs = Math.max(110, Math.min(260, Math.round(90 + distance * 0.45)));
+    const steps = Math.max(5, Math.min(14, Math.round(durationMs / 20)));
+
+    await this.renderAgentPointer(from.x, from.y, false);
+    await delay(16);
+    await this.renderAgentPointer(x, y, false);
+
+    for (let step = 1; step <= steps; step += 1) {
+      const progress = step / steps;
+      // Ease-out keeps the pointer readable near the target without delaying the click.
+      const eased = 1 - Math.pow(1 - progress, 3);
+      await this.view.webContents.debugger.sendCommand('Input.dispatchMouseEvent', {
+        type: 'mouseMoved',
+        x: from.x + (x - from.x) * eased,
+        y: from.y + (y - from.y) * eased,
+      });
+      if (step < steps) await delay(Math.max(8, Math.round(durationMs / steps)));
+    }
+    this.lastAgentPointer = { x, y };
+  }
+
+  private async flashAgentPointer(x: number, y: number): Promise<void> {
+    await this.renderAgentPointer(x, y, true);
+    await delay(44);
+  }
+
+  private async renderAgentPointer(x: number, y: number, clicked: boolean): Promise<void> {
+    const expression = `(() => {
+      const id = '__nexus_agent_pointer__';
+      let pointer = document.getElementById(id);
+      if (!pointer) {
+        pointer = document.createElement('div');
+        pointer.id = id;
+        pointer.setAttribute('aria-hidden', 'true');
+        pointer.style.cssText = [
+          'position:fixed', 'left:0', 'top:0', 'width:18px', 'height:18px',
+          'margin:-3px 0 0 -3px', 'border:2px solid #2463da', 'border-radius:50%',
+          'background:rgba(255,255,255,.92)', 'box-shadow:0 3px 12px rgba(20,53,114,.28)',
+          'pointer-events:none', 'z-index:2147483647',
+          'transition:transform 220ms cubic-bezier(.2,.8,.2,1), opacity 180ms ease',
+          'will-change:transform,opacity', 'opacity:1'
+        ].join(';');
+        const dot = document.createElement('i');
+        dot.style.cssText = 'display:block;width:5px;height:5px;margin:4.5px;border-radius:50%;background:#2463da';
+        pointer.appendChild(dot);
+        (document.documentElement || document.body).appendChild(pointer);
+      }
+      pointer.style.transform = 'translate3d(' + ${JSON.stringify(x)} + 'px,' + ${JSON.stringify(y)} + 'px,0)';
+      pointer.dataset.lastAgentMove = String(Date.now());
+      if (${clicked ? 'true' : 'false'}) {
+        pointer.animate([
+          { transform: pointer.style.transform + ' scale(1)' },
+          { transform: pointer.style.transform + ' scale(.72)', offset: .28 },
+          { transform: pointer.style.transform + ' scale(1.7)', opacity: .12 }
+        ], { duration: 360, easing: 'cubic-bezier(.2,.8,.2,1)' });
+      }
+      window.clearTimeout(Number(pointer.dataset.hideTimer || 0));
+      pointer.dataset.hideTimer = String(window.setTimeout(() => { pointer.style.opacity = '0'; }, 1250));
+      return true;
+    })()`;
+    try {
+      await this.evaluate({ tabId: 'agent-pointer', expression });
+    } catch {
+      // A hostile page or a navigation may reject DOM injection. Input still proceeds.
+    }
   }
 
   // 文本输入（真实键盘事件，用户在页面可见）。
   // — English: text insertion via CDP (visible to the user).
   async insertText(text: string): Promise<void> {
     await this.attach();
-    await this.view.webContents.debugger.sendCommand('Input.insertText', { text });
+    await this.dispatchAgentInput(() => this.view.webContents.debugger.sendCommand('Input.insertText', { text }).then(() => undefined));
+  }
+
+  async pressKey(key: string, modifiers: string[] = []): Promise<void> {
+    await this.attach();
+    const modifierMask = modifiers.reduce((mask, modifier) => {
+      switch (modifier.toLowerCase()) {
+        case 'alt': return mask | 1;
+        case 'control':
+        case 'ctrl': return mask | 2;
+        case 'meta':
+        case 'command': return mask | 4;
+        case 'shift': return mask | 8;
+        default: return mask;
+      }
+    }, 0);
+    const specialKeyCodes: Record<string, number> = {
+      Backspace: 8,
+      Tab: 9,
+      Enter: 13,
+      Escape: 27,
+      Space: 32,
+      ArrowLeft: 37,
+      ArrowUp: 38,
+      ArrowRight: 39,
+      ArrowDown: 40,
+      Delete: 46,
+    };
+    const keyCode = specialKeyCodes[key] ?? (key.length === 1 ? key.toUpperCase().charCodeAt(0) : undefined);
+    const payload = {
+      key,
+      code: key.length === 1 ? `Key${key.toUpperCase()}` : key,
+      modifiers: modifierMask,
+      ...(keyCode !== undefined ? { windowsVirtualKeyCode: keyCode, nativeVirtualKeyCode: keyCode } : {}),
+    };
+    await this.dispatchAgentInput(async () => {
+      await this.view.webContents.debugger.sendCommand('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...payload });
+      await this.view.webContents.debugger.sendCommand('Input.dispatchKeyEvent', { type: 'keyUp', ...payload });
+    });
   }
 
   detach(): void {
@@ -109,4 +233,8 @@ export class BrowserEngineAdapter {
   isCdpError(err: unknown): err is CdpError {
     return typeof err === 'object' && err !== null && 'code' in err && 'message' in err;
   }
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

@@ -23,6 +23,8 @@ export interface ContentProvenance {
 export interface PageNode {
   pageId: string;
   openerPageId?: string;
+  /** 页面最初由用户打开还是由 Agent 创建。用户与 Agent 共用页面时不改变此标记。 */
+  openedBy?: 'user' | 'agent';
   url: string;
   title: string;
   state: 'active' | 'background' | 'closed';

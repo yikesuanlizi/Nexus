@@ -19,7 +19,7 @@ import {
   type ReasoningEffort,
   type RunProfile,
   type ThreadId,
-  type ThreadModelOverrides,
+  type ThreadRunConfigOverrides,
   type WebSearchMode,
 } from '@nexus/protocol';
 import type { ThreadStore } from '@nexus/storage';
@@ -75,6 +75,8 @@ export interface AgentRunConfig {
   /** Simplified reasoning effort selector shown in the composer. */
   /** 中文：在 composer 中展示的简化推理力度选项 */
   reasoningEffort: ReasoningEffort;
+  /** 每个回合允许 Agent 循环的最大迭代次数。 */
+  maxIterations: number;
   /** Optional explicit context window override for the selected model. */
   /** 中文：当前模型上下文窗口的显式覆盖；为空时按 provider/model 自动推导 */
   modelContextTokens?: number;
@@ -144,7 +146,12 @@ export const THREAD_ACCESS_POLICY_KEY_PREFIX = 'thread-access-policy:';
 // A2A 协议配置存储 key — Chinese: A2A protocol config storage key
 export const A2A_CONFIG_KEY = 'nexus.a2aConfig';
 
-export type ThreadConfigOverrides = ThreadModelOverrides;
+// 当前对话可以覆盖的运行选择。模型字段之外的选择必须跟随线程保存，
+// 否则切换线程时会被全局配置或线程旧快照覆盖。
+export type ThreadConfigOverrides = Pick<
+  ThreadRunConfigOverrides,
+  'provider' | 'model' | 'baseUrl' | 'permissions' | 'reasoningEffort' | 'runProfile'
+>;
 
 export interface WebProviderSecrets {
   firecrawlApiKey?: string;
@@ -239,6 +246,7 @@ export const defaultConfig: AgentRunConfig = {
   webProvider: 'native_fetch',
   webProviderKeySource: 'config',
   reasoningEffort: 'medium',
+  maxIterations: 100,
   runProfile: 'runtime_os',
   themeMode: 'light',
   agentRoles: {},
@@ -282,6 +290,10 @@ export function resolveConfig(patch: Partial<AgentRunConfig> = {}): AgentRunConf
   if (!['low', 'medium', 'high'].includes(merged.reasoningEffort)) {
     merged.reasoningEffort = defaultConfig.reasoningEffort;
   }
+  const maxIterations = Number(merged.maxIterations);
+  merged.maxIterations = Number.isFinite(maxIterations)
+    ? Math.max(1, Math.min(1000, Math.floor(maxIterations)))
+    : defaultConfig.maxIterations;
   normalizeOptionalPositiveIntegerField(merged, 'modelContextTokens');
   normalizeOptionalPositiveIntegerField(merged, 'modelMaxOutputTokens');
   // harness 不再是有效 RunProfile，旧值自动降级为 runtime_os
@@ -408,6 +420,9 @@ function maskSecret(value: string): string {
 
 export function createConfigRepository(store: ThreadStore) {
   const UI_ONLY_FIELDS = ['themeMode', 'userAvatarId', 'customUserAvatarDataUrl'] as const;
+  // PATCH 请求可能在用户快速切换下拉项时并发到达。按线程串行化读-改-写，
+  // 避免后到的局部 patch 把先到的字段覆盖掉。
+  const threadConfigOverrideQueues = new Map<string, Promise<ThreadConfigOverrides>>();
 
   function stripThreadOnlyGlobalAppearance(config: Partial<AgentRunConfig>): Partial<AgentRunConfig> {
     const { themeMode: _themeMode, ...threadConfig } = config;
@@ -594,6 +609,15 @@ export function createConfigRepository(store: ThreadStore) {
     if (typeof input.provider === 'string') result.provider = input.provider.trim();
     if (typeof input.model === 'string') result.model = input.model.trim();
     if (typeof input.baseUrl === 'string') result.baseUrl = input.baseUrl.trim();
+    if (input.permissions === 'read_only' || input.permissions === 'workspace' || input.permissions === 'danger_full_access') {
+      result.permissions = input.permissions;
+    }
+    if (input.reasoningEffort === 'low' || input.reasoningEffort === 'medium' || input.reasoningEffort === 'high') {
+      result.reasoningEffort = input.reasoningEffort;
+    }
+    if (input.runProfile === 'cache_first' || input.runProfile === 'runtime_os') {
+      result.runProfile = input.runProfile;
+    }
     return result;
   }
 
@@ -606,9 +630,22 @@ export function createConfigRepository(store: ThreadStore) {
     threadId: string,
     input: Record<string, unknown>,
   ): Promise<ThreadConfigOverrides> {
-    const safe = threadConfigOverridesFrom(input);
-    await store.setSetting(threadConfigOverridesKey(threadId), safe);
-    return safe;
+    const previous = threadConfigOverrideQueues.get(threadId) ?? Promise.resolve({});
+    const operation = previous.catch(() => ({})).then(async () => {
+      const current = await getThreadConfigOverrides(threadId);
+      const safe = threadConfigOverridesFrom(input);
+      const merged = threadConfigOverridesFrom({ ...current, ...safe });
+      await store.setSetting(threadConfigOverridesKey(threadId), merged);
+      return merged;
+    });
+    threadConfigOverrideQueues.set(threadId, operation);
+    try {
+      return await operation;
+    } finally {
+      if (threadConfigOverrideQueues.get(threadId) === operation) {
+        threadConfigOverrideQueues.delete(threadId);
+      }
+    }
   }
 
   async function getThreadAccessPolicy(threadId: string): Promise<AccessPolicyConfig | null> {

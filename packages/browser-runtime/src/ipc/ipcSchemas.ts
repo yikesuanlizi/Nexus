@@ -54,6 +54,10 @@ export const ipcCommandSchema: z.ZodType<IpcCommand> = z.discriminatedUnion('act
     payload: z.object({ pageId: z.string().optional() }).strict(),
   }).strict(),
   z.object({
+    action: z.literal('browser.page_graph'),
+    payload: z.object({}).strict(),
+  }).strict(),
+  z.object({
     action: z.literal('browser.act'),
     payload: z.object({ intent: actionIntentSchema }).strict(),
   }).strict(),

@@ -98,6 +98,16 @@ export function actionDetail(action: 'compact' | 'fork' | 'rollback', data: unkn
     return zh ? '新对话已从当前上下文分支出来。' : 'A new chat was forked from the current context.';
   }
   if (action === 'compact') {
+    const result = data && typeof data === 'object' ? data as Record<string, unknown> : {};
+    const before = Number(result.tokensBefore ?? 0);
+    const after = Number(result.tokensAfter ?? 0);
+    const turns = Number(result.compactedTurns ?? 0);
+    if (before > 0 || after > 0 || turns > 0) {
+      const released = Math.max(0, before - after);
+      return zh
+        ? `已压缩 ${turns} 轮，上下文 ${before.toLocaleString()} -> ${after.toLocaleString()} tokens，释放 ${released.toLocaleString()} tokens。`
+        : `Compacted ${turns} turns: ${before.toLocaleString()} -> ${after.toLocaleString()} tokens, releasing ${released.toLocaleString()} tokens.`;
+    }
     return zh ? '已生成压缩摘要并写回对话。' : 'A compacted summary was written back to the chat.';
   }
   return zh ? '最近一轮已从对话中移除。' : 'The latest turn was removed from the chat.';

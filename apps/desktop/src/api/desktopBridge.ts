@@ -21,6 +21,7 @@ interface NexusDesktopBridge {
   desktop?: {
     capabilities?(): Promise<DesktopCapabilities>;
     openPath?(path: string): Promise<boolean>;
+    showItemInFolder?(path: string): Promise<void>;
   };
 }
 
@@ -66,6 +67,18 @@ export async function openInSystemEditor(filePath: string): Promise<boolean> {
   if (!openPath) return false;
   try {
     return await openPath(filePath);
+  } catch {
+    return false;
+  }
+}
+
+/** 在系统文件管理器中显示并选中目标文件（或打开目标目录）。 */
+export async function showItemInSystemFolder(filePath: string): Promise<boolean> {
+  const showItemInFolder = window.nexusDesktop?.desktop?.showItemInFolder;
+  if (!showItemInFolder) return false;
+  try {
+    await showItemInFolder(filePath);
+    return true;
   } catch {
     return false;
   }

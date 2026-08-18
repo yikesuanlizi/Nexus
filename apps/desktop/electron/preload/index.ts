@@ -26,7 +26,9 @@ export interface NexusDesktopApi {
     insertText(input: unknown): Promise<void>;
     closeTab(input: unknown): Promise<void>;
     closeAllTabs(): Promise<void>;
+    hideAllTabs(): Promise<void>;
     listTabs(): Promise<unknown>;
+    hasPendingAgentRequest(): Promise<boolean>;
     subscribe(handler: (event: unknown) => void): () => void;
   };
   // 窗口控制（替换 Tauri window.getCurrentWindow）。
@@ -44,6 +46,7 @@ export interface NexusDesktopApi {
   desktop: {
     capabilities(): Promise<DesktopCapabilitiesContract>;
     openPath(path: string): Promise<boolean>;
+    showItemInFolder(path: string): Promise<void>;
   };
   appearance: {
     setTheme(input: { source: 'light' | 'dark' | 'system'; resolved: 'light' | 'dark' }): Promise<void>;
@@ -78,7 +81,9 @@ const api: NexusDesktopApi = {
     insertText: (input) => ipcRenderer.invoke('browser:insertText', input),
     closeTab: (input) => ipcRenderer.invoke('browser:closeTab', input),
     closeAllTabs: () => ipcRenderer.invoke('browser:closeAll'),
+    hideAllTabs: () => ipcRenderer.invoke('browser:hideAll'),
     listTabs: () => ipcRenderer.invoke('browser:listTabs'),
+    hasPendingAgentRequest: () => ipcRenderer.invoke('browser:hasPendingAgentRequest'),
     subscribe: (handler) => {
       const listener = (_event: unknown, payload: unknown): void => {
         handler(payload);
@@ -108,6 +113,7 @@ const api: NexusDesktopApi = {
   desktop: {
     capabilities: () => ipcRenderer.invoke('desktop:capabilities'),
     openPath: (path) => ipcRenderer.invoke('desktop:openPath', path),
+    showItemInFolder: (path) => ipcRenderer.invoke('desktop:showItemInFolder', path),
   },
   appearance: {
     setTheme: (input) => ipcRenderer.invoke('appearance:setTheme', input),

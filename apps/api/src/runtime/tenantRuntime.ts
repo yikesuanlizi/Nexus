@@ -1,4 +1,5 @@
 import * as fs from 'node:fs';
+import path from 'node:path';
 import { AgentLoop, McpRuntimeManager, type AgentConfig } from '@nexus/runtime';
 import { ModelGateway, type ModelConfig } from '@nexus/model-gateway';
 import { AutoApproveHandler, DEFAULT_PRESET, getPreset, type ApprovalHandler, type SandboxConfig } from '@nexus/sandbox';
@@ -144,12 +145,16 @@ export function createTenantRuntime(options: {
     const tenantRepo = configRepoForTenant(tenantContext);
     const base = await tenantRepo.getDefaultRunConfig();
     const config = resolveConfig({ ...base, ...configPatch });
+    await prepareManagedWorkspaceDirectories(config.workspaceRoot);
     const defaultSystemPrompt = createI18n(config.locale ?? 'zh').t(systemPromptKey(config.locale ?? 'zh'));
     const connectorPrompt = dingtalkForwardingSystemPrompt(config.locale ?? 'zh');
-    const runtimeSystemPrompt = configPatch.systemPrompt
+    const runtimeSystemPrompt = `${configPatch.systemPrompt
       ?? (configPatch.systemPromptSuffix
         ? `${defaultSystemPrompt}\n\n${connectorPrompt}\n\n${configPatch.systemPromptSuffix}`
-        : `${defaultSystemPrompt}\n\n${connectorPrompt}`);
+        : `${defaultSystemPrompt}\n\n${connectorPrompt}`)}
+
+## Managed temporary files
+For one-off scripts, generated inspection output, and disposable caches in a project workspace, use .nexus/tmp/. Do not leave temporary helpers in the project root. Files in .nexus/tmp are managed and may be removed after seven days; durable user-requested work belongs outside that directory.`;
     if (config.workspaceRoot === hiddenChatWorkspaceRoot(config.dataDir)) {
       fs.mkdirSync(config.workspaceRoot, { recursive: true });
     }
@@ -204,6 +209,7 @@ export function createTenantRuntime(options: {
       skills,
       hooks,
       locale: config.locale ?? 'zh',
+      maxIterations: config.maxIterations,
       webSearchMode: config.webSearchMode,
       webProvider,
       runProfile: config.runProfile,
@@ -255,4 +261,19 @@ export function createTenantToolRegistry(store: ThreadStore): ToolRegistry {
     registry.register(tool);
   }
   return registry;
+}
+
+async function prepareManagedWorkspaceDirectories(workspaceRoot: string): Promise<void> {
+  const root = workspaceRoot.trim();
+  if (!root) return;
+  const tempRoot = path.join(root, '.nexus', 'tmp');
+  await fs.promises.mkdir(tempRoot, { recursive: true });
+  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const entries = await fs.promises.readdir(tempRoot, { withFileTypes: true }).catch(() => []);
+  await Promise.all(entries.map(async (entry) => {
+    const entryPath = path.join(tempRoot, entry.name);
+    const stats = await fs.promises.stat(entryPath).catch(() => null);
+    if (!stats || stats.mtimeMs >= cutoff) return;
+    await fs.promises.rm(entryPath, { recursive: entry.isDirectory(), force: true });
+  }));
 }

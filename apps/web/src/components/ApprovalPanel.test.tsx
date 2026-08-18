@@ -24,30 +24,36 @@ describe('ApprovalPanel', () => {
     },
   ];
 
-  it('renders temporary approval wording without persistent options', () => {
+  it('renders temporary and persistent approval options', () => {
     const html = renderToStaticMarkup(React.createElement(ApprovalPanel, {
       locale: 'zh',
       approvals,
       onDecision: vi.fn(),
     }));
 
-    expect(html).toContain('临时授权');
+    expect(html).toContain('授权请求');
     expect(html).toContain('仅本次工具调用');
     expect(html).toContain('读取外部文档');
-    expect(html).not.toContain('永久允许');
+    expect(html).toContain('临时允许');
+    expect(html).toContain('永久允许类似操作');
+    expect(html).toContain('当前线程对话');
+    expect(html).toContain('本工作目录');
+    expect(html).toContain('全局');
   });
 
-  it('passes the selected temporary scope to approval decisions in web and desktop', () => {
+  it('passes temporary and persistent scopes to approval decisions in web and desktop', () => {
     const webSource = readFileSync(join(process.cwd(), 'apps/web/src/components/ApprovalPanel.tsx'), 'utf-8');
     const desktopSource = readFileSync(join(process.cwd(), 'apps/desktop/src/components/ApprovalPanel.tsx'), 'utf-8');
 
     expect(webSource).toContain('handleDecision(approval.requestId, true, selectedScope)');
+    expect(webSource).toContain('handleDecision(approval.requestId, true, selectedScope, selectedPersistentScope)');
     expect(webSource).toContain('handleDecision(approval.requestId, false, selectedScope)');
     expect(desktopSource).toContain('handleDecision(approval.requestId, true, selectedScope)');
+    expect(desktopSource).toContain('handleDecision(approval.requestId, true, selectedScope, selectedPersistentScope)');
     expect(desktopSource).toContain('handleDecision(approval.requestId, false, selectedScope)');
     expect(webSource).toContain('disabled={isDeciding}');
     expect(desktopSource).toContain('disabled={isDeciding}');
-    expect(webSource).not.toContain('永久允许');
-    expect(desktopSource).not.toContain('永久允许');
+    expect(webSource).toContain('永久允许类似操作');
+    expect(desktopSource).toContain('永久允许类似操作');
   });
 });

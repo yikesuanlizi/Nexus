@@ -1,5 +1,5 @@
 import type React from 'react';
-import { lazy, Suspense, useMemo } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { Locale } from '../config/config.js';
@@ -27,6 +27,37 @@ export interface AssistantTurnGroup {
   items: ThreadItem[];
   status?: string;
   timestamp?: string;
+}
+
+// 实时/冻结时长：in_progress 时每秒刷新（now - start）；非进行中首次观测时
+// 冻结，避免 rerender 抖动（会话内稳定）。
+// — English: live/frozen elapsed time — refreshes every second while
+//   in_progress; freezes on the first non-running observation so re-renders
+//   cannot jitter it (stable within the session).
+function useElapsedMs(startIso: string | undefined, status: string): number | null {
+  const [now, setNow] = useState(() => Date.now());
+  const frozenRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!startIso) return;
+    if (status === 'in_progress') {
+      const timer = window.setInterval(() => setNow(Date.now()), 1000);
+      return () => window.clearInterval(timer);
+    }
+    if (frozenRef.current === null) {
+      frozenRef.current = Math.max(0, Date.now() - Date.parse(startIso));
+    }
+    return;
+  }, [startIso, status]);
+  if (!startIso) return null;
+  if (status !== 'in_progress') {
+    return frozenRef.current ?? Math.max(0, Date.now() - Date.parse(startIso));
+  }
+  return Math.max(0, now - Date.parse(startIso));
+}
+
+function formatElapsed(ms: number): string {
+  if (ms < 1000) return '0s';
+  return `${Math.round(ms / 1000)}s`;
 }
 
 export function ItemView({
@@ -72,7 +103,7 @@ export function ItemView({
         userAvatarId={userAvatarId}
         customUserAvatarDataUrl={customUserAvatarDataUrl}
       >
-        <article className="message user"><RichMessageText text={item.text ?? ''} onCopy={onCopy} /></article>
+        <article className="message user"><RichMessageText text={item.text ?? ''} onCopy={onCopy} /><PersistedAttachments attachments={item.attachments} /></article>
       </MessageFrame>
     );
   }
@@ -151,11 +182,16 @@ export function ItemView({
         onBranch={onBranch}
         onCopy={onCopy}
       >
-        <article className="message error">{item.message}</article>
+        <article className="message error" role="alert"><Icon name="alert" /><span>{item.message}</span></article>
       </MessageFrame>
     );
   }
   return <InternalItemDetails item={item} locale={locale} />;
+}
+
+function PersistedAttachments({ attachments }: { attachments?: Array<{ name: string; path: string; mimeType?: string; url?: string }> }) {
+  if (!attachments?.length) return null;
+  return <div className="persistedAttachmentStrip">{attachments.map((attachment) => attachment.url ? <img key={attachment.path} src={attachment.url} alt={attachment.name} title={attachment.name} /> : <span key={attachment.path}>{attachment.name}</span>)}</div>;
 }
 
 export function AssistantTurnView({
@@ -259,7 +295,7 @@ export function AssistantTurnView({
             return <RollbackConflictBlock item={item} locale={locale} key={item.id} />;
           }
           if (item.type === 'error') {
-            return <p className="assistantTurnError" key={item.id}>{item.message}</p>;
+            return <div className="assistantTurnError" role="alert" key={item.id}><Icon name="alert" /><span>{item.message}</span></div>;
           }
           return <InternalItemDetails item={item} key={item.id} locale={locale} />;
         })}
@@ -280,9 +316,21 @@ function ReasoningDetails({
 }) {
   const text = item.text?.trim();
   if (!text) return <InternalItemDetails item={item} locale={locale} />;
+  // 思考时长（实时/冻结），跟在 THINK 小字后面。
+  // — English: reasoning elapsed (live/frozen), right after the THINK label.
+  const elapsedMs = useElapsedMs(item.timestamp, item.status ?? 'completed');
   return (
-    <details className="reasoningDetails">
-      <summary>{locale === 'zh' ? '思考过程' : 'Reasoning'}</summary>
+    <details
+      className="reasoningDetails"
+      data-running={item.status === 'in_progress' ? 'true' : undefined}
+    >
+      <summary>
+        {elapsedMs !== null ? (
+          <span className="reasoningElapsed">
+            {locale === 'zh' ? `思考 ${formatElapsed(elapsedMs)}` : `think ${formatElapsed(elapsedMs)}`}
+          </span>
+        ) : null}
+      </summary>
       <div className="reasoningDetailsBody"><RichMessageText text={text} onCopy={onCopy} /></div>
     </details>
   );
@@ -312,12 +360,23 @@ function ToolBatchDetails({
   onPreviewFile?: (path: string) => void;
   onOpenFile?: (path: string) => void;
 }) {
+  // 批统计：工具数量 + 批总时长（首工具开始 → 末工具完成/实时）。
+  // 思考时长显示在 THINK 折叠旁（ReasoningDetails），不混入工具批。
+  // — English: batch stats — tool count and total batch elapsed (first tool
+  //   start → last tool finish or now). Thinking time lives next to the THINK
+  //   fold (ReasoningDetails), not inside the tool batch.
+  const anyRunning = items.some((item) => item.status === 'in_progress');
+  const batchElapsedMs = useElapsedMs(items[0]?.timestamp, anyRunning ? 'in_progress' : 'completed');
+  const zh = locale === 'zh';
+  const stats = batchElapsedMs !== null
+    ? (zh ? `共 ${items.length} 个 · ${formatElapsed(batchElapsedMs)}` : `${items.length} calls · ${formatElapsed(batchElapsedMs)}`)
+    : (zh ? `共 ${items.length} 个` : `${items.length} calls`);
   return (
     <details className="toolBatchDetails">
-      <summary aria-label={locale === 'zh' ? `${items.length} 个工具调用` : `${items.length} tool calls`}>
+      <summary aria-label={zh ? `${items.length} 个工具调用` : `${items.length} tool calls`}>
         <span aria-hidden="true" className="toolBatchIcon"><Icon name="wrench" /></span>
+        <span aria-hidden="true" className="toolBatchStats">{stats}</span>
         <span aria-hidden="true" className="toolBatchChevron"><Icon name="chevronRight" /></span>
-        <span aria-hidden="true" className="toolBatchCount">{items.length}</span>
       </summary>
       <div className="toolBatchItems">
         {items.map((item) => (
@@ -805,6 +864,7 @@ function ToolDetails({
     );
   }
   const toolSummary = summarizeToolItem(item, locale);
+  const elapsedMs = useElapsedMs(item.timestamp, item.status ?? 'completed');
   return (
     <details className={compact ? 'message tool inlineTool' : 'message tool'}>
       <summary className="toolSummary">
@@ -813,6 +873,13 @@ function ToolDetails({
           {toolSummary.value ? <span className="toolSummaryValue">{toolSummary.value}</span> : null}
           {toolSummary.meta ? <span className="toolSummaryMeta">{toolSummary.meta}</span> : null}
         </span>
+        {elapsedMs !== null ? (
+          <span className="toolElapsed" title={locale === 'zh' ? '调用时长' : 'elapsed'}>
+            {item.status === 'in_progress'
+              ? (locale === 'zh' ? `已用时 ${formatElapsed(elapsedMs)}` : `${formatElapsed(elapsedMs)} elapsed`)
+              : (locale === 'zh' ? `用时 ${formatElapsed(elapsedMs)}` : `${formatElapsed(elapsedMs)}`)}
+          </span>
+        ) : null}
         {toolSummary.status ? <span className="toolSummaryStatus">{toolSummary.status}</span> : null}
       </summary>
       <RemoteAgentStream item={item} locale={locale} />
@@ -927,7 +994,7 @@ function ChildActivityList({ items, locale }: { items: ThreadItem[]; locale: Loc
           );
         }
         if (item.type === 'error') {
-          return <p className="childActivityError" key={item.id}>{item.message}</p>;
+          return <div className="childActivityError" role="alert" key={item.id}><Icon name="alert" /><span>{item.message}</span></div>;
         }
         return <ToolDetails item={item} locale={locale} key={item.id} compact />;
       })}
@@ -1027,7 +1094,13 @@ function MessageFrame({
 }
 
 function messageMoodVariant(item: ThreadItem, text: string): RobotMoodVariant {
-  if (item.status === 'in_progress') return text.trim() ? 'working' : 'thinking';
+  // 进行中不再播放 working/thinking 头像动画——流式输出旁已有 StreamingOutputIcon，
+  // 避免同一气泡两个"思考"动画重复。失败/取消保留警示表情。
+  // — English: no working/thinking avatar animation while in progress — the
+  //   StreamingOutputIcon next to the streaming text is the single thinking
+  //   indicator, so two animations never duplicate in one bubble. Failed /
+  //   cancelled keep their alert face.
+  if (item.status === 'in_progress') return 'idle';
   if (item.status === 'completed') return 'idle';
   if (item.status === 'failed' || item.status === 'cancelled') return 'thinking';
   return 'idle';

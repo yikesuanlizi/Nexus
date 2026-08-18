@@ -2,10 +2,27 @@
 // 动态行为（多标签/导航/事件）由 tests/electron-phase2.test.ts 集成覆盖。
 // — English: static render tests for BrowserWorkbench (Phase 2). Dynamic behavior
 //   (tabs/navigation/events) is covered by the electron-phase2 integration tests.
+import { readFileSync } from 'node:fs';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { BrowserWorkbench } from './BrowserWorkbench.js';
+import { BrowserWorkbench, normalizeBrowserUrl } from './BrowserWorkbench.js';
+
+describe('normalizeBrowserUrl', () => {
+  it('localhost/回环/IP 无协议时补 http://（修复 localhost:5173 SSL 失败）', () => {
+    expect(normalizeBrowserUrl('localhost:5173')).toBe('http://localhost:5173');
+    expect(normalizeBrowserUrl('127.0.0.1:4127')).toBe('http://127.0.0.1:4127');
+    expect(normalizeBrowserUrl('[::1]:8080')).toBe('http://[::1]:8080');
+    expect(normalizeBrowserUrl('192.168.1.5:8080/path')).toBe('http://192.168.1.5:8080/path');
+  });
+
+  it('域名无协议时补 https://，已有协议保持不变', () => {
+    expect(normalizeBrowserUrl('example.com')).toBe('https://example.com');
+    expect(normalizeBrowserUrl('example.com/path?q=1')).toBe('https://example.com/path?q=1');
+    expect(normalizeBrowserUrl('https://example.com')).toBe('https://example.com');
+    expect(normalizeBrowserUrl('http://example.com')).toBe('http://example.com');
+  });
+});
 
 describe('BrowserWorkbench', () => {
   it('渲染浏览器工作台结构：工具栏/标签条/View 容器', () => {
@@ -32,5 +49,13 @@ describe('BrowserWorkbench', () => {
     const html = renderToStaticMarkup(React.createElement(BrowserWorkbench));
     expect(html).toContain('browserTabEmpty');
     expect(html).toContain('新建标签');
+  });
+
+  it('接收 active 状态以便切换工作台或打开覆盖层时隐藏原生视图', () => {
+    const source = readFileSync(new URL('./BrowserWorkbench.tsx', import.meta.url), 'utf8');
+    expect(source).toContain('export function BrowserWorkbench({ active = true }');
+    expect(source).toContain('void api.hideAllTabs()');
+    expect(source).toContain(".settingsLayer, .dialogLayer");
+    expect(source).toContain('onFocus={(event) => event.currentTarget.select()}');
   });
 });

@@ -15,11 +15,12 @@ interface BrowserTabState {
   title: string;
   visible: boolean;
   loading: boolean;
+  openedBy?: 'user' | 'agent';
   favicon?: string;
 }
 
 type BrowserEvent =
-  | { type: 'tab-created'; tabId: string; url: string }
+  | { type: 'tab-created'; tabId: string; url: string; openedBy?: 'user' | 'agent' }
   | { type: 'tab-closed'; tabId: string }
   | { type: 'tab-visible'; tabId: string; visible: boolean }
   | { type: 'did-navigate'; tabId: string; url: string }
@@ -27,9 +28,9 @@ type BrowserEvent =
   | { type: 'loading'; tabId: string; loading: boolean };
 
 interface BrowserApi {
-  createTab(input: { url: string; bounds: { x: number; y: number; width: number; height: number } }): Promise<BrowserTabState>;
+  createTab(input: { url: string; bounds: { x: number; y: number; width: number; height: number }; openedBy?: 'user' | 'agent' }): Promise<BrowserTabState>;
   closeTab(input: { tabId: string }): Promise<void>;
-  closeAllTabs(): Promise<void>;
+  hideAllTabs(): Promise<void>;
   activateTab(input: { tabId: string }): Promise<void>;
   setBounds(input: { tabId: string; bounds: { x: number; y: number; width: number; height: number } }): Promise<void>;
   navigate(input: { tabId: string; url: string }): Promise<void>;
@@ -47,14 +48,108 @@ function getBrowserApi(): BrowserApi | undefined {
 }
 
 const DEFAULT_URL = 'about:blank';
+const BROWSER_SESSION_STORAGE_KEY = 'nexus.browser.session.v1';
 
-export function BrowserWorkbench() {
+interface PersistedBrowserSession {
+  tabs: Array<{ url: string; title?: string; openedBy?: 'user' | 'agent' }>;
+  activeIndex: number;
+}
+
+function readStoredBrowserSession(): PersistedBrowserSession | null {
+  try {
+    const raw = localStorage.getItem(BROWSER_SESSION_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<PersistedBrowserSession>;
+    const tabs = Array.isArray(parsed.tabs)
+      ? parsed.tabs.filter((tab): tab is { url: string; title?: string; openedBy?: 'user' | 'agent' } => (
+        Boolean(tab) && typeof tab === 'object' && typeof tab.url === 'string' && tab.url.trim() !== ''
+      )).slice(0, 12)
+      : [];
+    if (tabs.length === 0) return null;
+    const activeIndex = typeof parsed.activeIndex === 'number'
+      ? Math.max(0, Math.min(tabs.length - 1, Math.floor(parsed.activeIndex)))
+      : 0;
+    return { tabs, activeIndex };
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredBrowserSession(tabs: BrowserTabState[], activeTabId: string | null): void {
+  try {
+    const activeIndex = Math.max(0, tabs.findIndex((tab) => tab.tabId === activeTabId));
+    localStorage.setItem(BROWSER_SESSION_STORAGE_KEY, JSON.stringify({
+      tabs: tabs.map((tab) => ({ url: tab.url || DEFAULT_URL, title: tab.title, openedBy: tab.openedBy })),
+      activeIndex,
+    } satisfies PersistedBrowserSession));
+  } catch {
+    // Browser session metadata is best effort; native views remain authoritative.
+  }
+}
+
+// 无协议 URL 规范化：localhost/回环/IP 补 http://（本地服务基本都是 http），
+// 域名才补 https://。之前一律 https:// 导致 localhost:5173 之类 SSL 失败。
+// — English: URL normalization without a scheme — localhost/loopback/IPs get
+//   http:// (local services are almost always http); only domains default to
+//   https://. Everything used to become https://, which broke localhost:5173.
+export function normalizeBrowserUrl(input: string): string {
+  const url = input.trim();
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(url)) return url;
+  const hostPart = url.split(/[/?#]/)[0] ?? '';
+  if (
+    /^(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)(:\d+)?$/.test(hostPart) ||
+    /^\d{1,3}(\.\d{1,3}){3}(:\d+)?$/.test(hostPart)
+  ) {
+    return `http://${url}`;
+  }
+  return `https://${url}`;
+}
+
+export function BrowserWorkbench({
+  active = true,
+  navigationRequest,
+}: {
+  active?: boolean;
+  navigationRequest?: { url: string; nonce: number } | null;
+}) {
   const apiRef = useRef<BrowserApi | undefined>(undefined);
   const [tabs, setTabs] = useState<BrowserTabState[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [address, setAddress] = useState('');
   const [loading, setLoading] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const initialTabRequestedRef = useRef(false);
+  const browserStateHydratedRef = useRef(false);
+  const [browserReady, setBrowserReady] = useState(false);
+  const appliedNavigationNonceRef = useRef(0);
+  const [rendererOverlayVisible, setRendererOverlayVisible] = useState(false);
+  const effectiveActive = active && !rendererOverlayVisible;
+  const activeRef = useRef(effectiveActive);
+
+  useEffect(() => {
+    activeRef.current = effectiveActive;
+  }, [effectiveActive]);
+
+  // Native WebContentsView sits above Renderer pixels. Watch generic modal
+  // surfaces as well as the explicit app state passed by the parent, so a new
+  // help/preview dialog cannot accidentally be covered by a live web page.
+  useEffect(() => {
+    const readOverlayState = (): void => {
+      const visible = Boolean(document.querySelector(
+        '.settingsLayer, .dialogLayer, [role="dialog"][aria-modal="true"]',
+      ));
+      setRendererOverlayVisible((current) => current === visible ? current : visible);
+    };
+    readOverlayState();
+    const observer = new MutationObserver(readOverlayState);
+    observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['class', 'aria-modal'],
+    });
+    return () => observer.disconnect();
+  }, []);
 
   // 初始化：获取 API、订阅事件、恢复既有标签。
   // — English: init — grab the API, subscribe to events, restore existing tabs.
@@ -62,20 +157,99 @@ export function BrowserWorkbench() {
     const api = getBrowserApi();
     if (!api) return;
     apiRef.current = api;
+    let cancelled = false;
+    let layoutRetry = 0;
+    const createInitialTab = (): void => {
+      if (cancelled || initialTabRequestedRef.current) return;
+      const container = containerRef.current;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      if (rect.width < 1 || rect.height < 1) {
+        layoutRetry = window.requestAnimationFrame(createInitialTab);
+        return;
+      }
+      initialTabRequestedRef.current = true;
+      void api.createTab({
+        url: DEFAULT_URL,
+        bounds: {
+          x: Math.round(rect.x),
+          y: Math.round(rect.y),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+        },
+      });
+    };
+    const restoreOrCreateTabs = (): void => {
+      if (cancelled || initialTabRequestedRef.current) return;
+      const container = containerRef.current;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      if (rect.width < 1 || rect.height < 1) {
+        layoutRetry = window.requestAnimationFrame(restoreOrCreateTabs);
+        return;
+      }
+      initialTabRequestedRef.current = true;
+      const saved = readStoredBrowserSession();
+      if (!saved) {
+        initialTabRequestedRef.current = false;
+        createInitialTab();
+        return;
+      }
+      void (async () => {
+        const created: BrowserTabState[] = [];
+        for (const savedTab of saved.tabs) {
+          if (cancelled) return;
+          try {
+            created.push(await api.createTab({
+              url: savedTab.url,
+              openedBy: savedTab.openedBy,
+              bounds: {
+                x: Math.round(rect.x),
+                y: Math.round(rect.y),
+                width: Math.round(rect.width),
+                height: Math.round(rect.height),
+              },
+            }));
+          } catch {
+            // Skip stale or invalid saved pages and continue restoring others.
+          }
+        }
+        const active = created[saved.activeIndex] ?? created[0];
+        if (active) {
+          setActiveTabId(active.tabId);
+          setAddress(active.url);
+          setLoading(active.loading);
+          if (activeRef.current) void api.activateTab({ tabId: active.tabId });
+        }
+      })();
+    };
     void api.listTabs().then((existing) => {
+      if (cancelled) return;
+      browserStateHydratedRef.current = true;
+      setBrowserReady(true);
       setTabs(existing);
       if (existing.length > 0) {
-        setActiveTabId(existing[0].tabId);
-        setAddress(existing[0].url);
-        setLoading(existing[0].loading);
+        const active = existing.find((tab) => tab.visible) ?? existing[0];
+        setActiveTabId(active.tabId);
+        setAddress(active.url);
+        setLoading(active.loading);
+        if (activeRef.current) void api.activateTab({ tabId: active.tabId });
+      } else {
+        restoreOrCreateTabs();
       }
     });
     const unsubscribe = api.subscribe((event) => {
       switch (event.type) {
         case 'tab-created':
-          setTabs((prev) => [...prev, { tabId: event.tabId, url: event.url, title: '', visible: true, loading: true }]);
+          setTabs((prev) => [...prev, { tabId: event.tabId, url: event.url, title: '', visible: true, loading: true, openedBy: event.openedBy }]);
           setActiveTabId(event.tabId);
           setAddress(event.url);
+          break;
+        case 'tab-visible':
+          setTabs((prev) => prev.map((tab) => (tab.tabId === event.tabId ? { ...tab, visible: event.visible } : tab)));
+          // A queued Agent action can reactivate the native view while a modal
+          // is still open. Remove it again without destroying the tab/session.
+          if (event.visible && !activeRef.current) void api.hideAllTabs();
           break;
         case 'tab-closed':
           setTabs((prev) => prev.filter((t) => t.tabId !== event.tabId));
@@ -103,14 +277,68 @@ export function BrowserWorkbench() {
       }
     });
     return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(layoutRetry);
       unsubscribe();
-      // 面板卸载（关闭浏览器 tab / 应用退出）时销毁全部原生 View，
-      // 否则网页画面残留在窗口上。
-      // — English: when the panel unmounts (browser tab closed / app exit),
-      //   destroy every native view or the page stays on screen.
-      void api.closeAllTabs();
+      // 右侧栏收起会卸载 React 工作台；仅隐藏原生 View，页面及 Agent pageId
+      // 绑定由主进程保留，避免再次打开时退回 about:blank。
+      void api.hideAllTabs();
     };
   }, []);
+
+  useEffect(() => {
+    const request = navigationRequest;
+    const api = apiRef.current;
+    if (!browserReady || !request?.url || !api || appliedNavigationNonceRef.current === request.nonce) return;
+    const container = containerRef.current;
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
+    if (rect.width < 1 || rect.height < 1) return;
+    appliedNavigationNonceRef.current = request.nonce;
+    const bounds = {
+      x: Math.round(rect.x),
+      y: Math.round(rect.y),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+    };
+    const currentTabId = activeTabId ?? tabs[0]?.tabId;
+    void (async () => {
+      if (currentTabId) {
+        await api.navigate({ tabId: currentTabId, url: request.url });
+        setActiveTabId(currentTabId);
+        setAddress(request.url);
+        if (effectiveActive) await api.activateTab({ tabId: currentTabId });
+        return;
+      }
+      const created = await api.createTab({ url: request.url, bounds, openedBy: 'user' });
+      setActiveTabId(created.tabId);
+      setAddress(created.url || request.url);
+      setLoading(created.loading);
+    })().catch(() => {
+      appliedNavigationNonceRef.current = 0;
+    });
+  }, [activeTabId, browserReady, effectiveActive, navigationRequest, tabs]);
+
+  useEffect(() => {
+    if (!browserStateHydratedRef.current) return;
+    writeStoredBrowserSession(tabs, activeTabId);
+  }, [tabs, activeTabId]);
+
+  // 原生 WebContentsView 不属于 React 的层叠上下文。切换到文件、活动或任意
+  // 模态层时必须从 Main 的 contentView 移除它，否则会压在 Renderer UI 之上。
+  useEffect(() => {
+    const api = apiRef.current;
+    if (!api) return;
+    if (!effectiveActive) {
+      void api.hideAllTabs();
+      return;
+    }
+    const tabId = activeTabId ?? tabs[0]?.tabId;
+    if (!tabId) return;
+    void api.activateTab({ tabId });
+    const frame = window.requestAnimationFrame(() => reportBrowserBounds(api, containerRef.current, tabId));
+    return () => window.cancelAnimationFrame(frame);
+  }, [effectiveActive, activeTabId, tabs]);
 
   // 容器尺寸变化 → 上报 bounds（Main 设置 View 布局）。
   // — English: container resize → report bounds (Main lays out the view).
@@ -118,25 +346,16 @@ export function BrowserWorkbench() {
     const api = apiRef.current;
     const container = containerRef.current;
     if (!api || !container) return;
-    const report = (): void => {
-      if (!activeTabId) return;
-      const rect = container.getBoundingClientRect();
-      void api.setBounds({
-        tabId: activeTabId,
-        bounds: {
-          x: Math.round(rect.x),
-          y: Math.round(rect.y + window.scrollY),
-          width: Math.round(rect.width),
-          height: Math.round(rect.height),
-        },
-      });
-    };
+    const report = (): void => reportBrowserBounds(api, container, activeTabId);
     const observer = new ResizeObserver(report);
     observer.observe(container);
+    window.addEventListener('resize', report);
+    report();
     return () => {
       observer.disconnect();
+      window.removeEventListener('resize', report);
     };
-  }, [activeTabId]);
+  }, [effectiveActive, activeTabId]);
 
   const createTab = useCallback(() => {
     const api = apiRef.current;
@@ -147,7 +366,7 @@ export function BrowserWorkbench() {
       url: DEFAULT_URL,
       bounds: {
         x: Math.round(rect.x),
-        y: Math.round(rect.y + window.scrollY),
+        y: Math.round(rect.y),
         width: Math.round(rect.width),
         height: Math.round(rect.height),
       },
@@ -159,7 +378,7 @@ export function BrowserWorkbench() {
     const container = containerRef.current;
     const url = address.trim();
     if (!api || url === '') return;
-    const normalized = /^[a-z]+:\/\//i.test(url) ? url : `https://${url}`;
+    const normalized = normalizeBrowserUrl(url);
     // 无标签时直接创建并导航（用户打开面板即可输入网址，不必先建标签）。
     // — English: with no tab yet, create one and navigate directly (the address
     //   bar works right after opening the panel).
@@ -170,7 +389,7 @@ export function BrowserWorkbench() {
         url: normalized,
         bounds: {
           x: Math.round(rect.x),
-          y: Math.round(rect.y + window.scrollY),
+          y: Math.round(rect.y),
           width: Math.round(rect.width),
           height: Math.round(rect.height),
         },
@@ -227,6 +446,7 @@ export function BrowserWorkbench() {
           aria-label="地址栏"
           value={address}
           onChange={(event) => setAddress(event.target.value)}
+          onFocus={(event) => event.currentTarget.select()}
           onKeyDown={(event) => {
             if (event.key === 'Enter') submitAddress();
           }}
@@ -271,4 +491,19 @@ export function BrowserWorkbench() {
       </div>
     </section>
   );
+}
+
+function reportBrowserBounds(api: BrowserApi, container: HTMLDivElement | null, tabId: string | null): void {
+  if (!container || !tabId) return;
+  const rect = container.getBoundingClientRect();
+  if (rect.width < 1 || rect.height < 1) return;
+  void api.setBounds({
+    tabId,
+    bounds: {
+      x: Math.round(rect.x),
+      y: Math.round(rect.y),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+    },
+  });
 }

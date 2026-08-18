@@ -31,6 +31,10 @@ export function registerBrowserIpc(deps: BrowserIpcDeps): void {
 
   ipcMain.handle('browser:setBounds', (_event, input: unknown) => {
     const { tabId, bounds } = validateTabBounds(input);
+    // A layout frame can arrive after its React tab has been closed. It is a
+    // stale renderer update, not an agent operation, so it must not turn into
+    // an unhandled IPC rejection or revive an obsolete native view.
+    if (!manager.hasTab(tabId)) return;
     manager.setBounds(tabId, bounds);
   });
 
@@ -41,6 +45,8 @@ export function registerBrowserIpc(deps: BrowserIpcDeps): void {
 
   ipcMain.handle('browser:activateTab', (_event, input: unknown) => {
     const { tabId } = validateTabId(input);
+    // See the matching setBounds guard above: closing and layout are async.
+    if (!manager.hasTab(tabId)) return;
     manager.activateTab(tabId);
   });
 
@@ -103,5 +109,11 @@ export function registerBrowserIpc(deps: BrowserIpcDeps): void {
     manager.destroyAll();
   });
 
+  ipcMain.handle('browser:hideAll', () => {
+    manager.hideAll();
+  });
+
   ipcMain.handle('browser:listTabs', () => manager.listTabs());
+
+  ipcMain.handle('browser:hasPendingAgentRequest', () => manager.hasPendingAgentBrowserRequest());
 }

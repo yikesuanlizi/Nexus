@@ -11,6 +11,7 @@ import { WorkbenchTabs, type WorkbenchTab } from './WorkbenchTabs.js';
 import { LiveActivityHud } from './LiveActivityHud.js';
 import { AgentInspector } from './AgentInspector.js';
 import { AgentStagePanel } from '../AgentStagePanel.js';
+import { TerminalPanel } from './TerminalPanel.js';
 
 export function WorkspaceWorkbench({
   activeThread,
@@ -33,6 +34,7 @@ export function WorkspaceWorkbench({
   onResume,
   onRollback,
   onToggleMemoryExcluded,
+  onAddFileToConversation,
   responsiveMode,
   onCloseRequest,
 }: {
@@ -56,18 +58,30 @@ export function WorkspaceWorkbench({
   onResume?(): void;
   onRollback?(checkpointId?: string): void;
   onToggleMemoryExcluded?(excluded: boolean): void;
+  onAddFileToConversation?(path: string): void;
   responsiveMode?: 'side' | 'overlay' | 'sheet';
   onCloseRequest?(): void;
 }) {
   const zh = locale === 'zh';
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const [terminalRoot, setTerminalRoot] = useState(workspaceRoot);
   const [filesPanelMounted, setFilesPanelMounted] = useState(false);
   const handledPreviewRequestKeyRef = useRef('');
+  const hasActiveThread = Boolean(activeThreadId && activeThread);
   const mainAgentThreadId = activeThreadId || 'main';
 
   useEffect(() => {
     setSelectedAgentId(null);
   }, [activeThreadId]);
+
+  useEffect(() => {
+    setTerminalRoot(workspaceRoot);
+  }, [workspaceRoot]);
+
+  const handleOpenTerminalAt = (directory: string): void => {
+    setTerminalRoot(directory || workspaceRoot);
+    onTabChange('terminal');
+  };
 
   useEffect(() => {
     if (!externalPreviewRequest?.path) return;
@@ -181,7 +195,7 @@ export function WorkspaceWorkbench({
           aria-hidden={activeTab !== 'activity'}
           inert={activeTab !== 'activity'}
         >
-          <LiveActivityHud
+          {hasActiveThread ? <LiveActivityHud
             traceSummary={traceSummary}
             currentPhase={workbench.currentPhase}
             recentEvents={workbench.recentEvents}
@@ -192,7 +206,7 @@ export function WorkspaceWorkbench({
             onRollback={onRollback}
             onJumpToTrace={handleJumpToTrace}
             locale={locale}
-          />
+          /> : null}
         </div>
 
         <div
@@ -201,15 +215,15 @@ export function WorkspaceWorkbench({
           aria-hidden={activeTab !== 'agents'}
           inert={activeTab !== 'agents'}
         >
-          <div className="workbenchAgentTreeWrap">
+          {hasActiveThread ? <div className="workbenchAgentTreeWrap">
             <AgentStagePanel
               locale={locale}
               rows={agentStageRows}
               selectedThreadId={selectedAgentId}
               onSelectAgent={handleSelectAgent}
             />
-          </div>
-          {selectedNode ? (
+          </div> : null}
+          {hasActiveThread && selectedNode ? (
             <div className="workbenchAgentInspectorWrap">
               <AgentInspector
                 node={selectedNode}
@@ -231,9 +245,20 @@ export function WorkspaceWorkbench({
               locale={locale}
               workspaceRoot={workspaceRoot}
               externalPreviewRequest={externalPreviewRequest}
+              onOpenTerminalAt={handleOpenTerminalAt}
+              onAddFileToConversation={onAddFileToConversation}
             />
           </div>
         ) : null}
+
+        <div
+          className={workbenchPanelClassName('terminal', activeTab)}
+          data-state={activeTab === 'terminal' ? 'active' : 'inactive'}
+          aria-hidden={activeTab !== 'terminal'}
+          inert={activeTab !== 'terminal'}
+        >
+          <TerminalPanel active={activeTab === 'terminal'} locale={locale} workspaceRoot={terminalRoot} />
+        </div>
       </div>
 
       {activeThread && onToggleMemoryExcluded ? (
@@ -266,6 +291,6 @@ export function WorkspaceWorkbench({
 }
 
 function workbenchPanelClassName(tab: WorkbenchTab, activeTab: WorkbenchTab): string {
-  const base = tab === 'activity' ? 'workbenchActivity' : tab === 'agents' ? 'workbenchAgents' : 'workbenchFiles';
+  const base = tab === 'activity' ? 'workbenchActivity' : tab === 'agents' ? 'workbenchAgents' : tab === 'terminal' ? 'workbenchTerminal' : 'workbenchFiles';
   return `${base} workbenchPanel${tab === activeTab ? ' active' : ' inactive'}`;
 }

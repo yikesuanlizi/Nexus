@@ -155,18 +155,19 @@ describe('RightPane', () => {
     expect(styles).toContain('contain: layout paint style;');
   });
 
-  it('keeps dynamic tabs local, does not restore them on startup, and reports sizing to the app shell', () => {
+  it('persists dynamic tabs across startup and reports sizing to the app shell', () => {
     const mainSource = readFileSync(join(here, '..', 'main.tsx'), 'utf-8');
     const rightPaneSource = readFileSync(join(here, 'RightPane.tsx'), 'utf-8');
 
     expect(rightPaneSource).toContain('useState<RightPaneTab>');
     expect(rightPaneSource).toContain('const [openUtilityTabs, setOpenUtilityTabs]');
-    expect(rightPaneSource).toContain("localStorage.getItem('nexus.rightPane.tab')");
+    expect(rightPaneSource).toContain('readStoredWorkbenchState');
+    expect(rightPaneSource).toContain('writeStoredWorkbenchState');
     expect(rightPaneSource).toContain("localStorage.removeItem('nexus.rightPane.tab')");
-    expect(rightPaneSource).toContain("onTabChange?.('activity')");
+    expect(rightPaneSource).toContain('const nextActiveTab: RightPaneTab');
+    expect(rightPaneSource).toContain('onTabChange?.(nextActiveTab)');
     expect(mainSource).not.toContain('setRightPaneTab');
     expect(mainSource).toContain("setRightPaneSizingMode(rightPaneSizingModeForTab(tab))");
-    expect(mainSource).toContain("if (tab === 'files' || tab === 'browser') localStorage.removeItem('nexus.rightPane.tab');");
     expect(mainSource).not.toContain('onTabChange={setRightPaneTab}');
   });
 

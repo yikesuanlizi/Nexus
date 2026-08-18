@@ -7,6 +7,7 @@
 //   real typing); 3) the page is visible after Enter; 4) F12 opens DevTools
 //   (detached window); 5) page console logs reach Main.
 import { spawn, type ChildProcess } from 'node:child_process';
+import { createServer, type Server } from 'node:http';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, beforeAll, afterAll } from 'vitest';
@@ -17,6 +18,10 @@ const MAIN_JS = join(here, '../apps/desktop/dist-electron/main/index.js');
 let viteServer: ChildProcess | null = null;
 let viteUiUrl = 'http://127.0.0.1:5178';
 let mainLogs: string[] = [];
+let userSite: Server | null = null;
+let userSiteUrl = '';
+
+const USER_SITE_HTML = `<!doctype html><title>Nexus User Test</title><main><h1>Browser user scenario</h1><button id="probe">Probe</button></main>`;
 
 async function startViteDev(): Promise<void> {
   if (viteServer !== null) return;
@@ -72,6 +77,14 @@ async function browserApi<T>(app: ElectronApplication, call: string, arg?: unkno
 
 beforeAll(async () => {
   await startViteDev();
+  userSite = createServer((_request, response) => {
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    response.end(USER_SITE_HTML);
+  });
+  await new Promise<void>((resolve) => userSite!.listen(0, '127.0.0.1', resolve));
+  const address = userSite.address();
+  if (typeof address !== 'object' || address === null) throw new Error('user scenario site failed to bind');
+  userSiteUrl = `http://127.0.0.1:${address.port}`;
 });
 
 afterAll(async () => {
@@ -87,6 +100,10 @@ afterAll(async () => {
     }
   }
   viteServer = null;
+  if (userSite !== null) {
+    await new Promise<void>((resolve) => userSite!.close(() => resolve()));
+    userSite = null;
+  }
 });
 
 describe('用户场景实测', () => {
@@ -118,7 +135,7 @@ describe('用户场景实测', () => {
       // — English: typing a URL with no tabs auto-creates the tab and navigates.
       const addressInput = win.locator('input[aria-label="地址栏"]');
       await addressInput.click();
-      await addressInput.type('https://example.com', { delay: 20 });
+      await addressInput.type(userSiteUrl, { delay: 20 });
       await addressInput.press('Enter');
 
       // 3) 等待加载完成（轮询）。
@@ -129,10 +146,10 @@ describe('用户场景实测', () => {
         const tabs = await browserApi<Array<{ url: string; loading: boolean }>>(app, 'listTabs');
         if (tabs.length > 0) {
           url = tabs[0].url;
-          if (url.includes('example.com') && !tabs[0].loading) break;
+          if (url.includes(userSiteUrl) && !tabs[0].loading) break;
         }
       }
-      expect(url).toContain('example.com');
+      expect(url).toContain(userSiteUrl);
 
       // 4) 网页可见性：View 内标题 + 窗口截图非空白。
       // — English: visibility — view title + a non-trivial window screenshot.
@@ -141,7 +158,7 @@ describe('用户场景实测', () => {
         tabId: tabsNow[0].tabId,
         expression: 'document.title',
       });
-      expect(String(viewTitle).toLowerCase()).toContain('example');
+      expect(String(viewTitle)).toBe('Nexus User Test');
       const shot = await win.screenshot();
       expect(shot.length).toBeGreaterThan(10_000);
 
@@ -181,12 +198,12 @@ describe('用户场景实测', () => {
       await win.waitForSelector('[data-testid="browserWorkbench"]', { timeout: 15_000 });
       const addressInput = win.locator('input[aria-label="地址栏"]');
       await addressInput.click();
-      await addressInput.type('https://example.com', { delay: 15 });
+      await addressInput.type(userSiteUrl, { delay: 15 });
       await addressInput.press('Enter');
       for (let i = 0; i < 40; i += 1) {
         await new Promise((r) => setTimeout(r, 250));
-        const tabs = await browserApi<Array<{ url: string }>>(app, 'listTabs');
-        if (tabs.length > 0 && tabs[0].url.includes('example.com')) break;
+        const tabs = await browserApi<Array<{ url: string; loading: boolean }>>(app, 'listTabs');
+        if (tabs.length > 0 && tabs[0].url.includes(userSiteUrl) && !tabs[0].loading) break;
       }
       expect((await browserApi<Array<unknown>>(app, 'listTabs')).length).toBeGreaterThan(0);
 
@@ -199,12 +216,58 @@ describe('用户场景实测', () => {
       // 原生 View 必须全部销毁（listTabs 空）——否则页面残留在窗口上。
       // — English: every native view must be destroyed (listTabs empty) or the
       //   page stays on screen.
-      const remaining = await browserApi<Array<unknown>>(app, 'listTabs');
-      expect(remaining.length).toBe(0);
+      const remaining = await browserApi<Array<{ tabId: string; url: string; visible: boolean }>>(app, 'listTabs');
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0].url).toContain(userSiteUrl);
+      expect(remaining[0].visible).toBe(false);
+      const title = await browserApi<string>(app, 'evaluate', {
+        tabId: remaining[0].tabId,
+        expression: 'document.title',
+      });
+      expect(title).toBe('Nexus User Test');
     } finally {
       await app.close();
     }
   }, 90_000);
+
+  it('搜索对话框覆盖整个窗口并保持居中，而非被侧栏裁剪', async () => {
+    const app = await launchElectronDev();
+    try {
+      const win = await app.firstWindow();
+      await win.waitForSelector('#root > *', { timeout: 60_000, state: 'attached' });
+      await win.locator('.searchLauncher').click();
+      const dialog = win.locator('.searchDialog[role="dialog"]');
+      await dialog.waitFor({ timeout: 10_000, state: 'visible' });
+      const box = await dialog.boundingBox();
+      const viewport = await win.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }));
+      const visual = await win.evaluate(() => {
+        const root = document.documentElement;
+        const dialogElement = document.querySelector<HTMLElement>('.searchDialog');
+        const inputElement = document.querySelector<HTMLElement>('.searchDialogInput');
+        const collapseButton = document.querySelector<HTMLElement>('.threadListHeader > .miniIconButton');
+        const path = collapseButton?.querySelector('svg path')?.getAttribute('d') ?? null;
+        const buttonBox = collapseButton?.getBoundingClientRect() ?? null;
+        return {
+          theme: root.dataset.nexusTheme,
+          dialogBackground: dialogElement ? getComputedStyle(dialogElement).backgroundColor : null,
+          inputBackground: inputElement ? getComputedStyle(inputElement).backgroundColor : null,
+          buttonBox: buttonBox ? { width: buttonBox.width, height: buttonBox.height } : null,
+          collapsePath: path,
+        };
+      });
+      expect(box).not.toBeNull();
+      expect(Math.abs((box!.x + box!.width / 2) - viewport.width / 2)).toBeLessThan(3);
+      expect(Math.abs((box!.y + box!.height / 2) - viewport.height / 2)).toBeLessThan(3);
+      expect(visual.theme).toBe('light');
+      expect(visual.dialogBackground).toBe('rgb(255, 255, 255)');
+      expect(visual.inputBackground).toBe('rgb(248, 250, 252)');
+      expect(visual.buttonBox?.width).toBeGreaterThanOrEqual(28);
+      expect(visual.buttonBox?.height).toBeGreaterThanOrEqual(28);
+      expect(visual.collapsePath).toBe('m15 18-6-6 6-6');
+    } finally {
+      await app.close();
+    }
+  }, 60_000);
 
   it('菜单 locale IPC：zh/en 切换调用成功（顶部菜单随主题语言）', async () => {
     const app = await launchElectronDev();
@@ -250,11 +313,11 @@ describe('用户场景实测', () => {
         };
       });
       expect(style?.bodyHasShell).toBe(true);
-      expect(style?.marginLeft).toBe('8px');
-      expect(style?.marginRight).toBe('8px');
-      expect(style?.marginBottom).toBe('8px');
-      expect(style?.marginTop).toBe('0px');
-      expect(style?.borderRadius).toBe('12px');
+      expect(style?.marginLeft).toBe('16px');
+      expect(style?.marginRight).toBe('16px');
+      expect(style?.marginBottom).toBe('16px');
+      expect(style?.marginTop).toBe('16px');
+      expect(style?.borderRadius).toBe('16px');
     } finally {
       await app.close();
     }

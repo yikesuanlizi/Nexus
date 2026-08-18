@@ -74,6 +74,16 @@ export function MonitorPage({ locale, config, setConfig, markDirty, onSave }: Mo
         <SectionHeader title={text(locale, '运行控制', 'Runtime control')} />
         <div className="settingsFormGrid three">
           <label className="settingsField">
+            <span className="settingsFieldLabel">{text(locale, 'Agent 循环上限', 'Agent loop limit')}</span>
+            <input
+              type="number"
+              min={1}
+              max={1000}
+              value={config.maxIterations}
+              onChange={(event) => updateField('maxIterations', Number(event.target.value))}
+            />
+          </label>
+          <label className="settingsField">
             <span className="settingsFieldLabel">{text(locale, '最大并发', 'Max concurrency')}</span>
             <input
               type="number"

@@ -54,7 +54,7 @@ describe('workspace root memory', () => {
 });
 
 describe('buildWorkspaceThreadGroups', () => {
-  it('groups root threads by workspace, keeps current workspace first, and hides child agent threads', () => {
+  it('groups root threads by workspace without moving a selected workspace to the top', () => {
     const groups = buildWorkspaceThreadGroups({
       currentWorkspaceRoot: 'D:/active',
       rememberedRoots: ['E:/remembered'],
@@ -92,7 +92,7 @@ describe('buildWorkspaceThreadGroups', () => {
       threads: [thread('部署说明', 'E:/langchain')],
     };
 
-    expect(buildWorkspaceThreadGroups(base).map((group) => group.workspaceRoot)).toEqual(['E:/langchain', 'D:/empty']);
+    expect(buildWorkspaceThreadGroups(base).map((group) => group.workspaceRoot)).toEqual(['D:/empty', 'E:/langchain']);
     expect(buildWorkspaceThreadGroups({ ...base, searchQuery: 'empty' }).map((group) => group.workspaceRoot)).toEqual(['D:/empty']);
     expect(buildWorkspaceThreadGroups({ ...base, searchQuery: '部署' })[0]?.threads.map((item) => item.threadId)).toEqual(['部署说明']);
   });

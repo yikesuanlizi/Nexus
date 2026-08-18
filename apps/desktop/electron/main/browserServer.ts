@@ -11,7 +11,7 @@
 //   capability token (NEXUS_BROWSER_TOKEN, a random value start-desktop injects
 //   on every launch); the Sidecar is only created after it checks out.
 import { randomBytes } from 'node:crypto';
-import type { WebContentsView } from 'electron';
+import type { BrowserRuntimePort, BrowserSessionHandle } from '@nexus/browser-runtime';
 import { ElectronWebContentsRuntime } from '../browser/ElectronWebContentsRuntime.js';
 import type { BrowserViewManager } from '../browser/BrowserViewManager.js';
 
@@ -48,11 +48,67 @@ export async function startBrowserCommandServer(deps: {
   const server = await createTcpSidecarServer({
     port,
     authToken: token,
-    createRuntime: () => {
-      // 绑定当前活动标签的 View（用户可见的真实页面）。
-      // — English: bind the active tab's view (the page the user sees).
-      const { view } = deps.manager.activeTabOrFirst();
-      return new ElectronWebContentsRuntime({ view, adapter: deps.manager.adapterForView(view) });
+    createRuntime: (context?: { taskId: string }) => {
+      const taskId = context?.taskId;
+      if (taskId === undefined || taskId === '') {
+        throw new Error('browser taskId missing');
+      }
+      const sessionsByTab = new Map<string, BrowserSessionHandle>();
+      let startInput: { taskId: string; signal?: AbortSignal } | undefined;
+      let rootTabId: string | undefined;
+
+      const sessionForPage = async (pageId?: string): Promise<{ tabId: string; session: BrowserSessionHandle }> => {
+        if (startInput === undefined) throw new Error('browser session not started');
+        const page = deps.manager.agentTabForPage(taskId, pageId);
+        const existing = sessionsByTab.get(page.tabId);
+        if (existing !== undefined) return { tabId: page.tabId, session: existing };
+        const runtime = new ElectronWebContentsRuntime({
+          view: page.view,
+          adapter: deps.manager.adapterForView(page.view),
+          pageId: page.tabId,
+          waitForDownload: (input) => deps.manager.waitForNextDownload(page.tabId, input),
+        });
+        const session = await runtime.start(startInput);
+        sessionsByTab.set(page.tabId, session);
+        return { tabId: page.tabId, session };
+      };
+      const leasedRuntime: BrowserRuntimePort = {
+        kind: 'electron',
+        async start(input) {
+          if (input.taskId !== taskId) {
+            throw new Error('browser session taskId does not match authenticated thread');
+          }
+          startInput = input;
+          const rootTab = await deps.manager.acquireAgentTab(taskId, { signal: input.signal });
+          rootTabId = rootTab.tabId;
+          const { session } = await sessionForPage(rootTabId);
+          return {
+            sessionId: session.sessionId,
+            taskId: session.taskId,
+            async close(reason) {
+              await Promise.all([...sessionsByTab.values()].map((pageSession) => pageSession.close(reason)));
+              sessionsByTab.clear();
+            },
+            currentPageGraph: () => deps.manager.agentPageGraph(taskId),
+            observe: (observeInput) => deps.manager.runAgentOperation(taskId, observeInput?.pageId, async () => {
+              const page = await sessionForPage(observeInput?.pageId);
+              return page.session.observe({ ...observeInput, pageId: page.tabId });
+            }),
+            navigate: (navigateInput: { url: string; signal?: AbortSignal; pageId?: string }) => deps.manager.runAgentOperation(taskId, navigateInput.pageId, async () => {
+              const page = await sessionForPage(navigateInput.pageId);
+              const pageSession = page.session as BrowserSessionHandle & {
+                navigate(input: { url: string; signal?: AbortSignal; pageId?: string }): ReturnType<BrowserSessionHandle['navigate']>;
+              };
+              return pageSession.navigate({ ...navigateInput, pageId: page.tabId });
+            }),
+            act: (actInput) => deps.manager.runAgentOperation(taskId, actInput.intent.pageId, async () => {
+              const page = await sessionForPage(actInput.intent.pageId);
+              return page.session.act(actInput);
+            }),
+          };
+        },
+      };
+      return leasedRuntime;
     },
     log: (line: string) => console.log(`[browser-server] ${line}`),
   });

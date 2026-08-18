@@ -33,6 +33,7 @@ export function RightPane({
   onRollback,
   responsiveMode,
   onCloseRequest,
+  onAddFileToConversation,
 }: {
   activeTab?: RightPaneTab;
   activeThreadId: string;
@@ -57,6 +58,7 @@ export function RightPane({
   onRollback?(checkpointId?: string): void;
   responsiveMode?: 'side' | 'overlay' | 'sheet';
   onCloseRequest?(): void;
+  onAddFileToConversation?(path: string): void;
 }) {
   void activeThreadTitle;
   void taskRuntimeState;
@@ -91,6 +93,7 @@ export function RightPane({
       onResume={onResume}
       onRollback={onRollback}
       onToggleMemoryExcluded={onToggleMemoryExcluded}
+      onAddFileToConversation={onAddFileToConversation}
       responsiveMode={responsiveMode}
       onCloseRequest={onCloseRequest}
     />
@@ -100,7 +103,7 @@ export function RightPane({
 function readStoredRightPaneTab(): RightPaneTab {
   try {
     const stored = localStorage.getItem('nexus.rightPane.tab');
-    if (stored === 'files' || stored === 'agents' || stored === 'activity') return stored;
+    if (stored === 'files' || stored === 'agents' || stored === 'activity' || stored === 'terminal') return stored;
     if (stored === 'status') return 'activity';
   } catch { /* best-effort local UI preference */ }
   return 'activity';

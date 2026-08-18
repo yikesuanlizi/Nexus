@@ -102,7 +102,8 @@ const runConfig: AgentRunConfig = {
   episodeFtsCandidateLimit: DEFAULT_EPISODE_MEMORY_SETTINGS.episodeFtsCandidateLimit,
   episodeRerankEnabled: DEFAULT_EPISODE_MEMORY_SETTINGS.episodeRerankEnabled,
   systemMonitorEnabled: false,
-  locale: 'zh',
+      locale: 'zh',
+      maxIterations: 100,
 };
 
 describe('bot route', () => {

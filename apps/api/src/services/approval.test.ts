@@ -34,6 +34,20 @@ describe('WebApprovalBroker', () => {
     expect(broker.decide('missing', false)).toBe(false);
   });
 
+  it('retains persistent approval scope for the runtime after the API saves its rule', async () => {
+    const broker = new WebApprovalBroker();
+    const pending = broker.requestApproval(approvalRequest('approval-persistent'));
+
+    expect(broker.getPending('approval-persistent')?.requestId).toBe('approval-persistent');
+    expect(broker.decideWithScope('approval-persistent', true, 'allow similar', 'tool_call', 'workspace')).toBe(true);
+    await expect(pending).resolves.toEqual({
+      approved: true,
+      reason: 'allow similar',
+      temporaryScope: 'tool_call',
+      persistentScope: 'workspace',
+    });
+  });
+
   it('uses a 60 second default timeout and records approval history', async () => {
     vi.useFakeTimers();
     try {

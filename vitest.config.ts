@@ -1,7 +1,19 @@
 import { defineConfig } from 'vitest/config';
+import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 export default defineConfig({
+  plugins: [
+    {
+      name: 'nexus-source-imports',
+      enforce: 'pre',
+      resolveId(source, importer) {
+        if (importer === undefined || !source.startsWith('.') || !source.endsWith('.js')) return null;
+        const sourcePath = resolve(importer, '..', `${source.slice(0, -3)}.ts`);
+        return existsSync(sourcePath) ? sourcePath : null;
+      },
+    },
+  ],
   resolve: {
     alias: {
       '@nexus/protocol': resolve(__dirname, 'packages/protocol/src/index.ts'),

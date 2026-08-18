@@ -24,7 +24,8 @@ export interface TcpSidecarServerOptions {
   // 每个连接创建其专用的浏览器 runtime（例如绑定当前活动 tab 的 view）。
   // — English: creates a dedicated browser runtime per connection (e.g. bound
   //   to the current active tab's view).
-  createRuntime(): BrowserRuntimePort;
+  createRuntime(context?: { taskId: string }): BrowserRuntimePort;
+  releaseRuntime?(context: { taskId: string }): void;
   log?(line: string): void;
   host?: string;
 }
@@ -50,6 +51,7 @@ export async function createTcpSidecarServer(options: TcpSidecarServerOptions): 
     // — English: auth gate — the first frame must be an auth frame; only then
     //   does the connection enter the sidecar-frame phase.
     let authenticated = false;
+    let taskId: string | null = null;
 
     const transport: SidecarTransport = {
       sendLine(line: string): void {
@@ -73,12 +75,21 @@ export async function createTcpSidecarServer(options: TcpSidecarServerOptions): 
         // 首帧认证：{"type":"auth","token":"..."}
         // — English: first-frame auth.
         try {
-          const frame = JSON.parse(line) as { type?: string; token?: string };
-          if (frame.type === 'auth' && frame.token === options.authToken) {
+          const frame = JSON.parse(line) as { type?: string; token?: string; taskId?: string };
+          if (
+            frame.type === 'auth'
+            && frame.token === options.authToken
+            && typeof frame.taskId === 'string'
+            && frame.taskId.trim() !== ''
+          ) {
+            taskId = frame.taskId;
             authenticated = true;
-            transport.sendLine(JSON.stringify({ type: 'auth', ok: true }));
             try {
-              sidecar = createSidecar({ runtime: options.createRuntime(), log: (l: string) => log(l) });
+              sidecar = createSidecar({
+                runtime: options.createRuntime({ taskId }),
+                log: (l: string) => log(l),
+              });
+              transport.sendLine(JSON.stringify({ type: 'auth', ok: true }));
             } catch (err) {
               log(`[tcp-sidecar] createSidecar failed: ${String(err)}`);
               transport.sendLine(JSON.stringify({ type: 'auth', ok: false, error: 'runtime unavailable' }));
@@ -125,19 +136,14 @@ export async function createTcpSidecarServer(options: TcpSidecarServerOptions): 
       sockets.delete(socket);
       void sidecar?.close('client disconnected').catch(() => undefined);
       sidecar = null;
+      if (taskId !== null) {
+        options.releaseRuntime?.({ taskId });
+        taskId = null;
+      }
     });
     socket.on('error', (err: Error) => {
       log(`[tcp-sidecar] socket error: ${String(err)}`);
     });
-
-    // 首个连接即创建 sidecar（runtime 惰性绑定 view）。
-    // — English: the sidecar is created on connect (runtime binds the view lazily).
-    try {
-      sidecar = createSidecar({ runtime: options.createRuntime(), log: (line: string) => log(line) });
-    } catch (err) {
-      log(`[tcp-sidecar] createSidecar failed: ${String(err)}`);
-      socket.destroy();
-    }
   });
 
   await new Promise<void>((resolve, reject) => {
@@ -170,7 +176,7 @@ export async function createTcpSidecarServer(options: TcpSidecarServerOptions): 
 // — English: TCP SidecarTransport — connects to 127.0.0.1:<port> and exchanges
 //   JSONL frames line by line. It performs the auth handshake first (the first
 //   frame carries the capability token); ready resolves only after that passes.
-export function createTcpSidecarTransport(options: { host?: string; port: number; authToken: string }): {
+export function createTcpSidecarTransport(options: { host?: string; port: number; authToken: string; taskId: string }): {
   transport: SidecarTransport;
   ready: Promise<void>;
   close(): void;
@@ -224,7 +230,7 @@ export function createTcpSidecarTransport(options: { host?: string; port: number
   socket.once('connect', () => {
     // 首帧 = auth 握手。
     // — English: the first frame is the auth handshake.
-    socket.write(`${JSON.stringify({ type: 'auth', token: options.authToken })}\n`);
+    socket.write(`${JSON.stringify({ type: 'auth', token: options.authToken, taskId: options.taskId })}\n`);
   });
   socket.once('error', (err: Error) => {
     if (!authResolved) {

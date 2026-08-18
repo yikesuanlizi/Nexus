@@ -41,6 +41,35 @@ describe('WorkspaceThreadList', () => {
     expect(css).toMatch(/\.searchLauncher span\s*\{[^}]*flex-1/s);
   });
 
+  it('gives the conversation title priority over a compact, single-line timestamp', () => {
+    const source = readFileSync(resolve(process.cwd(), 'apps/desktop/src/components/WorkspaceThreadList.tsx'), 'utf8');
+    const css = readFileSync(resolve(process.cwd(), 'apps/desktop/src/styles.css'), 'utf8');
+    expect(source).toContain('className="workspaceThreadTimestamp"');
+    expect(css).toContain('.appShell .workspaceThreadTimestamp');
+    expect(css).toContain('white-space: nowrap');
+    expect(css).toContain('.appShell .workspaceThreadMain {\n  display: flex;\n  width: 100%;');
+    expect(css).toContain('.appShell .workspaceThreadActions {\n  position: absolute;');
+    expect(css).toContain('background: inherit !important;');
+    expect(css).toContain('-webkit-mask-image: linear-gradient(to right, transparent 0, #000 16px, #000 100%)');
+    expect(css).toContain('padding-right: 8px !important;');
+    expect(css).not.toContain('.appShell .workspaceThreadRow.active .workspaceThreadActions');
+    expect(css).toContain('-webkit-mask-image: linear-gradient(to right, #000 0%, #000 42%');
+  });
+
+  it('mounts the search dialog at the document root so the sidebar cannot clip it', () => {
+    const source = readFileSync(resolve(process.cwd(), 'apps/desktop/src/components/WorkspaceThreadList.tsx'), 'utf8');
+    expect(source).toContain("import { createPortal } from 'react-dom'");
+    expect(source).toContain('createPortal(dialog, document.body)');
+  });
+
+  it('keeps the sidebar collapse control visible and points it left', () => {
+    const source = readFileSync(resolve(process.cwd(), 'apps/desktop/src/components/WorkspaceThreadList.tsx'), 'utf8');
+    const css = readFileSync(resolve(process.cwd(), 'apps/desktop/src/styles.css'), 'utf8');
+    expect(source).toContain('<Icon className="icon" name="chevron" />');
+    expect(css).toContain('.appShell .threadListHeader > .miniIconButton');
+    expect(css).toContain('visibility: visible');
+  });
+
   it('renders workspace group actions and compact thread rows without child threads', () => {
     const html = renderToStaticMarkup(React.createElement(WorkspaceThreadList, {
       activeThreadId: 'a',

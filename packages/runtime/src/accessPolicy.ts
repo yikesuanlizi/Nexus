@@ -87,7 +87,18 @@ export function temporaryGrantMatches(grant: TemporaryAccessGrant, request: Acce
 }
 
 function ruleMatches(rule: AccessRule, request: AccessRequest): boolean {
+  if (rule.scope === 'thread' && rule.threadId && rule.threadId !== request.threadId) return false;
+  if (rule.scope === 'workspace' && !sameWorkspace(rule.workspaceRoot, request.workspaceRoot)) return false;
   return rule.access === request.access && targetMatches(rule.target, request.target);
+}
+
+function sameWorkspace(ruleWorkspaceRoot: string | undefined, requestWorkspaceRoot: string | undefined): boolean {
+  if (!ruleWorkspaceRoot || !requestWorkspaceRoot) return false;
+  const ruleRoot = path.resolve(ruleWorkspaceRoot);
+  const requestRoot = path.resolve(requestWorkspaceRoot);
+  return process.platform === 'win32'
+    ? ruleRoot.toLowerCase() === requestRoot.toLowerCase()
+    : ruleRoot === requestRoot;
 }
 
 function targetMatches(ruleTarget: AccessRule['target'], requestTarget: AccessRequest['target']): boolean {

@@ -43,7 +43,8 @@ export function registerTaskRuntimeIpc(deps: TaskRuntimeDeps): void {
     if (running.has(goldenId)) throw new Error(`golden task already running: ${goldenId}`);
     running.add(goldenId);
     try {
-      const view: WebContentsView = tabId !== '' ? manager.viewFor(tabId) : manager.viewFor(manager.listTabs()[0]?.tabId ?? '');
+      const resolvedTabId = tabId !== '' ? tabId : manager.listTabs()[0]?.tabId ?? '';
+      const view: WebContentsView = manager.viewFor(resolvedTabId);
       console.error(`[task] view resolved: ${String(view.webContents.id)}`);
       const rt = await loadBrowserRuntime();
       console.error(`[task] browser-runtime loaded: ${typeof rt.runGoldenTaskWithOrchestrator}`);
@@ -66,7 +67,11 @@ export function registerTaskRuntimeIpc(deps: TaskRuntimeDeps): void {
       // 统一 adapter 缓存（manager 按 webContents.id 复用，避免双 CDP 附着）。
       // — English: use the manager's unified adapter cache (keyed by
       //   webContents.id) so two adapters never attach the same target twice.
-      const runtime = new ElectronWebContentsRuntime({ view, adapter: manager.adapterForView(view) });
+      const runtime = new ElectronWebContentsRuntime({
+        view,
+        adapter: manager.adapterForView(view),
+        waitForDownload: (input) => manager.waitForNextDownload(resolvedTabId, input),
+      });
       const result = await runGoldenTaskWithOrchestrator(runtime, task as Parameters<typeof runGoldenTaskWithOrchestrator>[1], {
         budget: { maxSteps: 30, maxTokens: 200_000, maxReplans: 5, maxConsecutiveFailures: 3, maxDurationMs: 5 * 60_000, maxExternalWrites: 3, maxDownloadBytes: 100 * 1024 * 1024 },
       });

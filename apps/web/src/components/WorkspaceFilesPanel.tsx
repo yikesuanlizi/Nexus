@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { Locale } from '../config/config.js';
 import { formatTimestamp } from '../shared/i18n.js';
 import type { WorkspaceFileEntry, WorkspaceFilePreview } from '../shared/types.js';
-import { Icon } from './Icon.js';
+import { Icon, type IconName } from './Icon.js';
 import { GitNexusPanel } from './GitNexusPanel.js';
 
 interface TreeRow {
@@ -15,6 +16,30 @@ interface TreeRow {
 type WorkspacePreviewMode = 'rendered' | 'source';
 
 const FILE_TYPE_ALIASES: Record<string, string> = {
+  py: 'python python3 flask django fastapi',
+  pyw: 'python python3',
+  go: 'go golang',
+  java: 'java jvm spring',
+  kt: 'kotlin android',
+  kts: 'kotlin gradle',
+  js: 'javascript node nodejs',
+  jsx: 'javascript react',
+  ts: 'typescript',
+  tsx: 'typescript react',
+  html: 'html markup web',
+  htm: 'html markup web',
+  css: 'css stylesheet',
+  scss: 'sass scss stylesheet',
+  rs: 'rust cargo',
+  c: 'c c-language',
+  h: 'c header',
+  cpp: 'c++ cpp',
+  hpp: 'c++ cpp header',
+  sh: 'shell bash zsh',
+  bash: 'shell bash',
+  ps1: 'powershell shell',
+  sql: 'sql database query',
+  dockerfile: 'docker container',
   csv: 'excel spreadsheet sheet table office 表格 电子表格',
   doc: 'word document office 文档',
   docx: 'word document office 文档',
@@ -31,6 +56,57 @@ const FILE_TYPE_ALIASES: Record<string, string> = {
 
 for (const extension of ['apng', 'avif', 'bmp', 'gif', 'ico', 'jpg', 'jpeg', 'png', 'svg', 'webp']) {
   FILE_TYPE_ALIASES[extension] = `image picture photo ${extension} 图片 图像 照片`;
+}
+
+function workspaceFileIcon(entry: WorkspaceFileEntry, opened: boolean): { name: IconName; className: string } {
+  if (entry.kind === 'directory') {
+    return { name: opened ? 'folderOpen' : 'folder', className: 'workspaceFileIcon folder' };
+  }
+
+  const fileName = entry.name.toLowerCase();
+  const extension = (entry.extension || fileName.split('.').pop() || '').toLowerCase();
+  if (fileName === 'package.json' || fileName === 'package-lock.json' || fileName === 'npm-shrinkwrap.json' || fileName === '.npmrc') {
+    return { name: 'fileNpm', className: 'workspaceFileIcon language-npm' };
+  }
+  if (fileName.startsWith('.git') || fileName === 'gitattributes' || fileName === 'gitmodules') {
+    return { name: 'fileGit', className: 'workspaceFileIcon language-git' };
+  }
+  if (fileName === 'dockerfile' || extension === 'dockerfile') return { name: 'fileDocker', className: 'workspaceFileIcon code language-docker' };
+  if (['py', 'pyw'].includes(extension)) return { name: 'filePython', className: 'workspaceFileIcon code language-python' };
+  if (extension === 'go') return { name: 'fileGo', className: 'workspaceFileIcon code language-go' };
+  if (extension === 'java') return { name: 'fileJava', className: 'workspaceFileIcon code language-java' };
+  if (['js', 'mjs', 'cjs'].includes(extension)) return { name: 'fileJavaScript', className: 'workspaceFileIcon code language-javascript' };
+  if (['jsx', 'tsx'].includes(extension)) return { name: 'fileReact', className: 'workspaceFileIcon code language-react' };
+  if (extension === 'ts') return { name: 'fileTypeScript', className: 'workspaceFileIcon code language-typescript' };
+  if (extension === 'vue') return { name: 'fileVue', className: 'workspaceFileIcon code language-vue' };
+  if (['html', 'htm'].includes(extension)) return { name: 'fileHtml', className: 'workspaceFileIcon code language-html' };
+  if (['css', 'scss', 'less'].includes(extension)) return { name: 'fileCss', className: 'workspaceFileIcon code language-css' };
+  if (extension === 'rs') return { name: 'fileRust', className: 'workspaceFileIcon code language-rust' };
+  if (extension === 'php') return { name: 'filePhp', className: 'workspaceFileIcon code language-php' };
+  if (['c', 'h'].includes(extension)) return { name: 'fileC', className: 'workspaceFileIcon code language-c' };
+  if (['cpp', 'hpp'].includes(extension)) return { name: 'fileCode', className: 'workspaceFileIcon code language-cpp' };
+  if (['sh', 'bash', 'zsh', 'bat', 'ps1'].includes(extension)) return { name: 'fileShell', className: 'workspaceFileIcon code language-shell' };
+  if (extension === 'sql') return { name: 'fileSql', className: 'workspaceFileIcon code language-sql' };
+  if (['json', 'jsonc', 'json5', 'yaml', 'yml', 'toml', 'ini', 'env'].includes(extension) || fileName.startsWith('.env') || fileName.includes('config.')) {
+    return { name: 'fileJson', className: 'workspaceFileIcon config' };
+  }
+  if (['ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'css', 'scss', 'less', 'html', 'htm', 'vue', 'svelte', 'astro', 'py', 'pyw', 'go', 'rs', 'java', 'kt', 'kts', 'c', 'cpp', 'h', 'hpp', 'sh', 'bash', 'zsh', 'bat', 'ps1', 'sql'].includes(extension)) {
+    return { name: 'fileCode', className: 'workspaceFileIcon code' };
+  }
+  if (['md', 'mdx'].includes(extension) || fileName.startsWith('readme')) {
+    return { name: 'fileMarkdown', className: 'workspaceFileIcon text language-markdown' };
+  }
+  if (['txt', 'log', 'rst', 'rtf'].includes(extension)) {
+    return { name: 'fileText', className: 'workspaceFileIcon text' };
+  }
+  if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'avif', 'bmp', 'ico', 'apng'].includes(extension)) {
+    return { name: 'fileImage', className: 'workspaceFileIcon image' };
+  }
+  if (extension === 'pdf') return { name: 'filePdf', className: 'workspaceFileIcon pdf' };
+  if (['csv', 'xls', 'xlsx', 'ods', 'numbers'].includes(extension)) return { name: 'fileSpreadsheet', className: 'workspaceFileIcon spreadsheet' };
+  if (['zip', 'rar', '7z', 'tar', 'gz', 'bz2'].includes(extension)) return { name: 'fileArchive', className: 'workspaceFileIcon archive' };
+  if (['doc', 'docx', 'odt', 'ppt', 'pptx', 'odp'].includes(extension)) return { name: 'fileText', className: 'workspaceFileIcon office' };
+  return { name: 'file', className: 'workspaceFileIcon generic' };
 }
 
 function formatBytes(value: number): string {
@@ -139,7 +215,10 @@ export function workspacePreviewTabsForDisplay<T extends Pick<WorkspaceFilePrevi
   return [transient, ...pinned];
 }
 
-export function workspaceHtmlPreviewDocument(html: string): string {
+export function workspaceHtmlPreviewDocument(html: string, theme: 'light' | 'dark' = 'light'): string {
+  const dark = theme === 'dark';
+  const previewBackground = dark ? '#17191c' : '#ffffff';
+  const previewText = dark ? '#eceff2' : '#0f172a';
   const previewStyle = `<style data-nexus-preview-style>
 html,
 body {
@@ -149,8 +228,8 @@ body {
   max-width: 100% !important;
   margin: 0 !important;
   overflow: auto !important;
-  background: #ffffff !important;
-  color: #0f172a !important;
+  background: ${previewBackground} !important;
+  color: ${previewText} !important;
 }
 *,
 *::before,
@@ -216,7 +295,8 @@ function renderPreviewContent(preview: WorkspaceFilePreview, locale: Locale, pre
 
   if (preview.previewType === 'html') {
     if (previewMode === 'source') return renderSourcePreview(preview, preview.text);
-    return <iframe className="workspaceHtmlPreview workspaceRenderedPreview" sandbox="" srcDoc={workspaceHtmlPreviewDocument(preview.text)} title={`${preview.name} rendered preview`} />;
+    const theme = typeof document !== 'undefined' && (document.documentElement.dataset.nexusTheme === 'dark' || document.querySelector('.appShell.theme-dark')) ? 'dark' : 'light';
+    return <iframe className="workspaceHtmlPreview workspaceRenderedPreview" sandbox="" srcDoc={workspaceHtmlPreviewDocument(preview.text, theme)} title={`${preview.name} rendered preview`} />;
   }
 
   if (preview.previewType === 'office') {
@@ -242,16 +322,54 @@ export interface ExternalPreviewRequest {
   nonce?: number;
 }
 
+interface WorkspaceFileContextMenuState {
+  entry: WorkspaceFileEntry;
+  x: number;
+  y: number;
+}
+
+function workspaceAbsolutePathForEntry(entry: WorkspaceFileEntry, workspaceRoot: string): string {
+  const rawPath = (entry.path || entry.name).replace(/^[\\/]+/, '');
+  const root = workspaceRoot.replace(/[\\/]+$/, '');
+  const normalizedRaw = rawPath.replace(/\\/g, '/').toLowerCase();
+  const normalizedRoot = root.replace(/\\/g, '/').toLowerCase();
+  if (normalizedRoot && (normalizedRaw === normalizedRoot || normalizedRaw.startsWith(`${normalizedRoot}/`))) {
+    return rawPath.replace(/\//g, root.includes('\\') ? '\\' : '/');
+  }
+  if (/^(?:[A-Za-z]:[\\/]|\\\\|\/)/.test(entry.path || '')) return entry.path;
+  if (!root) return rawPath;
+  const separator = workspaceRoot.includes('\\') ? '\\' : '/';
+  return `${root || separator}${root ? separator : ''}${rawPath.replace(/[\\/]/g, separator)}`;
+}
+
+function workspaceDirectoryForEntry(entry: WorkspaceFileEntry, workspaceRoot: string): string {
+  const absolute = workspaceAbsolutePathForEntry(entry, workspaceRoot);
+  if (entry.kind === 'directory') return absolute;
+  const separatorIndex = Math.max(absolute.lastIndexOf('/'), absolute.lastIndexOf('\\'));
+  return separatorIndex > 0 ? absolute.slice(0, separatorIndex) : workspaceRoot;
+}
+
+function workspaceEntryIsHtml(entry: WorkspaceFileEntry): boolean {
+  const extension = (entry.extension || entry.name.split('.').at(-1) || '').toLowerCase();
+  return extension === 'html' || extension === 'htm';
+}
+
 export function WorkspaceFilesPanel({
   locale,
   workspaceRoot,
   externalPreviewRequest,
+  onOpenTerminalAt,
+  onOpenHtmlInBrowser,
+  onAddFileToConversation,
 }: {
   locale: Locale;
   workspaceRoot: string;
   /** 外部预览请求 — 从对话条目点击"预览"时传入，自动加载该文件 */
   // — Chinese: external preview request — passed in when clicking "preview" from a chat item
   externalPreviewRequest?: ExternalPreviewRequest | null;
+  onOpenTerminalAt?(directory: string): void;
+  onOpenHtmlInBrowser?(path: string): void;
+  onAddFileToConversation?(path: string): void;
 }) {
   const [entriesByPath, setEntriesByPath] = useState<Record<string, WorkspaceFileEntry[]>>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set(['']));
@@ -268,6 +386,7 @@ export function WorkspaceFilesPanel({
   const [gitnexusSelectedPath, setGitnexusSelectedPath] = useState('');
   const [revealedPath, setRevealedPath] = useState<{ path: string; nonce: number } | null>(null);
   const [spotlightPath, setSpotlightPath] = useState('');
+  const [contextMenu, setContextMenu] = useState<WorkspaceFileContextMenuState | null>(null);
   // 文件树宽度百分比从 localStorage 读取，默认 28% 让预览框更宽（约 2.5 倍）
   // — English: tree width % from localStorage, default 28% for wider preview (~2.5x)
   const [treeWidth, setTreeWidth] = useState(() => {
@@ -296,6 +415,28 @@ export function WorkspaceFilesPanel({
   useEffect(() => () => {
     if (copyPreviewPathTimerRef.current) window.clearTimeout(copyPreviewPathTimerRef.current);
   }, []);
+
+  useEffect(() => {
+    if (!contextMenu) return undefined;
+    const close = (event: Event): void => {
+      const target = event.target;
+      if (target instanceof Element && target.closest('.workspaceFileContextMenu')) return;
+      setContextMenu(null);
+    };
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setContextMenu(null);
+    };
+    document.addEventListener('pointerdown', close);
+    document.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', close);
+      document.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [contextMenu]);
 
   // 中文注释：响应外部预览请求 — 从对话条目点击"预览"时自动加载该文件或目录
   // 若路径是目录则展开目录树，是文件则预览内容
@@ -586,6 +727,7 @@ export function WorkspaceFilesPanel({
             {!loadingPaths.has('') && rows.length === 0 ? <p>{locale === 'zh' ? '没有文件' : 'No files'}</p> : null}
             {rows.map(({ depth, entry }) => {
               const opened = expanded.has(entry.path);
+              const fileIcon = workspaceFileIcon(entry, opened);
               const rowBaseClassName = spotlightPath === entry.path ? 'workspaceFileRow spotlight' : 'workspaceFileRow';
               const rowClassName = activePreviewPath === entry.path ? `${rowBaseClassName} active` : rowBaseClassName;
               return (
@@ -600,9 +742,16 @@ export function WorkspaceFilesPanel({
                   title={workspaceFileRowTitle(entry, workspaceRoot)}
                   onClick={() => entry.kind === 'directory' ? toggleDirectory(entry) : void previewFile(entry)}
                   onDoubleClick={() => entry.kind === 'file' ? void previewFile(entry, true) : undefined}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    setContextMenu({ entry, x: event.clientX, y: event.clientY });
+                  }}
                   style={{ '--file-depth': depth } as React.CSSProperties}
                 >
-                  {entry.kind === 'directory' ? <Icon name={opened ? 'chevronDown' : 'chevronRight'} /> : <Icon name="file" />}
+                  <span className="workspaceFileLeading" aria-hidden="true">
+                    {entry.kind === 'directory' ? <Icon name={opened ? 'chevronDown' : 'chevronRight'} /> : null}
+                    <Icon name={fileIcon.name} className={fileIcon.className} />
+                  </span>
                   <span>{entry.name}</span>
                   <small>{entry.kind === 'directory' ? (loadingPaths.has(entry.path) ? '...' : '') : formatBytes(entry.size)}</small>
                 </button>
@@ -696,6 +845,56 @@ export function WorkspaceFilesPanel({
           </div>
         </section>
       </div>
+      {contextMenu ? createPortal(
+        <div
+          className="workspaceFileContextMenu"
+          role="menu"
+          style={{
+            left: Math.min(contextMenu.x, Math.max(8, window.innerWidth - 248)),
+            top: Math.min(contextMenu.y, Math.max(8, window.innerHeight - 172)),
+          }}
+          onContextMenu={(event) => event.preventDefault()}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            disabled={contextMenu.entry.kind !== 'file'}
+            onClick={() => {
+              const filePath = contextMenu.entry.path;
+              setContextMenu(null);
+              onAddFileToConversation?.(filePath);
+            }}
+          >
+            <Icon name="clip" />
+            <span>{locale === 'zh' ? '添加到对话' : 'Add to conversation'}</span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setContextMenu(null);
+              onOpenTerminalAt?.(workspaceDirectoryForEntry(contextMenu.entry, workspaceRoot));
+            }}
+          >
+            <Icon name="terminal" />
+            <span>{locale === 'zh' ? '在终端中打开' : 'Open in terminal'}</span>
+          </button>
+          {onOpenHtmlInBrowser && workspaceEntryIsHtml(contextMenu.entry) ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setContextMenu(null);
+                onOpenHtmlInBrowser(contextMenu.entry.path);
+              }}
+            >
+              <Icon name="browser" />
+              <span>{locale === 'zh' ? '在内置浏览器打开' : 'Open in built-in browser'}</span>
+            </button>
+          ) : null}
+        </div>,
+        document.body,
+      ) : null}
     </section>
   );
 }

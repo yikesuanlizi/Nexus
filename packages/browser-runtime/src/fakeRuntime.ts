@@ -311,9 +311,18 @@ export class FakeSessionHandle implements BrowserSessionHandle {
     };
   }
 
-  async navigate(input: { url: string; signal?: AbortSignal }): Promise<Observation> {
+  async navigate(input: { url: string; signal?: AbortSignal; pageId?: string }): Promise<Observation> {
     this.assertOpen();
     await abortableDelay(this.defaultDelayMs, input.signal);
+    const pageId = input.pageId ?? this.activePageId;
+    if (!this.pages.has(pageId)) {
+      throw {
+        kind: 'element',
+        code: 'PAGE_NOT_FOUND',
+        message: '页面不存在',
+        retryable: true,
+      } satisfies ClassifiedError;
+    }
     if (!this.site.pages.some((p) => p.url === input.url)) {
       throw {
         kind: 'page',
@@ -322,8 +331,9 @@ export class FakeSessionHandle implements BrowserSessionHandle {
         retryable: true,
       } satisfies ClassifiedError;
     }
-    this.applyNavigate(this.activePageId, input.url);
-    return this.observe();
+    this.activePageId = pageId;
+    this.applyNavigate(pageId, input.url);
+    return this.observe({ pageId });
   }
 
   // navigate 效果：目标 def 存在时在当前页面更新 url/title/元素/内容并 epoch++；

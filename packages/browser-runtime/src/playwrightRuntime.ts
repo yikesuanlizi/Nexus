@@ -473,8 +473,16 @@ class PlaywrightSessionHandle implements BrowserSessionHandle {
     };
   }
 
-  async navigate(input: { url: string; signal?: AbortSignal }): Promise<Observation> {
+  async navigate(input: { url: string; signal?: AbortSignal; pageId?: string }): Promise<Observation> {
     this.assertOpen();
+    if (input.pageId !== undefined && input.pageId !== 'page-1') {
+      throw {
+        kind: 'element',
+        code: 'PAGE_NOT_FOUND',
+        message: '页面不存在',
+        retryable: true,
+      } satisfies ClassifiedError;
+    }
     this.throwIfAborted(input.signal);
     try {
       await this.page.goto(input.url, { timeout: this.defaultTimeoutMs });

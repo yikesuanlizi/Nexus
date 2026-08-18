@@ -11,12 +11,21 @@ import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const desktopRoot = join(here, '..');
+const workspaceRoot = join(desktopRoot, '..', '..');
 const outDir = join(desktopRoot, 'dist-electron');
 
 // Windows 下 npx 是 .cmd 包装，直接调用 typescript 编译器入口更稳。
 // — English: on Windows npx is a .cmd shim — invoke the tsc entry directly.
 const require = createRequire(import.meta.url);
 const tscEntry = require.resolve('typescript/bin/tsc');
+
+// Electron Main 在运行时通过 workspace 包名动态导入其 dist（尤其是
+// @nexus/browser-runtime）。先构建根 project，避免仅编译 Electron 壳而让
+// 新协议停留在 src、运行时仍加载旧 dist。
+execFileSync(process.execPath, [tscEntry, '-b', join(workspaceRoot, 'tsconfig.json')], {
+  cwd: workspaceRoot,
+  stdio: 'inherit',
+});
 
 execFileSync(process.execPath, [tscEntry, '-p', 'tsconfig.electron.json'], { cwd: desktopRoot, stdio: 'inherit' });
 

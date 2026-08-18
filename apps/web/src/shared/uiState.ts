@@ -4,9 +4,10 @@ import { useCallback, useEffect, useState } from 'react';
 const RIGHT_PANE_MAIN_MIN = 220;
 const STANDARD_RIGHT_PANE_MIN = 220;
 const FILES_RIGHT_PANE_MIN = 300;
+const TERMINAL_RIGHT_PANE_MIN = 460;
 const WORKFLOW_RIGHT_PANE_MIN = 300;
 
-export type RightPaneSizingMode = 'standard' | 'files' | 'workflow';
+export type RightPaneSizingMode = 'standard' | 'files' | 'terminal' | 'workflow';
 
 export interface ToastNotice {
   id: number;
@@ -36,6 +37,10 @@ export function useRightPaneSizing(visible: boolean, mode: RightPaneSizingMode =
       const stored = Number(localStorage.getItem('nexus.filesPaneWidth') ?? 0);
       return clampRightPaneWidth(stored || defaultFilesPaneWidth(), FILES_RIGHT_PANE_MIN);
     }
+    if (mode === 'terminal') {
+      const stored = Number(localStorage.getItem('nexus.terminalPaneWidth') ?? 0);
+      return clampRightPaneWidth(stored || defaultTerminalPaneWidth(), TERMINAL_RIGHT_PANE_MIN);
+    }
     if (mode !== 'workflow') {
       const stored = Number(localStorage.getItem('nexus.standardPaneWidth') ?? 0);
       return clampRightPaneWidth(stored || defaultStandardPaneWidth(), STANDARD_RIGHT_PANE_MIN);
@@ -53,6 +58,10 @@ export function useRightPaneSizing(visible: boolean, mode: RightPaneSizingMode =
       if (mode === 'files') {
         const stored = Number(localStorage.getItem('nexus.filesPaneWidth') ?? 0);
         return clampRightPaneWidth(stored || defaultFilesPaneWidth(), FILES_RIGHT_PANE_MIN);
+      }
+      if (mode === 'terminal') {
+        const stored = Number(localStorage.getItem('nexus.terminalPaneWidth') ?? 0);
+        return clampRightPaneWidth(stored || defaultTerminalPaneWidth(), TERMINAL_RIGHT_PANE_MIN);
       }
       const stored = Number(localStorage.getItem('nexus.standardPaneWidth') ?? 0);
       return clampRightPaneWidth(stored || defaultStandardPaneWidth(), STANDARD_RIGHT_PANE_MIN);
@@ -72,6 +81,7 @@ export function useRightPaneSizing(visible: boolean, mode: RightPaneSizingMode =
       const nextWidth = Math.min(max, Math.max(resizeMin, next));
       if (mode === 'workflow') localStorage.setItem('nexus.workflowPaneWidth', String(Math.round(nextWidth)));
       if (mode === 'files') localStorage.setItem('nexus.filesPaneWidth', String(Math.round(nextWidth)));
+      if (mode === 'terminal') localStorage.setItem('nexus.terminalPaneWidth', String(Math.round(nextWidth)));
       if (mode === 'standard') localStorage.setItem('nexus.standardPaneWidth', String(Math.round(nextWidth)));
       setWidth(nextWidth);
     }
@@ -110,9 +120,14 @@ function defaultFilesPaneWidth(): number {
   return Math.round(Math.min(1080, Math.max(620, window.innerWidth * 0.5)));
 }
 
+function defaultTerminalPaneWidth(): number {
+  return Math.round(Math.min(1120, Math.max(700, window.innerWidth * 0.54)));
+}
+
 function rightPaneMinForMode(mode: RightPaneSizingMode): number {
   if (mode === 'workflow') return WORKFLOW_RIGHT_PANE_MIN;
   if (mode === 'files') return FILES_RIGHT_PANE_MIN;
+  if (mode === 'terminal') return TERMINAL_RIGHT_PANE_MIN;
   return STANDARD_RIGHT_PANE_MIN;
 }
 

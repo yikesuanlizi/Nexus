@@ -7,11 +7,18 @@ import { WorkspaceFilesPanel } from '../WorkspaceFilesPanel.js';
 import { Icon } from '../Icon.js';
 import { buildAgentWorkbench } from '../../features/agents/agentWorkbenchModel.js';
 import { buildAgentStageRows, buildSubagentStatusRows } from '../../features/agents/subagents.js';
-import { WorkbenchTabs, type UtilityWorkbenchTab, type WorkbenchTab } from './WorkbenchTabs.js';
+import {
+  isTerminalUtilityWorkbenchTab,
+  WorkbenchTabs,
+  type UtilityWorkbenchTab,
+  type UtilityWorkbenchTabKind,
+  type WorkbenchTab,
+} from './WorkbenchTabs.js';
 import { LiveActivityHud } from './LiveActivityHud.js';
 import { AgentInspector } from './AgentInspector.js';
 import { AgentStagePanel } from '../AgentStagePanel.js';
 import { BrowserWorkbench } from '../BrowserWorkbench.js';
+import { TerminalPanel } from './TerminalPanel.js';
 
 export function WorkspaceWorkbench({
   activeThread,
@@ -25,6 +32,7 @@ export function WorkspaceWorkbench({
   controlCapabilities,
   locale,
   workspaceRoot,
+  terminalWorkspaceRoot,
   externalPreviewRequest,
   activeTab,
   onTabChange,
@@ -36,8 +44,11 @@ export function WorkspaceWorkbench({
   onResume,
   onRollback,
   onToggleMemoryExcluded,
+  onOpenSystemLocation,
+  onAddFileToConversation,
   responsiveMode,
   onCloseRequest,
+  suspendBrowser = false,
 }: {
   activeThread?: ThreadMeta | null;
   activeThreadId: string;
@@ -50,28 +61,56 @@ export function WorkspaceWorkbench({
   controlCapabilities?: RunControlCapabilities;
   locale: Locale;
   workspaceRoot: string;
+  terminalWorkspaceRoot?: string;
   externalPreviewRequest?: ExternalPreviewRequest | null;
   activeTab: WorkbenchTab;
   onTabChange(tab: WorkbenchTab): void;
   openUtilityTabs: UtilityWorkbenchTab[];
-  onOpenUtilityTab(tab: UtilityWorkbenchTab): void;
+  onOpenUtilityTab(tab: UtilityWorkbenchTabKind): UtilityWorkbenchTab;
   onCloseUtilityTab(tab: UtilityWorkbenchTab): void;
   onJumpToMonitor?(opts: { runId?: string; eventId?: string; itemId?: string; threadId?: string }): void;
   onInterrupt?(): void;
   onResume?(): void;
   onRollback?(checkpointId?: string): void;
   onToggleMemoryExcluded?(excluded: boolean): void;
+  onOpenSystemLocation?(path: string): void;
+  onAddFileToConversation?(path: string): void;
   responsiveMode?: 'side' | 'overlay' | 'sheet';
   onCloseRequest?(): void;
+  suspendBrowser?: boolean;
 }) {
   const zh = locale === 'zh';
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const [terminalRoots, setTerminalRoots] = useState<Record<string, string>>({});
+  const [browserNavigationRequest, setBrowserNavigationRequest] = useState<{ url: string; nonce: number } | null>(null);
+  const browserNavigationNonceRef = useRef(0);
   const handledPreviewRequestKeyRef = useRef('');
+  const hasActiveThread = Boolean(activeThreadId && activeThread);
   const mainAgentThreadId = activeThreadId || 'main';
 
   useEffect(() => {
     setSelectedAgentId(null);
   }, [activeThreadId]);
+
+  useEffect(() => {
+    setTerminalRoots({});
+  }, [terminalWorkspaceRoot, workspaceRoot]);
+
+  const handleOpenTerminalAt = (directory: string): void => {
+    const tabId = onOpenUtilityTab('terminal');
+    setTerminalRoots((current) => ({
+      ...current,
+      [tabId]: directory || terminalWorkspaceRoot || workspaceRoot,
+    }));
+  };
+
+  const handleOpenHtmlInBrowser = (path: string): void => {
+    if (!workspaceRoot || !path) return;
+    const url = workspaceFileToUrl(workspaceRoot, path);
+    browserNavigationNonceRef.current += 1;
+    setBrowserNavigationRequest({ url, nonce: browserNavigationNonceRef.current });
+    onOpenUtilityTab('browser');
+  };
 
   useEffect(() => {
     if (!externalPreviewRequest?.path) return;
@@ -114,6 +153,7 @@ export function WorkspaceWorkbench({
   const memoryExcluded = activeThread?.tags?.memoryExcluded === 'true';
   const shouldRenderFilesPanel = openUtilityTabs.includes('files');
   const shouldRenderBrowserWorkbench = openUtilityTabs.includes('browser');
+  const terminalTabs = openUtilityTabs.filter(isTerminalUtilityWorkbenchTab);
 
   const handleTabChange = (tab: WorkbenchTab) => {
     onTabChange(tab);
@@ -161,7 +201,7 @@ export function WorkspaceWorkbench({
           aria-hidden={activeTab !== 'activity'}
           inert={activeTab !== 'activity'}
         >
-          <LiveActivityHud
+          {hasActiveThread ? <LiveActivityHud
             traceSummary={traceSummary}
             currentPhase={workbench.currentPhase}
             recentEvents={workbench.recentEvents}
@@ -172,7 +212,7 @@ export function WorkspaceWorkbench({
             onRollback={onRollback}
             onJumpToTrace={handleJumpToTrace}
             locale={locale}
-          />
+          /> : null}
         </div>
 
         <div
@@ -181,15 +221,15 @@ export function WorkspaceWorkbench({
           aria-hidden={activeTab !== 'agents'}
           inert={activeTab !== 'agents'}
         >
-          <div className="workbenchAgentTreeWrap">
+          {hasActiveThread ? <div className="workbenchAgentTreeWrap">
             <AgentStagePanel
               locale={locale}
               rows={agentStageRows}
               selectedThreadId={selectedAgentId}
               onSelectAgent={handleSelectAgent}
             />
-          </div>
-          {selectedNode ? (
+          </div> : null}
+          {hasActiveThread && selectedNode ? (
             <div className="workbenchAgentInspectorWrap">
               <AgentInspector
                 node={selectedNode}
@@ -211,6 +251,10 @@ export function WorkspaceWorkbench({
               locale={locale}
               workspaceRoot={workspaceRoot}
               externalPreviewRequest={externalPreviewRequest}
+              onOpenTerminalAt={handleOpenTerminalAt}
+              onOpenSystemLocation={onOpenSystemLocation}
+              onOpenHtmlInBrowser={handleOpenHtmlInBrowser}
+              onAddFileToConversation={onAddFileToConversation}
             />
           </div>
         ) : null}
@@ -222,9 +266,28 @@ export function WorkspaceWorkbench({
             aria-hidden={activeTab !== 'browser'}
             inert={activeTab !== 'browser'}
           >
-            <BrowserWorkbench />
+            <BrowserWorkbench
+              active={activeTab === 'browser' && !suspendBrowser}
+              navigationRequest={browserNavigationRequest}
+            />
           </div>
         ) : null}
+
+        {terminalTabs.map((tabId) => (
+          <div
+            className={workbenchPanelClassName(tabId, activeTab)}
+            data-state={activeTab === tabId ? 'active' : 'inactive'}
+            aria-hidden={activeTab !== tabId}
+            inert={activeTab !== tabId}
+            key={tabId}
+          >
+            <TerminalPanel
+              active={activeTab === tabId}
+              locale={locale}
+              workspaceRoot={terminalRoots[tabId] ?? terminalWorkspaceRoot ?? workspaceRoot}
+            />
+          </div>
+        ))}
       </div>
 
       {activeThread && onToggleMemoryExcluded ? (
@@ -257,6 +320,23 @@ export function WorkspaceWorkbench({
 }
 
 function workbenchPanelClassName(tab: WorkbenchTab, activeTab: WorkbenchTab): string {
-  const base = tab === 'activity' ? 'workbenchActivity' : tab === 'agents' ? 'workbenchAgents' : tab === 'browser' ? 'workbenchBrowser' : 'workbenchFiles';
+  const base = tab === 'activity' ? 'workbenchActivity' : tab === 'agents' ? 'workbenchAgents' : tab === 'browser' ? 'workbenchBrowser' : isTerminalUtilityWorkbenchTab(tab) ? 'workbenchTerminal' : 'workbenchFiles';
   return `${base} workbenchPanel${tab === activeTab ? ' active' : ' inactive'}`;
+}
+
+/** Build a local file URL so the Electron WebContentsView can resolve relative assets. */
+function workspaceFileToUrl(workspaceRoot: string, relativePath: string): string {
+  const root = workspaceRoot.trim().replace(/[\\/]+$/, '');
+  const safeRelativePath = relativePath
+    .replace(/\\/g, '/')
+    .split('/')
+    .filter((segment) => segment !== '' && segment !== '.' && segment !== '..')
+    .join('/');
+  const absolutePath = `${root}/${safeRelativePath}`.replace(/\\/g, '/');
+  const withLeadingSlash = absolutePath.startsWith('/') ? absolutePath : `/${absolutePath}`;
+  const encodedPath = withLeadingSlash
+    .split('/')
+    .map((segment, index) => index === 0 ? '' : encodeURIComponent(segment).replace(/%3A/gi, ':'))
+    .join('/');
+  return `file://${encodedPath}`;
 }

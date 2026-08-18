@@ -54,11 +54,13 @@ export function requireBounds(value: unknown): BoundsLike {
 export interface CreateTabInputValidated {
   url: string;
   bounds: BoundsLike;
+  openedBy?: 'user' | 'agent';
 }
 
 export function validateCreateTab(input: unknown): CreateTabInputValidated {
   const record = asRecord(input);
-  return { url: requireString(record, 'url'), bounds: requireBounds(record.bounds) };
+  const openedBy = record.openedBy === 'user' || record.openedBy === 'agent' ? record.openedBy : undefined;
+  return { url: requireString(record, 'url'), bounds: requireBounds(record.bounds), openedBy };
 }
 
 export interface TabIdInput {

@@ -1,7 +1,8 @@
 export type AccessMode = 'chat' | 'workspace' | 'danger_full_access';
 export type AccessKind = 'read' | 'write' | 'command' | 'network' | 'tool_call';
 export type AccessEffect = 'allow' | 'deny';
-export type AccessRuleScope = 'global' | 'thread';
+export type AccessRuleScope = 'global' | 'workspace' | 'thread';
+export type PersistentAccessScope = AccessRuleScope;
 export type TemporaryAccessScope = 'tool_call' | 'turn' | 'session';
 export type AccessDecisionKind = 'allow' | 'prompt' | 'deny';
 
@@ -19,6 +20,9 @@ export interface AccessRule {
   access: AccessKind;
   target: AccessTarget;
   scope: AccessRuleScope;
+  /** Bound when a rule applies only to one workspace or thread. */
+  workspaceRoot?: string;
+  threadId?: string;
   reason?: string;
   createdAt?: string;
   updatedAt?: string;
@@ -53,6 +57,8 @@ export interface AccessRequest {
   toolCallId?: string;
   agentThreadId?: string;
   agentRole?: string | null;
+  /** Workspace that originated this request, used by workspace-scoped rules. */
+  workspaceRoot?: string;
   description: string;
 }
 

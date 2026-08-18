@@ -7,6 +7,7 @@ import { sendError, sendJson } from '../shared/http.js';
 
 // 忽略的目录列表（构建产物/缓存等） — Chinese: ignored directories (build artifacts, caches)
 const IGNORED_DIRS = new Set([
+  '.nexus',
   '.cache',
   '.git',
   '.mypy_cache',

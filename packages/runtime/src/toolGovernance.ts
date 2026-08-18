@@ -1,6 +1,6 @@
 // 工具治理中间件：为 runtime 提供工具调用频率限制、工具黑名单、只读沙箱检查、命令执行策略以及人工审批等能力。
 import type { ApprovalHandler, PermissionPreset, Sandbox } from '@nexus/sandbox';
-import type { ApprovalRequest } from '@nexus/protocol';
+import type { AccessRequest, ApprovalRequest } from '@nexus/protocol';
 import type { RuntimeMiddleware, RuntimeToolResponse } from './middleware.js';
 
 // ToolGovernanceConfig：工具治理策略配置
@@ -87,6 +87,37 @@ export function createToolGovernanceMiddleware(options: ToolGovernanceMiddleware
         : request.toolDef?.requiresApproval === true || forceApprovalTools.has(request.toolName);
       if (!requiresApproval) return undefined;
 
+      // browser_navigate 会在工具执行前按目标主机申请网络访问；这里不再生成
+      // 第二个泛化 tool_call 审批，以免用户为同一次导航确认两遍。
+      if (request.toolName === 'browser_navigate' || request.toolName === 'browser_download') return undefined;
+
+      const accessRequest = accessRequestForTool(ctx, request);
+      if (typeof request.toolContext.requestAccess === 'function') {
+        const decision = await request.toolContext.requestAccess(accessRequest);
+        await ctx.audit?.({
+          category: 'approval',
+          type: 'approval.resolved',
+          level: decision.decision === 'allow' ? 'info' : 'warning',
+          message: decision.decision === 'allow'
+            ? `Approval granted for ${request.toolName}`
+            : `Approval denied for ${request.toolName}`,
+          toolName: request.toolName,
+          metadata: {
+            status: decision.decision === 'allow' ? 'approved' : 'denied',
+            reason: decision.justification,
+            toolName: request.toolName,
+          },
+        });
+        if (decision.decision !== 'allow') {
+          return failedGovernanceResponse(
+            ctx.locale === 'zh' ? `已拒绝：${decision.justification}` : `Rejected: ${decision.justification}`,
+            'APPROVAL_DENIED',
+          );
+        }
+        request.toolContext.approved = true;
+        return undefined;
+      }
+
       const approvalReq: ApprovalRequest = {
         requestId: generateApprovalId(),
         threadId: ctx.threadId,
@@ -96,6 +127,7 @@ export function createToolGovernanceMiddleware(options: ToolGovernanceMiddleware
         description: `Execute ${request.toolName}: ${JSON.stringify(request.args).slice(0, 200)}`,
         payload: request.args,
         decision: 'prompt',
+        accessRequest,
       };
 
       ctx.emit({
@@ -149,6 +181,36 @@ export function createToolGovernanceMiddleware(options: ToolGovernanceMiddleware
     afterTurn: (ctx) => {
       callsByTurn.delete(ctx.turnId);
     },
+  };
+}
+
+function accessRequestForTool(ctx: Parameters<NonNullable<RuntimeMiddleware['beforeTool']>>[0], request: {
+  toolCall: { id?: string };
+  toolName: string;
+  args: Record<string, unknown>;
+}): AccessRequest {
+  if (request.toolName === 'shell_command' && typeof request.args.command === 'string') {
+    return {
+      access: 'command',
+      target: { kind: 'command', command: request.args.command },
+      threadId: ctx.threadId,
+      turnId: ctx.turnId,
+      toolCallId: request.toolCall.id,
+      toolName: request.toolName,
+      description: `执行命令：${request.args.command.slice(0, 200)}`,
+    };
+  }
+  const actionKind = request.toolName === 'browser_act' && typeof request.args.kind === 'string'
+    ? `:${request.args.kind}`
+    : '';
+  return {
+    access: 'tool_call',
+    target: { kind: 'tool', toolName: `${request.toolName}${actionKind}` },
+    threadId: ctx.threadId,
+    turnId: ctx.turnId,
+    toolCallId: request.toolCall.id,
+    toolName: request.toolName,
+    description: `执行工具：${request.toolName}${actionKind}`,
   };
 }
 

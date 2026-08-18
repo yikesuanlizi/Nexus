@@ -16,6 +16,7 @@ const packages = [
   'i18n',
   'bot',
   'runtime',
+  'browser-runtime',
 ];
 
 fs.mkdirSync(scopeDir, { recursive: true });

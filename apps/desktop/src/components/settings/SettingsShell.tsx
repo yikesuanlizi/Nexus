@@ -1,7 +1,7 @@
 // 设置面板 modal 外壳：管理 open/close、Esc 关闭、tab 导航
 // P2.4 a11y：role=dialog/aria-modal、焦点进入/回收、Tab 焦点陷阱、aria-live 状态广播
 // v3 预览对齐：topbar 跨栏 + brand mark + 主题切换 + rail-label + nav 图标
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { Locale } from '../../config/config.js';
 import { t } from '../../shared/i18n.js';
 import { Icon, type IconName } from '../Icon.js';
@@ -23,13 +23,13 @@ export interface SettingsSaveState {
 
 // 设置导航 tab → 图标映射，对齐预览的 nav-icon 设计
 const SETTINGS_TAB_ICONS: Record<string, IconName> = {
-  agent: 'spark',
+  agent: 'modelGroup',
   accessPolicy: 'shield',
-  appearance: 'palette',
-  memory: 'database',
-  performance: 'activity',
-  plugins: 'layers',
-  remote: 'send',
+  appearance: 'paintbrush',
+  memory: 'brain',
+  performance: 'gauge',
+  plugins: 'puzzle',
+  remote: 'messages',
   admin: 'shield',
 };
 
@@ -66,7 +66,11 @@ export function SettingsShell({
   onToggleTheme,
 }: SettingsShellProps) {
   const drawerRef = useRef<HTMLElement>(null);
+  const settingsFieldsetRef = useRef<HTMLFieldSetElement>(null);
   const previousActiveElementRef = useRef<HTMLElement | null>(null);
+  const scrollIndicatorDragRef = useRef<{ startY: number; startScrollTop: number } | null>(null);
+  const [scrollIndicator, setScrollIndicator] = useState({ visible: false, top: 0, right: 0 });
+  const [scrollIndicatorDragging, setScrollIndicatorDragging] = useState(false);
 
   function handleCancel() {
     if (saveState.saving) return;
@@ -108,6 +112,88 @@ export function SettingsShell({
       }
     };
   }, [open]);
+
+  useEffect(() => {
+    if (!open) {
+      setScrollIndicator({ visible: false, top: 0, right: 0 });
+      return;
+    }
+    const fieldset = settingsFieldsetRef.current;
+    const content = fieldset?.parentElement;
+    if (!fieldset || !content) return;
+    let frame = 0;
+    const update = () => {
+      if (frame) cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        const scrollRange = Math.max(0, fieldset.scrollHeight - fieldset.clientHeight);
+        const thumbHeight = 38;
+        const trackHeight = Math.max(thumbHeight, fieldset.clientHeight - 4);
+        const maxOffset = Math.max(0, trackHeight - thumbHeight);
+        const progress = scrollRange > 0 ? fieldset.scrollTop / scrollRange : 0;
+        const fieldsetRect = fieldset.getBoundingClientRect();
+        const contentRect = content.getBoundingClientRect();
+        const top = Math.max(0, fieldsetRect.top - contentRect.top + 2 + progress * maxOffset);
+        const right = Math.max(6, contentRect.right - fieldsetRect.right - 10);
+        setScrollIndicator((current) => (
+          current.visible === (scrollRange > 0)
+          && Math.abs(current.top - top) < 0.5
+          && Math.abs(current.right - right) < 0.5
+            ? current
+            : { visible: scrollRange > 0, top, right }
+        ));
+      });
+    };
+    update();
+    fieldset.addEventListener('scroll', update, { passive: true });
+    const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update);
+    resizeObserver?.observe(fieldset);
+    const mutationObserver = typeof MutationObserver === 'undefined' ? null : new MutationObserver(update);
+    mutationObserver?.observe(fieldset, { childList: true, subtree: true, attributes: true });
+    return () => {
+      fieldset.removeEventListener('scroll', update);
+      if (frame) cancelAnimationFrame(frame);
+      resizeObserver?.disconnect();
+      mutationObserver?.disconnect();
+    };
+  }, [open, activeSection, pluginMode]);
+
+  useEffect(() => {
+    function handlePointerMove(event: PointerEvent) {
+      const drag = scrollIndicatorDragRef.current;
+      const fieldset = settingsFieldsetRef.current;
+      if (!drag || !fieldset) return;
+      const scrollRange = Math.max(0, fieldset.scrollHeight - fieldset.clientHeight);
+      const maxOffset = Math.max(0, fieldset.clientHeight - 4 - 38);
+      if (scrollRange <= 0 || maxOffset <= 0) return;
+      fieldset.scrollTop = drag.startScrollTop + ((event.clientY - drag.startY) * scrollRange) / maxOffset;
+    }
+
+    function handlePointerEnd() {
+      if (!scrollIndicatorDragRef.current) return;
+      scrollIndicatorDragRef.current = null;
+      setScrollIndicatorDragging(false);
+    }
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerEnd);
+    window.addEventListener('pointercancel', handlePointerEnd);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerEnd);
+      window.removeEventListener('pointercancel', handlePointerEnd);
+    };
+  }, []);
+
+  function handleScrollIndicatorPointerDown(event: React.PointerEvent<HTMLSpanElement>) {
+    const fieldset = settingsFieldsetRef.current;
+    if (!fieldset || fieldset.scrollHeight <= fieldset.clientHeight) return;
+    event.preventDefault();
+    event.stopPropagation();
+    scrollIndicatorDragRef.current = { startY: event.clientY, startScrollTop: fieldset.scrollTop };
+    setScrollIndicatorDragging(true);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }
 
   const showSavedToast = saveState.savedToastAt !== null && Date.now() - saveState.savedToastAt < 2000;
 
@@ -222,9 +308,15 @@ export function SettingsShell({
           </aside>
 
           <div className={`settingsContent ${pluginMode ? 'pluginContentMode' : ''}`}>
-            <fieldset className="settingsFieldset" disabled={saveState.saving && busyLayer}>
+            <fieldset ref={settingsFieldsetRef} className="settingsFieldset" disabled={saveState.saving && busyLayer}>
               {children}
             </fieldset>
+            <span
+              aria-hidden="true"
+              className={`settingsScrollIndicator${scrollIndicator.visible ? ' is-scrollable' : ''}${scrollIndicatorDragging ? ' is-dragging' : ''}`}
+              onPointerDown={handleScrollIndicatorPointerDown}
+              style={{ top: scrollIndicator.top, right: scrollIndicator.right }}
+            />
           </div>
         </div>
 

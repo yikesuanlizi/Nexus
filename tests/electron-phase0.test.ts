@@ -164,6 +164,14 @@ describe('Phase 0 · Electron 同会话可行性闸门', () => {
         expression: 'document.getElementById("out").textContent',
       });
       expect(out).toBe('收到: 内嵌浏览器');
+
+      // Agent 点击前会在同一可见页面展示平滑虚拟指针，随后仍由真实 CDP 鼠标
+      // 事件完成操作。指针不参与 hit testing，也不会阻断用户随时接管。
+      const agentPointerSeen = await browserApi<boolean>(win, 'evaluate', {
+        tabId: tab.tabId,
+        expression: 'document.getElementById("__nexus_agent_pointer__") !== null',
+      });
+      expect(agentPointerSeen).toBe(true);
     } finally {
       await app.close();
     }

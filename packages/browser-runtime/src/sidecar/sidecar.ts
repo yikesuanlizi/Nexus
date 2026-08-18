@@ -32,6 +32,7 @@ export interface StartCommandPayload {
 }
 export interface NavigateCommandPayload {
   url: string;
+  pageId?: string;
 }
 export interface ObserveCommandPayload {
   pageId?: string;
@@ -276,12 +277,12 @@ export function createSidecar(deps: SidecarDeps): SidecarHandle {
     if (session === null) {
       return [responseFrame(req, errorPayload('NOT_STARTED', 'no active session', false))];
     }
-    const { url } = req.payload as NavigateCommandPayload;
+    const { url, pageId } = req.payload as NavigateCommandPayload;
     if (typeof url !== 'string' || url === '') {
       return [responseFrame(req, errorPayload('BAD_FRAME', 'invalid frame', false))];
     }
     try {
-      const obs = await session.navigate({ url });
+      const obs = await session.navigate(pageId === undefined ? { url } : { url, pageId });
       // 完整 Observation 原样返回（14.1：元素列表是必需数据）。
       // — English: the full Observation is returned verbatim (14.1: the element
       //   list is required data).
@@ -302,6 +303,17 @@ export function createSidecar(deps: SidecarDeps): SidecarHandle {
       // — English: the full Observation is returned verbatim (14.1: the element
       //   list is required data).
       return [responseFrame(req, obs)];
+    } catch (err) {
+      return [responseFrame(req, classify(err))];
+    }
+  }
+
+  async function handlePageGraph(req: ProtocolFrame): Promise<string[]> {
+    if (session === null) {
+      return [responseFrame(req, errorPayload('NOT_STARTED', 'no active session', false))];
+    }
+    try {
+      return [responseFrame(req, session.currentPageGraph())];
     } catch (err) {
       return [responseFrame(req, classify(err))];
     }
@@ -455,6 +467,8 @@ export function createSidecar(deps: SidecarDeps): SidecarHandle {
           return handleNavigate(frame as ProtocolFrame);
         case 'browser.observe':
           return handleObserve(frame as ProtocolFrame);
+        case 'browser.page_graph':
+          return handlePageGraph(frame as ProtocolFrame);
         case 'browser.act':
           return handleAct(frame as ProtocolFrame);
         case 'session.close':

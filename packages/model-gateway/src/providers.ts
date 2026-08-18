@@ -147,6 +147,16 @@ const KNOWN_PROVIDERS: ProviderEntry[] = [
     description: 'SiliconFlow API (DeepSeek, Qwen, etc.)',
   },
   {
+    id: 'giteeai',
+    name: 'Gitee AI',
+    baseUrl: 'https://ai.gitee.com/v1',
+    apiKeyEnvVar: 'GITEE_API_KEY',
+    apiKeyEnvVars: ['GITEE_API_KEY', 'GITEE_TOKEN'],
+    protocol: 'openai',
+    isLocal: false,
+    description: 'Gitee AI OpenAI-compatible API',
+  },
+  {
     id: 'groq',
     name: 'Groq',
     baseUrl: 'https://api.groq.com/openai/v1',
@@ -172,6 +182,26 @@ const KNOWN_PROVIDERS: ProviderEntry[] = [
     protocol: 'openai',
     isLocal: false,
     description: 'OpenRouter — unified API for many models',
+  },
+  {
+    id: 'huggingface',
+    name: 'Hugging Face',
+    baseUrl: 'https://router.huggingface.co/v1',
+    apiKeyEnvVar: 'HF_TOKEN',
+    apiKeyEnvVars: ['HF_TOKEN', 'HUGGINGFACEHUB_API_TOKEN'],
+    protocol: 'openai',
+    isLocal: false,
+    description: 'Hugging Face Inference Providers OpenAI-compatible API',
+  },
+  {
+    id: 'nvidia',
+    name: 'NVIDIA NIM',
+    baseUrl: 'https://integrate.api.nvidia.com/v1',
+    apiKeyEnvVar: 'NVIDIA_API_KEY',
+    apiKeyEnvVars: ['NVIDIA_API_KEY', 'NVIDIA_NIM_API_KEY'],
+    protocol: 'openai',
+    isLocal: false,
+    description: 'NVIDIA NIM OpenAI-compatible API',
   },
   {
     id: 'gemini',
@@ -262,6 +292,14 @@ const PROVIDER_ALIASES: Record<string, string> = {
   kimi_coding: 'kimi',
   'kimi-coding': 'kimi',
   moonshot: 'kimi',
+  hf: 'huggingface',
+  'hugging-face': 'huggingface',
+  'huggingface-inference': 'huggingface',
+  nim: 'nvidia',
+  'nvidia-nim': 'nvidia',
+  gitee: 'giteeai',
+  'gitee-ai': 'giteeai',
+  'ai.gitee': 'giteeai',
   silicon: 'siliconflow',
   'x-ai': 'xai',
   'x.ai': 'xai',
@@ -505,9 +543,6 @@ export function listApiKeyEnvVarCandidates(providerId?: string): string[] {
       for (const envVar of resolveProviderApiKeyEnvVars(provider.id)) add(envVar);
       add(config.apiKeyEnvVars?.[provider.id]);
     }
-  }
-  for (const name of Object.keys({ ...readExternalEnvironmentSnapshot(), ...process.env, ...config.runtimeEnv })) {
-    if (/(API|KEY|TOKEN|SECRET)/i.test(name)) add(name);
   }
   return [...names].sort((a, b) => a.localeCompare(b));
 }

@@ -4,6 +4,7 @@ import type { Locale, RunConfig, ThemeMode } from '../../config/config.js';
 import { t } from '../../shared/i18n.js';
 import { DropdownSelect } from '../DropdownSelect.js';
 import { CUSTOM_USER_AVATAR_ID, DEFAULT_USER_AVATAR_ID, USER_AVATAR_OPTIONS, UserAvatar, userAvatarLabel } from '../UserAvatar.js';
+import { SettingsPageHeader } from './SettingsPageHeader.js';
 
 export interface AppearancePageProps {
   locale: Locale;
@@ -55,11 +56,10 @@ export function AppearancePage({ locale, config, setConfig, markDirty, dirtyFiel
 
   return (
     <section className="settingsSection" id="settings-appearance">
-      <div className="presetHeader">
-        <div>
-          <h3>{locale === 'zh' ? '外观' : 'Appearance'}</h3>
-        </div>
-      </div>
+      <SettingsPageHeader
+        eyebrow="INTERFACE"
+        title={locale === 'zh' ? '外观' : 'Appearance'}
+      />
       <div className="formGrid modelSettingsList">
         <label className={themeDirty ? 'fieldDirty' : ''}>
           {locale === 'zh' ? '主题' : 'Theme'}

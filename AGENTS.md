@@ -60,7 +60,7 @@
 2. 区分四层：前端渲染、SSE 事件、REST `/turn` 返回、runtime/storage 落盘。
 3. 工具成功但前端失败时，优先检查是否缺少最终 `agent_message` 或 `error` item。
 4. 不要只做视觉遮掩；失败必须在 thread items 中可追溯。
-5. 修完后至少跑相关单测、全量 `npm test`，并用浏览器或 API 验证一条真实消息链路。
+5. 修完后至少跑相关单测、全量 `npm test`（UI不需要测试，可以看界面），并用浏览器或 API 验证一条真实消息链路。
 
 ## 代码风格
 

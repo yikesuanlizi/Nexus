@@ -810,3 +810,57 @@
     justify-content: space-between;
   }
 }
+
+/* 深色主题统一覆盖：插件中心不能回退到独立的蓝色调色板。 */
+.appShell:is(.theme-dark, .theme-system) .settingsDrawer .pluginCatalogShell {
+  --bg: #17191c;
+  --card-bg: #1d2024;
+  --text-main: #eceff2;
+  --text-sub: #a6adb5;
+  --border: #30353b;
+  --border-strong: #454b53;
+  --accent: #aeb5bd;
+  --accent-2: #aeb5bd;
+  --gray-100: #1c1f23;
+  --gray-200: #22262b;
+  --gray-300: #30353b;
+  --gray-400: #747c85;
+  --gray-500: #a6adb5;
+  --gray-600: #eceff2;
+  background: #17191c !important;
+  background-color: #17191c !important;
+  background-image: none !important;
+  border-color: #30353b !important;
+  color: #eceff2 !important;
+}
+
+.appShell:is(.theme-dark, .theme-system) .settingsDrawer .pluginCatalogShell :is(.card, .pluginControlCard, .pluginNotice, .providerCard, .section-count, .nav-item .count, .tag, .btn, .btn-muted) {
+  background: #1d2024 !important;
+  background-color: #1d2024 !important;
+  background-image: none !important;
+  border-color: #30353b !important;
+  color: #eceff2 !important;
+  box-shadow: none !important;
+}
+
+.appShell:is(.theme-dark, .theme-system) .settingsDrawer .pluginCatalogShell :is(.nav-item:hover, .nav-item.active, .btn:hover, .btn-muted:hover) {
+  background: #2a2e33 !important;
+  background-color: #2a2e33 !important;
+  border-color: #454b53 !important;
+  color: #eceff2 !important;
+}
+
+.appShell:is(.theme-dark, .theme-system) .settingsDrawer .pluginCatalogShell :is(.btn-primary, .btn-primary:hover) {
+  background: #2a2e33 !important;
+  background-color: #2a2e33 !important;
+  border-color: #454b53 !important;
+  color: #f2f4f6 !important;
+}
+
+.appShell:is(.theme-dark, .theme-system) .settingsDrawer .pluginCatalogShell :is(input, select, textarea, .dropdownButton) {
+  background: #202328 !important;
+  background-color: #202328 !important;
+  background-image: none !important;
+  border-color: #30353b !important;
+  color: #eceff2 !important;
+}

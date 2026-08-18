@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { Locale } from '../config/config.js';
 import { formatTimestamp, t } from '../shared/i18n.js';
 import type { ThreadMeta } from '../shared/types.js';
@@ -74,6 +74,8 @@ export function WorkspaceThreadList({
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [renaming, setRenaming] = useState<ThreadMeta | null>(null);
+  const threadListScrollRef = useRef<HTMLDivElement | null>(null);
+  const pendingScrollTopRef = useRef<number | null>(null);
   const workflowThreads = useMemo(() => threads.filter((thread) => !thread.parentThreadId && isWorkflowProjectThread(thread)), [threads]);
   const listedThreads = useMemo(() => threads.filter((thread) => !isWorkflowProjectThread(thread)), [threads]);
   const plainChats = useMemo(() => buildPlainChatThreads({ searchQuery, threads: listedThreads }), [listedThreads, searchQuery]);
@@ -86,6 +88,19 @@ export function WorkspaceThreadList({
   }), [currentWorkspaceRoot, listedThreads, locale, rememberedRoots, searchQuery]);
   const remoteBindings = useMemo(() => buildRemoteThreadBindings({ dingtalkActiveThreadId, weixinActiveThreadId }), [dingtalkActiveThreadId, weixinActiveThreadId]);
   const searchVisible = searchOpen || searchQuery.trim().length > 0;
+  useEffect(() => {
+    const pendingTop = pendingScrollTopRef.current;
+    if (pendingTop === null) return;
+    pendingScrollTopRef.current = null;
+    window.requestAnimationFrame(() => {
+      if (threadListScrollRef.current) threadListScrollRef.current.scrollTop = pendingTop;
+    });
+  }, [activeThreadId]);
+
+  function selectThreadPreservingScroll(nextThreadId: string): void {
+    pendingScrollTopRef.current = threadListScrollRef.current?.scrollTop ?? 0;
+    onSelectThread(nextThreadId);
+  }
   const searchResults = useMemo(() => [
     ...workflowThreads.map((thread) => ({ context: locale === 'zh' ? '工作流项目' : 'Workflow projects', thread })),
     ...plainChats.map((thread) => ({ context: locale === 'zh' ? '对话' : 'Chats', thread })),
@@ -132,7 +147,7 @@ export function WorkspaceThreadList({
       </div>
 
       <div className="threadListScroll">
-        <div className="workspaceGroupList">
+        <div className="workspaceGroupList" ref={threadListScrollRef}>
         <WorkflowProjectList
           activeThreadId={activeThreadId}
           busy={busy}
@@ -145,7 +160,7 @@ export function WorkspaceThreadList({
           onCreateWorkflowProject={onCreateWorkflowProject}
           onDeleteThread={onDeleteThread}
           onRenameThread={(thread) => setRenaming(thread)}
-          onSelectThread={onSelectThread}
+          onSelectThread={selectThreadPreservingScroll}
           onToggleCollapsed={() => setWorkflowProjectsCollapsed((value) => !value)}
         />
         <ThreadModuleView
@@ -161,14 +176,14 @@ export function WorkspaceThreadList({
           onCreate={onCreatePlainChat}
           onDeleteThread={onDeleteThread}
           onRenameThread={(thread) => setRenaming(thread)}
-          onSelectThread={onSelectThread}
+          onSelectThread={selectThreadPreservingScroll}
           onToggleCollapsed={() => setPlainCollapsed((value) => !value)}
         />
 
         <div className="threadModuleTitle">
           <button className="threadModuleToggle" type="button" onClick={() => setProjectsCollapsed((value) => !value)}>
             {projectsCollapsed ? <Icon className="icon" name="chevronRight" /> : <SidebarIcon className="icon" name="chevron" />}
-            <SidebarIcon className="icon" name="folder" />
+            <SidebarIcon className="icon" name="folderOpen" />
             <span>{locale === 'zh' ? '项目' : 'Projects'}</span>
           </button>
           <button className="threadModuleAction" type="button" title={locale === 'zh' ? '选择工作区' : 'Select workspace'} onClick={onPickWorkspace}>
@@ -196,7 +211,7 @@ export function WorkspaceThreadList({
             onDeleteThread={onDeleteThread}
             onForgetWorkspace={onForgetWorkspace}
             onRenameThread={(thread) => setRenaming(thread)}
-            onSelectThread={onSelectThread}
+            onSelectThread={selectThreadPreservingScroll}
             onToggleCollapsed={() => setCollapsed((current) => ({ ...current, [group.workspaceRoot]: !current[group.workspaceRoot] }))}
             onToggleExpanded={() => setExpanded((current) => ({ ...current, [group.workspaceRoot]: !current[group.workspaceRoot] }))}
           />
@@ -223,7 +238,7 @@ export function WorkspaceThreadList({
           onQueryChange={onSearchQueryChange}
           onSelect={(id) => {
             setSearchOpen(false);
-            onSelectThread(id);
+            selectThreadPreservingScroll(id);
           }}
         />
       ) : null}
@@ -322,7 +337,7 @@ function ThreadModuleView({
       <div className="threadModuleHeader">
         <button className="threadModuleToggle" type="button" onClick={onToggleCollapsed}>
           {collapsed ? <Icon className="icon" name="chevronRight" /> : <SidebarIcon className="icon" name="chevron" />}
-          <SidebarIcon className="icon" name="message" />
+          <SidebarIcon className="icon" name="messages" />
           <span>{title}</span>
         </button>
         <button type="button" title={locale === 'zh' ? '新建对话' : 'New chat'} onClick={onCreate}>
@@ -343,14 +358,14 @@ function ThreadModuleView({
             <ThreadRow
               activity={activity}
               active={thread.threadId === activeThreadId}
-              iconName="message"
+              iconName="messages"
               remoteBindings={remoteBindingsForThread(remoteBindings, thread.threadId)}
               key={thread.threadId}
               locale={locale}
               thread={thread}
               onDeleteThread={onDeleteThread}
               onRenameThread={onRenameThread}
-              onSelectThread={onSelectThread}
+          onSelectThread={onSelectThread}
             />
           );
         })}
@@ -498,7 +513,7 @@ function WorkspaceGroupView({
               <ThreadRow
                 activity={activity}
                 active={thread.threadId === activeThreadId}
-                iconName="message"
+              iconName="messages"
                 remoteBindings={remoteBindingsForThread(remoteBindings, thread.threadId)}
                 key={thread.threadId}
                 locale={locale}

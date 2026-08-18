@@ -87,6 +87,13 @@ const MODEL_CAPABILITY_RULES: ModelCapabilityRule[] = [
     contextTokens: 262_144,
   },
   {
+    id: 'qwen3.8-256k',
+    displayName: 'Qwen3.8 256K',
+    provider: /^(?:huggingface|hf)$/,
+    model: /^(?:qwen\/)?qwen3\.8-27b(?::[^\s]+)?$/i,
+    contextTokens: 262_144,
+  },
+  {
     id: 'kimi-k2',
     displayName: 'Kimi K2',
     provider: /^(?:kimi|moonshot)$/,

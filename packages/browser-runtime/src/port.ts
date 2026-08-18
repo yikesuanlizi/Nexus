@@ -38,7 +38,7 @@ export interface BrowserSessionHandle {
   close(reason?: string): Promise<void>;
   currentPageGraph(): PageGraph;
   observe(input?: { signal?: AbortSignal; pageId?: string }): Promise<Observation>;
-  navigate(input: { url: string; signal?: AbortSignal }): Promise<Observation>;
+  navigate(input: { url: string; signal?: AbortSignal; pageId?: string }): Promise<Observation>;
   act(input: { intent: ActionIntent; signal?: AbortSignal }): Promise<ActionResult>;
 }
 

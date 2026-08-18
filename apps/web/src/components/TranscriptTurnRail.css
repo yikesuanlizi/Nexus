@@ -1,0 +1,18 @@
+/* 独立入口用于覆盖旧版热更新缓存的轨道定位规则。 */
+main.appShell .turnRailAnchor {
+  height: var(--turn-rail-viewport-height);
+  flex: 0 0 var(--turn-rail-viewport-height);
+  margin-bottom: calc(-1 * var(--turn-rail-viewport-height) - 16px);
+}
+
+main.appShell .turnRail {
+  top: 50%;
+  left: -24px;
+  z-index: 12;
+  transform: translateY(-50%);
+}
+
+main.appShell .turnRailMarker.current .turnRailLine {
+  background: var(--nx-brand);
+  opacity: 1;
+}

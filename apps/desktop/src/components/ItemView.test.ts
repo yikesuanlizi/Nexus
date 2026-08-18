@@ -14,7 +14,11 @@ describe('agent message avatars', () => {
 
     expect(source).toContain('messageAgentAvatar');
     expect(source).toContain('<RobotMoodIcon variant={moodVariant} />');
-    expect(source).toContain("text.trim() ? 'working' : 'thinking'");
+    // 进行中不再播放 working/thinking 头像动画（流式输出旁已有 StreamingOutputIcon），
+    // 避免同一气泡两个"思考"动画重复。
+    // — English: in-progress avatars are static now (the StreamingOutputIcon is
+    //   the single thinking indicator) — no duplicate animations in one bubble.
+    expect(source).toContain("if (item.status === 'in_progress') return 'idle';");
   });
 
   it('renders the working icon inline on the active streaming output line', () => {
@@ -127,7 +131,7 @@ describe('message action visibility', () => {
         group: {
           turnId: 'turn-reasoning',
           items: [
-            { id: 'reasoning-1', type: 'reasoning', turnId: 'turn-reasoning', text: '内部推理文本', status: 'completed' },
+            { id: 'reasoning-1', type: 'reasoning', turnId: 'turn-reasoning', text: '内部推理文本', status: 'completed', timestamp: new Date().toISOString() },
           ],
         },
         locale: 'zh',
@@ -135,7 +139,11 @@ describe('message action visibility', () => {
     );
 
     expect(html).toContain('<details class="reasoningDetails">');
-    expect(html).toContain('<summary>思考过程</summary>');
+    // 折叠标题由 CSS 显示为 THINK 小字；summary 内容为思考时长（思考 Ns）。
+    // — English: the fold title is the CSS THINK label; the summary carries the
+    //   thinking-time span.
+    expect(html).toContain('reasoningElapsed');
+    expect(html).toContain('思考 ');
     expect(html).toContain('内部推理文本');
     expect(html).not.toContain('&quot;type&quot;:&quot;reasoning&quot;');
   });

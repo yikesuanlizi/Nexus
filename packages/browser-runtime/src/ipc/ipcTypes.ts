@@ -42,6 +42,7 @@ export type IpcCommand =
   | { action: 'session.close'; payload: { reason?: string } }
   | { action: 'browser.navigate'; payload: { url: string; pageId?: string } }
   | { action: 'browser.observe'; payload: { pageId?: string } }
+  | { action: 'browser.page_graph'; payload: Record<string, never> }
   | { action: 'browser.act'; payload: { intent: ActionIntent } };
 
 // ─── 事件：Sidecar → Host（异步通知） ───────────────────────────────────────

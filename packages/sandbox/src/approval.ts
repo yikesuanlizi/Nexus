@@ -1,5 +1,5 @@
 // 引入协议层的审批请求类型
-import type { ApprovalRequest, TemporaryAccessScope } from '@nexus/protocol';
+import type { ApprovalRequest, PersistentAccessScope, TemporaryAccessScope } from '@nexus/protocol';
 
 /**
  * Callback interface for Human-In-The-Loop approval.
@@ -10,7 +10,7 @@ import type { ApprovalRequest, TemporaryAccessScope } from '@nexus/protocol';
 export interface ApprovalHandler {
   /** Request approval. Returns the user's decision. */
   // 发起一次审批请求，返回用户最终决定
-  requestApproval(req: ApprovalRequest): Promise<{ approved: boolean; reason?: string; temporaryScope?: TemporaryAccessScope }>;
+  requestApproval(req: ApprovalRequest): Promise<{ approved: boolean; reason?: string; temporaryScope?: TemporaryAccessScope; persistentScope?: PersistentAccessScope }>;
 }
 
 /** A no-op handler that auto-denies everything (safest default). */

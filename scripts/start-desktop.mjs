@@ -10,6 +10,29 @@ const DEFAULT_WEIXIN_BRIDGE_PORT = 18790;
 const children = new Set();
 let stopping = false;
 
+// 等待 vite 就绪并预热首页（触发入口模块编译，Electron 打开时首屏已热）。
+// — English: wait for vite and warm the entry page (compiles the entry modules
+//   so Electron's first paint is already warm).
+async function waitForVite(url, timeoutMs = 30_000) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      const response = await fetch(url);
+      if (response.ok) {
+        // 首页返回后 vite 已开始编译依赖；再给一点时间让入口编译完成。
+        // — English: once the index returns, vite has started compiling deps;
+        //   give it a moment to finish the entry modules.
+        await new Promise((r) => setTimeout(r, 800));
+        return true;
+      }
+    } catch {
+      // not ready yet
+    }
+    if (Date.now() > deadline) return false;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+}
+
 function bin(name) {
   return path.join(root, 'node_modules', '.bin', isWindows ? `${name}.CMD` : name);
 }
@@ -146,6 +169,16 @@ async function startDesktopStack() {
     cwd: path.join(root, 'apps', 'desktop'),
     env: { FORCE_COLOR: '1' },
   });
+
+  // 等 vite 就绪并预热首页：首次请求会触发 vite 编译入口模块，编译完成后
+  // 再启动 Electron，避免窗口打开后长时间空白（首屏编译热缓存）。
+  // — English: wait for vite and warm the entry page — the first request makes
+  //   vite compile the entry modules, so Electron opens against a warm cache
+  //   instead of a long blank first paint.
+  const viteReady = await waitForVite('http://127.0.0.1:5178/');
+  if (!viteReady) {
+    console.error('[vite] dev server did not become ready — continuing anyway (Electron will retry)');
+  }
 
   // Electron Main（迁移计划 Phase 1）：dev 模式加载 5178 Vite Renderer。
   // 注意：args 是相对 cwd（apps/desktop）的路径，不能带 apps/desktop 前缀，

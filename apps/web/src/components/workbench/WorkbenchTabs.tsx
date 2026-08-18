@@ -1,7 +1,7 @@
 import type { Locale } from '../../config/config.js';
 import { Icon } from '../Icon.js';
 
-export type WorkbenchTab = 'activity' | 'agents' | 'files';
+export type WorkbenchTab = 'activity' | 'agents' | 'files' | 'terminal';
 
 export function WorkbenchTabs({
   activeTab,
@@ -16,9 +16,10 @@ export function WorkbenchTabs({
 }) {
   const zh = locale === 'zh';
   const tabs: Array<{ id: WorkbenchTab; icon: React.ComponentProps<typeof Icon>['name']; label: string; badge?: number }> = [
-    { id: 'activity', icon: 'activity', label: zh ? '活动' : 'Activity' },
-    { id: 'agents', icon: 'puppet', label: zh ? '智能体' : 'Agents', badge: runningAgentCount > 0 ? runningAgentCount : undefined },
-    { id: 'files', icon: 'folder', label: zh ? '文件' : 'Files' },
+    { id: 'activity', icon: 'pulse', label: zh ? '活动' : 'Activity' },
+    { id: 'agents', icon: 'agentGroup', label: zh ? '智能体' : 'Agents', badge: runningAgentCount > 0 ? runningAgentCount : undefined },
+    { id: 'files', icon: 'folderOpen', label: zh ? '文件' : 'Files' },
+    { id: 'terminal', icon: 'terminal', label: zh ? '终端' : 'Terminal' },
   ];
 
   return (

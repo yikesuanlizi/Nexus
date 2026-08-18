@@ -91,6 +91,13 @@ export function registerDesktopIpc(deps: DesktopIpcDeps): void {
     return error === '';
   });
 
+  ipcMain.handle('desktop:showItemInFolder', (_event, path: unknown) => {
+    if (typeof path !== 'string' || path === '') {
+      throw new Error('path 必须为非空字符串');
+    }
+    shell.showItemInFolder(path);
+  });
+
   ipcMain.handle('appearance:setTheme', (_event, input: unknown) => {
     const value = input as { source?: unknown; resolved?: unknown } | null;
     if (!isAppearanceSource(value?.source) || !isVisualTheme(value?.resolved)) {

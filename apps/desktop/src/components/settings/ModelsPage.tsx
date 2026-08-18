@@ -6,6 +6,7 @@ import type { ApiKeyState, ModelPreset, ProviderEntry } from '../../shared/types
 import { t } from '../../shared/i18n.js';
 import { Icon } from '../Icon.js';
 import { DropdownSelect, type DropdownOption } from '../DropdownSelect.js';
+import { ModelBrandIcon } from '../ModelBrandIcon.js';
 import { ConfirmPanel } from './ConfirmPanel.js';
 import { SettingsPageHeader } from './SettingsPageHeader.js';
 import { modelPresetMatchesRunConfig, normalizeModelConfigDraftForSettings, providerDropdownOptions, type ModelConfigDraft } from './shared.js';
@@ -84,13 +85,19 @@ export function ModelsPage({
   const [deletingPresetId, setDeletingPresetId] = React.useState('');
   const [pendingDeletePreset, setPendingDeletePreset] = React.useState<ModelPreset | null>(null);
   const [selectedPresetId, setSelectedPresetId] = React.useState('__draft__');
+  const activePresetId = matchedDraftPreset?.id ?? selectedPresetId;
   const modelPresetDraftOptions: Array<DropdownOption<string>> = [
-    { value: '__draft__', label: locale === 'zh' ? '当前编辑草稿' : 'Current draft' },
+    ...(matchedDraftPreset ? [] : [{
+      value: '__draft__',
+      label: locale === 'zh' ? '当前编辑草稿' : 'Current draft',
+      icon: <ModelBrandIcon model={modelConfigDraft.model} provider={modelConfigDraft.provider} />,
+    }]),
     ...modelPresets.map((preset) => ({
       value: preset.id,
       label: preset.name,
       detail: [providers.find((provider) => provider.id === preset.config.provider)?.name ?? preset.config.provider, preset.config.model].filter(Boolean).join(' / '),
-      current: matchedDraftPreset?.id === preset.id,
+      icon: <ModelBrandIcon model={preset.config.model} provider={preset.config.provider} />,
+      badge: matchedDraftPreset?.id === preset.id ? (locale === 'zh' ? '当前' : 'Current') : undefined,
       action: {
         ariaLabel: locale === 'zh' ? `删除预设「${preset.name}」` : `Delete preset "${preset.name}"`,
         className: 'danger',
@@ -168,14 +175,23 @@ export function ModelsPage({
         title={text(locale, '模型', 'Model')}
       />
 
-      <div className="settingsCard scopeApplyCard">
+      <div className="settingsCard modelConfigurationCard">
+        <div className="modelConfigurationBlock defaultModelConfigurationBlock">
         <div className="settingsCardHeader">
           <h3>{locale === 'zh' ? '默认模型' : 'Default model'}</h3>
         </div>
         <div className="formGrid modelSettingsList">
           <label className="wideField">
             {t(locale, 'provider')}
-            <DropdownSelect className={['modelProviderSelect', providerDirty].filter(Boolean).join(' ')} value={providerSelectValue} onChange={selectModelProviderDraft} options={providerDropdownOptions(providers, locale)} />
+            <DropdownSelect
+              className={['modelProviderSelect', providerDirty].filter(Boolean).join(' ')}
+              value={providerSelectValue}
+              onChange={selectModelProviderDraft}
+              options={providerDropdownOptions(providers, locale).map((option) => ({
+                ...option,
+                icon: <ModelBrandIcon provider={option.value} />,
+              }))}
+            />
           </label>
           {providerSelectValue === 'openai_compatible' ? (
             <label className="wideField">
@@ -220,9 +236,9 @@ export function ModelsPage({
             {applyButtonLabel}
           </button>
         </div>
-      </div>
-
-      <div className="settingsCard providerKeyCard">
+        </div>
+        <div aria-hidden="true" className="modelConfigurationDivider" />
+        <div className="modelConfigurationBlock providerKeyCard">
         <div className="settingsCardHeader">
           <h3>{t(locale, 'providerKeyTitle')}</h3>
         </div>
@@ -288,6 +304,7 @@ export function ModelsPage({
             </div>
           )}
         </div>
+        </div>
       </div>
 
       <div className="settingsCard modelPresetManagementCard">
@@ -298,7 +315,7 @@ export function ModelsPage({
           <label className="wideField">
             <DropdownSelect
               className="modelPresetSelect"
-              value={selectedPresetId}
+              value={activePresetId}
               onChange={handlePresetDraftChange}
               options={modelPresetDraftOptions}
             />
