@@ -61,7 +61,7 @@ export function MemoryPage({
   return (
     <section className="settingsSection" id="settings-memory">
       <SettingsPageHeader
-        eyebrow="CONTEXT"
+        eyebrow={text(locale, '上下文', 'Context')}
         title={text(locale, '记忆', 'Memory')}
         actions={[
           {

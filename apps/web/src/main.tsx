@@ -4,7 +4,6 @@ import { createRoot } from 'react-dom/client';
 import { RUN_CONFIG_STORAGE_KEY, mergeRunConfigDefaults, type RunConfig, type WebSearchMode } from './config/config.js';
 import { Icon } from './components/Icon.js';
 import { AppDialog, SettingsHelpDialog, SkillDraftDialog, type AppDialogState } from './components/Dialogs.js';
-import { AuthGate } from './components/AuthGate.js';
 import { ComposerBar, type PaletteOption } from './components/ComposerBar.js';
 import { AssistantTurnView, ItemView } from './components/ItemView.js';
 import { TranscriptTurnRail, type TranscriptTurnRailEntry } from './components/TranscriptTurnRail.js';
@@ -45,7 +44,6 @@ import { actionDetail, actionTitle, completeLocalSkillDraftItem, createLocalSkil
 import { optimisticDeleteThread } from './features/chat/threads.js';
 import { forgetWorkspaceRoot, pickWorkspaceRoot, readRememberedWorkspaceRoots, rememberWorkspaceRoots, workspacePickerNotice, workspacePickerStatus } from './features/workspaces/workspaces.js';
 import { controlThreadWorkflow, createWorkflowDraftErrorItem, createWorkflowDraftReplyItem, createWorkflowDraftUserItem, isUntitledWorkflowProjectTitle, loadThreadWorkflow, parseThreadWorkflow, parseWorkflowCheckpointItems, planWorkflowDraft, saveThreadWorkflow, workflowThreadTitleFromGoal, type WorkflowBlueprintCompileResult, type WorkflowComponentDefinition, type WorkflowPlanDraft, type WorkflowRuntimeAction, type WorkflowSnapshot } from './features/workflow/workflow.js';
-import { authEventSourceUrl, patchGlobalFetch } from './api/authClient.js';
 import { applyAgentMessageDelta, describeEvent, groupTranscriptItems, removeThreadItem, withSyntheticUserMessages, type EventDraft } from './features/chat/threadView.js';
 import { fetchThreadConfigOverrides, patchThreadConfigOverrides, type ThreadConfigOverrides } from './api/threadConfigClient.js';
 import { createLatestRequestGuard } from './features/chat/latestRequestGuard.js';
@@ -53,7 +51,6 @@ import { nextTranscriptFollowState, type TranscriptFollowState } from './feature
 import type { ApiKeyState, ApprovalRequest, EventLine, McpConfig, McpServerStatus, ModelPreset, ModelPresetConfig, ProviderEntry, SkillDraft, SkillEntry, ThreadItem, ThreadChildInfo, ThreadMeta, ThreadUsage, TurnMeta } from './shared/types.js';
 import type { PersistentAccessScope, TemporaryAccessScope } from '@nexus/protocol';
 import './styles.css';
-type DeploymentStatus = { deploymentMode?: 'single' | 'multi'; authMode?: 'off' | 'token' };
 type ComposerImage = { name: string; dataUrl: string };
 function resolveThemeShortcutMode(current: RunConfig['themeMode']): 'light' | 'dark' {
   if (current === 'dark') return 'dark';
@@ -78,7 +75,7 @@ function parseProviderEnvVarSaveFailure(detail: string): string {
   return trimmed;
 }
 
-patchGlobalFetch(); function App() {
+function App() {
   const [hasStoredRunConfig] = useState(() => Boolean(localStorage.getItem(RUN_CONFIG_STORAGE_KEY)));
   const [config, setConfig] = useState<RunConfig>(() => ({
     ...defaultConfig,
@@ -127,7 +124,6 @@ patchGlobalFetch(); function App() {
   const [status, setStatus] = useState('Idle');
   const [transcriptFollow, setTranscriptFollow] = useState<TranscriptFollowState>({ following: true, showReturnToBottom: false });
   const [settingsOpen, setSettingsOpen] = useState(false), [settingsHelpOpen, setSettingsHelpOpen] = useState(false);
-  const [deploymentStatus, setDeploymentStatus] = useState<DeploymentStatus | null>(null);
   const [rightPaneVisible, setRightPaneVisible] = useState(true);
   // 中文注释：外部预览请求 — 从对话条目点击"预览"时驱动右侧文件面板加载该文件
   // — Chinese: external preview request — drives right file panel to load a file when "preview" is clicked from chat
@@ -164,7 +160,6 @@ patchGlobalFetch(); function App() {
   const { toast, showToast } = useToastNotice();
   const { botConfig, botStatus, bindRemoteAssistant, refreshBotStatus, saveBotConfig, connectWeixin, startDingtalkStream, stopDingtalkStream, testDingtalkMessage } = useBotControls();
   const { applyWebProviderState, clearWebProviderKey, saveWebProviderKey, webProviderState } = useWebProviderSettings();
-  const showAdminControls = deploymentStatus?.deploymentMode === 'multi' && deploymentStatus?.authMode === 'token';
   const apiConfig = useMemo(() => {
     const patch: Partial<RunConfig> = {};
     for (const key of Object.keys(config) as Array<keyof RunConfig>) {
@@ -806,7 +801,7 @@ patchGlobalFetch(); function App() {
       })();
       const sourceGeneration = request.generation;
       threadEventSourceGenerationRef.current = sourceGeneration;
-      const source = new EventSource(authEventSourceUrl(`/api/events/${id}`));
+      const source = new EventSource(`/api/events/${id}`);
       source.onmessage = (message) => {
         if (!threadLoadGuardRef.current.isCurrent(sourceGeneration)) return;
         try {
@@ -924,10 +919,6 @@ patchGlobalFetch(); function App() {
         setConfigHydrated(true);
       })
       .catch(() => setConfigHydrated(true));
-    fetch('/api/status')
-      .then((response) => response.ok ? response.json() : null)
-      .then((data: DeploymentStatus | null) => setDeploymentStatus(data))
-      .catch(() => setDeploymentStatus({ deploymentMode: 'single', authMode: 'off' }));
     void refreshThreads();
     void refreshProviders();
     void refreshModelPresets();
@@ -1813,14 +1804,11 @@ patchGlobalFetch(); function App() {
     if (name === null) return null;
     return name.trim() || defaultName;
   }
-  async function saveModelPreset(name: string, presetConfig: ModelPresetConfig): Promise<void> {
+  async function saveModelPreset(name: string, presetConfig: ModelPresetConfig, presetId?: string, status: 'draft' | 'published' = 'published'): Promise<void> {
     const response = await fetch('/api/model-presets', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name,
-        config: presetConfig,
-      }),
+      body: JSON.stringify({ ...(presetId ? { id: presetId } : {}), name, status, config: presetConfig }),
     });
     if (!response.ok) throw new Error('Model preset save failed');
     const data = (await response.json()) as { presets?: ModelPreset[] };
@@ -2073,9 +2061,9 @@ patchGlobalFetch(); function App() {
           setConfig={setConfig} setMcps={setMcps} setOpen={setSettingsOpen}
           pendingMcpDraft={pendingMcpDraft}
           consumePendingMcpDraft={() => setPendingMcpDraft(null)}
-          showAdminControls={showAdminControls}
           startDingtalkStream={startDingtalkStream} stopDingtalkStream={stopDingtalkStream} testDingtalkMessage={testDingtalkMessage}
           activeThreadId={threadId}
+          workspaceRoots={rememberedWorkspaceRoots}
           saveThreadModelOverrides={saveThreadModelOverrides}
           saveGlobalModelConfig={saveGlobalModelConfig}
           refreshKeyStates={refreshKeyStates}
@@ -2085,8 +2073,6 @@ patchGlobalFetch(); function App() {
       <RunMonitorDrawer
         threadId={threadId}
         open={runMonitor.open}
-        adminMode={runMonitor.adminMode}
-        adminToken={runMonitor.adminToken}
         runs={runMonitor.runs}
         traces={runMonitor.traces}
         visibleTraces={runMonitor.visibleTraces}
@@ -2120,7 +2106,6 @@ patchGlobalFetch(); function App() {
         onSetErrorsOnly={runMonitor.setErrorsOnly}
         onAutoRefreshChange={runMonitor.setAutoRefresh}
         onAutoRefreshIntervalChange={runMonitor.setAutoRefreshInterval}
-        onAdminTokenChange={runMonitor.setAdminToken}
         onLoadOlder={() => void runMonitor.loadOlder()}
       />
       {dialog ? <AppDialog dialog={dialog} onClose={() => setDialog(null)} /> : null}
@@ -2160,4 +2145,4 @@ function rightPaneSizingModeForTab(tab: string): 'standard' | 'files' | 'termina
   return 'standard';
 }
 
-createRoot(document.getElementById('root')!).render(<AuthGate locale={defaultConfig.locale ?? 'zh'} themeMode={defaultConfig.themeMode}><App /></AuthGate>);
+createRoot(document.getElementById('root')!).render(<App />);

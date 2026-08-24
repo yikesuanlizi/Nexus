@@ -27,6 +27,7 @@ export function DropdownSelect<T extends string>({
   title,
   value,
   onChange,
+  disabled = false,
 }: {
   ariaLabel?: string;
   className?: string;
@@ -35,6 +36,7 @@ export function DropdownSelect<T extends string>({
   title?: string;
   value: T;
   onChange(value: T): void;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const id = useId();
@@ -62,6 +64,7 @@ export function DropdownSelect<T extends string>({
         aria-haspopup="listbox"
         aria-label={ariaLabel}
         className="dropdownButton"
+        disabled={disabled}
         onClick={() => setOpen((value) => !value)}
         title={title}
         type="button"
@@ -89,11 +92,9 @@ export function DropdownSelect<T extends string>({
                       selectOption(option);
                     }}
                     onMouseDown={(event) => {
-                      event.preventDefault();
                       event.stopPropagation();
                     }}
                     onPointerDown={(event) => {
-                      event.preventDefault();
                       event.stopPropagation();
                     }}
                     role="option"

@@ -37,7 +37,7 @@ describe('ApprovalPanel', () => {
     expect(html).toContain('临时允许');
     expect(html).toContain('永久允许类似操作');
     expect(html).toContain('当前线程对话');
-    expect(html).toContain('本工作目录');
+    expect(html).toContain('此请求工作区');
     expect(html).toContain('全局');
   });
 

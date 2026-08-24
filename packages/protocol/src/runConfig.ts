@@ -85,6 +85,8 @@ export interface ModelPresetConfig {
   baseUrl: string;
 }
 
+export type ModelPresetStatus = 'draft' | 'published';
+
 export function modelPresetConfigFrom(input: Record<string, unknown>): ModelPresetConfig {
   const provider = typeof input.provider === 'string' ? input.provider.trim() : '';
   const model = typeof input.model === 'string' ? input.model.trim() : '';

@@ -76,7 +76,6 @@ Nexus/
 │   │   └── src/
 │   │       ├── sqlite.ts          # SQLite 主存储
 │   │       ├── jsonl.ts           # JSONL rollout 日志
-│   │       ├── postgres.ts        # 可选 Postgres 多租户
 │   │       └── index.ts
 │   │
 │   ├── context/                   # 🧠 认知上下文层（v1.5.0 新增核心）

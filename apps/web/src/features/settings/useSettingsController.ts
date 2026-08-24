@@ -16,7 +16,7 @@ export interface UseSettingsControllerOptions {
   keyStates: ApiKeyState[];
   modelPresets: ModelPreset[];
   requestModelPresetName: (defaultName: string) => Promise<string | null>;
-  saveModelPreset: (name: string, presetConfig: ModelPresetConfig) => Promise<void>;
+  saveModelPreset: (name: string, presetConfig: ModelPresetConfig, presetId?: string, status?: 'draft' | 'published') => Promise<void>;
   saveProviderKey: (providerId: string, apiKey: string) => Promise<void>;
   saveProviderEnvVar: (providerId: string, envVar: string) => Promise<void>;
   saveThreadModelOverrides: (overrides: { provider: string; model: string; baseUrl: string }) => Promise<void>;
@@ -57,7 +57,7 @@ export interface UseSettingsControllerResult {
   selectModelProviderDraft: (providerId: string) => void;
   loadModelPresetIntoDraft: (presetId: string) => void;
   ensureCustomProvider: () => Promise<string | null>;
-  handleSaveModelConfig: () => Promise<void>;
+  handleSaveModelConfig: (presetId?: string, status?: 'draft' | 'published') => Promise<boolean>;
   handleSetCurrentModelConfig: () => Promise<void>;
   resetModelDraft: () => void;
 }
@@ -119,10 +119,6 @@ export function useSettingsController(options: UseSettingsControllerOptions): Us
   const [savedKeyProviders, setSavedKeyProviders] = useState<Set<string>>(() => new Set());
   const [savedEnvVars, setSavedEnvVars] = useState<Record<string, string>>({});
 
-  const selectedProvider = useMemo(
-    () => providers.find((provider) => provider.id === modelConfigDraft.provider),
-    [providers, modelConfigDraft.provider],
-  );
   const selectedKeyState = useMemo(
     () => keyStates.find((state) => state.providerId === modelConfigDraft.provider),
     [keyStates, modelConfigDraft.provider],
@@ -353,7 +349,7 @@ export function useSettingsController(options: UseSettingsControllerOptions): Us
   }, [modelKeySource, modelEnvVarDraft, modelConfigDraft.provider, saveProviderEnvVar]);
 
   const loadModelPresetIntoDraft = useCallback((presetId: string) => {
-    if (presetId === '__draft__') return;
+    if (presetId === '__draft__' || presetId === '__new__') return;
     const preset = modelPresets.find((p) => p.id === presetId);
     if (!preset) return;
     setModelConfigDraft({
@@ -367,9 +363,9 @@ export function useSettingsController(options: UseSettingsControllerOptions): Us
     const nextSource = modelKeySourceForProvider(provider, keyState);
     setModelKeySource(nextSource);
     setModelEnvVarDraft(modelEnvVarForProvider(provider, keyState, nextSource));
-    markDirty('provider', true);
-    markDirty('model', true);
-    markDirty('baseUrl', true);
+    markDirty('provider', false);
+    markDirty('model', false);
+    markDirty('baseUrl', false);
   }, [modelPresets, providers, keyStates, markDirty]);
 
   useEffect(() => {
@@ -379,11 +375,14 @@ export function useSettingsController(options: UseSettingsControllerOptions): Us
       .catch(() => setModelEnvVarRemoteOptions([]));
   }, []);
 
-  const handleSaveModelConfig = useCallback(async () => {
+  const handleSaveModelConfig = useCallback(async (presetId?: string, status: 'draft' | 'published' = 'published'): Promise<boolean> => {
     try {
       setModelKeyNotice('');
-      await saveModelPresetDraft({
-        requestName: () => requestModelPresetName(modelConfigDraft.model || 'My Preset'),
+      const saved = await saveModelPresetDraft({
+        requestName: () => {
+          const existing = presetId ? modelPresets.find((preset) => preset.id === presetId) : undefined;
+          return existing ? Promise.resolve(existing.name) : requestModelPresetName(modelConfigDraft.model || 'My Preset');
+        },
         ensureProvider: ensureCustomProvider,
         saveProviderKey: saveModelKeyDraftIfNeeded,
         saveProviderEnvVar: saveModelEnvVarDraftIfNeeded,
@@ -393,17 +392,26 @@ export function useSettingsController(options: UseSettingsControllerOptions): Us
           model: modelConfigDraft.model.trim(),
           baseUrl: modelConfigDraft.baseUrl.trim(),
         },
+        presetId,
+        status,
       });
+      if (!saved) return false;
       setApiKeyDraft('');
+      markDirty('provider', false);
+      markDirty('model', false);
+      markDirty('baseUrl', false);
       markDirty('apiKey', false);
       markDirty('modelEnvVar', false);
       setModelKeyNotice(locale === 'zh' ? '预设已保存。' : 'Preset saved.');
       await refreshKeyStates();
+      return true;
     } catch (error) {
       setModelKeyNotice(error instanceof Error ? error.message : String(error));
+      return false;
     }
   }, [
     modelConfigDraft,
+    modelPresets,
     requestModelPresetName,
     ensureCustomProvider,
     saveModelKeyDraftIfNeeded,

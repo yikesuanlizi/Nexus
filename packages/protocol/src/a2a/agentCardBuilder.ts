@@ -67,7 +67,7 @@ function buildBearerSecurityScheme(): HTTPAuthSecurityScheme {
     type: 'http',
     scheme: 'Bearer',
     bearerFormat: 'JWT',
-    description: 'Nexus tenant bearer token (JWT) issued via /api/auth/login or admin tokens',
+    description: 'HTTP Bearer authentication for deployments that provide their own gateway.',
   };
 }
 

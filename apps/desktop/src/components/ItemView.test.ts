@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { AssistantTurnView, ItemView, sanitizeAgentMessageTextForDisplay, summarizeToolItem } from './ItemView.js';
+import { AssistantTurnView, ItemView, resolveElapsedMs, sanitizeAgentMessageTextForDisplay, summarizeToolItem, terminalTimestampForItem } from './ItemView.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -130,8 +130,9 @@ describe('message action visibility', () => {
       React.createElement(AssistantTurnView, {
         group: {
           turnId: 'turn-reasoning',
+          completedAt: '2026-08-23T00:00:03.000Z',
           items: [
-            { id: 'reasoning-1', type: 'reasoning', turnId: 'turn-reasoning', text: '内部推理文本', status: 'completed', timestamp: new Date().toISOString() },
+            { id: 'reasoning-1', type: 'reasoning', turnId: 'turn-reasoning', text: '内部推理文本', status: 'completed', timestamp: '2026-08-23T00:00:00.000Z' },
           ],
         },
         locale: 'zh',
@@ -194,6 +195,24 @@ describe('message action visibility', () => {
 
     expect(hidden).not.toContain('重新回答');
     expect(visible).toContain('重新回答');
+  });
+
+  it('freezes terminal reasoning duration at a known same-turn endpoint', () => {
+    const reasoning = { id: 'r1', type: 'reasoning', turnId: 't1', text: '思考', status: 'completed', timestamp: '2026-08-23T00:00:00.000Z' } as const;
+    const nextItem = { id: 'a1', type: 'agent_message', turnId: 't1', text: '完成', status: 'completed', timestamp: '2026-08-23T00:00:04.000Z' } as const;
+    expect(terminalTimestampForItem(reasoning as never, [reasoning as never, nextItem as never], null, nextItem.timestamp)).toBe(nextItem.timestamp);
+    expect(resolveElapsedMs(reasoning.timestamp, nextItem.timestamp)).toBe(4000);
+  });
+
+  it('does not invent a terminal duration when the endpoint is missing', () => {
+    expect(resolveElapsedMs('2020-01-01T00:00:00.000Z')).toBeNull();
+    const html = renderToStaticMarkup(
+      React.createElement(ItemView, {
+        item: { id: 'r-missing-end', type: 'reasoning', turnId: 't1', text: '历史思考', status: 'completed', timestamp: '2020-01-01T00:00:00.000Z' },
+        locale: 'zh',
+      }),
+    );
+    expect(html).not.toContain('reasoningElapsed');
   });
 });
 

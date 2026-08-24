@@ -1,4 +1,4 @@
-import type { ThreadId, TurnId, ItemId, Checkpoint } from '@nexus/protocol';
+import type { AgentDecisionRequest, ThreadId, TurnId, ItemId, Checkpoint } from '@nexus/protocol';
 
 // 方便外部再导出
 // Re-export for convenience
@@ -52,7 +52,7 @@ export interface AutoCompactWindow {
  * 每个 thread 的运行时状态；保存在内存中，不持久化。恢复时从存储重建。
  * status 字段是该线程执行状态的唯一可信来源。
  */
-export type ThreadStatus = 'idle' | 'running' | 'interrupted' | 'completed' | 'failed';
+export type ThreadStatus = 'idle' | 'running' | 'stopping' | 'waiting_user_input' | 'terminal' | 'interrupted' | 'completed' | 'failed';
 
 export interface ThreadState {
   /** Current execution status. */
@@ -88,6 +88,9 @@ export interface ThreadState {
   /** Last terminal turn ID (completed or failed). */
   /** 最后一次终止的 turn id（成功完成或失败）。 */
   lastTerminalTurnId: TurnId | null;
+  terminalStatus: 'completed' | 'failed' | 'interrupted' | null;
+  /** Persisted user-decision request currently blocking this turn. */
+  pendingDecision: AgentDecisionRequest | null;
 }
 
 /** Create a fresh ThreadState. */
@@ -104,6 +107,8 @@ export function createThreadState(): ThreadState {
     turnSummary: createTurnSummary(),
     lastCheckpoint: null,
     lastTerminalTurnId: null,
+    terminalStatus: null,
+    pendingDecision: null,
   };
 }
 
@@ -153,7 +158,8 @@ export class ThreadStateManager {
   /** Check if a thread has an active running turn. */
   /** 判断某个 thread 是否存在运行中的 turn。 */
   isRunning(threadId: ThreadId): boolean {
-    return this.get(threadId).status === 'running';
+    const state = this.get(threadId);
+    return Boolean(state.activeTurnId) && ['running', 'stopping', 'waiting_user_input'].includes(state.status);
   }
 
   /** Transition to running and set up cancel controller. */
@@ -166,10 +172,12 @@ export class ThreadStateManager {
       state.cancelController.abort();
     }
     state.status = 'running';
+    state.terminalStatus = null;
     state.activeTurnId = turnId;
     state.generation += 1;
     state.cancelController = new AbortController();
     state.turnSummary = createTurnSummary();
+    state.pendingDecision = null;
     state.turnSummary.startedAt = new Date().toISOString();
     return state.cancelController;
   }
@@ -179,10 +187,12 @@ export class ThreadStateManager {
   completeTurn(threadId: ThreadId, turnId: TurnId): void {
     const state = this.get(threadId);
     if (state.activeTurnId === turnId) {
-      state.status = 'completed';
+      state.status = 'terminal';
+      state.terminalStatus = 'completed';
       state.activeTurnId = null;
       state.lastTerminalTurnId = turnId;
       state.cancelController = null;
+      state.pendingDecision = null;
     }
   }
 
@@ -191,10 +201,12 @@ export class ThreadStateManager {
   completeInterruptedTurn(threadId: ThreadId, turnId: TurnId): void {
     const state = this.get(threadId);
     if (state.activeTurnId === turnId) {
-      state.status = 'interrupted';
+      state.status = 'terminal';
+      state.terminalStatus = 'interrupted';
       state.activeTurnId = null;
       state.lastTerminalTurnId = turnId;
       state.cancelController = null;
+      state.pendingDecision = null;
     }
   }
 
@@ -203,11 +215,13 @@ export class ThreadStateManager {
   failTurn(threadId: ThreadId, turnId: TurnId, error: TurnError): void {
     const state = this.get(threadId);
     if (state.activeTurnId === turnId) {
-      state.status = 'failed';
+      state.status = 'terminal';
+      state.terminalStatus = 'failed';
       state.activeTurnId = null;
       state.lastTerminalTurnId = turnId;
       state.turnSummary.lastError = error;
       state.cancelController = null;
+      state.pendingDecision = null;
     }
   }
 
@@ -215,13 +229,31 @@ export class ThreadStateManager {
   /** 迁移到 interrupted 状态（turn 在执行中被取消）。 */
   interruptTurn(threadId: ThreadId, turnId: TurnId, requestId: string): void {
     const state = this.get(threadId);
-    if (state.activeTurnId === turnId) {
-      state.status = 'interrupted';
+    if (state.activeTurnId === turnId && ['running', 'waiting_user_input'].includes(state.status)) {
+      state.status = 'stopping';
       state.pendingInterrupts.push(requestId);
       if (state.cancelController) {
         state.cancelController.abort();
       }
     }
+  }
+
+  /** Transition a turn into a durable wait-for-user-input state. */
+  waitForUserInput(threadId: ThreadId, turnId: TurnId, request: AgentDecisionRequest): boolean {
+    const state = this.get(threadId);
+    if (state.activeTurnId !== turnId || !['running', 'waiting_user_input'].includes(state.status)) return false;
+    state.status = 'waiting_user_input';
+    state.pendingDecision = request;
+    return true;
+  }
+
+  /** Resume the same turn after a decision is received; generation is stable. */
+  resumeAfterUserInput(threadId: ThreadId, turnId: TurnId): boolean {
+    const state = this.get(threadId);
+    if (state.activeTurnId !== turnId || state.status !== 'waiting_user_input') return false;
+    state.status = 'running';
+    state.pendingDecision = null;
+    return true;
   }
 
   /** Clear pending interrupts after they've been handled. */

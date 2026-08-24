@@ -106,13 +106,47 @@ function targetMatches(ruleTarget: AccessRule['target'], requestTarget: AccessRe
   if (ruleTarget.kind === 'path') {
     return Boolean(ruleTarget.path && requestTarget.path && isPathInsideOrEqual(ruleTarget.path, requestTarget.path));
   }
+  if (ruleTarget.kind === 'workspace') {
+    if (requestTarget.kind !== 'workspace') return false;
+    if (!ruleTarget.workspaceRoot || !requestTarget.workspaceRoot) return false;
+    if (!sameWorkspace(ruleTarget.workspaceRoot, requestTarget.workspaceRoot)) return false;
+    if (!ruleTarget.relativePath) return true;
+    return !requestTarget.relativePath
+      ? false
+      : isRelativePathInside(ruleTarget.relativePath, requestTarget.relativePath);
+  }
   if (ruleTarget.kind === 'command') {
     return Boolean(ruleTarget.command && requestTarget.command?.startsWith(ruleTarget.command));
   }
   if (ruleTarget.kind === 'network') {
     return Boolean(ruleTarget.host && requestTarget.host && hostMatches(requestTarget.host, ruleTarget.host));
   }
-  return ruleTarget.toolName === requestTarget.toolName;
+  if (ruleTarget.kind === 'tool') {
+    return ruleTarget.toolName === requestTarget.toolName;
+  }
+  if (ruleTarget.kind === 'host') {
+    return requestTarget.kind === 'host'
+      && ruleTarget.environmentId === requestTarget.environmentId
+      && ruleTarget.hostId === requestTarget.hostId;
+  }
+  if (ruleTarget.kind === 'container') {
+    return requestTarget.kind === 'container'
+      && scopedIdMatches(ruleTarget.environmentId, requestTarget.environmentId)
+      && scopedOptionalIdMatches(ruleTarget.hostId, requestTarget.hostId)
+      && ruleTarget.containerName === requestTarget.containerName;
+  }
+  if (ruleTarget.kind === 'service') {
+    return requestTarget.kind === 'service'
+      && scopedIdMatches(ruleTarget.environmentId, requestTarget.environmentId)
+      && scopedOptionalIdMatches(ruleTarget.hostId, requestTarget.hostId)
+      && ruleTarget.serviceName === requestTarget.serviceName;
+  }
+  return requestTarget.kind === 'log'
+    && scopedIdMatches(ruleTarget.environmentId, requestTarget.environmentId)
+    && scopedOptionalIdMatches(ruleTarget.hostId, requestTarget.hostId)
+    && scopedOptionalIdMatches(ruleTarget.serviceName, requestTarget.serviceName)
+    && scopedOptionalIdMatches(ruleTarget.containerName, requestTarget.containerName)
+    && timeRangeContains(ruleTarget.timeRange, requestTarget.timeRange);
 }
 
 function workspaceDefaultAllows(policy: AccessPolicyConfig, request: AccessRequest): boolean {
@@ -126,6 +160,12 @@ function workspaceDefaultAllows(policy: AccessPolicyConfig, request: AccessReque
 }
 
 function hardDenyReason(request: AccessRequest): string | null {
+  if (
+    (request.access === 'write' || request.access === 'command')
+    && ['host', 'container', 'service', 'log'].includes(request.target.kind)
+  ) {
+    return 'Ops 远程目标仅允许只读访问';
+  }
   if (request.target.kind === 'path' && request.target.path) {
     const resolved = path.resolve(request.target.path);
     if (request.access === 'write' && resolved === path.parse(resolved).root) {
@@ -166,6 +206,36 @@ function isPathInsideOrEqual(root: string, candidate: string): boolean {
   const normalizedCandidate = process.platform === 'win32' ? resolvedCandidate.toLowerCase() : resolvedCandidate;
   const relative = path.relative(normalizedRoot, normalizedCandidate);
   return relative === '' || (relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+function isRelativePathInside(root: string, candidate: string): boolean {
+  const normalizedRoot = root.replaceAll('\\', '/').replace(/^\.\//, '').replace(/\/+$/, '');
+  const normalizedCandidate = candidate.replaceAll('\\', '/').replace(/^\.\//, '');
+  return normalizedCandidate === normalizedRoot
+    || normalizedCandidate.startsWith(`${normalizedRoot}/`);
+}
+
+function scopedIdMatches(ruleValue: string | undefined, requestValue: string | undefined): boolean {
+  return Boolean(ruleValue && requestValue && ruleValue === requestValue);
+}
+
+function scopedOptionalIdMatches(ruleValue: string | undefined, requestValue: string | undefined): boolean {
+  return ruleValue === undefined || ruleValue === requestValue;
+}
+
+function timeRangeContains(
+  ruleRange: { from: string; to: string } | undefined,
+  requestRange: { from: string; to: string } | undefined,
+): boolean {
+  if (!ruleRange) return true;
+  if (!requestRange) return false;
+  const ruleFrom = Date.parse(ruleRange.from);
+  const ruleTo = Date.parse(ruleRange.to);
+  const requestFrom = Date.parse(requestRange.from);
+  const requestTo = Date.parse(requestRange.to);
+  return Number.isFinite(ruleFrom) && Number.isFinite(ruleTo)
+    && Number.isFinite(requestFrom) && Number.isFinite(requestTo)
+    && requestFrom >= ruleFrom && requestTo <= ruleTo;
 }
 
 function hostMatches(host: string, pattern: string): boolean {

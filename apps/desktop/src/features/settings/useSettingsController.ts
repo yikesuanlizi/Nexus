@@ -15,7 +15,7 @@ export interface UseSettingsControllerOptions {
   keyStates: ApiKeyState[];
   modelPresets: ModelPreset[];
   requestModelPresetName: (defaultName: string) => Promise<string | null>;
-  saveModelPreset: (name: string, presetConfig: ModelPresetConfig) => Promise<void>;
+  saveModelPreset: (name: string, presetConfig: ModelPresetConfig, presetId?: string, status?: 'draft' | 'published') => Promise<void>;
   saveProviderKey: (providerId: string, apiKey: string) => Promise<void>;
   saveProviderEnvVar: (providerId: string, envVar: string) => Promise<void>;
   saveThreadModelOverrides: (overrides: { provider: string; model: string; baseUrl: string }) => Promise<void>;
@@ -54,7 +54,8 @@ export interface UseSettingsControllerResult {
   setCustomProviderName: React.Dispatch<React.SetStateAction<string>>;
   selectModelProviderDraft: (providerId: string) => void;
   loadModelPresetIntoDraft: (presetId: string) => void;
-  handleSaveModelConfig: () => Promise<void>;
+  handleSaveModelConfig: (presetId?: string, status?: 'draft' | 'published') => Promise<boolean>;
+  resetModelDraft: () => void;
   handleSetCurrentModelConfig: () => Promise<void>;
   saveLabel: string;
 }
@@ -346,7 +347,7 @@ export function useSettingsController(options: UseSettingsControllerOptions): Us
   }
 
   function loadModelPresetIntoDraft(presetId: string) {
-    if (presetId === '__draft__') return;
+    if (presetId === '__draft__' || presetId === '__new__') return;
     const preset = modelPresets.find((item) => item.id === presetId);
     if (!preset) return;
     setModelConfigDraft((current) => ({
@@ -361,19 +362,22 @@ export function useSettingsController(options: UseSettingsControllerOptions): Us
     const nextSource = modelKeySourceForProvider(provider, keyState);
     setModelKeySource(nextSource);
     setModelEnvVarDraft(modelEnvVarForProvider(provider, keyState, nextSource));
-    markDirty('provider', true);
-    markDirty('model', true);
-    markDirty('baseUrl', true);
+    markDirty('provider', false);
+    markDirty('model', false);
+    markDirty('baseUrl', false);
   }
 
-  async function handleSaveModelConfig() {
+  async function handleSaveModelConfig(presetId?: string, status: 'draft' | 'published' = 'published'): Promise<boolean> {
     const defaultName = [
       providers.find((p) => p.id === modelConfigDraft.provider)?.name ?? modelConfigDraft.provider,
       modelConfigDraft.model,
     ].filter(Boolean).join(' / ');
 
-    await saveModelPresetDraft({
-      requestName: () => requestModelPresetName(defaultName),
+    const saved = await saveModelPresetDraft({
+    requestName: () => {
+      const existing = presetId ? modelPresets.find((preset) => preset.id === presetId) : undefined;
+      return existing ? Promise.resolve(existing.name) : requestModelPresetName(defaultName);
+    },
       ensureProvider: ensureCustomProvider,
       saveProviderKey: saveModelKeyDraftIfNeeded,
       saveProviderEnvVar: saveModelEnvVarDraftIfNeeded,
@@ -383,8 +387,37 @@ export function useSettingsController(options: UseSettingsControllerOptions): Us
         model: modelConfigDraft.model.trim(),
         baseUrl: (modelConfigDraft.baseUrl || '').trim(),
       },
+      presetId,
+      status,
     });
+    if (!saved) return false;
     await Promise.all([refreshProviders(), refreshKeyStates()]);
+    markDirty('provider', false);
+    markDirty('model', false);
+    markDirty('baseUrl', false);
+    markDirty('apiKey', false);
+    markDirty('modelEnvVar', false);
+    markDirty('modelKeySource', false);
+    return true;
+  }
+
+  function resetModelDraft() {
+    const currentDraft = modelConfigDraftFromConfig(config);
+    const currentProvider = providers.find((provider) => provider.id === currentDraft.provider);
+    const currentKeyState = keyStates.find((state) => state.providerId === currentDraft.provider);
+    const currentSource = modelKeySourceForProvider(currentProvider, currentKeyState);
+    setModelConfigDraft(currentDraft);
+    setCustomProviderName('');
+    setApiKeyDraft('');
+    setModelKeySource(currentSource);
+    setModelEnvVarDraft(modelEnvVarForProvider(currentProvider, currentKeyState, currentSource));
+    setShowSavedModelKey(false);
+    setModelKeyNotice('');
+    setDirtyFields((current) => {
+      const next = { ...current };
+      for (const field of ['provider', 'model', 'baseUrl', 'apiKey', 'modelEnvVar', 'modelKeySource']) delete next[field];
+      return next;
+    });
   }
 
   async function handleSetCurrentModelConfig() {
@@ -508,6 +541,7 @@ export function useSettingsController(options: UseSettingsControllerOptions): Us
     selectModelProviderDraft,
     loadModelPresetIntoDraft,
     handleSaveModelConfig,
+    resetModelDraft,
     handleSetCurrentModelConfig,
     saveLabel,
   };

@@ -347,52 +347,6 @@ describe('run monitor route', () => {
     expect((res.body as { runs: Array<{ controlCapabilities: { interrupt: { enabled: boolean } } }> }).runs[0].controlCapabilities.interrupt.enabled).toBe(true);
   });
 
-  it('requires admin token for cross-tenant monitor routes', async () => {
-    const res = response();
-    const handled = await handleRunMonitorRoute({
-      req: request('GET', '/api/admin/runs'),
-      res,
-      url: new URL('http://localhost/api/admin/runs'),
-      segments: ['api', 'admin', 'runs'],
-      store: new FakeStore() as unknown as ThreadStore,
-      tenantContext,
-      adminToken: 'secret',
-    });
-
-    expect(handled).toBe(true);
-    expect(res.statusCode).toBe(403);
-    expect(res.body).toEqual({ error: 'Admin monitor token is required' });
-  });
-
-  it('returns admin run trace detail with admin token', async () => {
-    const store = new FakeStore();
-    const res = response();
-    const handled = await handleRunMonitorRoute({
-      req: request('GET', '/api/admin/runs/run-a/trace?limit=2', undefined, { 'x-nexus-admin-token': 'secret' }),
-      res,
-      url: new URL('http://localhost/api/admin/runs/run-a/trace?limit=2'),
-      segments: ['api', 'admin', 'runs', 'run-a', 'trace'],
-      store: store as unknown as ThreadStore,
-      tenantContext,
-      adminToken: 'secret',
-    });
-
-    expect(handled).toBe(true);
-    expect(res.statusCode).toBe(200);
-    expect(res.body).toEqual({
-      admin: true,
-      runId: 'run-a',
-      threadId: 'thread-a',
-      page: {
-        events: [store.traces[0], store.traces[1]],
-        hasMoreBefore: false,
-        hasMoreAfter: false,
-        nextBefore: 1,
-        nextAfter: 2,
-      },
-    });
-  });
-
   it('rejects threadId in control request body', async () => {
     const store = new FakeStore();
     const res = response();

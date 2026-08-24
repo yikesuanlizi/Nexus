@@ -2,7 +2,7 @@ import type { ThreadRunConfigKey, ThreadRunConfigOverrides } from '@nexus/protoc
 import type { RunConfig } from '../../config/config.js';
 
 export type AppearanceConfig = Pick<RunConfig,
-  'themeMode' | 'userAvatarId' | 'customUserAvatarDataUrl'>;
+  'themeMode' | 'userAvatarId' | 'customUserAvatarDataUrl' | 'monitorPanelVisible'>;
 export type GlobalRuntimeConfig = Omit<RunConfig, keyof AppearanceConfig>;
 
 export interface ConfigState {
@@ -38,6 +38,7 @@ const APPEARANCE_KEYS: Array<keyof AppearanceConfig> = [
   'themeMode',
   'userAvatarId',
   'customUserAvatarDataUrl',
+  'monitorPanelVisible',
 ];
 
 export function configStateReducer(state: ConfigState, action: ConfigStateAction): ConfigState {

@@ -7,11 +7,12 @@ import { URL } from 'node:url';
 import type { ThreadStore } from '@nexus/storage';
 import type { AgentLoop } from '@nexus/runtime';
 import type { ModelGateway } from '@nexus/model-gateway';
-import type { ThreadEvent, ThreadId } from '@nexus/protocol';
+import { agentDecisionResponseSchema, type ThreadEvent, type ThreadId } from '@nexus/protocol';
 import { redactAccessPolicyForPublicConfig, type AccessPolicyConfig } from '@nexus/protocol';
 import type { AgentRunConfig, ThreadConfigOverrides } from '../config/config.js';
 import { readJson, sendError, sendJson } from '../shared/http.js';
 import type { TenantContext } from '../shared/tenant.js';
+import type { ActiveRunRegistry } from '../runtime/activeRunRegistry.js';
 import { buildThreadChildInfos } from '../services/threadChildren.js';
 import { usageForThreadTree, usageFromThread } from '../services/usage.js';
 import { clearRemoteBotBindingsForDeletedThread } from './threadDeletion.js';
@@ -35,6 +36,7 @@ export interface ThreadRouteContext {
   saveThreadAccessPolicy: (threadId: string, input: unknown) => Promise<AccessPolicyConfig>;
   publicThreadRunConfig: (config: AgentRunConfig, thread: { tags?: Record<string, string> } | null) => AgentRunConfig;
   closeThreadEventClients: (threadId: ThreadId, tenantId: string) => void;
+  activeRunRegistry?: ActiveRunRegistry;
 }
 
 /**
@@ -155,6 +157,42 @@ export async function handleThreadRoutes(
     const agent = await getTenantDefaultAgent();
     const thread = await store.getThread(threadId);
     sendJson(res, 200, { state: await agent.getRuntimeState(threadId), usage: usageFromThread(thread) });
+    return true;
+  }
+
+  // POST /api/threads/:id/decision：Agent 决策请求的独立接管入口，不混用权限审批。
+  if (req.method === 'POST' && segments[3] === 'decision') {
+    const body = await readJson<{
+      requestId?: string;
+      action?: 'way_one' | 'way_two' | 'custom_input' | 'cancel' | 'confirm';
+      optionId?: string;
+      customInput?: string;
+    }>(req);
+    if (!body.requestId || !body.action) {
+      sendError(res, 400, 'Decision requestId and action are required');
+      return true;
+    }
+    const parsedResponse = agentDecisionResponseSchema.safeParse({
+      requestId: body.requestId,
+      action: body.action,
+      ...(body.optionId ? { optionId: body.optionId } : {}),
+      ...(body.customInput !== undefined ? { customInput: body.customInput } : {}),
+    });
+    if (!parsedResponse.success) {
+      sendError(res, 400, 'Invalid decision response');
+      return true;
+    }
+    const response = parsedResponse.data;
+    const active = ctx.activeRunRegistry?.getByThreadId(threadId);
+    const agent = await getTenantDefaultAgent();
+    const result = active?.resolveDecision
+      ? await active.resolveDecision(response)
+      : await agent.resolveUserDecision(threadId, response);
+    if (!result.accepted) {
+      sendError(res, 409, 'Decision request is no longer pending');
+      return true;
+    }
+    sendJson(res, 200, { ok: true, ...result });
     return true;
   }
 

@@ -108,6 +108,41 @@ describe('AgentRunConfig themeMode', () => {
   });
 });
 
+describe('AgentRunConfig runtime limits and monitor migration', () => {
+  it('uses bounded runtime defaults and hard-clamps subagent depth', () => {
+    expect(defaultConfig.maxActiveTasks).toBe(4);
+    expect(defaultConfig.maxParallelReadonlyTools).toBe(2);
+    expect(defaultConfig.maxSubagentDepth).toBe(1);
+    expect(resolveConfig({ maxActiveTasks: 999, maxParallelReadonlyTools: 99, maxSubagentDepth: 99 })).toMatchObject({
+      maxActiveTasks: 64,
+      maxParallelReadonlyTools: 16,
+      maxSubagentDepth: 2,
+    });
+  });
+
+  it('migrates the legacy monitor switch without enabling data collection by default', () => {
+    expect(resolveConfig({}).systemMonitorSamplingEnabled).toBe(false);
+    expect(resolveConfig({}).systemMonitorGuardEnabled).toBe(false);
+    expect(resolveConfig({ systemMonitorEnabled: true })).toMatchObject({
+      systemMonitorSamplingEnabled: true,
+      systemMonitorGuardEnabled: true,
+      systemMonitorEnabled: true,
+    });
+  });
+
+  it('normalizes threshold values on the server', () => {
+    expect(resolveConfig({
+      systemMonitorThresholds: { cpuLight: -1, cpuModerate: 101, cpuSevere: Number.NaN, memLight: 50, memModerate: 60, memSevere: 70, diskSevereBytes: 10 ** 30 },
+    }).systemMonitorThresholds).toMatchObject({
+      cpuLight: 1,
+      cpuModerate: 100,
+      cpuSevere: 97,
+      memLight: 50,
+      diskSevereBytes: 1024 ** 5,
+    });
+  });
+});
+
 describe('AgentRunConfig web provider', () => {
   it('defaults to local native fetch and accepts Firecrawl as explicit enhanced mode', () => {
     expect(defaultConfig.webProvider).toBe('native_fetch');

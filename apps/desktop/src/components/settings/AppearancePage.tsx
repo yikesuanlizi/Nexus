@@ -57,7 +57,7 @@ export function AppearancePage({ locale, config, setConfig, markDirty, dirtyFiel
   return (
     <section className="settingsSection" id="settings-appearance">
       <SettingsPageHeader
-        eyebrow="INTERFACE"
+        eyebrow={locale === 'zh' ? '界面' : 'Interface'}
         title={locale === 'zh' ? '外观' : 'Appearance'}
       />
       <div className="formGrid modelSettingsList">

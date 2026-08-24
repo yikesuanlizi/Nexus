@@ -1,0 +1,239 @@
+.settingsLayer .settingsDrawer .modelPresetManagementCard {
+  display: block !important;
+  grid-column: 1 / -1 !important;
+  grid-template-columns: none !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  padding: 16px 18px !important;
+}
+
+.settingsLayer .presetDecisionLayer {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+}
+.settingsLayer .presetDecisionPanel {
+  position: relative;
+  z-index: 1;
+  width: min(440px, calc(100vw - 36px));
+  padding: 18px 20px;
+  border: 1px solid var(--nx-settings-border, #dce2eb);
+  background: var(--nx-settings-surface, #fff);
+  color: var(--nx-settings-text, #172033);
+  box-shadow: 0 14px 34px rgb(15 23 42 / 16%);
+}
+.settingsLayer .presetDecisionPanel h3 { margin: 0; font-size: 15px; }
+.settingsLayer .presetDecisionPanel p { margin: 8px 0 16px; color: var(--nx-settings-text-muted, #64748b); font-size: 12px; line-height: 1.5; }
+.settingsLayer .presetDecisionPanel .settingsConfirmActions { flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.settingsLayer .modelEditingBadge { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; color: var(--nx-settings-accent, #2563eb); font-size: 11px; font-weight: 500; }
+.settingsLayer .modelEditingBadge svg { width: 12px; height: 12px; }
+
+/* The legacy settings card is a three-column shell. Model configuration has
+   only a label column and a content column, so keep its controls from being
+   squeezed into the old action column. */
+.settingsLayer .settingsDrawer .modelConfigurationBlock.defaultModelConfigurationBlock,
+.settingsLayer .settingsDrawer .modelConfigurationBlock.providerKeyCard {
+  grid-template-columns: minmax(112px, 148px) minmax(0, 1fr) !important;
+}
+
+.settingsLayer .settingsDrawer .defaultModelConfigurationBlock > .formGrid,
+.settingsLayer .settingsDrawer .defaultModelConfigurationBlock > .scopeApplyActions,
+.settingsLayer .settingsDrawer .modelConfigurationBlock.providerKeyCard > .modelCredentialLayout {
+  grid-column: 2 / -1 !important;
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+.settingsLayer .settingsDrawer .defaultModelConfigurationBlock > .formGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
+.settingsLayer .settingsDrawer .defaultModelConfigurationBlock > .formGrid > .wideField:last-child {
+  grid-column: 1 / -1 !important;
+}
+
+.settingsLayer .settingsDrawer .defaultModelConfigurationBlock > .scopeApplyActions {
+  justify-content: flex-end !important;
+  justify-self: stretch !important;
+  padding-top: 0 !important;
+}
+
+.settingsLayer .settingsDrawer .modelConfigurationBlock.providerKeyCard > .modelCredentialLayout {
+  grid-template-columns: minmax(150px, .72fr) minmax(220px, 1fr) !important;
+  align-items: end !important;
+}
+
+.settingsLayer .settingsDrawer .modelCredentialLayout {
+  display: grid !important;
+  gap: 10px !important;
+  align-items: end !important;
+}
+
+.settingsLayer .settingsDrawer .modelCredentialLayout > label {
+  display: grid !important;
+  gap: 6px !important;
+  min-width: 0 !important;
+}
+
+.settingsLayer .settingsDrawer .modelCredentialLayout > label > input,
+.settingsLayer .settingsDrawer .modelCredentialLayout > label .dropdownButton {
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+.settingsLayer .settingsDrawer .modelCredentialLayout.savedMode > label:first-child {
+  grid-column: 1 !important;
+}
+
+.settingsLayer .settingsDrawer .modelCredentialLayout.savedMode > .savedModelKeyField {
+  grid-column: 2 !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) 34px !important;
+  gap: 8px !important;
+  align-items: center !important;
+  min-width: 0 !important;
+}
+
+.settingsLayer .settingsDrawer .modelCredentialLayout.envMode > label:first-child {
+  grid-column: 1 !important;
+}
+
+.settingsLayer .settingsDrawer .modelCredentialLayout.envMode > label:nth-of-type(2) {
+  grid-column: 2 !important;
+}
+
+.settingsLayer .settingsDrawer .modelCredentialLayout.envMode > .modelKeyStatusLine,
+.settingsLayer .settingsDrawer .modelCredentialLayout.envMode > .botNotice {
+  grid-column: 1 / -1 !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+}
+
+.settingsLayer .settingsDrawer .modelConfigurationBlock.providerKeyCard > .modelCredentialLayout.savedMode,
+.settingsLayer .settingsDrawer .modelConfigurationBlock.providerKeyCard > .modelCredentialLayout.envMode {
+  grid-template-columns: minmax(150px, .72fr) minmax(220px, 1fr) !important;
+}
+
+#settings-agent .modelConfigurationBlock.providerKeyCard > .modelCredentialLayout.savedMode,
+#settings-agent .modelConfigurationBlock.providerKeyCard > .modelCredentialLayout.envMode {
+  grid-template-columns: minmax(150px, .72fr) minmax(220px, 1fr) !important;
+}
+
+.settingsLayer .settingsDrawer .providerKeyCard .savedModelKeyField,
+.settingsLayer .settingsDrawer .providerKeyCard .savedModelKeyField input {
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+.settingsLayer .settingsDrawer .modelPresetManagementCard > .settingsCardHeader {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin: 0 0 12px !important;
+}
+
+.settingsLayer .settingsDrawer .modelPresetManagementCard > .modelPresetEditorRow {
+  display: grid !important;
+  grid-column: auto !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  align-items: center !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  gap: 12px !important;
+}
+
+.settingsLayer .settingsDrawer .modelPresetManagementCard .wideField,
+.settingsLayer .settingsDrawer .modelPresetManagementCard .modelPresetSelect,
+.settingsLayer .settingsDrawer .modelPresetManagementCard .modelPresetSelect .dropdownButton {
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+.settingsLayer .settingsDrawer .modelPresetManagementCard .modelPresetActionRow {
+  display: flex !important;
+  grid-column: auto !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  align-items: center !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.settingsLayer .settingsDrawer .modelPresetManagementCard > .settingsCardHeader .modelPresetCount {
+  display: inline-flex !important;
+  min-width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  margin-left: 5px;
+  padding: 0 6px;
+  border-left: 1px solid var(--nx-settings-border, #dce2eb);
+  color: var(--nx-settings-text-muted, #64748b);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.settingsLayer .settingsDrawer .modelPresetCurrentHint {
+  margin: 8px 0 0;
+  color: var(--nx-settings-text-muted, #64748b);
+  font-size: 11px;
+}
+
+.settingsLayer .settingsDrawer .modelPresetActionRow .textButton,
+.settingsLayer .settingsDrawer .modelPresetActionRow .solidButton {
+  min-height: 30px;
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .settingsLayer .settingsDrawer .modelConfigurationBlock.defaultModelConfigurationBlock,
+  .settingsLayer .settingsDrawer .modelConfigurationBlock.providerKeyCard {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .settingsLayer .settingsDrawer .defaultModelConfigurationBlock > .formGrid,
+  .settingsLayer .settingsDrawer .defaultModelConfigurationBlock > .scopeApplyActions,
+  .settingsLayer .settingsDrawer .modelConfigurationBlock.providerKeyCard > .modelCredentialLayout {
+    grid-column: 1 / -1 !important;
+  }
+
+  .settingsLayer .settingsDrawer .defaultModelConfigurationBlock > .formGrid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .settingsLayer .settingsDrawer .modelConfigurationBlock.providerKeyCard > .modelCredentialLayout,
+  .settingsLayer .settingsDrawer .modelConfigurationBlock.providerKeyCard > .modelCredentialLayout.savedMode,
+  .settingsLayer .settingsDrawer .modelConfigurationBlock.providerKeyCard > .modelCredentialLayout.envMode {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  #settings-agent .modelConfigurationBlock.providerKeyCard > .modelCredentialLayout.savedMode,
+  #settings-agent .modelConfigurationBlock.providerKeyCard > .modelCredentialLayout.envMode {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .settingsLayer .settingsDrawer .modelCredentialLayout.savedMode > label:first-child,
+  .settingsLayer .settingsDrawer .modelCredentialLayout.savedMode > .savedModelKeyField,
+  .settingsLayer .settingsDrawer .modelCredentialLayout.envMode > label:first-child,
+  .settingsLayer .settingsDrawer .modelCredentialLayout.envMode > label:nth-of-type(2),
+  .settingsLayer .settingsDrawer .modelCredentialLayout.envMode > .modelKeyStatusLine,
+  .settingsLayer .settingsDrawer .modelCredentialLayout.envMode > .botNotice {
+    grid-column: 1 / -1 !important;
+  }
+
+  .settingsLayer .settingsDrawer .modelPresetManagementCard > .modelPresetEditorRow {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .settingsLayer .settingsDrawer .modelPresetManagementCard .modelPresetActionRow {
+    justify-content: flex-start;
+  }
+}

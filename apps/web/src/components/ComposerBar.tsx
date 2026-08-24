@@ -122,7 +122,7 @@ export function ComposerBar({
     ? []
     : [{
       value: '__current__',
-      label: config.model,
+      label: modelDisplayName(config.model),
       title: modelPresetTooltip(config),
       current: true,
     }];
@@ -130,7 +130,7 @@ export function ComposerBar({
     ...currentModelPresetOptions,
     ...modelPresets.map((preset) => ({
       value: preset.id,
-      label: preset.name,
+      label: modelDisplayName(preset.config.model ?? config.model),
       title: modelPresetTooltip({ ...config, ...preset.config }),
       group: config.locale === 'zh' ? '已保存' : 'Saved',
       current: matchedModelPreset?.id === preset.id,
@@ -501,7 +501,7 @@ export function ComposerBar({
           />
           </div>
           <div className="composerActions">
-          <DropdownSelect ariaLabel={t(config.locale, 'mode')} className="modeSelect" title={t(config.locale, 'mode')} value={config.permissions} onChange={(permissions) => updateThreadChoice('permissions', permissions as NonNullable<ThreadConfigOverrides['permissions']>)} options={[{ value: 'read_only', label: config.locale === 'zh' ? '只读' : 'Read' }, { value: 'workspace', label: config.locale === 'zh' ? '默认' : 'Default' }, { value: 'danger_full_access', label: config.locale === 'zh' ? '自主' : 'Auto' }]} />
+          <DropdownSelect ariaLabel={t(config.locale, 'mode')} className="modeSelect permissionSelect" title={t(config.locale, 'mode')} value={config.permissions} onChange={(permissions) => updateThreadChoice('permissions', permissions as NonNullable<ThreadConfigOverrides['permissions']>)} options={[{ value: 'read_only', label: config.locale === 'zh' ? '只读' : 'Read' }, { value: 'workspace', label: config.locale === 'zh' ? '默认' : 'Default' }, { value: 'danger_full_access', label: config.locale === 'zh' ? '自主' : 'Auto' }]} />
           <DropdownSelect ariaLabel={config.locale === 'zh' ? '思考程度' : 'Reasoning effort'} className="modeSelect reasoningSelect" title={config.locale === 'zh' ? '思考程度' : 'Reasoning effort'} value={config.reasoningEffort} onChange={(reasoningEffort) => updateThreadChoice('reasoningEffort', reasoningEffort as NonNullable<ThreadConfigOverrides['reasoningEffort']>)} options={[{ value: 'low', label: config.locale === 'zh' ? '快速' : 'Fast' }, { value: 'medium', label: config.locale === 'zh' ? '均衡' : 'Balanced' }, { value: 'high', label: config.locale === 'zh' ? '深度' : 'Deep' }]} />
           <DropdownSelect ariaLabel={config.locale === 'zh' ? '运行模式' : 'Run profile'} className="modeSelect runProfileSelect" title={config.locale === 'zh' ? '运行模式' : 'Run profile'} value={(config.runProfile as string) === 'harness' ? 'runtime_os' : config.runProfile} onChange={(runProfile) => updateThreadChoice('runProfile', runProfile as NonNullable<ThreadConfigOverrides['runProfile']>)} options={[{ value: 'cache_first', label: runProfileLabel('cache_first', config.locale) }, { value: 'runtime_os', label: runProfileLabel('runtime_os', config.locale) }]} />
           </div>
@@ -564,6 +564,13 @@ function clearComposerDraft(): void {
 
 function modelPresetSummary(config: Partial<RunConfig>): string {
   return [config.provider, config.model].filter(Boolean).join(' / ') || 'model';
+}
+
+function modelDisplayName(model?: string): string {
+  const value = model?.trim() ?? '';
+  if (!value) return 'model';
+  const segments = value.split(/\s*\/\s*/).filter(Boolean);
+  return (segments.at(-1) ?? value).replace(/:(?:featherless-ai)$/i, '');
 }
 
 function modelPresetTooltip(config: Partial<RunConfig>): string {

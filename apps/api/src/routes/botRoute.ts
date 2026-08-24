@@ -14,6 +14,7 @@ import {
 import { readJson, sendError, sendJson } from '../shared/http.js';
 import type { AgentRunConfig } from '../config/config.js';
 import type { AgentCreateConfig } from '../runtime/tenantRuntime.js';
+import type { ActiveRunRegistry } from '../runtime/activeRunRegistry.js';
 import {
   BOT_CONFIG_KEY,
   DEFAULT_BOT_CONFIG,
@@ -59,8 +60,27 @@ export interface BotRouteOptions {
   createId?(): string;
   now?(): string;
   tenantId?: string;
-  storageMode?: 'single' | 'multi';
   publishEvent?(event: ThreadEvent): void;
+  activeRunRegistry?: ActiveRunRegistry;
+}
+
+async function runTopLevelBotTurn(
+  options: BotRouteOptions,
+  agent: MinimalAgent,
+  threadId: string,
+  input: { type: 'text'; text: string },
+  maxActiveTasks: number,
+): Promise<{ items: ThreadItem[]; usage: unknown }> {
+  const reservationId = `bot:${threadId}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+  const registry = options.activeRunRegistry;
+  if (registry && !registry.tryReserveTopLevel(reservationId, maxActiveTasks)) {
+    throw new Error(`Maximum active top-level tasks reached (${maxActiveTasks}).`);
+  }
+  try {
+    return await agent.runTurn(threadId, input);
+  } finally {
+    registry?.releaseTopLevel(reservationId);
+  }
 }
 
 // 机器人路由处理（配置读取/更新、状态、微信登录/登out、消息/测试发送等）
@@ -239,11 +259,6 @@ export async function handleBotRoute(options: BotRouteOptions): Promise<boolean>
     if (!config.dingtalk.enabled || !config.dingtalk.clientId || !config.dingtalk.clientSecret) {
       sendJson(res, 400, { ok: false, code: 'DingtalkNotConfigured', error: '钉钉机器人未配置或未启用' });
       return true;
-    }
-    const violation = dingtalkMultiTenantViolation(options, config);
-    if (violation && config.dingtalk.connectionMode === 'webhook') {
-      // webhook 模式允许多租户（每个租户独立回调路径）
-      // stream 模式在多租户下也支持（每个租户独立 WebSocket 连接）
     }
     const client = getOrCreateDingtalkClient(options, config);
     const result = await client.startStream();
@@ -536,8 +551,9 @@ export async function handleBotRoute(options: BotRouteOptions): Promise<boolean>
         return state.status === 'running';
       },
       runTurn: async (threadId, text) => {
-        const { agent } = await options.createAgent(await runConfigForThread(options, threadId, botDefaultRunConfig));
-        const result = await agent.runTurn(threadId, { type: 'text', text });
+        const runConfig = await runConfigForThread(options, threadId, botDefaultRunConfig);
+        const { agent } = await options.createAgent(runConfig);
+        const result = await runTopLevelBotTurn(options, agent, threadId, { type: 'text', text }, runConfig.maxActiveTasks ?? 4);
         publishBotTurnEvents(options, threadId, result.items, result.usage);
         return { text: latestAgentText(result.items) };
       },
@@ -662,17 +678,7 @@ function createWeixinClient(options: BotRouteOptions, config: BotConfig): Weixin
   return options.createWeixinClient?.(config) ?? new WeixinBridgeClient({ rpcUrl: config.weixin.bridgeUrl });
 }
 
-// 验证多租户/非默认租户是否能使用桌面桥接
-// — Chinese: validate desktop bridge usage is limited to single-tenant default
-function personalWeixinBridgeViolation(options: BotRouteOptions, config: BotConfig): string {
-  const tenantId = options.tenantId?.trim() || 'default';
-  const storageMode = options.storageMode ?? 'single';
-  const isDefaultDesktopBridge = config.weixin.bridgeMode === 'desktop_managed'
-    || config.weixin.bridgeUrl === DEFAULT_WEIXIN_BRIDGE_URL;
-  if (!isDefaultDesktopBridge) return '';
-  if (storageMode === 'multi' || tenantId !== 'default') {
-    return 'Personal desktop Weixin bridge is only supported in single-user default tenant mode. Use a server-managed enterprise WeChat channel for multi-tenant mode.';
-  }
+function personalWeixinBridgeViolation(_options: BotRouteOptions, _config: BotConfig): string {
   return '';
 }
 
@@ -1172,7 +1178,7 @@ async function dispatchDingtalkMessage(
         agent.onEvent(deltaListener);
       }
       try {
-        const result = await agent.runTurn(threadId, { type: 'text', text });
+        const result = await runTopLevelBotTurn(options, agent, threadId, { type: 'text', text }, runConfig.maxActiveTasks ?? 4);
         publishBotTurnEvents(options, threadId, result.items, result.usage);
         return { text: sanitizeDingtalkAgentReply(latestAgentText(result.items), locale) };
       } finally {
@@ -1253,13 +1259,6 @@ function isDingtalkUserAllowed(config: BotConfigLike, userId: string): boolean {
   return allowed.includes(userId);
 }
 
-function dingtalkMultiTenantViolation(_options: BotRouteOptions, _config: BotConfigLike): string {
-  // Stream 模式每个租户独立 WebSocket 连接，天然支持多租户
-  // Webhook 模式需要不同的回调路径，也支持
-  // 此处保留接口，未来可加限制
-  return '';
-}
-
 async function appendDingtalkBotLog(level: 'info' | 'error', message: string, meta: Record<string, unknown> = {}): Promise<void> {
   try {
     await mkdir(BOT_LOG_DIR, { recursive: true });
@@ -1311,7 +1310,6 @@ export async function autoStartDingtalkForTenant(
     createId: options.createId ?? (() => `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`),
     now: options.now ?? (() => new Date().toISOString()),
     tenantId,
-    storageMode: options.storageMode,
     publishEvent: options.publishEvent,
   };
   const client = getOrCreateDingtalkClient(fullOptions, config);

@@ -12,9 +12,11 @@ export interface DropdownOption<T extends string = string> {
     label: string;
     onClick: () => Promise<void> | void;
   };
+  badge?: string;
   current?: boolean;
   detail?: string;
   group?: string;
+  icon?: React.ReactNode;
   label: string;
   title?: string;
   value: T;
@@ -29,6 +31,7 @@ export function DropdownSelect<T extends string>({
   title,
   value,
   onChange,
+  disabled = false,
 }: {
   ariaLabel?: string;
   className?: string;
@@ -36,6 +39,7 @@ export function DropdownSelect<T extends string>({
   title?: string;
   value: T;
   onChange(value: T): void;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const id = useId();
@@ -65,11 +69,15 @@ export function DropdownSelect<T extends string>({
         aria-haspopup="listbox"
         aria-label={ariaLabel}
         className="dropdownButton"
+        disabled={disabled}
         onClick={() => setOpen((value) => !value)}
         title={title}
         type="button"
       >
-        <span>{selected?.label ?? value}</span>
+        <span className="dropdownSelectedValue">
+          {selected?.icon ? <span className="dropdownIcon">{selected.icon}</span> : null}
+          <span>{selected?.label ?? value}</span>
+        </span>
         <Icon name="chevronDown" />
       </button>
       {open ? (
@@ -100,7 +108,11 @@ export function DropdownSelect<T extends string>({
                     title={option.title}
                     type="button"
                   >
-                    <span>{option.label}</span>
+                    <span className="dropdownOptionLabel">
+                      {option.icon ? <span className="dropdownIcon">{option.icon}</span> : null}
+                      <span>{option.label}</span>
+                    </span>
+                    {option.badge ? <em className="dropdownOptionBadge">{option.badge}</em> : null}
                     {option.detail ? <small>{option.detail}</small> : null}
                   </button>
                   {option.action ? (

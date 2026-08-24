@@ -14,6 +14,7 @@
     "@nexus/sandbox": "1.7.0",
     "@nexus/storage": "1.7.0",
     "@nexus/tools": "1.7.0",
+    "@nexus/wiki-core": "1.7.0",
     "mammoth": "^1.12.0",
     "node-pty": "^1.1.0",
     "xlsx": "^0.18.5"

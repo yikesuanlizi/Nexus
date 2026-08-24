@@ -1,7 +1,7 @@
 // 设置面板入口薄壳（desktop 桌面端）：注册 Shell 与各 page；状态、handler 集中于此
 // 与 web 差异：含 desktopCapabilities、logoutWeixin、bridgeMode='desktop_managed'、
 // updateXxxConfig 在 patch 时立即 save；没有 admin tab；saveModelPreset 签名不同
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { Locale, RunConfig } from '../config/config.js';
 import { emptyMcp } from '../config/defaults.js';
 import { upsertById } from '../features/chat/threadItems.js';
@@ -15,14 +15,18 @@ import { ModelsPage } from './settings/ModelsPage.js';
 import { AgentsPage } from './settings/AgentsPage.js';
 import { ToolsPage } from './settings/ToolsPage.js';
 import { MonitorPage } from './settings/MonitorPage.js';
+import { RuntimePage } from './settings/RuntimePage.js';
+import { SshProfilesPage } from './settings/SshProfilesPage.js';
 import { MemoryPage } from './settings/MemoryPage.js';
-import { AboutPage, AdminPage, type AuthTokenPublic } from './settings/AboutPage.js';
+import { AboutPage } from './settings/AboutPage.js';
 import { AccessPolicyPage, type AccessPolicySettingsScope } from './settings/AccessPolicyPage.js';
 import { McpConfigDialog } from './settings/McpConfigDialog.js';
 import { FirecrawlKeyDialog } from './settings/FirecrawlKeyDialog.js';
+import { OpsKnowledgeStatus } from './workbench/OpsKnowledgeStatus.js';
 import { useSettingsController } from '../features/settings/useSettingsController.js';
 import { saveGlobalAccessPolicy } from '../features/settings/settingsClient.js';
 import { fetchThreadAccessPolicy, patchThreadAccessPolicy } from '../api/threadConfigClient.js';
+import { compactWorkspaceRoots, normalizeWorkspaceRoot } from '../features/workspaces/workspaces.js';
 
 const defaultBotConfig: BotConfig = {
   weixin: {
@@ -136,8 +140,9 @@ export function SettingsDrawer({
   startDingtalkStream,
   stopDingtalkStream,
   testDingtalkMessage,
-  activeThreadId,
-  saveThreadModelOverrides,
+    activeThreadId,
+    workspaceRoots,
+    saveThreadModelOverrides,
   saveGlobalModelConfig,
 }: {
   botConfig: BotConfig | null;
@@ -159,7 +164,7 @@ export function SettingsDrawer({
   refreshProviders: () => Promise<void>;
   refreshKeyStates: () => Promise<void>;
   requestModelPresetName: (defaultName: string) => Promise<string | null>;
-  saveModelPreset: (name: string, presetConfig: ModelPresetConfig) => Promise<void>;
+  saveModelPreset: (name: string, presetConfig: ModelPresetConfig, presetId?: string, status?: 'draft' | 'published') => Promise<void>;
   deleteModelPreset: (presetId: string) => Promise<void>;
   saveSkillDraft: (draft: import('../shared/types.js').SkillDraft) => Promise<void>;
   saveBotConfig: (config: BotConfig) => Promise<void>;
@@ -176,8 +181,9 @@ export function SettingsDrawer({
   startDingtalkStream: () => Promise<{ ok?: boolean; error?: string }>;
   stopDingtalkStream: () => Promise<void>;
   testDingtalkMessage: (conversationId: string, conversationType: 'dm' | 'group', text?: string) => Promise<{ ok?: boolean; error?: string }>;
-  activeThreadId: string;
-  saveThreadModelOverrides: (overrides: { provider: string; model: string; baseUrl: string }) => Promise<void>;
+    activeThreadId: string;
+    workspaceRoots?: string[];
+    saveThreadModelOverrides: (overrides: { provider: string; model: string; baseUrl: string }) => Promise<void>;
   saveGlobalModelConfig: (config: RunConfig) => void;
 }) {
   const settings = useSettingsController({
@@ -213,27 +219,37 @@ export function SettingsDrawer({
   const [firecrawlDialogOpen, setFirecrawlDialogOpen] = useState(false);
   const [activeSection, setActiveSection] = useState('agent');
   const [accessPolicyScope, setAccessPolicyScope] = useState<AccessPolicySettingsScope>('global');
+  const [accessPolicyWorkspaceRoot, setAccessPolicyWorkspaceRoot] = useState(() => normalizeWorkspaceRoot(config.workspaceRoot));
   const [accessPolicyDraft, setAccessPolicyDraft] = useState<AccessPolicyConfig>(() => accessPolicyFromConfig(config));
   const [accessPolicySaving, setAccessPolicySaving] = useState(false);
   const [accessPolicyNotice, setAccessPolicyNotice] = useState('');
   const [pluginNotice, setPluginNotice] = useState('');
   const [memoryRecords, setMemoryRecords] = useState<MemoryRecord[]>([]);
   const [memoryNotice, setMemoryNotice] = useState('');
+  const modelCloseGuardRef = useRef<(() => boolean) | null>(null);
+  const availableWorkspaceRoots = compactWorkspaceRoots([config.workspaceRoot, ...(workspaceRoots ?? [])]);
+  const workspaceRootsKey = (workspaceRoots ?? []).join('\u0000');
+
+  function handleSettingsClose() {
+    if (activeSection === 'agent' && modelCloseGuardRef.current?.()) return;
+    settings.handleCancel();
+  }
 
   const dingtalkStatus = botStatus?.dingtalk;
   const dingtalkConfigured = Boolean(botDraft.dingtalk.clientId && botDraft.dingtalk.clientSecret);
 
-  const [authToken, setAuthToken] = useState<AuthTokenPublic | null>(null);
-
   const settingsTabs = [
     { id: 'agent', label: locale === 'zh' ? '模型' : 'Model' },
+    { id: 'accessPolicy', label: locale === 'zh' ? '权限' : 'Access' },
     { id: 'appearance', label: locale === 'zh' ? '外观' : 'Appearance' },
     { id: 'memory', label: locale === 'zh' ? '记忆' : 'Memory' },
+    { id: 'knowledge', label: locale === 'zh' ? '个人知识库' : 'Knowledge bases' },
+    { id: 'runtime', label: locale === 'zh' ? '运行参数' : 'Runtime' },
+    { id: 'ssh', label: locale === 'zh' ? 'SSH 配置' : 'SSH profiles' },
     { id: 'monitor', label: locale === 'zh' ? '监控' : 'Monitor' },
     { id: 'plugins', label: locale === 'zh' ? '插件中心' : 'Plugins' },
     { id: 'remote', label: locale === 'zh' ? '远程助手' : 'Remote bots' },
     { id: 'about', label: locale === 'zh' ? '关于' : 'About' },
-    ...(config.permissions === 'danger_full_access' ? [{ id: 'admin' as const, label: locale === 'zh' ? '管理员' : 'Admin' }] : []),
   ];
 
   useEffect(() => {
@@ -265,10 +281,27 @@ export function SettingsDrawer({
   }, [activeSection]);
 
   useEffect(() => {
-    if (accessPolicyScope === 'global') {
-      setAccessPolicyDraft(accessPolicyFromConfig(config));
+    setAccessPolicyWorkspaceRoot((current) => {
+      const normalizedCurrent = normalizeWorkspaceRoot(current);
+      return normalizedCurrent && availableWorkspaceRoots.some((root) => normalizeWorkspaceRoot(root).toLowerCase() === normalizedCurrent.toLowerCase())
+        ? normalizedCurrent
+        : (availableWorkspaceRoots[0] ?? '');
+    });
+  }, [config.workspaceRoot, workspaceRootsKey]);
+
+  useEffect(() => {
+    if (accessPolicyScope === 'global' || accessPolicyScope === 'workspace') {
+      const globalPolicy = accessPolicyFromConfig(config);
+      if (accessPolicyScope === 'workspace') {
+        const root = normalizeWorkspaceRoot(accessPolicyWorkspaceRoot || config.workspaceRoot).toLowerCase();
+        setAccessPolicyDraft({
+          ...globalPolicy,
+          workspaceRoot: normalizeWorkspaceRoot(accessPolicyWorkspaceRoot || config.workspaceRoot),
+          persistentRules: globalPolicy.persistentRules.filter((rule) => rule.scope === 'workspace' && normalizeWorkspaceRoot(rule.workspaceRoot ?? globalPolicy.workspaceRoot).toLowerCase() === root),
+        });
+      } else setAccessPolicyDraft(globalPolicy);
     }
-  }, [config.accessPolicy, config.workspaceRoot, config.permissions, accessPolicyScope]);
+  }, [config.accessPolicy, config.workspaceRoot, config.permissions, accessPolicyScope, accessPolicyWorkspaceRoot]);
 
   async function ensureSkillsRoot() {
     const response = await fetch('/api/settings');
@@ -285,7 +318,7 @@ export function SettingsDrawer({
     settings.markDirty('skillsRoot', false);
   }
 
-  async function loadAccessPolicy(nextScope: AccessPolicySettingsScope) {
+  async function loadAccessPolicy(nextScope: AccessPolicySettingsScope, workspaceRootOverride?: string) {
     setAccessPolicyNotice('');
     if (nextScope === 'currentThread' && activeThreadId) {
       const threadPolicy = await fetchThreadAccessPolicy(activeThreadId);
@@ -297,12 +330,29 @@ export function SettingsDrawer({
       });
       return;
     }
-    setAccessPolicyDraft(accessPolicyFromConfig(config));
+    const globalPolicy = accessPolicyFromConfig(config);
+    if (nextScope === 'workspace') {
+      const selectedRoot = normalizeWorkspaceRoot(workspaceRootOverride || accessPolicyWorkspaceRoot || config.workspaceRoot);
+      const root = selectedRoot.toLowerCase();
+      setAccessPolicyDraft({
+        ...globalPolicy,
+        workspaceRoot: selectedRoot,
+        persistentRules: globalPolicy.persistentRules.filter((rule) => rule.scope === 'workspace' && normalizeWorkspaceRoot(rule.workspaceRoot ?? globalPolicy.workspaceRoot).toLowerCase() === root),
+      });
+      return;
+    }
+    setAccessPolicyDraft(globalPolicy);
   }
 
   function handleAccessPolicyScopeChange(nextScope: AccessPolicySettingsScope) {
     setAccessPolicyScope(nextScope);
-    void loadAccessPolicy(nextScope);
+    void loadAccessPolicy(nextScope, nextScope === 'workspace' ? accessPolicyWorkspaceRoot : undefined);
+  }
+
+  function handleAccessPolicyWorkspaceChange(workspaceRoot: string) {
+    const normalizedRoot = normalizeWorkspaceRoot(workspaceRoot);
+    setAccessPolicyWorkspaceRoot(normalizedRoot);
+    if (accessPolicyScope === 'workspace') void loadAccessPolicy('workspace', normalizedRoot);
   }
 
   async function handleSaveAccessPolicy() {
@@ -312,6 +362,23 @@ export function SettingsDrawer({
       if (accessPolicyScope === 'currentThread' && activeThreadId) {
         const saved = await patchThreadAccessPolicy(activeThreadId, accessPolicyDraft);
         setAccessPolicyDraft(saved ?? { ...accessPolicyDraft, temporaryGrants: [] });
+      } else if (accessPolicyScope === 'workspace') {
+        const base = accessPolicyFromConfig(config);
+        const root = normalizeWorkspaceRoot(accessPolicyWorkspaceRoot || config.workspaceRoot);
+        if (!root) {
+          setAccessPolicyNotice(locale === 'zh' ? '请先选择工作区。' : 'Select a workspace first.');
+          return;
+        }
+        const normalizedRoot = root.toLowerCase();
+        const retained = base.persistentRules.filter((rule) => !(rule.scope === 'workspace' && normalizeWorkspaceRoot(rule.workspaceRoot ?? base.workspaceRoot).toLowerCase() === normalizedRoot));
+        const saved = await saveGlobalAccessPolicy({
+          ...base,
+          mode: accessPolicyDraft.mode,
+          persistentRules: [...retained, ...accessPolicyDraft.persistentRules.map((rule) => ({ ...rule, scope: 'workspace' as const, workspaceRoot: root }))],
+          temporaryGrants: [],
+        });
+        setAccessPolicyDraft({ ...saved, workspaceRoot: root, persistentRules: saved.persistentRules.filter((rule) => rule.scope === 'workspace' && normalizeWorkspaceRoot(rule.workspaceRoot ?? saved.workspaceRoot).toLowerCase() === normalizedRoot) });
+        setConfig((current) => ({ ...current, accessPolicy: saved }));
       } else {
         const saved = await saveGlobalAccessPolicy(accessPolicyDraft);
         setAccessPolicyDraft(saved);
@@ -586,9 +653,12 @@ export function SettingsDrawer({
             selectModelProviderDraft={settings.selectModelProviderDraft}
             loadModelPresetIntoDraft={settings.loadModelPresetIntoDraft}
             handleSaveModelConfig={settings.handleSaveModelConfig}
+            resetModelDraft={settings.resetModelDraft}
             handleSetCurrentModelConfig={settings.handleSetCurrentModelConfig}
             markDirty={settings.markDirty}
             dirtyFields={settings.dirtyFields}
+            registerCloseGuard={(handler) => { modelCloseGuardRef.current = handler; }}
+            onForceClose={() => setOpen(false)}
           />
         );
       case 'appearance':
@@ -607,10 +677,16 @@ export function SettingsDrawer({
             locale={locale}
             value={accessPolicyDraft}
             scope={accessPolicyScope}
+            currentWorkspaceAvailable={availableWorkspaceRoots.length > 0}
+            currentWorkspaceRoot={accessPolicyWorkspaceRoot}
+            workspaceRoots={availableWorkspaceRoots}
+            selectedWorkspaceRoot={accessPolicyWorkspaceRoot}
             currentThreadAvailable={Boolean(activeThreadId)}
+            currentThreadId={activeThreadId}
             saving={accessPolicySaving}
             notice={accessPolicyNotice}
             onScopeChange={handleAccessPolicyScopeChange}
+            onWorkspaceChange={handleAccessPolicyWorkspaceChange}
             onChange={setAccessPolicyDraft}
             onSave={handleSaveAccessPolicy}
             onReload={() => void loadAccessPolicy(accessPolicyScope)}
@@ -628,6 +704,8 @@ export function SettingsDrawer({
             exportMemories={exportMemories}
           />
         );
+      case 'knowledge':
+        return <OpsKnowledgeStatus locale={locale} mode="manage" />;
       case 'monitor':
         return (
           <MonitorPage
@@ -639,21 +717,20 @@ export function SettingsDrawer({
             onSave={settings.handleSave}
           />
         );
+      case 'runtime':
+        return (
+          <RuntimePage
+            locale={locale}
+            config={config}
+            setConfig={setConfig}
+            markDirty={settings.markDirty}
+            onSave={settings.handleSave}
+          />
+        );
+      case 'ssh':
+        return <SshProfilesPage locale={locale} />;
       case 'about':
-        return (
-          <AboutPage
-            locale={locale}
-          />
-        );
-      case 'admin':
-        return (
-          <AdminPage
-            locale={locale}
-            token={authToken}
-            onCopyToken={() => {}}
-            onRegenerateToken={() => {}}
-          />
-        );
+        return <AboutPage locale={locale} />;
       case 'plugins':
         return (
           <ToolsPage
@@ -732,7 +809,7 @@ export function SettingsDrawer({
       <SettingsShell
         locale={locale}
         open={true}
-        onClose={() => setOpen(false)}
+        onClose={handleSettingsClose}
         settingsTabs={settingsTabs}
         activeSection={activeSection}
         setActiveSection={setActiveSection}

@@ -98,8 +98,7 @@ function shouldStartWeixinBridge() {
   const explicit = process.env.NEXUS_START_WEIXIN_BRIDGE?.trim().toLowerCase();
   if (['0', 'false', 'no', 'off'].includes(explicit ?? '')) return false;
   if (['1', 'true', 'yes', 'on'].includes(explicit ?? '')) return true;
-  const deploymentMode = (process.env.NEXUS_DEPLOYMENT_MODE || process.env.NEXUS_STORAGE_MODE || '').trim().toLowerCase();
-  return !deploymentMode.startsWith('multi');
+  return true;
 }
 
 const build = run(bin('tsc'), ['-b'], { allowExit: true });

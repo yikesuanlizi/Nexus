@@ -14,7 +14,7 @@ export type WorkspacePickResult = {
 
 // 调用系统原生目录选择对话框（当前版本仅支持 Windows）
 // — Chinese: invoke native folder browser (Windows only in current build)
-export async function pickWorkspaceDirectory(): Promise<WorkspacePickResult> {
+export async function pickWorkspaceDirectory(options: { description?: string } = {}): Promise<WorkspacePickResult> {
   if (process.platform !== 'win32') {
     throw new Error('Native workspace directory picker is only available on Windows in this build.');
   }
@@ -25,7 +25,7 @@ export async function pickWorkspaceDirectory(): Promise<WorkspacePickResult> {
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 Add-Type -AssemblyName System.Windows.Forms
 $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
-$dialog.Description = 'Select Nexus workspace'
+$dialog.Description = '${(options.description ?? 'Select Nexus workspace').replaceAll("'", "''")}'
 $dialog.ShowNewFolderButton = $true
 $result = $dialog.ShowDialog()
 if ($result -eq [System.Windows.Forms.DialogResult]::OK) {

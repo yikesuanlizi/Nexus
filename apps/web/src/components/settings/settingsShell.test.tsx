@@ -137,12 +137,41 @@ describe('AccessPolicyPage · persistent policy UI', () => {
       onReload: vi.fn(),
     }));
 
-    expect(html).toContain('权限与工作区');
+    expect(html).toContain('权限');
     expect(html).toContain('持久规则');
     expect(html).toContain('allow-docs');
     expect(html).toContain('E:\\langchain\\dexin-agent');
     expect(html).not.toContain('temp-hidden');
     expect(html).not.toContain('E:\\secret');
+  });
+
+  it('renders compact global, workspace, and thread scopes', () => {
+    const html = renderToStaticMarkup(React.createElement(AccessPolicyPage, {
+      locale: 'zh',
+      value,
+      scope: 'workspace',
+      currentWorkspaceAvailable: true,
+      currentWorkspaceRoot: value.workspaceRoot,
+      workspaceRoots: [value.workspaceRoot, 'D:\\teacher-rag'],
+      selectedWorkspaceRoot: value.workspaceRoot,
+      currentThreadAvailable: true,
+      currentThreadId: 'thread-1',
+      saving: false,
+      notice: '',
+      onScopeChange: vi.fn(),
+      onWorkspaceChange: vi.fn(),
+      onChange: vi.fn(),
+      onSave: vi.fn(),
+      onReload: vi.fn(),
+    }));
+    expect(html).toContain('当前工作区');
+    expect(html).toContain('当前线程');
+    expect(html).toContain('aria-selected="true"');
+    expect(html).toContain('accessWorkspaceList');
+    expect(html).toContain('D:\\teacher-rag');
+    expect(html).toContain('class="accessModeValue"');
+    expect(html).not.toContain('<select value="workspace"');
+    expect(html).not.toContain('当前工作区目录');
   });
 
   it('keeps the page wired in web and desktop drawers', () => {

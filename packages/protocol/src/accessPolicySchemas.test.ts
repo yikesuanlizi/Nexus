@@ -81,4 +81,22 @@ describe('access policy schemas', () => {
 
     expect(parsed.scope).toBe('tool_call');
   });
+
+  it('parses typed Ops targets without collapsing them into path/network targets', () => {
+    const parsed = accessRuleSchema.parse({
+      id: 'ops-log',
+      effect: 'allow',
+      access: 'read',
+      target: {
+        kind: 'log',
+        environmentId: 'prod',
+        hostId: 'api-01',
+        serviceName: 'nginx',
+        timeRange: { from: '2026-08-19T00:00:00.000Z', to: '2026-08-19T01:00:00.000Z' },
+      },
+      scope: 'thread',
+      threadId: 'thread-1',
+    });
+    expect(parsed.target.kind).toBe('log');
+  });
 });

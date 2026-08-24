@@ -27,10 +27,14 @@ const SETTINGS_TAB_ICONS: Record<string, IconName> = {
   accessPolicy: 'shield',
   appearance: 'paintbrush',
   memory: 'brain',
+  knowledge: 'knowledge',
   performance: 'gauge',
+  runtime: 'gauge',
+  monitor: 'activity',
+  ssh: 'terminal',
+  about: 'question',
   plugins: 'puzzle',
   remote: 'messages',
-  admin: 'shield',
 };
 
 export interface SettingsShellProps {
@@ -54,6 +58,7 @@ export interface SettingsShellProps {
 export function SettingsShell({
   locale,
   open,
+  onClose,
   settingsTabs,
   activeSection,
   setActiveSection,
@@ -74,7 +79,8 @@ export function SettingsShell({
 
   function handleCancel() {
     if (saveState.saving) return;
-    onCancel();
+    if (onClose) onClose();
+    else onCancel();
   }
 
   useEffect(() => {

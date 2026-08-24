@@ -47,6 +47,7 @@ export type TranscriptGroup =
       items: ThreadItemLike[];
       status?: string;
       timestamp?: string;
+      completedAt?: string | null;
     };
 
 export interface EventDraft {
@@ -134,7 +135,7 @@ export function groupTranscriptItems<T extends ThreadItemLike>(
   items: T[],
   turns: TurnLike[] = [],
 ): TranscriptGroup[] {
-  const turnStatus = new Map(turns.map((turn) => [turn.turnId, turn.status]));
+  const turnById = new Map(turns.map((turn) => [turn.turnId, turn]));
   const groups: TranscriptGroup[] = [];
   const assistantByTurn = new Map<string, Extract<TranscriptGroup, { kind: 'assistant' }>>();
 
@@ -160,8 +161,9 @@ export function groupTranscriptItems<T extends ThreadItemLike>(
         id: `assistant:${key}`,
         turnId: item.turnId,
         items: [],
-        status: item.turnId ? turnStatus.get(item.turnId) : item.status,
+        status: item.turnId ? turnById.get(item.turnId)?.status : item.status,
         timestamp: item.timestamp,
+        completedAt: item.turnId ? turnById.get(item.turnId)?.completedAt ?? null : null,
       };
       assistantByTurn.set(key, group);
       groups.push(group);

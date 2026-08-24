@@ -8,9 +8,39 @@ export const temporaryAccessScopeSchema = z.enum(['tool_call', 'turn', 'session'
 
 export const accessTargetSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('path'), path: z.string().trim().min(1) }).strict(),
+  z.object({
+    kind: z.literal('workspace'),
+    workspaceRoot: z.string().trim().min(1),
+    relativePath: z.string().trim().min(1).optional(),
+  }).strict(),
   z.object({ kind: z.literal('command'), command: z.string().trim().min(1) }).strict(),
   z.object({ kind: z.literal('network'), host: z.string().trim().min(1) }).strict(),
   z.object({ kind: z.literal('tool'), toolName: z.string().trim().min(1) }).strict(),
+  z.object({
+    kind: z.literal('host'),
+    environmentId: z.string().trim().min(1),
+    hostId: z.string().trim().min(1),
+  }).strict(),
+  z.object({
+    kind: z.literal('container'),
+    environmentId: z.string().trim().min(1),
+    hostId: z.string().trim().min(1).optional(),
+    containerName: z.string().trim().min(1),
+  }).strict(),
+  z.object({
+    kind: z.literal('service'),
+    environmentId: z.string().trim().min(1),
+    hostId: z.string().trim().min(1).optional(),
+    serviceName: z.string().trim().min(1),
+  }).strict(),
+  z.object({
+    kind: z.literal('log'),
+    environmentId: z.string().trim().min(1),
+    hostId: z.string().trim().min(1).optional(),
+    serviceName: z.string().trim().min(1).optional(),
+    containerName: z.string().trim().min(1).optional(),
+    timeRange: z.object({ from: z.string().datetime(), to: z.string().datetime() }).optional(),
+  }).strict(),
 ]);
 
 export const accessRuleSchema = z.object({

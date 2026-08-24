@@ -22,8 +22,6 @@ export interface RunMonitorWorkbenchProps {
   errorsOnly: boolean;
   tracePage: TracePageInfo | null;
   expandedThreadId: string;
-  adminMode: boolean;
-  adminToken: string;
   autoRefresh: boolean;
   autoRefreshInterval: number;
   allCategories: RunTraceCategory[];
@@ -32,7 +30,6 @@ export interface RunMonitorWorkbenchProps {
   onClose(): void;
   onRefresh(): void;
   onControlRun(action: 'interrupt' | 'resume' | 'rollback', opts?: { checkpointId?: string }): void;
-  onAdminTokenChange(value: string): void;
   onToggleThread(threadId: string): void;
   onSelectRun(runId: string): void;
   onSelectEvent(eventId: string): void;
@@ -61,8 +58,6 @@ export function RunMonitorWorkbench(props: RunMonitorWorkbenchProps) {
     errorsOnly,
     tracePage,
     expandedThreadId,
-    adminMode,
-    adminToken,
     autoRefresh,
     autoRefreshInterval,
     allCategories,
@@ -71,7 +66,6 @@ export function RunMonitorWorkbench(props: RunMonitorWorkbenchProps) {
     onClose,
     onRefresh,
     onControlRun,
-    onAdminTokenChange,
     onToggleThread,
     onSelectRun,
     onSelectEvent,
@@ -185,16 +179,6 @@ export function RunMonitorWorkbench(props: RunMonitorWorkbenchProps) {
             )}
           </div>
           <div className="runMonitorHeader__right">
-            {adminMode || adminToken ? (
-              <input
-                type="password"
-                className="runMonitorAdminToken"
-                placeholder={zh ? 'Admin Token' : 'Admin Token'}
-                value={adminToken}
-                onChange={(e) => onAdminTokenChange(e.target.value)}
-                aria-label={zh ? '管理员令牌' : 'Admin token'}
-              />
-            ) : null}
             <button
               type="button"
               className="runMonitorCloseBtn"

@@ -25,7 +25,7 @@ export function readStoredWorkbenchState(): PersistedWorkbenchState {
     const raw = localStorage.getItem(WORKBENCH_STATE_STORAGE_KEY);
     if (!raw) {
       const legacy = localStorage.getItem('nexus.rightPane.tab');
-      const activeTab = legacy === 'browser' || legacy === 'files' || legacy === 'agents' || legacy === 'activity'
+      const activeTab = legacy === 'browser' || legacy === 'files' || legacy === 'agents' || legacy === 'activity' || legacy === 'ops'
         ? legacy
         : legacy === 'terminal'
           ? LEGACY_TERMINAL_TAB
@@ -41,7 +41,7 @@ export function readStoredWorkbenchState(): PersistedWorkbenchState {
       : [];
     const utilityActiveTab = normalizeUtilityTab(parsed.activeTab);
     const activeTab: WorkbenchTab = utilityActiveTab
-      ?? (parsed.activeTab === 'agents' || parsed.activeTab === 'activity' ? parsed.activeTab : 'activity');
+      ?? (parsed.activeTab === 'agents' || parsed.activeTab === 'activity' || parsed.activeTab === 'ops' ? parsed.activeTab : 'activity');
     const normalizedTabs = [...new Set(openUtilityTabs)];
     if (utilityActiveTab && !normalizedTabs.includes(utilityActiveTab)) normalizedTabs.push(utilityActiveTab);
     return { activeTab, openUtilityTabs: normalizedTabs };

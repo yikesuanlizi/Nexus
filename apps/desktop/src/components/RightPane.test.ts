@@ -9,6 +9,29 @@ import { RightPane } from './RightPane.js';
 const here = dirname(fileURLToPath(import.meta.url));
 
 describe('RightPane', () => {
+  it('keeps the workbench empty and utility controls disabled without a selected thread', () => {
+    const html = renderToStaticMarkup(React.createElement(RightPane, {
+      activeTab: 'browser',
+      activeThreadId: '',
+      activeThreadTitle: '',
+      activeThread: null,
+      busy: false,
+      threadChildren: [],
+      runtimeItems: [],
+      locale: 'zh',
+      workspaceRoot: 'D:/remembered/project',
+      onTabChange: vi.fn(),
+    }));
+
+    expect(html).toContain('活动');
+    expect(html).toContain('智能体');
+    expect(html).toContain('disabled=""');
+    expect(html).not.toContain('workbenchDynamicTab');
+    expect(html).not.toContain('browserWorkbench');
+    expect(html).not.toContain('workspaceFiles');
+    expect(html).not.toContain('terminalPanel');
+  });
+
   it('renders only fixed tabs at startup and keeps utilities behind the add menu', () => {
     const html = renderToStaticMarkup(React.createElement(RightPane, {
       activeTab: 'activity',
@@ -90,6 +113,31 @@ describe('RightPane', () => {
     expect(html).not.toContain('深度');
   });
 
+  it('derives the Ops tab from thread metadata when the caller does not pass an override', () => {
+    const html = renderToStaticMarkup(React.createElement(RightPane, {
+      activeTab: 'activity',
+      activeThreadId: 'thread_ops',
+      activeThreadTitle: 'Ops',
+      busy: false,
+      threadChildren: [],
+      activeThread: {
+        threadId: 'thread_ops',
+        title: 'Ops',
+        mode: 'ops',
+        taskPreset: 'ops',
+        status: 'idle',
+        turnCount: 0,
+        createdAt: '2026-07-18T00:00:00.000Z',
+        updatedAt: '2026-07-18T00:00:00.000Z',
+      },
+      locale: 'zh',
+      workspaceRoot: 'E:/langchain',
+      onTabChange: vi.fn(),
+    }));
+
+    expect(html).toContain('运维');
+  });
+
   it('keeps the agent info button meaningful by not rendering inspector until an agent is selected', () => {
     const workbenchSource = readFileSync(join(here, 'workbench', 'WorkspaceWorkbench.tsx'), 'utf-8');
     const agentStageSource = readFileSync(join(here, 'AgentStagePanel.tsx'), 'utf-8');
@@ -131,12 +179,42 @@ describe('RightPane', () => {
     expect(styles).toContain('@keyframes workbenchPanelIn');
   });
 
+  it('keeps the Ops inspector in its own conditional fixed tab', () => {
+    const workbenchSource = readFileSync(join(here, 'workbench', 'WorkspaceWorkbench.tsx'), 'utf-8');
+
+    expect(workbenchSource).toContain("opsVisible ? (");
+    expect(workbenchSource).toContain("workbenchPanelClassName('ops', activeTab)");
+    expect(workbenchSource).toContain('data-testid="ops-workbench-panel"');
+    expect(workbenchSource).toContain('<OpsTaskInspector');
+    expect(workbenchSource).toContain('opsWorkbenchEmpty');
+  });
+
+  it('guards mode writes and Ops task state by thread before rendering or mutating', () => {
+    const mainSource = readFileSync(join(here, '..', 'main.tsx'), 'utf-8');
+
+    expect(mainSource).toContain('modePatchGenerationRef');
+    expect(mainSource).toContain('modePatchQueueRef');
+    expect(mainSource).toContain('opsStartGenerationRef');
+    expect(mainSource).toContain('isCurrentStart');
+    expect(mainSource).toContain('requestThreadId');
+    expect(mainSource).toContain('opsTaskDetail?.task.spec.threadId === threadId');
+    expect(mainSource).toContain('opsTaskAnchor?.threadId === threadId');
+    expect(mainSource).toContain('setItems((current) => mergeIncomingItems(current, [{ id: `ops_error_');
+  });
+
+  it('keeps Ops unavailable until a real workspace exists', () => {
+    const mainSource = readFileSync(join(here, '..', 'main.tsx'), 'utf-8');
+
+    expect(mainSource).toContain('const opsModeAvailable = Boolean(activeWorkspaceRoot.trim())');
+    expect(mainSource).toContain('opsModeAvailable={opsModeAvailable}');
+  });
+
   it('mounts file and browser panels only while their dynamic tabs are open', () => {
     const workbenchSource = readFileSync(join(here, 'workbench', 'WorkspaceWorkbench.tsx'), 'utf-8');
     const styles = readFileSync(join(here, '..', 'styles.css'), 'utf-8');
 
-    expect(workbenchSource).toContain("const shouldRenderFilesPanel = openUtilityTabs.includes('files');");
-    expect(workbenchSource).toContain("const shouldRenderBrowserWorkbench = openUtilityTabs.includes('browser');");
+    expect(workbenchSource).toContain("const shouldRenderFilesPanel = hasActiveThread && openUtilityTabs.includes('files');");
+    expect(workbenchSource).toContain("const shouldRenderBrowserWorkbench = hasActiveThread && openUtilityTabs.includes('browser');");
     expect(workbenchSource).not.toContain('filesPanelMounted');
     expect(workbenchSource).not.toContain('requestIdleCallback');
     expect(workbenchSource).toContain("aria-hidden={activeTab !== 'files'}");

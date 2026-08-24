@@ -27,32 +27,57 @@ export interface AssistantTurnGroup {
   items: ThreadItem[];
   status?: string;
   timestamp?: string;
+  completedAt?: string | null;
 }
 
-// 实时/冻结时长：in_progress 时每秒刷新（now - start）；非进行中首次观测时
-// 冻结，避免 rerender 抖动（会话内稳定）。
-// — English: live/frozen elapsed time — refreshes every second while
-//   in_progress; freezes on the first non-running observation so re-renders
-//   cannot jitter it (stable within the session).
-function useElapsedMs(startIso: string | undefined, status: string): number | null {
-  const [now, setNow] = useState(() => Date.now());
-  const frozenRef = useRef<number | null>(null);
+// 终态只能使用已持久化的结束点；只有实时运行态才读取当前时间。
+// — English: terminal durations use a persisted endpoint; Date.now is only
+//   read for a live in-progress item.
+export function resolveElapsedMs(startIso: string | undefined, endIso?: string | null): number | null {
+  if (!startIso || !endIso) return null;
+  const start = Date.parse(startIso);
+  const end = Date.parse(endIso);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+  return end >= start ? end - start : null;
+}
+
+function useElapsedMs(startIso: string | undefined, status: string, endIso?: string | null): number | null {
+  const [now, setNow] = useState<number | null>(null);
   useEffect(() => {
-    if (!startIso) return;
-    if (status === 'in_progress') {
-      const timer = window.setInterval(() => setNow(Date.now()), 1000);
-      return () => window.clearInterval(timer);
-    }
-    if (frozenRef.current === null) {
-      frozenRef.current = Math.max(0, Date.now() - Date.parse(startIso));
-    }
-    return;
+    if (status !== 'in_progress' || !startIso) return undefined;
+    const update = () => setNow(Date.now());
+    update();
+    const timer = window.setInterval(update, 1000);
+    return () => window.clearInterval(timer);
   }, [startIso, status]);
   if (!startIso) return null;
-  if (status !== 'in_progress') {
-    return frozenRef.current ?? Math.max(0, Date.now() - Date.parse(startIso));
+  if (status === 'in_progress') {
+    const start = Date.parse(startIso);
+    return now === null || !Number.isFinite(start) ? null : Math.max(0, now - start);
   }
-  return Math.max(0, now - Date.parse(startIso));
+  return resolveElapsedMs(startIso, endIso);
+}
+
+/** Find a stable end point for an item without changing persisted history. */
+export function terminalTimestampForItem(
+  item: ThreadItem,
+  items: ThreadItem[] = [],
+  turnCompletedAt?: string | null,
+  assistantTimestamp?: string,
+): string | null {
+  const start = item.timestamp ? Date.parse(item.timestamp) : Number.NaN;
+  const laterItem = items
+    .slice(Math.max(0, items.indexOf(item) + 1))
+    .map((candidate) => candidate.timestamp)
+    .find((timestamp) => {
+      const parsed = timestamp ? Date.parse(timestamp) : Number.NaN;
+      return Number.isFinite(parsed) && (!Number.isFinite(start) || parsed > start);
+    });
+  if (laterItem) return laterItem;
+  if (turnCompletedAt && Number.isFinite(Date.parse(turnCompletedAt)) && (!Number.isFinite(start) || Date.parse(turnCompletedAt) > start)) return turnCompletedAt;
+  if (assistantTimestamp && Number.isFinite(Date.parse(assistantTimestamp)) && (!Number.isFinite(start) || Date.parse(assistantTimestamp) > start)) return assistantTimestamp;
+  const itemCompletedAt = (item as ThreadItem & { completedAt?: string | null }).completedAt;
+  return itemCompletedAt && Number.isFinite(Date.parse(itemCompletedAt)) && (!Number.isFinite(start) || Date.parse(itemCompletedAt) > start) ? itemCompletedAt : null;
 }
 
 function formatElapsed(ms: number): string {
@@ -231,6 +256,7 @@ export function AssistantTurnView({
     .join('\n\n');
   const text = agentText || errorText;
   const timestamp = group.timestamp ?? group.items.find((item) => item.timestamp)?.timestamp ?? new Date().toISOString();
+  const assistantTimestamp = [...group.items].reverse().find((item) => item.type === 'agent_message' && item.timestamp)?.timestamp;
   const hasRunningItem = group.items.some((item) => item.status === 'in_progress');
   const agentItems = group.items.filter((item) => item.type === 'agent_message' && item.text);
   const streamingAgentItemId = [...agentItems].reverse().find((item) => item.status === 'in_progress')?.id
@@ -270,7 +296,7 @@ export function AssistantTurnView({
             ) : null;
           }
           if (item.type === 'reasoning') {
-            return <ReasoningDetails item={item} key={item.id} locale={locale} onCopy={onCopy} />;
+            return <ReasoningDetails item={item} key={item.id} locale={locale} onCopy={onCopy} endIso={terminalTimestampForItem(item, group.items, group.completedAt, assistantTimestamp)} />;
           }
           if (
             isToolItem(item)
@@ -286,6 +312,8 @@ export function AssistantTurnView({
                 items={batch}
                 key={`tool-batch-${item.id}`}
                 locale={locale}
+                completedAt={group.completedAt}
+                assistantTimestamp={assistantTimestamp}
                 onPreviewFile={onPreviewFile}
                 onOpenFile={onOpenFile}
               />
@@ -309,16 +337,18 @@ function ReasoningDetails({
   item,
   locale,
   onCopy,
+  endIso,
 }: {
   item: ThreadItem;
   locale: Locale;
   onCopy?: (text: string) => void;
+  endIso?: string | null;
 }) {
   const text = item.text?.trim();
   if (!text) return <InternalItemDetails item={item} locale={locale} />;
   // 思考时长（实时/冻结），跟在 THINK 小字后面。
   // — English: reasoning elapsed (live/frozen), right after the THINK label.
-  const elapsedMs = useElapsedMs(item.timestamp, item.status ?? 'completed');
+  const elapsedMs = useElapsedMs(item.timestamp, item.status ?? 'completed', endIso);
   return (
     <details
       className="reasoningDetails"
@@ -351,12 +381,16 @@ function ToolBatchDetails({
   childActivityByThread,
   items,
   locale,
+  completedAt,
+  assistantTimestamp,
   onPreviewFile,
   onOpenFile,
 }: {
   childActivityByThread: Record<string, ThreadItem[]>;
   items: ThreadItem[];
   locale: Locale;
+  completedAt?: string | null;
+  assistantTimestamp?: string;
   onPreviewFile?: (path: string) => void;
   onOpenFile?: (path: string) => void;
 }) {
@@ -366,7 +400,10 @@ function ToolBatchDetails({
   //   start → last tool finish or now). Thinking time lives next to the THINK
   //   fold (ReasoningDetails), not inside the tool batch.
   const anyRunning = items.some((item) => item.status === 'in_progress');
-  const batchElapsedMs = useElapsedMs(items[0]?.timestamp, anyRunning ? 'in_progress' : 'completed');
+  const batchEndIso = items[0]
+    ? terminalTimestampForItem(items[0], items, completedAt, assistantTimestamp)
+    : null;
+  const batchElapsedMs = useElapsedMs(items[0]?.timestamp, anyRunning ? 'in_progress' : 'completed', batchEndIso);
   const zh = locale === 'zh';
   const stats = batchElapsedMs !== null
     ? (zh ? `共 ${items.length} 个 · ${formatElapsed(batchElapsedMs)}` : `${items.length} calls · ${formatElapsed(batchElapsedMs)}`)
@@ -864,7 +901,7 @@ function ToolDetails({
     );
   }
   const toolSummary = summarizeToolItem(item, locale);
-  const elapsedMs = useElapsedMs(item.timestamp, item.status ?? 'completed');
+  const elapsedMs = useElapsedMs(item.timestamp, item.status ?? 'completed', (item as ThreadItem & { completedAt?: string | null }).completedAt);
   return (
     <details className={compact ? 'message tool inlineTool' : 'message tool'}>
       <summary className="toolSummary">

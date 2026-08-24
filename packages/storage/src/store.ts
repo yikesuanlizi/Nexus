@@ -34,7 +34,16 @@ export function safeTenantId(value: string | null | undefined): string {
 }
 
 export type RunStatus = 'pending' | 'running' | 'completed' | 'failed' | 'interrupted' | 'blocked';
-export type RunKind = 'turn' | 'model' | 'tool' | 'workflow' | 'subagent' | 'middleware' | 'checkpoint' | 'control' | 'file';
+export type RunKind =
+  | 'turn'
+  | 'model'
+  | 'tool'
+  | 'workflow'
+  | 'subagent'
+  | 'middleware'
+  | 'checkpoint'
+  | 'control'
+  | 'file';
 export type RunCaller = 'lead_agent' | 'subagent' | 'middleware' | 'tool' | 'workflow';
 export type RunEventLevel = 'debug' | 'info' | 'warning' | 'error';
 
@@ -115,12 +124,21 @@ export interface RollbackMarker {
 interface SqliteDb {
   exec(sql: string): void;
   prepare(sql: string): SqliteStatement;
+  pragma?(sql: string): unknown;
 }
 
 interface SqliteStatement {
   run(...params: unknown[]): void;
   get(...params: unknown[]): unknown;
   all(...params: unknown[]): unknown[];
+}
+
+/** Narrow SQL surface exposed to feature stores that live beside thread data. */
+export interface KnowledgeSqlitePort {
+  exec(sql: string): void;
+  run(sql: string, params?: unknown[]): void;
+  get<T = unknown>(sql: string, params?: unknown[]): T | undefined;
+  all<T = unknown>(sql: string, params?: unknown[]): T[];
 }
 
 // ─── ThreadStore Interface ──────────────────────────────────────────────────
@@ -135,13 +153,21 @@ interface SqliteStatement {
 export interface ThreadStore {
   readonly tenantId?: string;
 
+  /** Dedicated SQLite port for the local Wiki catalog and lexical index. */
+  readonly knowledgeSqlite?: KnowledgeSqlitePort;
+
   scope?(tenantId: string): ThreadStore;
 
   appendItems(threadId: ThreadId, items: ThreadItem[]): Promise<void>;
 
   updateThreadMetadata(
     threadId: ThreadId,
-    patch: Partial<Pick<ThreadMeta, 'title' | 'status' | 'turnCount' | 'updatedAt' | 'tags'>>,
+    patch: Partial<
+      Pick<
+        ThreadMeta,
+        'title' | 'status' | 'turnCount' | 'updatedAt' | 'tags' | 'mode' | 'taskPreset'
+      >
+    >,
   ): Promise<void>;
 
   createThread(meta: ThreadMeta): Promise<void>;
@@ -238,7 +264,10 @@ export interface ThreadStore {
 
   /** Compact rollout JSONL by removing items before the latest checkpoint item index. */
   // 压缩 rollout JSONL：删除最近检查点索引之前的条目
-  compactRollout?(threadId: ThreadId, options?: { keepLastCheckpoints?: number }): Promise<{
+  compactRollout?(
+    threadId: ThreadId,
+    options?: { keepLastCheckpoints?: number },
+  ): Promise<{
     beforeLines: number;
     afterLines: number;
     removedItems: number;
@@ -284,7 +313,16 @@ export interface ThreadStore {
     limit?: number;
   }): Promise<RunRecord[]>;
 
-  listRunEvents?(runId: string, filter?: { limit?: number; category?: string; type?: string; afterSequence?: number; beforeSequence?: number }): Promise<RunEvent[]>;
+  listRunEvents?(
+    runId: string,
+    filter?: {
+      limit?: number;
+      category?: string;
+      type?: string;
+      afterSequence?: number;
+      beforeSequence?: number;
+    },
+  ): Promise<RunEvent[]>;
 
   upsertRunFeedback?(feedback: RunFeedback): Promise<void>;
 
@@ -297,12 +335,23 @@ export class LocalThreadStore implements ThreadStore {
   private dataDir: string;
   private sqlitePath: string;
   readonly tenantId: string;
+  readonly knowledgeSqlite?: KnowledgeSqlitePort;
 
   constructor(db: SqliteDb, dataDir: string, tenantId: string = DEFAULT_TENANT_ID) {
     this.db = db;
     this.dataDir = dataDir;
     this.sqlitePath = path.join(dataDir, 'threads.db');
     this.tenantId = safeTenantId(tenantId);
+    // The JSON fallback implements the legacy thread-shaped SQL shim but does
+    // not expose pragma(), so it must never be treated as a real SQLite index.
+    if (typeof db.pragma === 'function') {
+      this.knowledgeSqlite = {
+        exec: (sql) => db.exec(sql),
+        run: (sql, params = []) => db.prepare(sql).run(...params),
+        get: <T>(sql: string, params: unknown[] = []) => db.prepare(sql).get(...params) as T | undefined,
+        all: <T>(sql: string, params: unknown[] = []) => db.prepare(sql).all(...params) as T[],
+      };
+    }
     this.initSchema();
   }
 
@@ -333,7 +382,9 @@ export class LocalThreadStore implements ThreadStore {
         tags TEXT NOT NULL DEFAULT '{}',
         parent_thread_id TEXT,
         agent_nickname TEXT,
-        agent_role TEXT
+        agent_role TEXT,
+        mode TEXT NOT NULL DEFAULT 'chat',
+        task_preset TEXT
       );
 
       CREATE TABLE IF NOT EXISTS turns (
@@ -550,7 +601,13 @@ export class LocalThreadStore implements ThreadStore {
     this.addColumnIfMissing('threads', 'parent_thread_id', 'TEXT');
     this.addColumnIfMissing('threads', 'agent_nickname', 'TEXT');
     this.addColumnIfMissing('threads', 'agent_role', 'TEXT');
-    this.addColumnIfMissing('thread_spawn_edges', 'tenant_id', `TEXT NOT NULL DEFAULT '${DEFAULT_TENANT_ID}'`);
+    this.addColumnIfMissing('threads', 'mode', "TEXT NOT NULL DEFAULT 'chat'");
+    this.addColumnIfMissing('threads', 'task_preset', 'TEXT');
+    this.addColumnIfMissing(
+      'thread_spawn_edges',
+      'tenant_id',
+      `TEXT NOT NULL DEFAULT '${DEFAULT_TENANT_ID}'`,
+    );
     this.addColumnIfMissing('run_records', 'trace_version', 'INTEGER');
     this.addColumnIfMissing('run_records', 'trace_summary_json', 'TEXT');
     this.db.exec(`
@@ -558,26 +615,36 @@ export class LocalThreadStore implements ThreadStore {
         ON threads(tenant_id, updated_at);
     `);
     this.db
-      .prepare('INSERT OR REPLACE INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)')
+      .prepare(
+        'INSERT OR REPLACE INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
+      )
       .run(1, 'initial_thread_store_schema', now);
     this.db
-      .prepare('INSERT OR REPLACE INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)')
+      .prepare(
+        'INSERT OR REPLACE INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
+      )
       .run(2, 'tenant_scoped_thread_store', now);
     this.db
-      .prepare('INSERT OR REPLACE INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)')
+      .prepare(
+        'INSERT OR REPLACE INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
+      )
       .run(3, 'run_monitor_store', now);
     this.db
-      .prepare('INSERT OR REPLACE INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)')
+      .prepare(
+        'INSERT OR REPLACE INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
+      )
       .run(4, 'episode_memory_store', now);
     this.migrateV5IfNeeded();
     this.migrateV6IfNeeded();
   }
 
   private migrateV5IfNeeded(): void {
-    const versionRow = this.db.prepare('SELECT value FROM settings WHERE key = ?').get('storage.schemaVersion') as
-      | { value?: string }
-      | undefined;
-    const currentVersion = versionRow ? (JSON.parse(versionRow.value ?? '{}') as { version?: number }).version ?? 0 : 0;
+    const versionRow = this.db
+      .prepare('SELECT value FROM settings WHERE key = ?')
+      .get('storage.schemaVersion') as { value?: string } | undefined;
+    const currentVersion = versionRow
+      ? ((JSON.parse(versionRow.value ?? '{}') as { version?: number }).version ?? 0)
+      : 0;
     if (currentVersion >= 5) return;
 
     const tables = this.db
@@ -619,7 +686,9 @@ export class LocalThreadStore implements ThreadStore {
 
     const now = new Date().toISOString();
     this.db
-      .prepare('INSERT OR REPLACE INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)')
+      .prepare(
+        'INSERT OR REPLACE INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
+      )
       .run(5, 'thread_working_sets_composite_key', now);
     this.db
       .prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)')
@@ -627,15 +696,19 @@ export class LocalThreadStore implements ThreadStore {
   }
 
   private migrateV6IfNeeded(): void {
-    const versionRow = this.db.prepare('SELECT value FROM settings WHERE key = ?').get('storage.schemaVersion') as
-      | { value?: string }
-      | undefined;
-    const currentVersion = versionRow ? (JSON.parse(versionRow.value ?? '{}') as { version?: number }).version ?? 0 : 0;
+    const versionRow = this.db
+      .prepare('SELECT value FROM settings WHERE key = ?')
+      .get('storage.schemaVersion') as { value?: string } | undefined;
+    const currentVersion = versionRow
+      ? ((JSON.parse(versionRow.value ?? '{}') as { version?: number }).version ?? 0)
+      : 0;
     if (currentVersion >= 6) return;
 
     const now = new Date().toISOString();
     this.db
-      .prepare('INSERT OR REPLACE INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)')
+      .prepare(
+        'INSERT OR REPLACE INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
+      )
       .run(6, 'run_trace_v2_events', now);
     this.db
       .prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)')
@@ -651,8 +724,8 @@ export class LocalThreadStore implements ThreadStore {
   async createThread(meta: ThreadMeta): Promise<void> {
     this.db
       .prepare(
-        `INSERT INTO threads (thread_id, tenant_id, title, workspace_root, status, turn_count, created_at, updated_at, archived_at, ephemeral, tags, parent_thread_id, agent_nickname, agent_role)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO threads (thread_id, tenant_id, title, workspace_root, status, turn_count, created_at, updated_at, archived_at, ephemeral, tags, parent_thread_id, agent_nickname, agent_role, mode, task_preset)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         meta.threadId,
@@ -669,6 +742,8 @@ export class LocalThreadStore implements ThreadStore {
         meta.parentThreadId ?? null,
         meta.agentNickname ?? null,
         meta.agentRole ?? null,
+        meta.mode ?? 'chat',
+        meta.taskPreset ?? null,
       );
   }
 
@@ -702,9 +777,15 @@ export class LocalThreadStore implements ThreadStore {
   async deleteThread(threadId: ThreadId): Promise<void> {
     const existing = await this.getThread(threadId);
     if (!existing) return;
-    this.db.prepare('DELETE FROM thread_spawn_edges WHERE tenant_id = ? AND (parent_thread_id = ? OR child_thread_id = ?)').run(this.tenantId, threadId, threadId);
+    this.db
+      .prepare(
+        'DELETE FROM thread_spawn_edges WHERE tenant_id = ? AND (parent_thread_id = ? OR child_thread_id = ?)',
+      )
+      .run(this.tenantId, threadId, threadId);
     this.db.prepare('DELETE FROM turns WHERE thread_id = ?').run(threadId);
-    this.db.prepare('DELETE FROM threads WHERE thread_id = ? AND tenant_id = ?').run(threadId, this.tenantId);
+    this.db
+      .prepare('DELETE FROM threads WHERE thread_id = ? AND tenant_id = ?')
+      .run(threadId, this.tenantId);
     await fs.rm(this.rolloutPath(threadId), { force: true });
     if (this.tenantId === DEFAULT_TENANT_ID) {
       await fs.rm(this.legacyRolloutPath(threadId), { force: true });
@@ -714,7 +795,10 @@ export class LocalThreadStore implements ThreadStore {
   async updateThreadMetadata(
     threadId: ThreadId,
     patch: Partial<
-      Pick<ThreadMeta, 'title' | 'status' | 'turnCount' | 'updatedAt' | 'tags'>
+      Pick<
+        ThreadMeta,
+        'title' | 'status' | 'turnCount' | 'updatedAt' | 'tags' | 'mode' | 'taskPreset'
+      >
     >,
   ): Promise<void> {
     const sets: string[] = [];
@@ -739,12 +823,22 @@ export class LocalThreadStore implements ThreadStore {
       sets.push('tags = ?');
       params.push(JSON.stringify(patch.tags));
     }
+    if (patch.mode !== undefined) {
+      sets.push('mode = ?');
+      params.push(patch.mode);
+    }
+    if (patch.taskPreset !== undefined) {
+      sets.push('task_preset = ?');
+      params.push(patch.taskPreset);
+    }
     if (sets.length === 0) return;
     sets.push('updated_at = ?');
     params.push(new Date().toISOString());
     params.push(threadId);
     params.push(this.tenantId);
-    this.db.prepare(`UPDATE threads SET ${sets.join(', ')} WHERE thread_id = ? AND tenant_id = ?`).run(...params);
+    this.db
+      .prepare(`UPDATE threads SET ${sets.join(', ')} WHERE thread_id = ? AND tenant_id = ?`)
+      .run(...params);
   }
 
   async appendItems(threadId: ThreadId, items: ThreadItem[]): Promise<void> {
@@ -826,30 +920,34 @@ export class LocalThreadStore implements ThreadStore {
   async appendCheckpoint(threadId: ThreadId, ckpt: Checkpoint): Promise<void> {
     const rolloutPath = this.rolloutPath(threadId);
     await fs.mkdir(path.dirname(rolloutPath), { recursive: true });
-    const line = JSON.stringify({
-      type: '__checkpoint__',
-      threadId: ckpt.threadId,
-      turnId: ckpt.turnId,
-      itemIndex: ckpt.itemIndex,
-      timestamp: ckpt.timestamp,
-      generation: ckpt.generation,
-      status: ckpt.status,
-      expiresAt: ckpt.expiresAt,
-    }) + '\n';
+    const line =
+      JSON.stringify({
+        type: '__checkpoint__',
+        threadId: ckpt.threadId,
+        turnId: ckpt.turnId,
+        itemIndex: ckpt.itemIndex,
+        timestamp: ckpt.timestamp,
+        generation: ckpt.generation,
+        status: ckpt.status,
+        expiresAt: ckpt.expiresAt,
+        decisionRequest: ckpt.decisionRequest,
+        executionStatus: ckpt.executionStatus,
+      }) + '\n';
     await fs.appendFile(rolloutPath, line, 'utf-8');
   }
 
   async appendRollbackMarker(threadId: ThreadId, marker: RollbackMarker): Promise<void> {
     const rolloutPath = this.rolloutPath(threadId);
     await fs.mkdir(path.dirname(rolloutPath), { recursive: true });
-    const line = JSON.stringify({
-      type: '__rollback__',
-      threadId,
-      count: marker.count,
-      remainingTurnCount: marker.remainingTurnCount,
-      requestId: marker.requestId ?? null,
-      timestamp: marker.createdAt ?? new Date().toISOString(),
-    }) + '\n';
+    const line =
+      JSON.stringify({
+        type: '__rollback__',
+        threadId,
+        count: marker.count,
+        remainingTurnCount: marker.remainingTurnCount,
+        requestId: marker.requestId ?? null,
+        timestamp: marker.createdAt ?? new Date().toISOString(),
+      }) + '\n';
     await fs.appendFile(rolloutPath, line, 'utf-8');
   }
 
@@ -877,15 +975,19 @@ export class LocalThreadStore implements ThreadStore {
             generation: parsed.generation,
             status: parsed.status,
             expiresAt: parsed.expiresAt,
+            decisionRequest: parsed.decisionRequest,
+            executionStatus: parsed.executionStatus,
           };
         }
-      } catch { /* skip */ }
+      } catch {
+        /* skip */
+      }
     }
     return null;
   }
 
   async saveTurn(turn: TurnMeta): Promise<void> {
-    if (!await this.getThread(turn.threadId)) return;
+    if (!(await this.getThread(turn.threadId))) return;
     this.db
       .prepare(
         `INSERT OR REPLACE INTO turns (turn_id, thread_id, turn_index, user_input, status, started_at, completed_at)
@@ -910,12 +1012,15 @@ export class LocalThreadStore implements ThreadStore {
 
   async getSetting<T = unknown>(key: string): Promise<T | null> {
     const scopedKey = this.settingKey(key);
-    const row = this.db
-      .prepare('SELECT value FROM settings WHERE key = ?')
-      .get(scopedKey) as { value?: string } | undefined;
-    const fallbackRow = !row && this.tenantId === DEFAULT_TENANT_ID && scopedKey !== key
-      ? this.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value?: string } | undefined
-      : undefined;
+    const row = this.db.prepare('SELECT value FROM settings WHERE key = ?').get(scopedKey) as
+      | { value?: string }
+      | undefined;
+    const fallbackRow =
+      !row && this.tenantId === DEFAULT_TENANT_ID && scopedKey !== key
+        ? (this.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as
+            | { value?: string }
+            | undefined)
+        : undefined;
     const source = row ?? fallbackRow;
     if (!source?.value) return null;
     try {
@@ -936,28 +1041,30 @@ export class LocalThreadStore implements ThreadStore {
 
   async upsertMemoryRecord(record: MemoryRecord): Promise<void> {
     const now = new Date().toISOString();
-    this.db.prepare(
-      `INSERT OR REPLACE INTO memory_records (
+    this.db
+      .prepare(
+        `INSERT OR REPLACE INTO memory_records (
         tenant_id, id, type, text, status, scope, source_thread_id, source_turn_ids,
         workspace_root, tags, confidence, usage_count, last_used_at, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
-      this.tenantId,
-      record.id,
-      record.type,
-      record.text,
-      record.status,
-      record.scope,
-      record.sourceThreadId ?? null,
-      JSON.stringify(record.sourceTurnIds),
-      record.workspaceRoot ?? null,
-      JSON.stringify(record.tags),
-      record.confidence,
-      record.usageCount,
-      record.lastUsedAt ?? null,
-      record.createdAt || now,
-      record.updatedAt || now,
-    );
+      )
+      .run(
+        this.tenantId,
+        record.id,
+        record.type,
+        record.text,
+        record.status,
+        record.scope,
+        record.sourceThreadId ?? null,
+        JSON.stringify(record.sourceTurnIds),
+        record.workspaceRoot ?? null,
+        JSON.stringify(record.tags),
+        record.confidence,
+        record.usageCount,
+        record.lastUsedAt ?? null,
+        record.createdAt || now,
+        record.updatedAt || now,
+      );
   }
 
   async listMemoryRecords(filter: MemorySearchOptions = {}): Promise<MemoryRecord[]> {
@@ -981,72 +1088,83 @@ export class LocalThreadStore implements ThreadStore {
     return rows.map(rowToMemoryRecord);
   }
 
-  async searchMemoryRecords(query: string, options: MemorySearchOptions = {}): Promise<MemoryRecord[]> {
+  async searchMemoryRecords(
+    query: string,
+    options: MemorySearchOptions = {},
+  ): Promise<MemoryRecord[]> {
     const filter = query.trim().toLowerCase();
     const records = await this.listMemoryRecords({ ...options, limit: undefined });
     const matched = filter
-      ? records.filter((record) => [
-          record.text,
-          record.type,
-          record.workspaceRoot ?? '',
-          ...record.tags,
-        ].join(' ').toLowerCase().includes(filter))
+      ? records.filter((record) =>
+          [record.text, record.type, record.workspaceRoot ?? '', ...record.tags]
+            .join(' ')
+            .toLowerCase()
+            .includes(filter),
+        )
       : records;
     return matched.slice(0, options.limit ?? matched.length);
   }
 
   async deleteMemoryRecord(id: string): Promise<void> {
-    this.db.prepare(
-      `UPDATE memory_records SET status = 'deleted', updated_at = ? WHERE tenant_id = ? AND id = ?`,
-    ).run(new Date().toISOString(), this.tenantId, id);
+    this.db
+      .prepare(
+        `UPDATE memory_records SET status = 'deleted', updated_at = ? WHERE tenant_id = ? AND id = ?`,
+      )
+      .run(new Date().toISOString(), this.tenantId, id);
   }
 
   async recordMemoryUsage(id: string, usedAt: string): Promise<void> {
-    this.db.prepare(
-      `UPDATE memory_records SET usage_count = usage_count + 1, last_used_at = ?, updated_at = ? WHERE tenant_id = ? AND id = ?`,
-    ).run(usedAt, usedAt, this.tenantId, id);
+    this.db
+      .prepare(
+        `UPDATE memory_records SET usage_count = usage_count + 1, last_used_at = ?, updated_at = ? WHERE tenant_id = ? AND id = ?`,
+      )
+      .run(usedAt, usedAt, this.tenantId, id);
   }
 
   async upsertEpisodeRecord(record: EpisodeRecord): Promise<void> {
     const now = new Date().toISOString();
-    this.db.prepare(
-      `INSERT OR REPLACE INTO episode_records (
+    this.db
+      .prepare(
+        `INSERT OR REPLACE INTO episode_records (
         tenant_id, id, workspace_root, source_thread_id, source_turn_start, source_turn_end,
         source_turn_start_index, source_turn_end_index, lifecycle, temperature, title, objective,
         summary, facts, decisions, artifacts, open_tasks, entities, keywords, boundary_reason,
         fingerprint, topic_key, usage_count, last_activated_at, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
-      this.tenantId,
-      record.id,
-      record.workspaceRoot,
-      record.sourceThreadId,
-      record.sourceTurnStart,
-      record.sourceTurnEnd,
-      record.sourceTurnStartIndex,
-      record.sourceTurnEndIndex,
-      record.lifecycle,
-      record.temperature,
-      record.title,
-      record.objective,
-      record.summary,
-      JSON.stringify(record.facts),
-      JSON.stringify(record.decisions),
-      JSON.stringify(record.artifacts),
-      JSON.stringify(record.openTasks),
-      JSON.stringify(record.entities),
-      JSON.stringify(record.keywords),
-      record.boundaryReason,
-      record.fingerprint,
-      record.topicKey,
-      record.usageCount,
-      record.lastActivatedAt ?? null,
-      record.createdAt || now,
-      record.updatedAt || now,
-    );
+      )
+      .run(
+        this.tenantId,
+        record.id,
+        record.workspaceRoot,
+        record.sourceThreadId,
+        record.sourceTurnStart,
+        record.sourceTurnEnd,
+        record.sourceTurnStartIndex,
+        record.sourceTurnEndIndex,
+        record.lifecycle,
+        record.temperature,
+        record.title,
+        record.objective,
+        record.summary,
+        JSON.stringify(record.facts),
+        JSON.stringify(record.decisions),
+        JSON.stringify(record.artifacts),
+        JSON.stringify(record.openTasks),
+        JSON.stringify(record.entities),
+        JSON.stringify(record.keywords),
+        record.boundaryReason,
+        record.fingerprint,
+        record.topicKey,
+        record.usageCount,
+        record.lastActivatedAt ?? null,
+        record.createdAt || now,
+        record.updatedAt || now,
+      );
     const searchText = episodeSearchText(record);
     this.db.prepare('DELETE FROM episode_search WHERE episode_id = ?').run(record.id);
-    this.db.prepare('INSERT INTO episode_search (episode_id, search_text) VALUES (?, ?)').run(record.id, searchText);
+    this.db
+      .prepare('INSERT INTO episode_search (episode_id, search_text) VALUES (?, ?)')
+      .run(record.id, searchText);
   }
 
   async getEpisodeRecord(id: string): Promise<EpisodeRecord | null> {
@@ -1088,7 +1206,10 @@ export class LocalThreadStore implements ThreadStore {
     return rows.map(rowToEpisodeRecord);
   }
 
-  async searchEpisodeRecords(query: string, options: EpisodeSearchOptions = {}): Promise<EpisodeRecord[]> {
+  async searchEpisodeRecords(
+    query: string,
+    options: EpisodeSearchOptions = {},
+  ): Promise<EpisodeRecord[]> {
     const safeQuery = buildFtsMatchQuery(query);
     if (!safeQuery) {
       // The query had no searchable tokens, so return nothing rather than
@@ -1133,33 +1254,37 @@ export class LocalThreadStore implements ThreadStore {
   }
 
   async recordEpisodeUsage(id: string, usedAt: string): Promise<void> {
-    this.db.prepare(
-      `UPDATE episode_records SET usage_count = usage_count + 1, last_activated_at = ?, updated_at = ? WHERE tenant_id = ? AND id = ?`,
-    ).run(usedAt, usedAt, this.tenantId, id);
+    this.db
+      .prepare(
+        `UPDATE episode_records SET usage_count = usage_count + 1, last_activated_at = ?, updated_at = ? WHERE tenant_id = ? AND id = ?`,
+      )
+      .run(usedAt, usedAt, this.tenantId, id);
   }
 
   async saveThreadWorkingSet(snapshot: ThreadWorkingSetSnapshot): Promise<void> {
     const now = new Date().toISOString();
-    this.db.prepare(
-      `INSERT OR REPLACE INTO thread_working_sets (
+    this.db
+      .prepare(
+        `INSERT OR REPLACE INTO thread_working_sets (
         tenant_id, thread_id, generation, active_episode_ids, injected_episode_ids,
         frozen_prompt_block, built_from_turn_id, built_from_turn_index, task_fingerprint,
         episode_identity, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
-      this.tenantId,
-      snapshot.threadId,
-      snapshot.generation,
-      JSON.stringify(snapshot.activeEpisodeIds),
-      JSON.stringify(snapshot.injectedEpisodeIds),
-      snapshot.frozenPromptBlock,
-      snapshot.builtFromTurnId,
-      snapshot.builtFromTurnIndex,
-      snapshot.taskFingerprint,
-      snapshot.episodeIdentity ?? '',
-      snapshot.createdAt || now,
-      snapshot.updatedAt || now,
-    );
+      )
+      .run(
+        this.tenantId,
+        snapshot.threadId,
+        snapshot.generation,
+        JSON.stringify(snapshot.activeEpisodeIds),
+        JSON.stringify(snapshot.injectedEpisodeIds),
+        snapshot.frozenPromptBlock,
+        snapshot.builtFromTurnId,
+        snapshot.builtFromTurnIndex,
+        snapshot.taskFingerprint,
+        snapshot.episodeIdentity ?? '',
+        snapshot.createdAt || now,
+        snapshot.updatedAt || now,
+      );
   }
 
   async getThreadWorkingSet(threadId: ThreadId): Promise<ThreadWorkingSetSnapshot | null> {
@@ -1170,10 +1295,15 @@ export class LocalThreadStore implements ThreadStore {
   }
 
   async deleteThreadWorkingSet(threadId: ThreadId): Promise<void> {
-    this.db.prepare('DELETE FROM thread_working_sets WHERE tenant_id = ? AND thread_id = ?').run(this.tenantId, threadId);
+    this.db
+      .prepare('DELETE FROM thread_working_sets WHERE tenant_id = ? AND thread_id = ?')
+      .run(this.tenantId, threadId);
   }
 
-  async compactRollout(threadId: ThreadId, options: { keepLastCheckpoints?: number } = {}): Promise<{
+  async compactRollout(
+    threadId: ThreadId,
+    options: { keepLastCheckpoints?: number } = {},
+  ): Promise<{
     beforeLines: number;
     afterLines: number;
     removedItems: number;
@@ -1206,7 +1336,9 @@ export class LocalThreadStore implements ThreadStore {
     }
 
     const keepCheckpointCount = Math.max(1, Math.floor(options.keepLastCheckpoints ?? 1));
-    const checkpointLines = new Set(checkpoints.slice(-keepCheckpointCount).map((checkpoint) => checkpoint.lineIndex));
+    const checkpointLines = new Set(
+      checkpoints.slice(-keepCheckpointCount).map((checkpoint) => checkpoint.lineIndex),
+    );
     const nextLines: string[] = [];
     let itemIndex = 0;
     let removedItems = 0;
@@ -1245,7 +1377,14 @@ export class LocalThreadStore implements ThreadStore {
          ON CONFLICT(parent_thread_id, child_thread_id)
          DO UPDATE SET tenant_id = excluded.tenant_id, status = excluded.status, updated_at = excluded.updated_at`,
       )
-      .run(edge.parentThreadId, edge.childThreadId, this.tenantId, edge.status, edge.createdAt, edge.updatedAt);
+      .run(
+        edge.parentThreadId,
+        edge.childThreadId,
+        this.tenantId,
+        edge.status,
+        edge.createdAt,
+        edge.updatedAt,
+      );
   }
 
   async setThreadSpawnEdgeStatus(
@@ -1294,8 +1433,9 @@ export class LocalThreadStore implements ThreadStore {
   }
 
   async createRunRecord(record: RunRecord): Promise<void> {
-    this.db.prepare(
-      `INSERT OR REPLACE INTO run_records (
+    this.db
+      .prepare(
+        `INSERT OR REPLACE INTO run_records (
         run_id, tenant_id, thread_id, turn_id, parent_run_id, workflow_id, workflow_node_id,
         kind, status, title, caller, active_step, model, error,
         input_tokens, cached_input_tokens, output_tokens, reasoning_output_tokens,
@@ -1303,38 +1443,39 @@ export class LocalThreadStore implements ThreadStore {
         first_human_message, last_ai_message, started_at, updated_at, completed_at, metadata,
         trace_version, trace_summary_json
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
-      record.runId,
-      this.tenantId,
-      record.threadId,
-      record.turnId ?? null,
-      record.parentRunId ?? null,
-      record.workflowId ?? null,
-      record.workflowNodeId ?? null,
-      record.kind,
-      record.status,
-      record.title ?? null,
-      record.caller,
-      record.activeStep ?? null,
-      record.model ?? null,
-      record.error ?? null,
-      record.inputTokens,
-      record.cachedInputTokens,
-      record.outputTokens,
-      record.reasoningOutputTokens,
-      record.toolCallCount,
-      record.modelCallCount,
-      record.subagentCount,
-      record.middlewareEventCount,
-      record.firstHumanMessage ?? null,
-      record.lastAiMessage ?? null,
-      record.startedAt,
-      record.updatedAt,
-      record.completedAt ?? null,
-      JSON.stringify(record.metadata ?? {}),
-      record.traceVersion ?? null,
-      record.traceSummary === undefined ? null : JSON.stringify(record.traceSummary),
-    );
+      )
+      .run(
+        record.runId,
+        this.tenantId,
+        record.threadId,
+        record.turnId ?? null,
+        record.parentRunId ?? null,
+        record.workflowId ?? null,
+        record.workflowNodeId ?? null,
+        record.kind,
+        record.status,
+        record.title ?? null,
+        record.caller,
+        record.activeStep ?? null,
+        record.model ?? null,
+        record.error ?? null,
+        record.inputTokens,
+        record.cachedInputTokens,
+        record.outputTokens,
+        record.reasoningOutputTokens,
+        record.toolCallCount,
+        record.modelCallCount,
+        record.subagentCount,
+        record.middlewareEventCount,
+        record.firstHumanMessage ?? null,
+        record.lastAiMessage ?? null,
+        record.startedAt,
+        record.updatedAt,
+        record.completedAt ?? null,
+        JSON.stringify(record.metadata ?? {}),
+        record.traceVersion ?? null,
+        record.traceSummary === undefined ? null : JSON.stringify(record.traceSummary),
+      );
   }
 
   async updateRunRecord(runId: string, patch: Partial<RunRecord>): Promise<void> {
@@ -1364,9 +1505,17 @@ export class LocalThreadStore implements ThreadStore {
       ['startedAt', 'started_at', patch.startedAt],
       ['updatedAt', 'updated_at', patch.updatedAt],
       ['completedAt', 'completed_at', patch.completedAt],
-      ['metadata', 'metadata', patch.metadata === undefined ? undefined : JSON.stringify(patch.metadata ?? {})],
+      [
+        'metadata',
+        'metadata',
+        patch.metadata === undefined ? undefined : JSON.stringify(patch.metadata ?? {}),
+      ],
       ['traceVersion', 'trace_version', patch.traceVersion],
-      ['traceSummary', 'trace_summary_json', patch.traceSummary === undefined ? undefined : JSON.stringify(patch.traceSummary)],
+      [
+        'traceSummary',
+        'trace_summary_json',
+        patch.traceSummary === undefined ? undefined : JSON.stringify(patch.traceSummary),
+      ],
     ];
     const sets: string[] = [];
     const params: unknown[] = [];
@@ -1381,39 +1530,45 @@ export class LocalThreadStore implements ThreadStore {
     }
     if (sets.length === 0) return;
     params.push(this.tenantId, runId);
-    this.db.prepare(`UPDATE run_records SET ${sets.join(', ')} WHERE tenant_id = ? AND run_id = ?`).run(...params);
+    this.db
+      .prepare(`UPDATE run_records SET ${sets.join(', ')} WHERE tenant_id = ? AND run_id = ?`)
+      .run(...params);
   }
 
   async appendRunEvent(event: RunEvent): Promise<void> {
-    this.db.prepare(
-      `INSERT OR REPLACE INTO run_events (
+    this.db
+      .prepare(
+        `INSERT OR REPLACE INTO run_events (
         tenant_id, run_id, event_id, thread_id, turn_id, parent_run_id, workflow_id,
         workflow_node_id, sequence, category, type, level, message, tool_name,
         model, duration_ms, metadata, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
-      this.tenantId,
-      event.runId,
-      event.eventId,
-      event.threadId,
-      event.turnId ?? null,
-      event.parentRunId ?? null,
-      event.workflowId ?? null,
-      event.workflowNodeId ?? null,
-      event.sequence,
-      event.category,
-      event.type,
-      event.level,
-      event.message,
-      event.toolName ?? null,
-      event.model ?? null,
-      event.durationMs ?? null,
-      JSON.stringify(event.metadata ?? {}),
-      event.createdAt,
-    );
+      )
+      .run(
+        this.tenantId,
+        event.runId,
+        event.eventId,
+        event.threadId,
+        event.turnId ?? null,
+        event.parentRunId ?? null,
+        event.workflowId ?? null,
+        event.workflowNodeId ?? null,
+        event.sequence,
+        event.category,
+        event.type,
+        event.level,
+        event.message,
+        event.toolName ?? null,
+        event.model ?? null,
+        event.durationMs ?? null,
+        JSON.stringify(event.metadata ?? {}),
+        event.createdAt,
+      );
   }
 
-  async listRunRecords(filter: { threadId?: ThreadId; status?: RunStatus; limit?: number } = {}): Promise<RunRecord[]> {
+  async listRunRecords(
+    filter: { threadId?: ThreadId; status?: RunStatus; limit?: number } = {},
+  ): Promise<RunRecord[]> {
     const params: unknown[] = [this.tenantId];
     let sql = 'SELECT * FROM run_records WHERE tenant_id = ?';
     if (filter.threadId) {
@@ -1433,13 +1588,22 @@ export class LocalThreadStore implements ThreadStore {
   }
 
   async getRunRecord(runId: string): Promise<RunRecord | null> {
-    const row = this.db.prepare(
-      'SELECT * FROM run_records WHERE tenant_id = ? AND run_id = ?',
-    ).get(this.tenantId, runId) as Record<string, unknown> | undefined;
+    const row = this.db
+      .prepare('SELECT * FROM run_records WHERE tenant_id = ? AND run_id = ?')
+      .get(this.tenantId, runId) as Record<string, unknown> | undefined;
     return row ? rowToRunRecord(row) : null;
   }
 
-  async listRunEvents(runId: string, filter: { limit?: number; category?: string; type?: string; afterSequence?: number; beforeSequence?: number } = {}): Promise<RunEvent[]> {
+  async listRunEvents(
+    runId: string,
+    filter: {
+      limit?: number;
+      category?: string;
+      type?: string;
+      afterSequence?: number;
+      beforeSequence?: number;
+    } = {},
+  ): Promise<RunEvent[]> {
     const params: unknown[] = [this.tenantId, runId];
     let sql = 'SELECT * FROM run_events WHERE tenant_id = ? AND run_id = ?';
     if (filter.category) {
@@ -1470,18 +1634,18 @@ export class LocalThreadStore implements ThreadStore {
     const run = await this.getRunRecord(draft.runId);
     if (!run) throw new Error('RUN_NOT_FOUND');
 
-    const head = this.db.prepare(
-      'SELECT next_sequence FROM run_trace_heads WHERE tenant_id = ? AND run_id = ?',
-    ).get(this.tenantId, draft.runId) as { next_sequence?: number } | undefined;
+    const head = this.db
+      .prepare('SELECT next_sequence FROM run_trace_heads WHERE tenant_id = ? AND run_id = ?')
+      .get(this.tenantId, draft.runId) as { next_sequence?: number } | undefined;
     const sequence = Number(head?.next_sequence ?? 1);
     if (head) {
-      this.db.prepare(
-        'UPDATE run_trace_heads SET next_sequence = ? WHERE tenant_id = ? AND run_id = ?',
-      ).run(sequence + 1, this.tenantId, draft.runId);
+      this.db
+        .prepare('UPDATE run_trace_heads SET next_sequence = ? WHERE tenant_id = ? AND run_id = ?')
+        .run(sequence + 1, this.tenantId, draft.runId);
     } else {
-      this.db.prepare(
-        'INSERT INTO run_trace_heads (tenant_id, run_id, next_sequence) VALUES (?, ?, ?)',
-      ).run(this.tenantId, draft.runId, sequence + 1);
+      this.db
+        .prepare('INSERT INTO run_trace_heads (tenant_id, run_id, next_sequence) VALUES (?, ?, ?)')
+        .run(this.tenantId, draft.runId, sequence + 1);
     }
 
     const envelope = {
@@ -1491,23 +1655,25 @@ export class LocalThreadStore implements ThreadStore {
       sequence,
     } as RunTraceEnvelope;
 
-    this.db.prepare(
-      `INSERT INTO run_trace_events (
+    this.db
+      .prepare(
+        `INSERT INTO run_trace_events (
         tenant_id, run_id, sequence, event_id, thread_id, turn_id,
         category, lifecycle, occurred_at, envelope_json
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
-      this.tenantId,
-      envelope.runId,
-      envelope.sequence,
-      envelope.eventId,
-      envelope.threadId,
-      envelope.turnId ?? null,
-      envelope.category,
-      envelope.lifecycle,
-      envelope.occurredAt,
-      JSON.stringify(envelope),
-    );
+      )
+      .run(
+        this.tenantId,
+        envelope.runId,
+        envelope.sequence,
+        envelope.eventId,
+        envelope.threadId,
+        envelope.turnId ?? null,
+        envelope.category,
+        envelope.lifecycle,
+        envelope.occurredAt,
+        JSON.stringify(envelope),
+      );
 
     return envelope;
   }
@@ -1515,9 +1681,9 @@ export class LocalThreadStore implements ThreadStore {
   async getRunTraceHead(runId: string): Promise<number> {
     const run = await this.getRunRecord(runId);
     if (!run) return 0;
-    const head = this.db.prepare(
-      'SELECT next_sequence FROM run_trace_heads WHERE tenant_id = ? AND run_id = ?',
-    ).get(this.tenantId, runId) as { next_sequence?: number } | undefined;
+    const head = this.db
+      .prepare('SELECT next_sequence FROM run_trace_heads WHERE tenant_id = ? AND run_id = ?')
+      .get(this.tenantId, runId) as { next_sequence?: number } | undefined;
     return Math.max(0, Number(head?.next_sequence ?? 1) - 1);
   }
 
@@ -1530,24 +1696,31 @@ export class LocalThreadStore implements ThreadStore {
 
     const limit = Math.max(1, Math.min(500, Math.floor(query.limit ?? 100)));
     const filters = this.runTraceWhereClause(runId, query);
-    const events = this.selectRunTraceRows(filters.sql, filters.params, query, limit).map(rowToRunTraceEnvelope);
+    const events = this.selectRunTraceRows(filters.sql, filters.params, query, limit).map(
+      rowToRunTraceEnvelope,
+    );
     const firstSequence = events[0]?.sequence;
     const lastSequence = events.at(-1)?.sequence;
 
     return {
       events,
-      hasMoreBefore: firstSequence === undefined
-        ? false
-        : this.hasRunTraceBeyond(filters.sql, filters.params, 'before', firstSequence),
-      hasMoreAfter: lastSequence === undefined
-        ? false
-        : this.hasRunTraceBeyond(filters.sql, filters.params, 'after', lastSequence),
+      hasMoreBefore:
+        firstSequence === undefined
+          ? false
+          : this.hasRunTraceBeyond(filters.sql, filters.params, 'before', firstSequence),
+      hasMoreAfter:
+        lastSequence === undefined
+          ? false
+          : this.hasRunTraceBeyond(filters.sql, filters.params, 'after', lastSequence),
       nextBefore: firstSequence,
       nextAfter: lastSequence,
     };
   }
 
-  private runTraceWhereClause(runId: string, query: RunTraceQuery): { sql: string; params: unknown[] } {
+  private runTraceWhereClause(
+    runId: string,
+    query: RunTraceQuery,
+  ): { sql: string; params: unknown[] } {
     const clauses = ['tenant_id = ?', 'run_id = ?'];
     const params: unknown[] = [this.tenantId, runId];
     if (query.categories && query.categories.length > 0) {
@@ -1568,22 +1741,28 @@ export class LocalThreadStore implements ThreadStore {
     limit: number,
   ): Record<string, unknown>[] {
     if (query.after !== undefined) {
-      return this.db.prepare(
-        `SELECT * FROM run_trace_events WHERE ${baseWhere} AND sequence > ? ORDER BY sequence ASC LIMIT ?`,
-      ).all(...baseParams, query.after, limit) as Record<string, unknown>[];
+      return this.db
+        .prepare(
+          `SELECT * FROM run_trace_events WHERE ${baseWhere} AND sequence > ? ORDER BY sequence ASC LIMIT ?`,
+        )
+        .all(...baseParams, query.after, limit) as Record<string, unknown>[];
     }
     if (query.before !== undefined) {
-      return this.db.prepare(
-        `SELECT * FROM (
+      return this.db
+        .prepare(
+          `SELECT * FROM (
           SELECT * FROM run_trace_events WHERE ${baseWhere} AND sequence < ? ORDER BY sequence DESC LIMIT ?
         ) ORDER BY sequence ASC`,
-      ).all(...baseParams, query.before, limit) as Record<string, unknown>[];
+        )
+        .all(...baseParams, query.before, limit) as Record<string, unknown>[];
     }
-    return this.db.prepare(
-      `SELECT * FROM (
+    return this.db
+      .prepare(
+        `SELECT * FROM (
         SELECT * FROM run_trace_events WHERE ${baseWhere} ORDER BY sequence DESC LIMIT ?
       ) ORDER BY sequence ASC`,
-    ).all(...baseParams, limit) as Record<string, unknown>[];
+      )
+      .all(...baseParams, limit) as Record<string, unknown>[];
   }
 
   private hasRunTraceBeyond(
@@ -1593,34 +1772,42 @@ export class LocalThreadStore implements ThreadStore {
     sequence: number,
   ): boolean {
     const operator = direction === 'before' ? '<' : '>';
-    const row = this.db.prepare(
-      `SELECT sequence FROM run_trace_events WHERE ${baseWhere} AND sequence ${operator} ? LIMIT 1`,
-    ).get(...baseParams, sequence) as Record<string, unknown> | undefined;
+    const row = this.db
+      .prepare(
+        `SELECT sequence FROM run_trace_events WHERE ${baseWhere} AND sequence ${operator} ? LIMIT 1`,
+      )
+      .get(...baseParams, sequence) as Record<string, unknown> | undefined;
     return Boolean(row);
   }
 
   async upsertRunFeedback(feedback: RunFeedback): Promise<void> {
-    this.db.prepare(
-      `INSERT INTO run_feedback (tenant_id, feedback_id, run_id, thread_id, rating, comment, created_at, updated_at)
+    this.db
+      .prepare(
+        `INSERT INTO run_feedback (tenant_id, feedback_id, run_id, thread_id, rating, comment, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(tenant_id, feedback_id)
        DO UPDATE SET rating = excluded.rating, comment = excluded.comment, updated_at = excluded.updated_at`,
-    ).run(
-      this.tenantId,
-      feedback.feedbackId,
-      feedback.runId,
-      feedback.threadId,
-      feedback.rating,
-      feedback.comment ?? null,
-      feedback.createdAt,
-      feedback.updatedAt,
-    );
+      )
+      .run(
+        this.tenantId,
+        feedback.feedbackId,
+        feedback.runId,
+        feedback.threadId,
+        feedback.rating,
+        feedback.comment ?? null,
+        feedback.createdAt,
+        feedback.updatedAt,
+      );
   }
 
   async listRunFeedback(runId: string): Promise<RunFeedback[]> {
-    return (this.db
-      .prepare('SELECT * FROM run_feedback WHERE tenant_id = ? AND run_id = ? ORDER BY updated_at DESC')
-      .all(this.tenantId, runId) as Record<string, unknown>[]).map(rowToRunFeedback);
+    return (
+      this.db
+        .prepare(
+          'SELECT * FROM run_feedback WHERE tenant_id = ? AND run_id = ? ORDER BY updated_at DESC',
+        )
+        .all(this.tenantId, runId) as Record<string, unknown>[]
+    ).map(rowToRunFeedback);
   }
 
   private tenantRolloutDir(): string {
@@ -1668,6 +1855,8 @@ function rowToMeta(row: Record<string, unknown>): ThreadMeta {
     parentThreadId: (row.parent_thread_id as string | null | undefined) ?? null,
     agentNickname: (row.agent_nickname as string | null | undefined) ?? null,
     agentRole: (row.agent_role as string | null | undefined) ?? null,
+    mode: (row.mode as ThreadMeta['mode'] | null | undefined) ?? 'chat',
+    taskPreset: (row.task_preset as ThreadMeta['taskPreset'] | undefined) ?? null,
   };
 }
 
@@ -1712,7 +1901,7 @@ function rowToRunRecord(row: Record<string, unknown>): RunRecord {
     updatedAt: row.updated_at as string,
     completedAt: (row.completed_at as string | null | undefined) ?? null,
     metadata: parseJsonRecord(row.metadata),
-    traceVersion: row.trace_version == null ? null : Number(row.trace_version) as 2,
+    traceVersion: row.trace_version == null ? null : (Number(row.trace_version) as 2),
     traceSummary: parseNullableJsonRecord(row.trace_summary_json) as RunTraceSummary | null,
   };
 }
@@ -1778,8 +1967,6 @@ function rowToMemoryRecord(row: Record<string, unknown>): MemoryRecord {
   };
 }
 
-
-
 function sanitizeFtsInput(text: string): string[] {
   const terms = new Set<string>();
   // Extract path-like strings and colon-pairs; add segments and the basename.
@@ -1829,7 +2016,9 @@ function episodeSearchText(record: EpisodeRecord): string {
     ...record.openTasks,
     ...record.entities,
     ...record.keywords,
-  ].filter(Boolean).join(' ');
+  ]
+    .filter(Boolean)
+    .join(' ');
   return sanitizeFtsInput(raw).join(' ');
 }
 
@@ -1892,11 +2081,14 @@ function parseJsonArray(value: unknown): string[] {
 }
 
 function parseJsonRecord(value: unknown): Record<string, unknown> {
-  if (typeof value === 'object' && value !== null && !Array.isArray(value)) return value as Record<string, unknown>;
+  if (typeof value === 'object' && value !== null && !Array.isArray(value))
+    return value as Record<string, unknown>;
   if (typeof value !== 'string') return {};
   try {
     const parsed = JSON.parse(value);
-    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
   } catch {
     return {};
   }
@@ -1908,11 +2100,17 @@ function parseNullableJsonRecord(value: unknown): Record<string, unknown> | null
   return Object.keys(parsed).length > 0 ? parsed : null;
 }
 
-function isActiveThreadItem(item: ThreadItem, activeTurnIds: Set<string>, activeTurnCount: number): boolean {
+function isActiveThreadItem(
+  item: ThreadItem,
+  activeTurnIds: Set<string>,
+  activeTurnCount: number,
+): boolean {
   const checkpoint = item as ThreadItem & { turnCount?: unknown };
   if (
-    (item.type === 'workflow_checkpoint' || item.type === 'project_checkpoint' || item.type === 'rollback_conflict')
-    && typeof checkpoint.turnCount === 'number'
+    (item.type === 'workflow_checkpoint' ||
+      item.type === 'project_checkpoint' ||
+      item.type === 'rollback_conflict') &&
+    typeof checkpoint.turnCount === 'number'
   ) {
     return checkpoint.turnCount <= activeTurnCount;
   }

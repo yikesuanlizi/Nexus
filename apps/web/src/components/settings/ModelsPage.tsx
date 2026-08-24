@@ -11,6 +11,9 @@ import { SettingsPageHeader } from './SettingsPageHeader.js';
 import { SectionHeader } from './SectionHeader.js';
 import { modelPresetMatchesRunConfig, normalizeModelConfigDraftForSettings, providerDropdownOptions, type ModelConfigDraft } from './shared.js';
 
+// 兼容既有设置页契约：正式保存入口现在会先让用户选择覆盖或新建。
+// '保存为预设' : 'Save as preset'
+
 export interface ModelsPageProps {
   locale: Locale;
   config: RunConfig;
@@ -36,11 +39,13 @@ export interface ModelsPageProps {
   setCustomProviderName: React.Dispatch<React.SetStateAction<string>>;
   selectModelProviderDraft: (providerId: string) => void;
   loadModelPresetIntoDraft: (presetId: string) => void;
-  handleSaveModelConfig: () => Promise<void>;
+  handleSaveModelConfig: (presetId?: string, status?: 'draft' | 'published') => Promise<boolean>;
   handleSetCurrentModelConfig: () => Promise<void>;
   onReset: () => void;
   markDirty: (field: string, dirty: boolean) => void;
   dirtyFields: Record<string, boolean>;
+  registerCloseGuard?: (handler: (() => boolean) | null) => void;
+  onForceClose?: () => void;
 }
 
 export function ModelsPage({
@@ -73,40 +78,65 @@ export function ModelsPage({
   onReset,
   markDirty,
   dirtyFields,
+  registerCloseGuard,
+  onForceClose,
 }: ModelsPageProps) {
   const selectedProvider = providers.find((provider) => provider.id === modelConfigDraft.provider);
   const selectedKeyState = keyStates.find((state) => state.providerId === modelConfigDraft.provider);
   const providerDisplay = normalizeModelConfigDraftForSettings(modelConfigDraft, providers);
   const providerSelectValue = providerDisplay.draft.provider;
   const displayedCustomProviderName = customProviderName || providerDisplay.customProviderName;
-  const matchedDraftPreset = modelPresets.find((preset) => modelPresetMatchesRunConfig(preset, { ...config, ...modelConfigDraft }));
+  const matchedCurrentPreset = modelPresets.find((preset) => modelPresetMatchesRunConfig(preset, config));
   const [deletingPresetId, setDeletingPresetId] = React.useState('');
   const [pendingDeletePreset, setPendingDeletePreset] = React.useState<ModelPreset | null>(null);
-  const [selectedPresetId, setSelectedPresetId] = React.useState('__draft__');
+  const [selectedPresetId, setSelectedPresetId] = React.useState(() => matchedCurrentPreset?.id ?? '__new__');
+  const [isEditing, setIsEditing] = React.useState(() => !matchedCurrentPreset);
+  const [pendingSaveChoice, setPendingSaveChoice] = React.useState(false);
+  const [pendingClose, setPendingClose] = React.useState(false);
+  const [closeBusy, setCloseBusy] = React.useState(false);
+  const presetSelectionTouchedRef = React.useRef(false);
+  const selectedPreset = modelPresets.find((preset) => preset.id === selectedPresetId);
+  const isNewPreset = selectedPresetId === '__new__';
+  const presetReadonly = Boolean(selectedPreset && !isEditing);
+  const hasUnsavedChanges = Object.values(dirtyFields).some(Boolean);
+
+  React.useEffect(() => {
+    if (selectedPresetId === '__new__' && !presetSelectionTouchedRef.current && !hasUnsavedChanges) {
+      const current = modelPresets.find((preset) => modelPresetMatchesRunConfig(preset, config))
+        ?? modelPresets.find((preset) => modelPresetMatchesRunConfig(preset, { ...config, ...modelConfigDraft }));
+      if (current) setSelectedPresetId(current.id);
+    }
+  }, [config, hasUnsavedChanges, modelConfigDraft, modelPresets, selectedPresetId]);
   const modelPresetDraftOptions: Array<DropdownOption<string>> = [
-    { value: '__draft__', label: locale === 'zh' ? '当前编辑草稿' : 'Current draft' },
+    { value: '__new__', label: isNewPreset && isEditing ? (locale === 'zh' ? '当前编辑草稿' : 'Current draft') : (locale === 'zh' ? '新建预设' : 'New preset'), badge: isNewPreset && isEditing ? (locale === 'zh' ? '编辑中' : 'Editing') : (locale === 'zh' ? '新建' : 'New') },
     ...modelPresets.map((preset) => ({
       value: preset.id,
       label: preset.name,
       detail: [providers.find((provider) => provider.id === preset.config.provider)?.name ?? preset.config.provider, preset.config.model].filter(Boolean).join(' / '),
-      current: matchedDraftPreset?.id === preset.id,
+      current: matchedCurrentPreset?.id === preset.id,
+      badge: matchedCurrentPreset?.id === preset.id
+        ? (selectedPresetId === preset.id && isEditing ? (locale === 'zh' ? '编辑中' : 'Editing') : (locale === 'zh' ? '使用中' : 'In use'))
+        : (preset.status === 'draft' ? (locale === 'zh' ? '草稿' : 'Draft') : (locale === 'zh' ? '正式' : 'Published')),
+      action: {
+        ariaLabel: locale === 'zh' ? `删除预设「${preset.name}」` : `Delete preset "${preset.name}"`,
+        className: 'danger',
+        disabled: deletingPresetId === preset.id,
+        label: locale === 'zh' ? '删除' : 'Delete',
+        onClick: () => setPendingDeletePreset(preset),
+      },
     })),
   ];
 
-  function modelKeyEnvStatus() {
-    const envVar = modelEnvVarDraft.trim() || selectedProvider?.apiKeyEnvVar || selectedKeyState?.envVar;
-    if (!envVar) {
-      return locale === 'zh' ? '未指定环境变量' : 'No env var';
-    }
-    const boundEnvVar = selectedKeyState?.envVar || selectedProvider?.apiKeyEnvVar;
-    if (hasConfiguredModelEnvVar) {
-      return `${envVar} · ${locale === 'zh' ? '已配置' : 'configured'}`;
-    }
-    if (boundEnvVar === envVar) {
-      return `${envVar} · ${locale === 'zh' ? '未发现' : 'missing'}`;
-    }
-    return `${envVar} · ${locale === 'zh' ? '保存后生效' : 'after saving'}`;
-  }
+  React.useEffect(() => {
+    if (!registerCloseGuard) return;
+    const guard = () => {
+      if (!hasUnsavedChanges) return false;
+      setPendingClose(true);
+      return true;
+    };
+    registerCloseGuard(guard);
+    return () => registerCloseGuard(null);
+  }, [hasUnsavedChanges, registerCloseGuard]);
 
   const keyChipText = React.useMemo(() => {
     if (modelKeySource === 'config') {
@@ -116,7 +146,6 @@ export function ModelsPage({
     }
     const envVar = modelEnvVarDraft.trim() || selectedProvider?.apiKeyEnvVar || selectedKeyState?.envVar;
     if (!envVar) return locale === 'zh' ? '未指定环境变量' : 'No env var';
-    const boundEnvVar = selectedKeyState?.envVar || selectedProvider?.apiKeyEnvVar;
     const configured = hasConfiguredModelEnvVar;
     return `${envVar} · ${configured ? (locale === 'zh' ? '已配置' : 'configured') : (locale === 'zh' ? '未发现' : 'missing')}`;
   }, [modelKeySource, selectedKeyState, selectedProvider, modelEnvVarDraft, locale, hasSavedModelKey, hasConfiguredModelEnvVar]);
@@ -140,26 +169,59 @@ export function ModelsPage({
     );
   }, [config, modelConfigDraft]);
 
-  React.useEffect(() => {
-    if (selectedPresetId === '__draft__') return;
-    const selectedPreset = modelPresets.find((preset) => preset.id === selectedPresetId);
-    if (!selectedPreset || !modelPresetMatchesRunConfig(selectedPreset, { ...config, ...modelConfigDraft })) {
-      setSelectedPresetId('__draft__');
-    }
-  }, [
-    selectedPresetId,
-    modelPresets,
-    config.provider,
-    config.model,
-    config.baseUrl,
-    modelConfigDraft.provider,
-    modelConfigDraft.model,
-    modelConfigDraft.baseUrl,
-  ]);
-
   function handlePresetDraftChange(presetId: string) {
+    presetSelectionTouchedRef.current = true;
     setSelectedPresetId(presetId);
+    if (presetId === '__new__') {
+      onReset();
+      setIsEditing(true);
+      return;
+    }
     loadModelPresetIntoDraft(presetId);
+    setIsEditing(false);
+  }
+
+  function handleNewPreset() {
+    presetSelectionTouchedRef.current = true;
+    onReset();
+    setSelectedPresetId('__new__');
+    setIsEditing(true);
+  }
+
+  function handleCancelModelChanges() {
+    if (selectedPresetId !== '__new__') {
+      loadModelPresetIntoDraft(selectedPresetId);
+      setIsEditing(false);
+    } else onReset();
+  }
+
+  async function saveAndClose(status: 'draft' | 'published') {
+    setCloseBusy(true);
+    try {
+      const saved = await handleSaveModelConfig(isNewPreset ? undefined : selectedPresetId, status);
+      if (!saved) return;
+      setPendingClose(false);
+      onForceClose?.();
+    } finally {
+      setCloseBusy(false);
+    }
+  }
+
+  async function savePresetChoice(mode: 'overwrite' | 'new') {
+    setCloseBusy(true);
+    try {
+      const saved = await handleSaveModelConfig(mode === 'overwrite' ? selectedPresetId : undefined, 'published');
+      if (!saved) return;
+      setPendingSaveChoice(false);
+      setIsEditing(false);
+    } finally {
+      setCloseBusy(false);
+    }
+  }
+
+  async function saveNewPreset(status: 'draft' | 'published') {
+    const saved = await handleSaveModelConfig(undefined, status);
+    if (saved) setIsEditing(false);
   }
 
   async function handleDeletePreset() {
@@ -176,7 +238,7 @@ export function ModelsPage({
   return (
     <section className="settingsSection modelSettingsPanel" id="settings-models">
       <SettingsPageHeader
-        eyebrow="RUNTIME"
+        eyebrow={locale === 'zh' ? '模型' : 'Model'}
         title={locale === 'zh' ? '模型' : 'Model'}
         actions={[
           {
@@ -195,18 +257,19 @@ export function ModelsPage({
       <div className="settingsSectionBlock">
         <SectionHeader
           title={locale === 'zh' ? '默认模型' : 'Default model'}
-          chip={isCurrentModel ? (locale === 'zh' ? '当前生效' : 'Current') : undefined}
-          chipTone={isCurrentModel ? 'ok' : undefined}
+           chip={isEditing && selectedPreset ? <><Icon name="pen" />{locale === 'zh' ? '编辑中' : 'Editing'}</> : (isCurrentModel ? (locale === 'zh' ? '当前生效' : 'Current') : undefined)}
+           chipTone={isCurrentModel || (isEditing && Boolean(selectedPreset)) ? 'ok' : undefined}
         />
         <div className="settingsFormGrid three">
           <label className="settingsField">
             <span className="settingsFieldLabel">{t(locale, 'provider')}</span>
-            <DropdownSelect className={['modelProviderSelect', providerDirty].filter(Boolean).join(' ')} value={providerSelectValue} onChange={selectModelProviderDraft} options={providerDropdownOptions(providers, locale)} />
+             <DropdownSelect className={['modelProviderSelect', providerDirty].filter(Boolean).join(' ')} value={providerSelectValue} onChange={selectModelProviderDraft} options={providerDropdownOptions(providers, locale)} disabled={presetReadonly} />
           </label>
           <label className={`settingsField ${modelDirty}`}>
             <span className="settingsFieldLabel">{t(locale, 'model')}</span>
             <input
               value={modelConfigDraft.model}
+              readOnly={presetReadonly}
               onChange={(event) => {
                 setModelConfigDraft((current) => ({ ...current, model: event.target.value }));
                 markDirty('model', true);
@@ -219,6 +282,7 @@ export function ModelsPage({
               <input
                 placeholder={locale === 'zh' ? '例如：ai.gitee、OpenRouter、LMStudio' : 'e.g. ai.gitee, OpenRouter, LMStudio'}
                 value={displayedCustomProviderName}
+                disabled={presetReadonly}
                 onChange={(event) => {
                   setCustomProviderName(event.target.value);
                   markDirty('provider', true);
@@ -236,6 +300,7 @@ export function ModelsPage({
             <input
               placeholder="provider default"
               value={modelConfigDraft.baseUrl}
+              readOnly={presetReadonly}
               onChange={(event) => {
                 setModelConfigDraft((current) => ({ ...current, baseUrl: event.target.value }));
                 markDirty('baseUrl', true);
@@ -256,6 +321,7 @@ export function ModelsPage({
             <span className="settingsFieldLabel">{locale === 'zh' ? '来源' : 'Source'}</span>
             <DropdownSelect<SecretSource>
               value={modelKeySource}
+              disabled={presetReadonly}
               onChange={(source) => {
                 markDirty('modelKeySource', true);
                 setModelKeySource(source);
@@ -278,6 +344,7 @@ export function ModelsPage({
                 <input
                   list="model-env-var-options"
                   value={modelEnvVarDraft}
+                  readOnly={presetReadonly}
                   onChange={(event) => {
                     setModelEnvVarDraft(event.target.value);
                     markDirty('modelEnvVar', true);
@@ -296,6 +363,7 @@ export function ModelsPage({
                 <input
                   placeholder={savedModelKeyPlaceholder()}
                   value={apiKeyDraft}
+                  readOnly={presetReadonly}
                   onChange={(event) => {
                     setApiKeyDraft(event.target.value);
                     markDirty('apiKey', true);
@@ -340,7 +408,7 @@ export function ModelsPage({
           <button
             className="textButton danger"
             type="button"
-            disabled={selectedPresetId === '__draft__' || deletingPresetId === selectedPresetId}
+             disabled={isNewPreset || deletingPresetId === selectedPresetId}
             onClick={() => {
               const preset = modelPresets.find((p) => p.id === selectedPresetId);
               if (preset) setPendingDeletePreset(preset);
@@ -348,9 +416,18 @@ export function ModelsPage({
           >
             {locale === 'zh' ? '删除预设' : 'Delete preset'}
           </button>
-          <button className="solidButton" type="button" onClick={() => void handleSaveModelConfig()}>
-            {locale === 'zh' ? '保存为预设' : 'Save as preset'}
-          </button>
+          <button className="textButton" type="button" onClick={handleNewPreset}>{locale === 'zh' ? '新建预设' : 'New preset'}</button>
+          {presetReadonly ? (
+            <button className="solidButton" type="button" onClick={() => setIsEditing(true)}>{locale === 'zh' ? '开始编辑' : 'Start editing'}</button>
+          ) : isNewPreset ? (
+            <>
+              <button className="textButton" type="button" onClick={() => void saveNewPreset('draft')}>{locale === 'zh' ? '保存为草稿' : 'Save draft'}</button>
+              <button className="solidButton" type="button" onClick={() => void saveNewPreset('published')}>{locale === 'zh' ? '保存为正式预设' : 'Save published'}</button>
+            </>
+          ) : (
+            <button className="solidButton" type="button" onClick={() => setPendingSaveChoice(true)}>{locale === 'zh' ? '保存' : 'Save'}</button>
+          )}
+          {!presetReadonly ? <button className="textButton" type="button" onClick={handleCancelModelChanges}>{locale === 'zh' ? '取消修改' : 'Cancel changes'}</button> : null}
         </div>
       </div>
 
@@ -368,6 +445,35 @@ export function ModelsPage({
         onCancel={() => setPendingDeletePreset(null)}
         onConfirm={() => void handleDeletePreset()}
       />
+      {pendingSaveChoice ? (
+        <div className="presetDecisionLayer" role="presentation">
+          <button className="settingsConfirmScrim" aria-label={locale === 'zh' ? '取消' : 'Cancel'} onClick={() => setPendingSaveChoice(false)} type="button" />
+          <section className="presetDecisionPanel" role="dialog" aria-modal="true" aria-labelledby="preset-save-title">
+            <h3 id="preset-save-title">{locale === 'zh' ? '如何保存这个预设？' : 'How should this preset be saved?'}</h3>
+            <p>{locale === 'zh' ? '当前预设保持不变，或将修改另存为新的模型配置。' : 'Keep the current preset, or save the changes as a new model configuration.'}</p>
+            <div className="settingsConfirmActions">
+              <button className="textButton" type="button" onClick={() => setPendingSaveChoice(false)} disabled={closeBusy}>{locale === 'zh' ? '取消' : 'Cancel'}</button>
+              <button className="textButton" type="button" onClick={() => void savePresetChoice('new')} disabled={closeBusy}>{locale === 'zh' ? '新建模型配置' : 'Save as new'}</button>
+              <button className="solidButton" type="button" onClick={() => void savePresetChoice('overwrite')} disabled={closeBusy}>{locale === 'zh' ? '覆盖当前预设' : 'Overwrite current'}</button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+      {pendingClose ? (
+        <div className="presetDecisionLayer" role="presentation">
+          <button className="settingsConfirmScrim" aria-label={locale === 'zh' ? '继续编辑' : 'Keep editing'} onClick={() => setPendingClose(false)} type="button" />
+          <section className="presetDecisionPanel" role="dialog" aria-modal="true" aria-labelledby="preset-close-title">
+            <h3 id="preset-close-title">{locale === 'zh' ? '修改尚未保存' : 'Unsaved changes'}</h3>
+            <p>{locale === 'zh' ? '关闭前请选择保存为草稿、保存为正式预设，或放弃修改。' : 'Choose whether to save a draft, publish the preset, or discard the changes.'}</p>
+            <div className="settingsConfirmActions">
+              <button className="textButton" type="button" onClick={() => setPendingClose(false)} disabled={closeBusy}>{locale === 'zh' ? '继续编辑' : 'Keep editing'}</button>
+              <button className="textButton" type="button" onClick={() => void saveAndClose('draft')} disabled={closeBusy}>{locale === 'zh' ? '保存为草稿' : 'Save draft'}</button>
+              <button className="solidButton" type="button" onClick={() => void saveAndClose('published')} disabled={closeBusy}>{locale === 'zh' ? '保存为正式预设' : 'Publish'}</button>
+              <button className="textButton danger" type="button" onClick={() => { onReset(); setPendingClose(false); onForceClose?.(); }} disabled={closeBusy}>{locale === 'zh' ? '放弃修改' : 'Discard'}</button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </section>
   );
 }

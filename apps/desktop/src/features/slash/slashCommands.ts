@@ -8,6 +8,7 @@ export type SlashCommand =
   | { kind: 'mcp.add'; args: string }
   | { kind: 'web_search.mode'; mode: WebSearchMode }
   | { kind: 'compact' }
+  | { kind: 'ops'; preset: 'ops'; args: string }
   | { kind: 'task.mode'; mode: 'plan' | 'review' | 'debug' | 'frontend'; args: string };
 
 export interface SlashCommandOption {
@@ -78,6 +79,12 @@ export const slashCommandOptions: SlashCommandOption[] = [
     title: 'Compact',
     detail: '压缩当前对话上下文',
   },
+  {
+    id: 'ops',
+    command: '/ops ',
+    title: 'Ops',
+    detail: '启动只读运维调查并持续记录证据',
+  },
 ];
 
 const localizedSlashDetails: Record<Locale, Record<string, Pick<SlashCommandOption, 'title' | 'detail'>>> = {
@@ -92,6 +99,7 @@ const localizedSlashDetails: Record<Locale, Record<string, Pick<SlashCommandOpti
     debug: { title: '调试', detail: '系统化定位问题，再给出修复' },
     frontend: { title: '前端优化', detail: '按产品界面标准打磨 UI' },
     compact: { title: '压缩上下文', detail: '压缩当前对话上下文' },
+    ops: { title: '运维调查', detail: '启动只读运维调查并持续记录证据' },
   },
   en: {
     skills: { title: 'Skills', detail: 'List and select a Skill' },
@@ -104,6 +112,7 @@ const localizedSlashDetails: Record<Locale, Record<string, Pick<SlashCommandOpti
     debug: { title: 'Debug', detail: 'Reproduce, diagnose, then fix' },
     frontend: { title: 'Frontend', detail: 'Polish UI with product-grade standards' },
     compact: { title: 'Compact', detail: 'Compact this conversation context' },
+    ops: { title: 'Ops investigation', detail: 'Start a read-only Ops investigation with evidence' },
   },
 };
 
@@ -142,6 +151,13 @@ export function parseSlashCommand(input: string): SlashCommand {
 
   if (command === '/compact') {
     return { kind: 'compact' };
+  }
+
+  if (command === '/ops') {
+    const knownLegacySubcommand = subcommand === 'diagnose' || subcommand === 'log_analysis' || subcommand === 'logs';
+    return { kind: 'ops', preset: 'ops', args: knownLegacySubcommand
+      ? stripCommandPrefix(normalized, rawCommand, rawSubcommand)
+      : stripCommandPrefix(normalized, rawCommand) };
   }
 
   if (command === '/plan' || command === '/review' || command === '/debug' || command === '/frontend') {

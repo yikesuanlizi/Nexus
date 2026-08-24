@@ -16,6 +16,7 @@
     { "path": "../../packages/bot" },
     { "path": "../../packages/runtime" },
     { "path": "../../packages/i18n" },
-    { "path": "../../packages/tools" }
+    { "path": "../../packages/tools" },
+    { "path": "../../packages/wiki-core" }
   ]
 }

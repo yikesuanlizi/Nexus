@@ -6,6 +6,8 @@ import type {
   PersistentAccessScope,
   TemporaryAccessScope,
 } from './accessPolicy.js';
+import type { OpsTaskPresetId } from './opsTask.js';
+import type { AgentDecisionAction, AgentDecisionRequest, ThreadExecutionStatus } from './threadInteraction.js';
 
 // ─── Thread ──────────────────────────────────────────────────────────────────
 // Thread（线程/会话）：代表一次完整的对话，由若干个 Turn 组成
@@ -13,12 +15,23 @@ import type {
 // 线程唯一 ID，全局字符串
 export type ThreadId = string;
 
+/** 线程当前的交互入口；不改变底层 runProfile。 */
+export type ThreadMode = 'chat' | 'ops';
+
+/** 线程最近选择的 Ops 任务预设；未进入 Ops 时为空。 */
+export type ThreadTaskPreset = OpsTaskPresetId;
+export type ThreadTaskPresetId = ThreadTaskPreset;
+
 /** Thread metadata persisted in SQLite. */
 // 线程元信息，持久化到 SQLite
 export interface ThreadMeta {
   threadId: ThreadId;
-  /** Isolation boundary for local-first multi-tenant runtime. */
-  // 本地优先多租户运行时的隔离边界（可选）
+  /** 当前线程入口模式，旧数据缺失时按 chat 处理。 */
+  mode?: ThreadMode;
+  /** 当前线程关联的 Ops 任务预设，普通聊天线程通常为空。 */
+  taskPreset?: ThreadTaskPreset | null;
+  /** Legacy SQLite partition key retained for local data migration compatibility. */
+  // 旧 SQLite 分区字段，仅用于本地数据迁移兼容，运行时固定为 default
   tenantId?: string;
   /** Human-readable title (may be auto-generated). */
   // 人类可读的标题（可自动生成）
@@ -391,15 +404,15 @@ export interface FileSegmentRef extends ArtifactRef {
 
 // 上下文压缩摘要：把多轮对话压缩为固定字段的结构化摘要
 export interface CompactionSummary {
-  userGoal: string;            // 用户目标
-  completedWork: string;       // 已完成工作
-  keyConstraints: string;      // 关键约束
-  filesAndArtifacts: string;   // 涉及的文件与工件
-  toolResults: string;         // 工具调用结果
-  subagentResults: string;     // 子代理结果
-  openTasks: string;           // 待办任务
-  risks: string;               // 风险点
-  raw: string;                 // 原始摘要
+  userGoal: string; // 用户目标
+  completedWork: string; // 已完成工作
+  keyConstraints: string; // 关键约束
+  filesAndArtifacts: string; // 涉及的文件与工件
+  toolResults: string; // 工具调用结果
+  subagentResults: string; // 子代理结果
+  openTasks: string; // 待办任务
+  risks: string; // 风险点
+  raw: string; // 原始摘要
 }
 
 // 上下文压缩计划：哪些回合要被压缩、哪些保留
@@ -670,7 +683,12 @@ export interface AgentTransferEnvelope {
     presetId?: string;
   };
   constraints: Array<{
-    layer: 'project_agents_md' | 'thread_config' | 'parent_delegation' | 'skills_mcp_web_search' | 'subagent_role';
+    layer:
+      | 'project_agents_md'
+      | 'thread_config'
+      | 'parent_delegation'
+      | 'skills_mcp_web_search'
+      | 'subagent_role';
     text: string;
   }>;
   contextRefs: ArtifactRef[];
@@ -762,35 +780,35 @@ export interface ErrorItem {
 
 // Nexus 错误分类：用于错误处理与重试策略
 export type NexusErrorKind =
-  | 'ContextWindowExceeded'              // 上下文窗口超出
-  | 'UsageLimitExceeded'                 // 用量上限
-  | 'ServerOverloaded'                   // 服务端过载
-  | 'HttpConnectionFailed'               // HTTP 连接失败
-  | 'ResponseStreamConnectionFailed'     // 流式响应连接失败
-  | 'InternalServerError'                // 服务端内部错误
-  | 'Unauthorized'                       // 未授权
-  | 'BadRequest'                         // 错误请求
-  | 'SandboxError'                       // 沙箱错误
-  | 'ResponseStreamDisconnected'         // 流式响应中断
-  | 'ResponseTooManyFailedAttempts'      // 重试次数耗尽
-  | 'ActiveTurnNotSteerable'             // 活跃回合不可被引导
-  | 'ThreadRollbackFailed'               // 线程回滚失败
-  | 'Other';                             // 其它
+  | 'ContextWindowExceeded' // 上下文窗口超出
+  | 'UsageLimitExceeded' // 用量上限
+  | 'ServerOverloaded' // 服务端过载
+  | 'HttpConnectionFailed' // HTTP 连接失败
+  | 'ResponseStreamConnectionFailed' // 流式响应连接失败
+  | 'InternalServerError' // 服务端内部错误
+  | 'Unauthorized' // 未授权
+  | 'BadRequest' // 错误请求
+  | 'SandboxError' // 沙箱错误
+  | 'ResponseStreamDisconnected' // 流式响应中断
+  | 'ResponseTooManyFailedAttempts' // 重试次数耗尽
+  | 'ActiveTurnNotSteerable' // 活跃回合不可被引导
+  | 'ThreadRollbackFailed' // 线程回滚失败
+  | 'Other'; // 其它
 
 // 错误附加信息
 export interface NexusErrorInfo {
   kind: NexusErrorKind;
-  httpStatusCode?: number;  // HTTP 状态码
-  turnKind?: string;        // 触发错误的回合类型
+  httpStatusCode?: number; // HTTP 状态码
+  turnKind?: string; // 触发错误的回合类型
 }
 
 /** Token usage for a turn. */
 // 单回合 token 用量统计
 export interface Usage {
-  inputTokens: number;              // 输入 token
-  cachedInputTokens: number;        // 命中缓存的输入 token
-  outputTokens: number;             // 输出 token
-  reasoningOutputTokens: number;    // 推理过程 token
+  inputTokens: number; // 输入 token
+  cachedInputTokens: number; // 命中缓存的输入 token
+  outputTokens: number; // 输出 token
+  reasoningOutputTokens: number; // 推理过程 token
   cacheStrategy?: 'deepseek-native' | 'openai-compatible' | 'anthropic-cache-control' | 'mixed';
 }
 
@@ -807,14 +825,14 @@ export interface ThreadUsage {
   total: Usage;
   turns: TurnUsage[];
   updatedAt: string;
-  includedThreadIds?: ThreadId[];   // 跨线程汇总时列出包含的线程
+  includedThreadIds?: ThreadId[]; // 跨线程汇总时列出包含的线程
 }
 
 // 重试策略：指数退避 + 上下限
 export interface RetryPolicy {
-  maxAttempts: number;       // 最大尝试次数
-  initialDelayMs: number;    // 初始退避毫秒
-  maxDelayMs: number;        // 最大退避毫秒
+  maxAttempts: number; // 最大尝试次数
+  initialDelayMs: number; // 初始退避毫秒
+  maxDelayMs: number; // 最大退避毫秒
 }
 
 // 模型重试事件：流式上报让前端展示
@@ -822,11 +840,11 @@ export interface ModelRetryEvent {
   type: 'model.retry';
   threadId: ThreadId;
   turnId: TurnId;
-  attempt: number;            // 当前重试次数
-  maxAttempts: number;        // 最大重试次数
-  delayMs: number;            // 本次等待毫秒
-  status?: number;            // 上次失败的 HTTP 状态码
-  error?: string;             // 上次失败原因
+  attempt: number; // 当前重试次数
+  maxAttempts: number; // 最大重试次数
+  delayMs: number; // 本次等待毫秒
+  status?: number; // 上次失败的 HTTP 状态码
+  error?: string; // 上次失败原因
 }
 
 // 上下文 token 估算更新事件：用于前端展示上下文使用率
@@ -835,10 +853,10 @@ export interface ContextTokenEstimateUpdatedEvent {
   threadId: ThreadId;
   turnId: TurnId;
   estimate: {
-    inputTokens: number;     // 估算的输入 token
-    messageCount: number;    // 消息数
-    imageCount: number;      // 图片数
-    charCount: number;       // 字符数
+    inputTokens: number; // 估算的输入 token
+    messageCount: number; // 消息数
+    imageCount: number; // 图片数
+    charCount: number; // 字符数
   };
 }
 
@@ -848,15 +866,15 @@ export interface ContextCompactionPressureEvent {
   threadId: ThreadId;
   turnId: TurnId;
   pressure: {
-    estimatedTokens: number;   // 估算 token
-    maxTokens: number;         // 上下文窗口
-    softThreshold: number;     // 软阈值（提示）
-    hardThreshold: number;     // 硬阈值（强制压缩）
-    ratio: number;             // 占用比例
+    estimatedTokens: number; // 估算 token
+    maxTokens: number; // 上下文窗口
+    softThreshold: number; // 软阈值（提示）
+    hardThreshold: number; // 硬阈值（强制压缩）
+    ratio: number; // 占用比例
     status: 'ok' | 'soft' | 'hard';
     window?: {
-      ordinal: number;         // 窗口序号
-      prefillInputTokens: number | null;  // 预填 token
+      ordinal: number; // 窗口序号
+      prefillInputTokens: number | null; // 预填 token
     };
   };
 }
@@ -892,12 +910,12 @@ export interface CacheDiagnosticsEvent {
   threadId: ThreadId;
   turnId: TurnId;
   shape: {
-    systemHash: string;    // 系统提示哈希
-    toolsHash: string;     // 工具 schema 哈希
-    prefixHash: string;    // 前缀哈希
+    systemHash: string; // 系统提示哈希
+    toolsHash: string; // 工具 schema 哈希
+    prefixHash: string; // 前缀哈希
   };
-  stable: boolean;         // 是否稳定
-  reasons: Array<'system' | 'tools'>;  // 不稳定原因
+  stable: boolean; // 是否稳定
+  reasons: Array<'system' | 'tools'>; // 不稳定原因
 }
 
 /** Union of all streaming events. */
@@ -907,6 +925,9 @@ export type ThreadEvent =
   | TurnStartedEvent
   | TurnCompletedEvent
   | TurnFailedEvent
+  | ThreadRuntimeUpdatedEvent
+  | AgentDecisionRequestedEvent
+  | AgentDecisionResolvedEvent
   | WarningEvent
   | StreamErrorEvent
   | ModelOutputRejectedEvent
@@ -980,6 +1001,33 @@ export interface TurnFailedEvent {
   turnId: TurnId;
   runId: string;
   error: { message: string; info?: NexusErrorInfo };
+}
+
+export interface ThreadRuntimeUpdatedEvent {
+  type: 'thread.runtime.updated';
+  threadId: ThreadId;
+  turnId?: TurnId;
+  runId?: string;
+  status: ThreadExecutionStatus;
+  terminalStatus?: 'completed' | 'failed' | 'interrupted';
+  decisionRequest?: AgentDecisionRequest | null;
+}
+
+export interface AgentDecisionRequestedEvent {
+  type: 'agent.decision.requested';
+  threadId: ThreadId;
+  turnId: TurnId;
+  request: AgentDecisionRequest;
+}
+
+export interface AgentDecisionResolvedEvent {
+  type: 'agent.decision.resolved';
+  threadId: ThreadId;
+  turnId: TurnId;
+  requestId: string;
+  action: AgentDecisionAction;
+  optionId?: string;
+  customInput?: string;
 }
 
 // 通用警告事件
@@ -1301,10 +1349,7 @@ export interface TaskLoopUpdatedEvent {
 
 // ─── JSON-RPC Transport ──────────────────────────────────────────────────────
 // JSON-RPC 传输层：本地 API 服务的请求/响应/通知协议
-export type JsonRpcMessage =
-  | JsonRpcRequest
-  | JsonRpcResponse
-  | JsonRpcNotification;
+export type JsonRpcMessage = JsonRpcRequest | JsonRpcResponse | JsonRpcNotification;
 
 // JSON-RPC 2.0 请求
 export interface JsonRpcRequest {
@@ -1449,6 +1494,9 @@ export interface Checkpoint {
   generation?: number;
   status?: CheckpointStatus;
   expiresAt?: string;
+  /** 用户决策等待点；与 checkpoint 一起持久化，支持冷启动恢复。 */
+  decisionRequest?: AgentDecisionRequest;
+  executionStatus?: ThreadExecutionStatus;
 }
 
 // JSONL 中的检查点行
@@ -1461,18 +1509,24 @@ export interface CheckpointLine {
   generation?: number;
   status?: CheckpointStatus;
   expiresAt?: string;
+  executionStatus?: ThreadExecutionStatus;
+  decisionRequest?: AgentDecisionRequest;
 }
 
-// 检查点状态：running/completed/interrupted/failed/stale
-export type CheckpointStatus = 'running' | 'completed' | 'interrupted' | 'failed' | 'stale';
+// 检查点状态：包含停止确认和等待用户输入的持久化中间态。
+export type CheckpointStatus = 'running' | 'stopping' | 'waiting_user_input' | 'terminal' | 'completed' | 'interrupted' | 'failed' | 'stale';
 
 // 线程运行时状态：用于恢复决策
 export interface ThreadRuntimeState {
   threadId: ThreadId;
-  status: 'idle' | 'running' | 'completed' | 'interrupted' | 'failed' | 'stale';
+  status: 'idle' | 'running' | 'stopping' | 'waiting_user_input' | 'terminal' | 'completed' | 'interrupted' | 'failed' | 'stale';
   checkpoint: Checkpoint | null;
   resumable: boolean;
   stale: boolean;
+  /** 线程执行生命周期，独立于历史兼容的 status 字段。 */
+  executionStatus?: ThreadExecutionStatus;
+  terminalStatus?: 'completed' | 'failed' | 'interrupted';
+  decisionRequest?: AgentDecisionRequest | null;
 }
 
 // ─── Harness ─────────────────────────────────────────────────────────────────
@@ -1487,15 +1541,15 @@ export type GoalEvaluationStatus = 'satisfied' | 'continue' | 'needs_user_input'
 
 // 目标评估结果：由独立模型（GoalEvaluator）输出，fail-closed
 export interface GoalEvaluation {
-  satisfied: boolean;                       // 是否达标
+  satisfied: boolean; // 是否达标
   status: GoalEvaluationStatus;
-  passedCriteria: string[];                // 已达标的验收标准
-  failedCriteria: string[];                // 未达标的验收标准
-  blocker?: string;                        // 阻塞原因
-  nextHint?: string;                       // 下一步提示
-  evidenceSummary: string;                 // 证据摘要
-  progressSignature: string;                // 进度签名（用于无进展检测）
-  reasoning: string;                       // 推理过程
+  passedCriteria: string[]; // 已达标的验收标准
+  failedCriteria: string[]; // 未达标的验收标准
+  blocker?: string; // 阻塞原因
+  nextHint?: string; // 下一步提示
+  evidenceSummary: string; // 证据摘要
+  progressSignature: string; // 进度签名（用于无进展检测）
+  reasoning: string; // 推理过程
   /** Gap 8: criteria → evidenceId[] 映射，由 evaluator 声明。 */
   // Gap 8: 验收标准到证据 ID 的映射，由 evaluator 声明
   criteriaEvidenceMap?: Record<string, string[]>;
@@ -1512,10 +1566,10 @@ export interface HarnessContinuationItem {
   /** 第几次续跑（0 = 首次，1+ = 后续隐藏续跑）。 */
   // 续跑迭代次数（0 表示首次，1+ 表示后续隐藏续跑）
   iteration: number;
-  objective: string;                       // 本次 harness 的目标
-  instruction: string;                     // 给模型的续跑指令
-  evaluation: GoalEvaluation;              // 上次评估结果
-  visibleToUser: HarnessItemVisibility;    // 永远 false
+  objective: string; // 本次 harness 的目标
+  instruction: string; // 给模型的续跑指令
+  evaluation: GoalEvaluation; // 上次评估结果
+  visibleToUser: HarnessItemVisibility; // 永远 false
   timestamp: string;
   /** P2: AgentContext 快照，用于续跑/恢复时还原认知状态 */
   agentContext?: unknown;

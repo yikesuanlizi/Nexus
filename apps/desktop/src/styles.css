@@ -1106,6 +1106,173 @@ main.appShell:is(.theme-light, .theme-dark, .theme-system) .runExplorer :is(.run
   pointer-events: auto !important;
 }
 
+/* Removal confirmations must own the viewport, including when opened from the right workbench. */
+.settingsConfirmLayer {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 1400 !important;
+}
+
+/* 权限页最终布局覆盖：避免通用 settingsCard 网格压缩只读模式和值域列表。 */
+.settingsLayer .settingsDrawer .accessModeBlock {
+  display: block !important;
+  grid-template-columns: 1fr !important;
+}
+.settingsLayer:is(.theme-light, .theme-dark, .theme-system) .settingsDrawer .accessModeBlock {
+  display: block !important;
+  grid-template-columns: 1fr !important;
+}
+.settingsLayer .settingsDrawer .accessModeBlock .settingsFieldRow {
+  width: 100% !important;
+}
+
+/* 设置页收口：监控开关使用轻量分隔，不再套一层灰色外框。 */
+.settingsLayer .settingsDrawer .settingsToggleList {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  padding: 0 !important;
+}
+.settingsLayer .settingsDrawer .settingsToggleRow:focus-within {
+  outline: 0 !important;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--nx-settings-accent, #4b5563) 28%, transparent) !important;
+  border-radius: 5px !important;
+}
+.settingsLayer .settingsDrawer .settingsToggleTrack,
+.settingsLayer .settingsDrawer .settingsToggleTrack.on {
+  border: 0 !important;
+  box-shadow: none !important;
+}
+.settingsLayer .settingsDrawer .settingsToggleTrack.on,
+.settingsLayer .settingsDrawer .settingsToggleRow input:checked ~ .settingsToggleTrack {
+  background: #4b5563 !important;
+}
+.settingsLayer .settingsDrawer .settingsToggleTrack.on::after,
+.settingsLayer .settingsDrawer .settingsToggleRow input:checked ~ .settingsToggleTrack::after {
+  transform: translateX(14px) !important;
+}
+.settingsLayer.theme-dark .settingsDrawer .settingsToggleTrack {
+  background: #3f444b !important;
+}
+.settingsLayer.theme-dark .settingsDrawer .settingsToggleTrack.on,
+.settingsLayer.theme-dark .settingsDrawer .settingsToggleRow input:checked ~ .settingsToggleTrack {
+  background: #aeb5bd !important;
+}
+.settingsLayer.theme-dark .settingsDrawer .settingsToggleTrack::after {
+  background: #17191c !important;
+}
+
+.settingsLayer.theme-dark .settingsDrawer .accessModeValue {
+  border-bottom-color: #454b53 !important;
+  color: #eceff2 !important;
+}
+.settingsLayer.theme-dark .settingsDrawer .accessWorkspaceList button {
+  color: #c2c8ce !important;
+}
+.settingsLayer.theme-dark .settingsDrawer .accessWorkspaceList button:hover:not(:disabled),
+.settingsLayer.theme-dark .settingsDrawer .accessWorkspaceList button.active {
+  background: #22262b !important;
+  color: #eceff2 !important;
+}
+.settingsLayer.theme-dark .settingsDrawer .accessWorkspaceList button.active {
+  border-left-color: #aeb5bd !important;
+}
+.settingsLayer.theme-dark .settingsDrawer .accessWorkspaceEmpty {
+  color: #a6adb5 !important;
+}
+.settingsLayer.theme-dark .settingsDrawer .accessModeBlock .settingsFieldRow {
+  border-color: #30353b !important;
+  background: #1d2024 !important;
+}
+
+/* 权限页：范围选择是紧凑的分段控件，当前工作区与当前线程明确分开。 */
+.settingsLayer .settingsDrawer .settingsAccessPolicyPage > .settingsCard,
+.settingsLayer .settingsDrawer .settingsAccessPolicyPage > .settingsSectionBlock {
+  border: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+}
+.settingsLayer .settingsDrawer .settingsAccessPolicyPage > .settingsCard.settingsCardCompact,
+.settingsLayer .settingsDrawer .settingsAccessPolicyPage > .settingsSectionBlock {
+  padding-inline: 0 !important;
+}
+.settingsLayer .settingsDrawer .accessPolicyScopeBlock {
+  gap: 8px !important;
+  padding-block: 4px 12px !important;
+  border-bottom: 1px solid var(--nx-settings-border, #dce2eb) !important;
+}
+.settingsLayer .settingsDrawer .accessPolicyScopeHeader {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+}
+.settingsLayer .settingsDrawer .accessPolicyScopeHeader strong,
+.settingsLayer .settingsDrawer .accessPolicyScopeBlock .settingsSectionHeaderTitle {
+  font-size: 12px !important;
+  font-weight: 650 !important;
+}
+.settingsLayer .settingsDrawer .accessPolicyScopeHeader small,
+.settingsLayer .settingsDrawer .accessPolicyScopeValue {
+  display: block;
+  margin-top: 3px;
+  color: var(--nx-settings-text-muted, #64748b) !important;
+  font-size: 10px !important;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settingsLayer .settingsDrawer .accessPolicyScopeTabs {
+  display: inline-flex !important;
+  width: max-content !important;
+  max-width: 100% !important;
+  gap: 2px !important;
+  padding: 2px !important;
+  border: 1px solid var(--nx-settings-border, #dce2eb) !important;
+  border-radius: 7px !important;
+  background: var(--nx-settings-surface, #f8fafc) !important;
+}
+.settingsLayer .settingsDrawer .accessPolicyScopeTabs button {
+  min-height: 27px !important;
+  padding: 0 10px !important;
+  border: 0 !important;
+  border-radius: 5px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--nx-settings-text-muted, #526078) !important;
+  font-size: 11px !important;
+  font-weight: 620 !important;
+  white-space: nowrap;
+}
+.settingsLayer .settingsDrawer .accessPolicyScopeTabs button.active {
+  background: var(--nx-settings-panel, #ffffff) !important;
+  color: var(--nx-settings-text, #172033) !important;
+  box-shadow: inset 0 0 0 1px var(--nx-settings-border-strong, #c6d0de) !important;
+}
+.settingsLayer .settingsDrawer .accessPolicyScopeTabs button:disabled {
+  opacity: .42 !important;
+}
+.settingsLayer.theme-dark .settingsDrawer .accessPolicyScopeTabs button.active {
+  background: #30343a !important;
+  color: #f2f4f6 !important;
+  box-shadow: inset 0 0 0 1px #4b5159 !important;
+}
+.settingsLayer .settingsDrawer .accessModeBlock {
+  padding-top: 12px !important;
+}
+.settingsLayer .settingsDrawer .settingsThresholdActions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--nx-settings-border, #dce2eb);
+}
+.settingsLayer .settingsDrawer .settingsThresholdSave {
+  min-height: 30px !important;
+  padding: 0 12px !important;
+  font-size: 11px !important;
+}
+
 @layer components {
   .settingsLayer .settingsDrawer .settingsConfirmLayer {
     z-index: 1000 !important;
@@ -3632,6 +3799,69 @@ main.appShell:is(.theme-light, .theme-dark, .theme-system) .runExplorer :is(.run
     @apply grid min-h-full place-items-center text-sm text-slate-500;
   }
 
+  .conversationIdleAnimation {
+    position: relative;
+    display: block;
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  .conversationIdleAnimationCanvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    min-height: 280px;
+    max-height: 680px;
+    border: 0;
+    background: transparent;
+    cursor: grab;
+  }
+
+  .conversationIdleAnimationCanvas:active {
+    cursor: grabbing;
+  }
+
+  .conversationIdleCopy {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 10px;
+    pointer-events: none;
+    text-align: center;
+  }
+
+  .conversationIdleCopy strong {
+    color: var(--nx-text, #1f2328);
+    font-size: clamp(20px, 2.3vw, 30px);
+    font-weight: 650;
+    letter-spacing: .08em;
+  }
+
+  .conversationIdleCopy span {
+    color: var(--nx-muted, #656d76);
+    font-size: 12px;
+    letter-spacing: .04em;
+    opacity: .88;
+  }
+
+  .appShell.theme-dark .conversationIdleCopy strong {
+    color: #e6edf3;
+  }
+
+  .appShell.theme-dark .conversationIdleCopy span {
+    color: #8b949e;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .conversationIdleAnimationCanvas {
+      opacity: .58;
+    }
+  }
+
   .approvalPanel {
     @apply grid gap-2 border-t border-slate-200 bg-white px-4 py-2 shadow-none;
     grid-column: 1;
@@ -3657,6 +3887,148 @@ main.appShell:is(.theme-light, .theme-dark, .theme-system) .runExplorer :is(.run
     border-top: 1px solid rgb(226 232 240);
     margin-top: 4px;
     padding-top: 8px;
+  }
+
+  .opsTaskAnchorCard {
+    align-self: center;
+    width: min(100%, 720px);
+    display: grid;
+    gap: 10px;
+    margin: 4px 0 8px;
+    padding: 12px 14px;
+    border: 1px solid var(--nx-control-border, #cbd5e1);
+    border-left: 3px solid var(--nx-accent, #2563eb);
+    border-radius: 10px;
+    background: var(--nx-surface-raised, #fff);
+    color: var(--nx-text, #0f172a);
+    box-shadow: 0 3px 12px rgba(15, 23, 42, .08);
+  }
+
+  .opsTaskAnchorCard-blocked {
+    border-left-color: #d97706;
+  }
+
+  .opsTaskAnchorHeader {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    min-width: 0;
+  }
+
+  .opsTaskAnchorStatusIcon {
+    display: grid;
+    width: 26px;
+    height: 26px;
+    flex: 0 0 auto;
+    place-items: center;
+    border-radius: 7px;
+    background: color-mix(in srgb, var(--nx-accent, #2563eb) 12%, transparent);
+    color: var(--nx-accent, #2563eb);
+  }
+
+  .opsTaskAnchorCard-blocked .opsTaskAnchorStatusIcon {
+    background: rgba(217, 119, 6, .12);
+    color: #b45309;
+  }
+
+  .opsTaskAnchorStatusIcon svg {
+    width: 15px;
+    height: 15px;
+  }
+
+  .opsTaskAnchorHeading {
+    display: grid;
+    min-width: 0;
+    gap: 2px;
+  }
+
+  .opsTaskAnchorHeading strong,
+  .opsTaskAnchorHeading span,
+  .opsTaskAnchorBody span,
+  .opsTaskAnchorBody p {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .opsTaskAnchorHeading strong {
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .opsTaskAnchorHeading span {
+    color: var(--nx-text-muted, #64748b);
+    font-size: 11px;
+  }
+
+  .opsTaskAnchorBody {
+    display: grid;
+    gap: 4px;
+    padding-left: 35px;
+    color: var(--nx-text-muted, #64748b);
+    font-size: 11px;
+  }
+
+  .opsTaskAnchorBody span {
+    display: flex;
+    gap: 6px;
+  }
+
+  .opsTaskAnchorBody b {
+    flex: 0 0 auto;
+    color: var(--nx-text, #334155);
+    font-weight: 650;
+  }
+
+  .opsTaskAnchorBody p {
+    margin: 2px 0 0;
+    color: var(--nx-text, #334155);
+    font-size: 12px;
+  }
+
+  .opsTaskAnchorActions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+
+  .opsTaskAnchorActions button {
+    display: inline-flex;
+    min-height: 28px;
+    align-items: center;
+    gap: 5px;
+    border-radius: 7px;
+    padding: 0 9px;
+    font-size: 11px;
+    font-weight: 650;
+  }
+
+  .opsTaskAnchorActions button svg {
+    width: 13px;
+    height: 13px;
+  }
+
+  .opsTaskAnchorPrimary {
+    border: 1px solid var(--nx-accent, #2563eb);
+    background: var(--nx-accent, #2563eb);
+    color: #fff;
+  }
+
+  .opsTaskAnchorSecondary,
+  .opsTaskAnchorCancel {
+    border: 1px solid var(--nx-control-border, #cbd5e1);
+    background: transparent;
+    color: var(--nx-text, #334155);
+  }
+
+  .opsTaskAnchorActions button:hover:not(:disabled) {
+    filter: brightness(.96);
+  }
+
+  .opsTaskAnchorActions button:disabled {
+    cursor: wait;
+    opacity: .55;
   }
 
   .composer {
@@ -4617,6 +4989,13 @@ main.appShell:is(.theme-light, .theme-dark, .theme-system) .runExplorer :is(.run
 
   .modeSelect .dropdownButton {
     @apply h-7 w-[72px] px-2 text-[11px];
+  }
+
+  .workModeUnavailableHint {
+    max-width: 180px;
+    color: var(--nx-text-faint);
+    font-size: 10px;
+    line-height: 1.3;
   }
 
   .runProfileSelect .dropdownButton {
@@ -9601,8 +9980,6 @@ main.appShell:is(.theme-light, .theme-dark, .theme-system) .runExplorer :is(.run
   .appShell.theme-light .pluginInnerSection,
   .appShell.theme-light .pluginTabs,
   .appShell.theme-light .weixinBotPanel,
-  .appShell.theme-light .authTokenCreate,
-  .appShell.theme-light .authTokenItem,
   .appShell.theme-light .mcpCard,
   .appShell.theme-light .composer,
   .appShell.theme-light .dropdownMenu {
@@ -12756,9 +13133,79 @@ main.appShell:is(.theme-light, .theme-dark, .theme-system) .runExplorer :is(.run
   }
 
   .workbenchActivity,
-  .workbenchAgents {
+  .workbenchAgents,
+  .workbenchOps {
     @apply flex min-h-0 flex-1 flex-col overflow-hidden;
   }
+
+  .workbenchOps {
+    overflow-y: auto;
+    padding: 13px;
+  }
+
+  .opsWorkbenchEmpty {
+    @apply flex min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center;
+    color: var(--nx-text-muted);
+  }
+
+  .opsWorkbenchEmpty > svg {
+    width: 24px;
+    height: 24px;
+    color: var(--nx-brand);
+  }
+
+  .opsWorkbenchEmpty strong {
+    color: var(--nx-text-primary);
+    font-size: 13px;
+  }
+
+  .opsWorkbenchEmpty span {
+    max-width: 230px;
+    color: var(--nx-text-faint);
+    font-size: 11px;
+    line-height: 1.5;
+  }
+
+  .opsKnowledgePanel {
+    display: grid;
+    gap: 10px;
+    flex: 0 0 auto;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--nx-border-subtle, rgba(127,145,166,.2));
+  }
+
+  .opsKnowledgeHeader {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .opsKnowledgeHeader h3 { margin: 3px 0 0; color: var(--nx-text-primary, inherit); font-size: 13px; }
+  .opsKnowledgeHeader p { margin: 4px 0 0; color: var(--nx-text-muted, #8d99a8); font-size: 10px; line-height: 1.4; }
+  .opsKnowledgeEyebrow { color: var(--nx-text-muted, #8d99a8); font-size: 9px; letter-spacing: .08em; }
+  .opsKnowledgeCreate { display: grid; gap: 6px; }
+  .opsKnowledgeCreate label { display: grid; gap: 3px; color: var(--nx-text-muted, #8d99a8); font-size: 10px; }
+  .opsKnowledgeCreate input { min-width: 0; height: 28px; padding: 0 8px; border: 1px solid var(--nx-border-subtle, rgba(127,145,166,.3)); border-radius: 5px; background: var(--nx-chat-field, transparent); color: var(--nx-text-primary, inherit); font: inherit; font-size: 10px; }
+  .opsKnowledgeCreate .solidButton { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 28px; font-size: 10px; }
+  .opsKnowledgeCreate .solidButton svg { width: 12px; height: 12px; }
+  .opsKnowledgeLocked { display: flex; align-items: center; gap: 6px; color: #d7ae63; font-size: 10px; }
+  .opsKnowledgeLocked svg { width: 12px; height: 12px; flex: 0 0 auto; }
+  .opsKnowledgeNotice, .opsKnowledgeError, .opsKnowledgeEmpty, .opsKnowledgeSelected { margin: 0; color: var(--nx-text-muted, #8d99a8); font-size: 10px; line-height: 1.4; }
+  .opsKnowledgeError { color: #d58d8d; }
+  .opsKnowledgeList { display: grid; gap: 5px; max-height: 230px; overflow-y: auto; }
+  .opsKnowledgeRow { display: grid; grid-template-columns: minmax(0, 1fr) 28px; align-items: center; gap: 4px; min-width: 0; padding: 7px 6px; border: 1px solid var(--nx-border-subtle, rgba(127,145,166,.2)); border-radius: 5px; }
+  .opsKnowledgeRow.selected { border-color: color-mix(in srgb, var(--nx-brand, #6aa7ff) 55%, transparent); background: color-mix(in srgb, var(--nx-brand, #6aa7ff) 8%, transparent); }
+  .opsKnowledgeSelect { display: flex; align-items: flex-start; gap: 7px; min-width: 0; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; font: inherit; cursor: pointer; }
+  .opsKnowledgeSelect:disabled { opacity: .58; cursor: not-allowed; }
+  .opsKnowledgeSelect > svg:first-child { width: 14px; height: 14px; flex: 0 0 auto; margin-top: 1px; color: var(--nx-brand, #6aa7ff); }
+  .opsKnowledgeSelect > svg:last-child { width: 12px; height: 12px; flex: 0 0 auto; margin: 1px 0 0 auto; color: #69c39d; }
+  .opsKnowledgeSelect span { display: grid; gap: 2px; min-width: 0; }
+  .opsKnowledgeSelect strong, .opsKnowledgeSelect small, .opsKnowledgeSelect em { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .opsKnowledgeSelect strong { color: var(--nx-text-primary, inherit); font-size: 10px; }
+  .opsKnowledgeSelect small, .opsKnowledgeSelect em { color: var(--nx-text-muted, #8d99a8); font-size: 9px; font-style: normal; }
+  .opsKnowledgeRow > .iconButton { display: grid; place-items: center; width: 26px; height: 26px; padding: 0; }
+  .opsKnowledgeRow > .iconButton svg { width: 13px; height: 13px; }
 
   .workbenchAgents {
     gap: 12px;
@@ -13708,9 +14155,37 @@ main.appShell:is(.theme-light, .theme-dark, .theme-system) .runExplorer :is(.run
 }
 
 .settingsDrawer .modelPresetManagementCard .modelPresetActionRow {
-  display: grid !important;
-  grid-template-columns: minmax(0, 1fr) auto !important;
+  display: flex !important;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
   align-items: center !important;
+}
+
+.settingsDrawer .modelPresetCount {
+  display: inline-flex;
+  min-width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  margin-left: 5px;
+  padding: 0 6px;
+  border-left: 1px solid var(--nx-settings-border, #dce2eb);
+  color: var(--nx-settings-text-muted, #64748b);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.settingsDrawer .modelPresetCurrentHint {
+  margin: 8px 0 0;
+  color: var(--nx-settings-text-muted, #64748b);
+  font-size: 11px;
+}
+
+.settingsDrawer .modelPresetActionRow .textButton,
+.settingsDrawer .modelPresetActionRow .solidButton {
+  min-height: 30px;
+  white-space: nowrap;
 }
 
 /* Settings UI polish: visual-only layout pass. Keep configuration fields and handlers unchanged. */
@@ -15204,6 +15679,70 @@ main.appShell:is(.theme-light, .theme-dark, .theme-system) .runExplorer :is(.run
   margin: 0 0 4px;
 }
 
+/* 权限页：当前模式只读，工作区使用轻量列表选择，不暴露路径输入。 */
+.settingsDrawer .accessModeValue {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 2px;
+  border-bottom: 1px solid #cbd5e1;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 650;
+}
+.settingsDrawer .accessModeBlock {
+  display: block !important;
+}
+.settingsDrawer .accessModeBlock .settingsFieldRow {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  width: 100%;
+}
+.settingsDrawer .accessModeValue {
+  width: max-content;
+  max-width: 100%;
+  white-space: nowrap;
+}
+.settingsDrawer .accessWorkspacePicker {
+  min-width: 0;
+}
+.settingsDrawer .accessWorkspaceList {
+  display: grid;
+  gap: 2px;
+  max-height: 168px;
+  min-width: 0;
+  overflow: auto;
+  padding: 2px 0;
+}
+.settingsDrawer .accessWorkspaceList button {
+  min-width: 0;
+  min-height: 30px;
+  overflow: hidden;
+  border: 0;
+  border-left: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: #475569;
+  padding: 5px 8px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settingsDrawer .accessWorkspaceList button:hover:not(:disabled) {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+.settingsDrawer .accessWorkspaceList button.active {
+  border-left-color: #64748b;
+  background: #f8fafc;
+  color: #0f172a;
+  font-weight: 650;
+}
+.settingsDrawer .accessWorkspaceEmpty {
+  color: #64748b;
+  font-size: 12px;
+}
+
 .settingsDrawer .accessPolicyEmpty {
   border: 1px dashed #cbd5e1;
   border-radius: 12px;
@@ -15287,6 +15826,15 @@ main.appShell:is(.theme-light, .theme-dark, .theme-system) .runExplorer :is(.run
 .approvalPanelHeader {
   display: grid;
   gap: 4px;
+}
+
+.approvalContext {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.35;
 }
 
 .approvalItemPanel .approvalPanelHeader strong {
@@ -21872,6 +22420,10 @@ main.appShell:is(.theme-light, .theme-dark, .theme-system) .runExplorer :is(.run
   width: 112px;
 }
 
+.appShell .workModeSelect .dropdownButton {
+  width: 104px;
+}
+
 .appShell .permissionSelect .dropdownMenu {
   min-width: 176px;
 }
@@ -22223,10 +22775,12 @@ main.appShell:is(.theme-light, .theme-dark, .theme-system) .runExplorer :is(.run
 }
 
 .appShell .workbenchTabsScrollable {
-  flex: 1 1 auto;
+  flex: 1 1 0%;
   min-width: 0;
+  max-width: 100%;
   overflow-x: auto;
   overflow-y: hidden;
+  overscroll-behavior-inline: contain;
   scrollbar-width: none;
   -ms-overflow-style: none;
   scroll-behavior: smooth;
@@ -22246,8 +22800,37 @@ main.appShell:is(.theme-light, .theme-dark, .theme-system) .runExplorer :is(.run
 .appShell .workbenchUtilityTabs {
   display: flex;
   align-items: center;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   min-width: 0;
+}
+
+.appShell .workbenchPrimaryTabs {
+  flex: 0 1 46%;
+  min-width: 72px;
+  max-width: min(46%, 310px);
+  overflow: hidden;
+}
+
+.appShell .workbenchPrimaryTabs button {
+  min-width: 0;
+  flex: 1 1 0;
+  padding-inline: 7px;
+  overflow: hidden;
+}
+
+.appShell .workbenchPrimaryTabs button > svg {
+  flex: 0 0 auto;
+}
+
+.appShell .workbenchPrimaryTabs button > span:not(.workbenchTabBadge) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.appShell .workbenchUtilityActions {
+  flex: 0 0 auto;
 }
 
 .appShell .workbenchPrimaryTabs {
@@ -22807,7 +23390,7 @@ html[data-nexus-theme='dark'] body.electron-shell #root {
    rather than relying on the app shell as an ancestor. */
 html[data-nexus-theme='light'] .searchDialog {
   border-color: #d8dee8;
-  background: #ffffff;
+  background: var(--nx-card, #fff);
   color: #111827;
   box-shadow: 0 22px 70px rgba(15, 23, 42, .18);
 }
@@ -25200,4 +25783,346 @@ main.appShell:is(.theme-light, .theme-dark, .theme-system) .sendButton.planningB
 
 main.appShell:is(.theme-light, .theme-dark, .theme-system) .sendButton.busy::after {
   display: none !important;
+}
+
+/* Narrow main columns keep the composer usable when the right workbench is wide. */
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .composer {
+  min-width: 0 !important;
+  max-width: calc(100% - 24px) !important;
+  overflow: visible !important;
+}
+
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .composerBottom:not(.workflowMode) {
+  min-width: 0 !important;
+  width: 100% !important;
+  flex-direction: row !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  overflow: visible !important;
+}
+
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .composerBottom:not(.workflowMode) > .composerMeta {
+  min-width: 0 !important;
+  flex: 0 1 180px !important;
+  width: min(180px, 100%) !important;
+  max-width: 180px !important;
+}
+
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .composerBottom:not(.workflowMode) > .composerActions {
+  min-width: 0 !important;
+  width: auto !important;
+  max-width: 100% !important;
+  flex: 0 1 auto !important;
+  flex-wrap: nowrap !important;
+  justify-content: flex-end !important;
+  margin-left: auto !important;
+  overflow: visible !important;
+}
+
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .composerActions > .modeSelect {
+  min-width: 0 !important;
+  width: auto !important;
+  flex: 0 1 auto !important;
+  max-width: 100% !important;
+  overflow: visible !important;
+}
+
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .composerActions > .modeSelect .dropdownButton {
+  box-sizing: border-box !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  padding-inline: 5px !important;
+  overflow: hidden !important;
+}
+
+/* Narrow composer columns may clip the selected label, never the menu. */
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .composerBottom,
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .composerMeta,
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .composerActions,
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .composerActions > .dropdownSelect {
+  overflow: visible !important;
+}
+
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .composerBottom .dropdownMenu {
+  z-index: 240 !important;
+  pointer-events: auto !important;
+}
+
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .composerActions > .modeSelect .dropdownSelectedValue > span {
+  min-width: 0 !important;
+  max-width: 7ch !important;
+}
+
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .composerMeta .modelPresetSelect,
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .composerMeta .modelPresetSelect .dropdownButton {
+  min-width: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .workModeUnavailableHint {
+  flex: 1 1 80px;
+  min-width: 0;
+  max-width: 18ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Ops Task Inspector */
+.opsTaskInspector{margin:12px 0 0;padding:12px;border:1px solid var(--border-subtle,rgba(127,145,166,.28));border-radius:8px;background:var(--surface-elevated,rgba(255,255,255,.035));color:var(--text-primary,inherit)}
+.opsInspectorHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.opsInspectorEyebrow{display:block;color:var(--text-muted,#8d99a8);font-size:10px;letter-spacing:.08em;text-transform:uppercase}.opsInspectorHeader h3{margin:3px 0 0;font-size:13px;font-weight:600;overflow-wrap:anywhere}.opsInspectorState{border:1px solid var(--border-subtle,rgba(127,145,166,.28));border-radius:999px;padding:3px 8px;font-size:11px;white-space:nowrap}.opsInspectorState.state-running,.opsInspectorState.state-verifying{color:var(--accent,#77d4c1)}.opsInspectorState.state-waiting_confirmation,.opsInspectorState.state-blocked{color:#e5bb72}.opsInspectorState.state-failed{color:#e38d8d}
+.opsInspectorKnowledge{display:flex;align-items:center;gap:7px;margin:10px 0 0;padding:8px 0;border-top:1px solid var(--border-subtle,rgba(127,145,166,.18));border-bottom:1px solid var(--border-subtle,rgba(127,145,166,.18));min-width:0}.opsInspectorKnowledge>svg{width:14px;height:14px;flex:0 0 auto;color:var(--accent,#77d4c1)}.opsInspectorKnowledgeCopy{display:grid;gap:2px;min-width:0}.opsInspectorKnowledgeCopy span{color:var(--text-muted,#8d99a8);font-size:10px}.opsInspectorKnowledgeCopy strong{font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.opsInspectorReceipt{margin-left:auto;flex:0 0 auto;font-size:9px}.opsInspectorReceipt.ready{color:#69c39d}.opsInspectorReceipt.missing{color:#d7ae63}
+.opsInspectorPhases{display:flex;align-items:flex-start;gap:4px;margin:14px 0 12px;overflow-x:auto}.opsInspectorPhase{flex:1 0 58px;display:flex;flex-direction:column;align-items:center;gap:4px;color:var(--text-muted,#8d99a8);font-size:10px;text-align:center}.opsInspectorPhaseDot{display:grid;place-items:center;width:20px;height:20px;border:1px solid var(--border-subtle,rgba(127,145,166,.35));border-radius:50%;font-size:10px}.opsInspectorPhaseDot svg{width:11px;height:11px}.opsInspectorPhase.current{color:var(--text-primary,inherit);font-weight:600}.opsInspectorPhase.current .opsInspectorPhaseDot,.opsInspectorPhase.done .opsInspectorPhaseDot{border-color:var(--accent,#77d4c1);color:var(--accent,#77d4c1)}
+.opsInspectorBudget{padding:8px 0;border-top:1px solid var(--border-subtle,rgba(127,145,166,.18));border-bottom:1px solid var(--border-subtle,rgba(127,145,166,.18))}.opsInspectorBudgetHeader,.opsInspectorBudgetMeta{display:flex;justify-content:space-between;gap:8px;color:var(--text-muted,#8d99a8);font-size:10px}.opsInspectorBudgetHeader strong{color:var(--text-primary,inherit);font-size:11px}.opsInspectorProgress{height:4px;margin:7px 0 5px;overflow:hidden;border-radius:999px;background:var(--border-subtle,rgba(127,145,166,.18))}.opsInspectorProgress span{display:block;height:100%;border-radius:inherit;background:var(--accent,#77d4c1);transition:width .2s ease}.opsPatchReview,.opsEvidenceSection,.opsClaimsSection{margin-top:10px}.opsSectionHeading{display:flex;align-items:center;gap:6px;color:var(--text-muted,#8d99a8);font-size:11px}.opsSectionHeading svg{width:13px;height:13px}.opsSectionHeading strong{color:var(--text-primary,inherit)}.opsSectionHeading span{margin-left:auto}.opsPatchReview p{margin:7px 0;font-size:11px;line-height:1.4}.opsPatchReview pre{max-height:150px;margin:0;padding:8px;overflow:auto;white-space:pre-wrap;border:1px solid var(--border-subtle,rgba(127,145,166,.2));background:rgba(0,0,0,.12);font:10px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace}.opsPatchEmpty{padding:8px;color:var(--text-muted,#8d99a8);font-size:10px;border:1px dashed var(--border-subtle,rgba(127,145,166,.2))}
+.opsInspectorActions{display:flex;gap:6px;margin-top:8px}.opsInspectorActions button,.opsInspectorFooter button{display:inline-flex;align-items:center;gap:5px;min-height:26px;padding:4px 8px;border:1px solid var(--border-subtle,rgba(127,145,166,.3));border-radius:5px;background:transparent;color:inherit;font-size:10px;cursor:pointer}.opsInspectorActions button svg,.opsInspectorFooter button svg{width:12px;height:12px}.opsActionPrimary{border-color:color-mix(in srgb,var(--accent,#77d4c1) 65%,transparent)!important;color:var(--accent,#77d4c1)!important}.opsActionSecondary{color:var(--text-muted,#8d99a8)!important}.opsEvidenceList{display:grid;gap:6px;margin-top:7px}.opsEvidenceItem{display:grid;grid-template-columns:3px minmax(0,1fr);gap:8px}.opsEvidenceSignal{border-radius:3px;background:var(--text-muted,#8d99a8)}.opsEvidenceItem.evidence-complete .opsEvidenceSignal{background:#69c39d}.opsEvidenceItem.evidence-partial .opsEvidenceSignal,.opsEvidenceItem.evidence-timed_out .opsEvidenceSignal{background:#d7ae63}.opsEvidenceItem.evidence-stale .opsEvidenceSignal,.opsEvidenceItem.evidence-redaction_failed .opsEvidenceSignal{background:#a4a9b4}.opsEvidenceItem strong{display:block;font-size:10px;overflow-wrap:anywhere}.opsEvidenceItem p{margin:2px 0;color:var(--text-secondary,#b7c0cb);font-size:10px;line-height:1.4;white-space:pre-wrap}.opsEvidenceItem small{color:var(--text-muted,#8d99a8);font-size:9px}
+.opsTestsSection{display:grid;gap:7px;margin-top:10px;padding-top:9px;border-top:1px solid var(--border-subtle,rgba(127,145,166,.22))}.opsTestControls{display:flex;gap:6px;min-width:0}.opsTestControls select{min-width:0;flex:1;height:28px;padding:0 7px;border:1px solid var(--border-subtle,rgba(127,145,166,.3));border-radius:4px;background:var(--surface-2,transparent);color:inherit;font-size:10px}.opsTestControls button{display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 9px;border:1px solid var(--border-subtle,rgba(127,145,166,.3));border-radius:4px;background:transparent;color:inherit;font-size:10px;cursor:pointer}.opsTestControls button:disabled{opacity:.5;cursor:default}.opsTestControls svg{width:11px;height:11px}.opsTestRunList{display:grid;gap:5px}.opsTestRun{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 8px;padding:6px 7px;border-left:2px solid var(--border-subtle,rgba(127,145,166,.35));font-size:10px}.opsTestRun-completed{border-left-color:#69c39d}.opsTestRun-failed,.opsTestRun-timed_out{border-left-color:#d7ae63}.opsTestRun-cancelled{border-left-color:var(--text-muted,#8d99a8)}.opsTestRun span{color:var(--text-muted,#8d99a8)}.opsTestRun pre,.opsTestRun p{grid-column:1/-1;margin:0;max-height:120px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--text-secondary,#b7c0cb);font-size:9px;line-height:1.35}
+.opsPatchProposalTrigger{display:inline-flex;align-items:center;gap:6px;margin-top:9px;padding:6px 8px;border:1px dashed var(--border-subtle,rgba(127,145,166,.3));border-radius:5px;background:transparent;color:var(--text-muted,#8d99a8);font-size:10px;cursor:pointer}.opsPatchProposalTrigger svg{width:12px;height:12px}.opsPatchProposalTrigger:disabled{opacity:.5;cursor:not-allowed}
+
+/* Composer controls stay content-sized instead of inheriting the old full-width rules. */
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .composerBottom:not(.workflowMode) > .composerMeta {
+  flex: 0 1 180px !important;
+  width: min(180px, 100%) !important;
+  max-width: 180px !important;
+}
+
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .composerMeta .modelPresetSelect {
+  flex: 0 1 180px !important;
+  width: min(180px, 34vw) !important;
+  max-width: 100% !important;
+}
+
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .composerMeta .modelPresetSelect .dropdownButton {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .composerActions > .modeSelect {
+  flex: 0 1 auto !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .composerBottom:not(.workflowMode) > .composerActions {
+  flex: 0 1 auto !important;
+  width: auto !important;
+  max-width: 100% !important;
+  flex-wrap: nowrap !important;
+  margin-left: auto !important;
+}
+
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .composerActions > .workModeSelect .dropdownButton {
+  width: 76px !important;
+}
+
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .composerActions > .permissionSelect .dropdownButton {
+  width: 88px !important;
+}
+
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .composerActions > .reasoningSelect .dropdownButton,
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .composerActions > .runProfileSelect .dropdownButton {
+  width: 72px !important;
+}
+
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .commandInputMeta {
+  justify-items: start !important;
+}
+
+main.appShell:is(.theme-light, .theme-dark, .theme-system) .commandChip {
+  width: fit-content !important;
+  max-width: min(260px, 100%) !important;
+}
+
+/* A selected slash command uses the same surface as the input in both themes. */
+main.appShell:is(.theme-dark, .theme-system) .commandInputRow.active {
+  border-color: transparent !important;
+  background: var(--nx-chat-field) !important;
+  box-shadow: none !important;
+}
+
+main.appShell:is(.theme-dark, .theme-system) .commandChip {
+  border-color: rgba(255, 255, 255, .14) !important;
+  background: #1a1e24 !important;
+  color: #e7ebf1 !important;
+}
+
+main.appShell.theme-light .commandInputRow.active {
+  border-color: transparent !important;
+  background: var(--nx-surface-overlay) !important;
+  box-shadow: none !important;
+}
+
+main.appShell.theme-light .commandChip {
+  border-color: #cbd5e1 !important;
+  background: #f8fafc !important;
+  color: #111827 !important;
+}
+.opsClaim{display:grid;grid-template-columns:14px minmax(0,1fr);gap:6px;margin-top:6px;font-size:10px}.opsClaim>span{color:#69c39d}.opsClaim-contradicted>span{color:#d27f7f}.opsClaim-unverified>span{color:#d7ae63}.opsClaim p{margin:0;line-height:1.4}.opsClaim small{color:var(--text-muted,#8d99a8)}.opsInspectorFooter{display:flex;align-items:center;gap:5px;margin-top:10px}.opsInspectorFooter button{color:var(--text-muted,#8d99a8)}.opsInspectorFooter button:last-of-type{margin-left:auto}.opsInspectorFooter button:disabled{opacity:.5;cursor:not-allowed}.opsInspectorEventCount{margin-left:auto;color:var(--text-muted,#8d99a8);font-size:9px}
+
+/* Ops knowledge scope is a compact composer control with an anchored popover. */
+.knowledgeManagerLayer{position:fixed;inset:0;z-index:1200;display:grid;place-items:center;background:rgba(10,14,20,.28)}.knowledgeManagerDialog{width:min(560px,calc(100vw - 28px));max-height:min(760px,calc(100vh - 40px));overflow:auto;background:var(--nx-surface-overlay,#fff);color:var(--nx-text-primary,#111827);border:1px solid var(--nx-border-subtle,rgba(127,145,166,.32));box-shadow:0 20px 60px rgba(0,0,0,.22)}.knowledgeManagerDialog>header{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 14px;border-bottom:1px solid var(--nx-border-subtle,rgba(127,145,166,.2));font-size:13px}.knowledgeManagerDialog>header .iconButton{display:grid;place-items:center;width:26px;height:26px;padding:0}.theme-dark .knowledgeManagerDialog,.theme-system .knowledgeManagerDialog{background:#17191e;color:#e8ebf0}
+.opsReceiptAudit{display:grid;gap:5px;margin:8px 12px;padding:7px 0;border-top:1px solid var(--nx-border-subtle,rgba(127,145,166,.2))}.opsReceiptAudit .opsSectionHeading{display:flex;align-items:center;gap:5px}.opsReceiptAudit .opsSectionHeading small,.opsReceiptAudit>small{color:var(--nx-text-muted,#7d8794);font-size:8px}.opsReceiptAudit>div:last-child{display:grid;gap:4px}.opsReceiptAudit article{display:grid;gap:1px;padding:4px 0;border-left:2px solid color-mix(in srgb,var(--nx-brand,#6aa7ff) 45%,transparent);padding-left:6px}.opsReceiptAudit article strong{font-size:9px}.opsReceiptAudit article small{color:var(--nx-text-muted,#7d8794);font-size:8px}.opsReceiptAudit article p{margin:0;color:var(--nx-text-secondary,inherit);font-size:9px;line-height:1.35}
+.opsKnowledgeStatus{position:relative}
+.opsKnowledgeSourcePicker{display:grid;grid-template-columns:minmax(0,1fr) 26px;gap:4px}.opsKnowledgeSourcePicker .iconButton{display:grid;place-items:center;width:26px;height:27px;padding:0}.opsKnowledgeStatusRow{grid-template-columns:minmax(0,1fr) auto}.opsKnowledgeStatusSelect input{width:100%;min-width:0;height:20px;padding:0 4px;border:1px solid var(--nx-border-subtle,rgba(127,145,166,.3));background:transparent;color:inherit;font:inherit}.opsKnowledgeRowActions{display:flex;align-items:center;gap:1px}.opsKnowledgeRowActions .iconButton{display:grid;place-items:center;width:23px;height:23px;padding:0}.opsKnowledgeRowActions .iconButton svg{width:12px;height:12px}.opsKnowledgeVerify{display:grid;gap:5px;margin-top:8px}.opsKnowledgeVerify>div{display:grid;grid-template-columns:minmax(0,1fr) 26px;gap:4px}.opsKnowledgeVerify input{height:26px;min-width:0;padding:0 7px;border:1px solid var(--nx-border-subtle,rgba(127,145,166,.3));background:transparent;color:inherit;font:inherit;font-size:10px}.opsKnowledgeVerify>div .iconButton{display:grid;place-items:center;width:26px;height:26px;padding:0}.opsKnowledgeVerify>button{display:grid;gap:2px;min-width:0;padding:5px;border:0;border-left:2px solid color-mix(in srgb,var(--nx-brand,#6aa7ff) 48%,transparent);background:transparent;color:inherit;text-align:left}.opsKnowledgeVerify button strong,.opsKnowledgeVerify button small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.opsKnowledgeVerify button strong{font-size:9px}.opsKnowledgeVerify button small{color:var(--nx-text-muted,#7d8794);font-size:9px}.opsKnowledgePages{display:grid;gap:2px;margin:4px 0 0 21px;padding:3px 0 3px 7px;border-left:1px solid var(--nx-border-subtle,rgba(127,145,166,.25))}.opsKnowledgePages button{display:flex;align-items:flex-start;gap:5px;min-width:0;padding:3px;border:0;background:transparent;color:inherit;text-align:left}.opsKnowledgePages button svg{width:11px;height:11px;flex:0 0 auto;color:var(--nx-brand,#6aa7ff)}.opsKnowledgePages span{display:grid;gap:1px;min-width:0;font-size:9px}.opsKnowledgePages small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--nx-text-muted,#7d8794);font-size:8px}.opsKnowledgePagePreview{position:absolute;z-index:4;inset:12px;background:var(--nx-surface-overlay,#fff);border:1px solid var(--nx-border-subtle,rgba(127,145,166,.3));padding:8px;overflow:auto}.opsKnowledgePagePreview>div{display:flex;align-items:center;justify-content:space-between;gap:5px}.opsKnowledgePagePreview pre{margin:8px 0 0;white-space:pre-wrap;font:inherit;font-size:10px;line-height:1.45}
+.opsKnowledgeSourcePicker{display:grid;grid-template-columns:minmax(0,1fr) 26px;gap:4px}.opsKnowledgeSourcePicker .iconButton{display:grid;place-items:center;width:26px;height:27px;padding:0}.opsKnowledgeStatusRow{grid-template-columns:minmax(0,1fr) auto}.opsKnowledgeStatusSelect input{width:100%;min-width:0;height:20px;padding:0 4px;border:1px solid var(--nx-border-subtle,rgba(127,145,166,.3));background:transparent;color:inherit;font:inherit}.opsKnowledgeRowActions{display:flex;align-items:center;gap:1px}.opsKnowledgeRowActions .iconButton{display:grid;place-items:center;width:23px;height:23px;padding:0}.opsKnowledgeRowActions .iconButton svg{width:12px;height:12px}
+.knowledgeScopePicker{position:relative;flex:0 0 auto;min-width:0}.knowledgeScopeButton{display:inline-flex;align-items:center;gap:5px;height:26px;max-width:190px;padding:0 7px;border:1px solid var(--nx-border-subtle,rgba(127,145,166,.3));border-radius:5px;background:var(--nx-chat-field,transparent);color:var(--nx-text-secondary,inherit);font:inherit;font-size:10px;cursor:pointer}.knowledgeScopeButton:disabled{opacity:.5;cursor:not-allowed}.knowledgeScopeButton.selected{color:var(--nx-text-primary,inherit);border-color:color-mix(in srgb,var(--nx-brand,#6aa7ff) 52%,transparent)}.knowledgeScopeButton>svg:first-child{width:12px;height:12px;flex:0 0 auto;color:var(--nx-brand,#6aa7ff)}.knowledgeScopeButton>svg:last-child{width:10px;height:10px;flex:0 0 auto}.knowledgeScopeButton>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.knowledgeScopePopover{position:absolute;right:0;bottom:calc(100% + 7px);z-index:310;width:min(340px,calc(100vw - 24px));padding:10px;border:1px solid var(--nx-border-subtle,rgba(127,145,166,.34));border-radius:7px;background:var(--nx-surface-overlay,#fff);color:var(--nx-text-primary,#111827);box-shadow:0 12px 30px rgba(0,0,0,.18)}.theme-dark .knowledgeScopePopover,.theme-system .knowledgeScopePopover{background:#171a20;color:#e7ebf1;border-color:rgba(255,255,255,.14)}.knowledgeScopeHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;padding-bottom:8px;border-bottom:1px solid var(--nx-border-subtle,rgba(127,145,166,.2))}.knowledgeScopeHeader strong,.knowledgeScopeHeader small{display:block}.knowledgeScopeHeader strong{font-size:11px}.knowledgeScopeHeader small{margin-top:3px;max-width:270px;color:var(--nx-text-muted,#7d8794);font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.knowledgeScopeHeader>button,.knowledgeScopeSync{display:grid;place-items:center;width:24px;height:24px;padding:0;border:0;border-radius:4px;background:transparent;color:inherit;cursor:pointer}.knowledgeScopeHeader>button:hover,.knowledgeScopeSync:hover{background:color-mix(in srgb,currentColor 9%,transparent)}.knowledgeScopeHint,.knowledgeScopeError{margin:8px 0 0;font-size:10px}.knowledgeScopeError{color:#b45e63}.knowledgeScopeEmpty{display:grid;justify-items:center;gap:7px;padding:14px 8px;text-align:center;color:var(--nx-text-muted,#7d8794);font-size:10px}.knowledgeScopeEmpty>svg{width:20px;height:20px;color:var(--nx-brand,#6aa7ff)}.knowledgeScopeEmpty button,.knowledgeScopeClear{display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 8px;border:1px solid var(--nx-border-subtle,rgba(127,145,166,.3));border-radius:4px;background:transparent;color:inherit;font:inherit;font-size:10px;cursor:pointer}.knowledgeScopeList{display:grid;gap:4px;margin-top:8px}.knowledgeScopeOption{display:grid;grid-template-columns:minmax(0,1fr) 24px;align-items:center;gap:4px}.knowledgeScopeOption>button:first-child{display:flex;align-items:center;gap:7px;min-width:0;padding:6px;border:0;border-radius:5px;background:transparent;color:inherit;text-align:left;font:inherit;cursor:pointer}.knowledgeScopeOption>button:first-child:hover,.knowledgeScopeOption.selected>button:first-child{background:color-mix(in srgb,var(--nx-brand,#6aa7ff) 10%,transparent)}.knowledgeScopeOption>button:first-child:disabled{opacity:.55;cursor:not-allowed}.knowledgeScopeOption>button:first-child>svg:first-child{width:14px;height:14px;flex:0 0 auto;color:var(--nx-brand,#6aa7ff)}.knowledgeScopeOption>button:first-child>svg:last-child{width:11px;height:11px;margin-left:auto;color:#4eaa83}.knowledgeScopeOption span{display:grid;gap:2px;min-width:0}.knowledgeScopeOption strong,.knowledgeScopeOption small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.knowledgeScopeOption strong{font-size:10px}.knowledgeScopeOption small{color:var(--nx-text-muted,#7d8794);font-size:9px}.knowledgeScopeClear{margin-top:8px;width:100%;justify-content:center;color:var(--nx-text-muted,#7d8794)}
+
+.knowledgeBaseToolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:14px 0;padding:10px 0;border-bottom:1px solid var(--nx-border-subtle,rgba(127,145,166,.24))}.knowledgeBasePath{display:flex;align-items:center;gap:7px;min-width:0;color:var(--nx-text-muted,#7d8794);font-size:11px}.knowledgeBasePath svg{width:14px;height:14px;flex:0 0 auto;color:var(--nx-brand,#6aa7ff)}.knowledgeBasePath span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.knowledgeBaseToolbar .solidButton{display:inline-flex;align-items:center;gap:5px;flex:0 0 auto}.knowledgeBaseToolbar .solidButton svg{width:12px;height:12px}.knowledgeBaseEmpty{display:grid;justify-items:center;gap:8px;padding:34px 16px;color:var(--nx-text-muted,#7d8794);text-align:center}.knowledgeBaseEmpty svg{width:26px;height:26px;color:var(--nx-brand,#6aa7ff)}.knowledgeBaseEmpty strong{color:var(--nx-text-primary,inherit);font-size:13px}.knowledgeBaseEmpty span{font-size:11px}.knowledgeBaseList{display:grid;gap:5px}.knowledgeBaseRow{display:grid;grid-template-columns:18px minmax(0,1fr) 28px;align-items:center;gap:9px;padding:10px 8px;border-left:2px solid color-mix(in srgb,var(--nx-brand,#6aa7ff) 60%,transparent);background:color-mix(in srgb,var(--nx-brand,#6aa7ff) 5%,transparent)}.knowledgeBaseRow>svg{width:15px;height:15px;color:var(--nx-brand,#6aa7ff)}.knowledgeBaseRowCopy{display:grid;gap:3px;min-width:0}.knowledgeBaseRowCopy strong,.knowledgeBaseRowCopy span,.knowledgeBaseRowCopy small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.knowledgeBaseRowCopy strong{font-size:11px}.knowledgeBaseRowCopy span,.knowledgeBaseRowCopy small{font-size:9px;color:var(--nx-text-muted,#7d8794)}.knowledgeBaseRowCopy small{color:#4eaa83}.knowledgeBaseRow .iconButton{display:grid;place-items:center;width:26px;height:26px;padding:0;border:0;background:transparent;color:inherit}.knowledgeBaseRow .iconButton svg{width:13px;height:13px}
+.opsKnowledgeStatus{margin:10px 12px 14px;padding:10px 0;border-bottom:1px solid var(--nx-border-subtle,rgba(127,145,166,.22))}.opsKnowledgeStatusHeader{display:flex;align-items:center;justify-content:space-between;gap:8px}.opsKnowledgeStatusTitle{display:flex;align-items:center;gap:7px;color:var(--nx-text-primary,#111827);font-size:12px}.opsKnowledgeStatusTitle svg{width:15px;height:15px;color:var(--nx-brand,#6aa7ff)}.opsKnowledgeStatusHeader .iconButton{display:grid;place-items:center;width:24px;height:24px;padding:0;border:0;background:transparent;color:var(--nx-text-muted,#7d8794)}.opsKnowledgeStatusHeader .iconButton svg{width:13px;height:13px}.opsKnowledgeStatusAction{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:26px;padding:0 8px;border:1px solid var(--nx-border-subtle,rgba(127,145,166,.32));border-radius:4px;background:transparent;color:var(--nx-text-secondary,inherit);font:inherit;font-size:10px;cursor:pointer}.opsKnowledgeStatusAction:hover{border-color:color-mix(in srgb,var(--nx-brand,#6aa7ff) 60%,transparent);color:var(--nx-text-primary,inherit)}.opsKnowledgeStatusAction svg{width:12px;height:12px}.opsKnowledgeCreateForm{display:grid;gap:6px;margin-top:8px}.opsKnowledgeCreateForm label{display:grid;gap:3px;color:var(--nx-text-muted,#7d8794);font-size:9px}.opsKnowledgeCreateForm input{height:27px;min-width:0;padding:0 7px;border:1px solid var(--nx-border-subtle,rgba(127,145,166,.3));border-radius:4px;background:var(--nx-chat-field,transparent);color:var(--nx-text-primary,inherit);font:inherit;font-size:10px}.opsKnowledgeStatusList{display:grid;gap:5px;max-height:220px;margin-top:8px;overflow:auto}.opsKnowledgeStatusRow{display:grid;grid-template-columns:minmax(0,1fr) 26px;align-items:center;gap:4px;padding:6px;border:1px solid var(--nx-border-subtle,rgba(127,145,166,.2));border-radius:5px}.opsKnowledgeStatusRow.selected{border-color:color-mix(in srgb,var(--nx-brand,#6aa7ff) 60%,transparent);background:color-mix(in srgb,var(--nx-brand,#6aa7ff) 8%,transparent)}.opsKnowledgeStatusSelect{display:flex;align-items:flex-start;gap:7px;min-width:0;padding:0;border:0;background:transparent;color:inherit;text-align:left;font:inherit;cursor:pointer}.opsKnowledgeStatusSelect:disabled{opacity:.55;cursor:not-allowed}.opsKnowledgeStatusSelect>svg:first-child{width:14px;height:14px;flex:0 0 auto;color:var(--nx-brand,#6aa7ff)}.opsKnowledgeStatusSelect>svg:last-child{width:12px;height:12px;flex:0 0 auto;margin-left:auto;color:#4eaa83}.opsKnowledgeStatusSelect span{display:grid;gap:2px;min-width:0}.opsKnowledgeStatusSelect strong,.opsKnowledgeStatusSelect small,.opsKnowledgeStatusSelect em{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.opsKnowledgeStatusSelect strong{font-size:10px}.opsKnowledgeStatusSelect small,.opsKnowledgeStatusSelect em{color:var(--nx-text-muted,#7d8794);font-size:9px;font-style:normal}.opsKnowledgeStatusRow>.iconButton{display:grid;place-items:center;width:24px;height:24px;padding:0}.opsKnowledgeStatusRow>.iconButton svg{width:12px;height:12px}.opsKnowledgeStatusNotice,.opsKnowledgeStatusSelected{margin:7px 0 0;color:var(--nx-text-muted,#7d8794);font-size:9px}.opsKnowledgeStatusEmpty{display:grid;gap:8px;margin-top:8px;color:var(--nx-text-muted,#7d8794);font-size:10px}.opsKnowledgeStatusError{margin:7px 0 0;color:#b45e63;font-size:10px}
+.opsKnowledgePendingToggle{display:flex!important;align-items:center;gap:5px!important;cursor:pointer}.opsKnowledgePendingToggle input{width:13px!important;height:13px!important;margin:0;padding:0}.opsKnowledgeCompileJob{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 6px;margin:4px 0 0 21px;padding:4px 0 1px 7px;border-left:1px solid var(--nx-border-subtle,rgba(127,145,166,.25));font-size:9px}.opsKnowledgeCompileMeta{display:flex;gap:7px;min-width:0;color:var(--nx-text-muted,#7d8794)}.opsKnowledgeCompileMeta span:first-child{color:var(--nx-text-primary,#111827)}.opsKnowledgeCompileFile{grid-column:1/-1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--nx-text-muted,#7d8794);font-size:8px}.opsKnowledgeCompileError{grid-column:1/-1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#b45e63;font-size:8px}.opsKnowledgeCompileActions{display:flex;align-items:center;gap:1px;grid-row:1/4;grid-column:2}.opsKnowledgeCompileActions .iconButton{display:grid;place-items:center;width:21px;height:21px;padding:0}.opsKnowledgeCompileActions svg{width:11px;height:11px}
+.apiUnavailableNotice {
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transform: translateX(-50%);
+  padding: 7px 10px;
+  border: 1px solid var(--border-subtle, #d5d8dc);
+  background: var(--surface-1, #fff);
+  color: var(--text-primary, #25282d);
+  font-size: 12px;
+}
+
+.apiUnavailableNotice button {
+  border: 0;
+  background: transparent;
+  color: var(--accent, #496b8f);
+  cursor: pointer;
+  font: inherit;
+}
+
+.settingsPrimaryButton {
+  margin-top: 10px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-subtle, #d5d8dc);
+  background: var(--surface-2, #f4f5f6);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.settingsInlineRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border-subtle, #d5d8dc);
+}
+
+.settingsInlineRow small {
+  display: block;
+  color: var(--text-muted, #747a82);
+  font-size: 11px;
+}
+
+.settingsInlineRow button + button { margin-left: 8px; }
+
+.agentDecisionCard {
+  margin: 0 18px 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-subtle, #d6d9dd);
+  border-radius: 8px;
+  background: var(--surface-1, #fff);
+}
+
+.agentDecisionHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-primary, #25282d);
+}
+
+.agentDecisionHeader span,
+.agentDecisionOption small {
+  color: var(--text-secondary, #6a7078);
+  font-size: 12px;
+}
+
+.agentDecisionPrompt {
+  margin: 8px 0 10px;
+  color: var(--text-primary, #25282d);
+  white-space: pre-wrap;
+}
+
+.agentDecisionOptions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.agentDecisionOption {
+  display: grid;
+  min-width: 120px;
+  max-width: 280px;
+  gap: 3px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-subtle, #d6d9dd);
+  border-radius: 6px;
+  background: var(--surface-2, #f7f8f9);
+  color: var(--text-primary, #25282d);
+  cursor: pointer;
+  text-align: left;
+}
+
+.agentDecisionOption:hover,
+.agentDecisionOption.selected {
+  border-color: var(--nx-brand, #496b8f);
+  background: var(--surface-3, #eef1f4);
+}
+
+.agentDecisionCustom {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin-top: 9px;
+}
+
+.agentDecisionCustom textarea {
+  flex: 1;
+  min-height: 42px;
+  resize: vertical;
+}
+
+.agentDecisionFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+@media (max-width: 680px) {
+  .agentDecisionCard {
+    margin-inline: 10px;
+  }
+
+  .agentDecisionHeader {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .agentDecisionOption {
+    flex: 1 1 140px;
+    max-width: none;
+  }
+
+  .agentDecisionCustom {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+/* Keep settings/workbench removal confirmations above native right-pane content. */
+.settingsConfirmLayer {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 1400 !important;
 }

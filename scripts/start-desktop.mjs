@@ -10,10 +10,11 @@ const DEFAULT_WEIXIN_BRIDGE_PORT = 18790;
 const children = new Set();
 let stopping = false;
 
-// 等待 vite 就绪并预热首页（触发入口模块编译，Electron 打开时首屏已热）。
-// — English: wait for vite and warm the entry page (compiles the entry modules
-//   so Electron's first paint is already warm).
-async function waitForVite(url, timeoutMs = 30_000) {
+// 等待本地 HTTP 服务就绪；API 必须先于 Vite/Electron 可用，避免首屏把暂时
+// 的连接失败显示成空线程列表。
+// — English: wait for a local HTTP service. The API must be available before
+// Vite/Electron open, so a transient refusal is never rendered as an empty list.
+async function waitForHttp(url, timeoutMs = 30_000) {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     try {
@@ -165,9 +166,13 @@ async function startDesktopStack() {
       NEXUS_LOG_DIR: process.env.NEXUS_LOG_DIR ?? logDir,
     },
   });
+  const apiReady = await waitForHttp(`http://127.0.0.1:${apiPort}/api/settings`);
+  if (!apiReady) {
+    console.error('[api] API did not become ready before the desktop UI startup window.');
+  }
   const desktopUi = run(bin('vite'), ['--host', '127.0.0.1', '--port', '5178'], {
     cwd: path.join(root, 'apps', 'desktop'),
-    env: { FORCE_COLOR: '1' },
+    env: { FORCE_COLOR: '1', NEXUS_API_URL: `http://127.0.0.1:${apiPort}` },
   });
 
   // 等 vite 就绪并预热首页：首次请求会触发 vite 编译入口模块，编译完成后
@@ -175,7 +180,7 @@ async function startDesktopStack() {
   // — English: wait for vite and warm the entry page — the first request makes
   //   vite compile the entry modules, so Electron opens against a warm cache
   //   instead of a long blank first paint.
-  const viteReady = await waitForVite('http://127.0.0.1:5178/');
+  const viteReady = await waitForHttp('http://127.0.0.1:5178/');
   if (!viteReady) {
     console.error('[vite] dev server did not become ready — continuing anyway (Electron will retry)');
   }

@@ -32,6 +32,13 @@ export async function pickWorkspaceRoot(): Promise<string | null> {
   return data.cancelled || !workspaceRoot ? null : workspaceRoot;
 }
 
+/** Native directory authorization for personal knowledge sources. The picker
+ * is shared with the workspace UI, but the selected directory is not attached
+ * to a workspace or thread. */
+export async function pickAuthorizedDirectory(): Promise<string | null> {
+  return pickWorkspaceRoot();
+}
+
 export function workspacePickerStatus(locale: Locale): string {
   return locale === 'zh' ? '选择工作目录' : 'Selecting workspace';
 }

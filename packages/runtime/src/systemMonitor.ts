@@ -23,6 +23,10 @@ import type {
 export interface SystemMonitorConfig {
   /** 是否启用监控 */
   enabled: boolean;
+  /** 是否根据样本执行自动限流。采样关闭时强制视为关闭。 */
+  guardEnabled: boolean;
+  /** 是否记录系统监控通知/样本对应的运行轨迹。 */
+  logRecordingEnabled: boolean;
   /** 采样间隔（毫秒），默认 5000 */
   intervalMs: number;
   /** 阈值配置 */
@@ -48,6 +52,8 @@ export interface SystemMonitorConfig {
 // — Chinese: default config
 export const DEFAULT_SYSTEM_MONITOR_CONFIG: SystemMonitorConfig = {
   enabled: false,
+  guardEnabled: false,
+  logRecordingEnabled: false,
   intervalMs: 5000,
   thresholds: {
     cpuLight: 85,
@@ -132,6 +138,14 @@ export class SystemMonitor implements SystemMonitorInterface {
   /** 监控是否已启用。 */
   isEnabled(): boolean {
     return this.config.enabled;
+  }
+
+  isGuardEnabled(): boolean {
+    return this.config.enabled && this.config.guardEnabled;
+  }
+
+  isLogRecordingEnabled(): boolean {
+    return this.config.enabled && this.config.logRecordingEnabled;
   }
 
   /** 获取当前监控状态。未采样过时返回一个"未知"状态。 */
@@ -276,6 +290,7 @@ export class SystemMonitor implements SystemMonitorInterface {
   /** 根据阈值计算限流级别。 */
   // — Chinese: compute throttle level from thresholds
   private computeLevel(snapshot: SystemMonitorSnapshot): SystemMonitorLevel {
+    if (!this.config.enabled || !this.config.guardEnabled) return 'none';
     const t = this.config.thresholds;
     const cpu = snapshot.cpuUsage;
     const mem = snapshot.memUsage;

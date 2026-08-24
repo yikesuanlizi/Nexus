@@ -41,6 +41,8 @@ export function ApprovalPanel({ locale, approvals, onDecision }: ApprovalPanelPr
           : [{ scope: 'tool_call' as const, label: text(locale, '仅本次工具调用', 'This tool call only') }];
         const selectedScope = selectedScopes[approval.requestId] ?? defaultScope(approval);
         const selectedPersistentScope = selectedPersistentScopes[approval.requestId] ?? 'thread';
+        const requestWorkspaceRoot = approval.accessRequest?.workspaceRoot?.trim() ?? '';
+        const workspacePersistentAllowed = Boolean(requestWorkspaceRoot);
         const isDeciding = deciding[approval.requestId] === true;
 
         return (
@@ -49,6 +51,10 @@ export function ApprovalPanel({ locale, approvals, onDecision }: ApprovalPanelPr
               <strong>{text(locale, '授权请求', 'Approval required')}</strong>
               <span>{approval.description}</span>
             </header>
+            <div className="approvalContext" aria-label={text(locale, '请求范围', 'Request context')}>
+              <span>{text(locale, '线程', 'Thread')} · {approval.threadId}</span>
+              <span>{text(locale, '工作区', 'Workspace')} · {requestWorkspaceRoot || text(locale, '未绑定', 'Not bound')}</span>
+            </div>
             <p className="approvalScopeHint">
               {text(locale, '临时允许只影响当前运行；永久允许会保存同类操作规则。', 'Temporary approval affects only this run. Persistent approval saves a matching rule.')}
             </p>
@@ -78,7 +84,7 @@ export function ApprovalPanel({ locale, approvals, onDecision }: ApprovalPanelPr
                 disabled={isDeciding}
               >
                 <option value="thread">{text(locale, '当前线程对话', 'This thread')}</option>
-                <option value="workspace">{text(locale, '本工作目录', 'This workspace')}</option>
+                <option value="workspace" disabled={!workspacePersistentAllowed}>{text(locale, '此请求工作区', 'Request workspace')}</option>
                 <option value="global">{text(locale, '全局', 'Global')}</option>
               </select>
             </label>

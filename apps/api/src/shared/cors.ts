@@ -6,13 +6,8 @@ export interface CorsOptions {
 }
 
 const ALLOW_HEADERS = [
-  'Authorization',
   'Content-Type',
   'X-CSRF-Token',
-  'x-nexus-tenant-id',
-  'x-nexus-auth-token',
-  'x-nexus-admin-token',
-  'x-nexus-admin-bootstrap-token',
 ].join(', ');
 
 export function resolveCorsOptions(

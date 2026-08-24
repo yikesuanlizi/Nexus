@@ -63,6 +63,12 @@ export function ComposerBar({
   slashVisible,
   stopTurn,
   submitComposer,
+  currentThreadMode = 'chat',
+  currentTaskPreset = null,
+  opsModeAvailable = true,
+  opsModeUnavailableHint = '',
+  onThreadModeChange = () => undefined,
+  onStartOps,
   workflowMode = false,
   workflowPlanning = false,
   workspaceRoot = '',
@@ -98,7 +104,13 @@ export function ComposerBar({
   setInput: (value: string) => void;
   slashVisible: boolean;
   stopTurn: () => Promise<void>;
-  submitComposer: () => Promise<void>;
+  submitComposer: () => Promise<boolean | void>;
+  currentThreadMode?: 'chat' | 'ops';
+  currentTaskPreset?: 'ops' | null;
+  onThreadModeChange?: (mode: 'chat' | 'ops', taskPreset: 'ops' | null) => Promise<void> | void;
+  opsModeAvailable?: boolean;
+  opsModeUnavailableHint?: string;
+  onStartOps?: (preset: 'ops', args: string, attachments?: { fileReferences?: string[]; imageNames?: string[] }) => Promise<boolean | void>;
   workflowMode?: boolean;
   workflowPlanning?: boolean;
   workspaceRoot?: string;
@@ -116,7 +128,7 @@ export function ComposerBar({
     ? []
     : [{
       value: '__current__',
-      label: config.model,
+      label: modelDisplayName(config.model),
       icon: <ModelBrandIcon model={config.model} provider={config.provider} />,
       title: modelPresetTooltip(config),
       current: true,
@@ -125,7 +137,7 @@ export function ComposerBar({
     ...currentModelPresetOptions,
     ...modelPresets.map((preset) => ({
       value: preset.id,
-      label: preset.name,
+      label: modelDisplayName(preset.config.model ?? config.model),
       icon: <ModelBrandIcon model={preset.config.model ?? config.model} provider={preset.config.provider ?? config.provider} />,
       title: modelPresetTooltip({ ...config, ...preset.config }),
       group: config.locale === 'zh' ? '已保存' : 'Saved',
@@ -231,6 +243,9 @@ export function ComposerBar({
 
   function updateComposerInput(next: string) {
     setHistoryCursor(null);
+    // Once a command is selected, typing a new slash command starts a fresh
+    // palette flow instead of leaving the previous command chip latched.
+    if (activeSlashOption && next.trimStart().startsWith('/')) setActiveSlashOption(null);
     setInput(next);
     writeComposerDraft(next);
     window.requestAnimationFrame(() => resizeTextareaToContent(composerInputRef.current));
@@ -238,7 +253,18 @@ export function ComposerBar({
 
   async function handleSubmitComposer() {
     const text = input.trim();
-    await submitComposer();
+    const isSlashFlow = Boolean(activeSlashOption) || text.startsWith('/');
+    if (currentThreadMode === 'ops' && !isSlashFlow) {
+      if (!onStartOps) return;
+      const started = await onStartOps('ops', text, {
+        fileReferences,
+        imageNames: images.map((image) => image.name),
+      });
+      if (started === false) return;
+    } else {
+      const submitted = await submitComposer();
+      if (submitted === false) return;
+    }
     if (text) {
       historyRef.current = writeComposerHistory(text, historyRef.current);
     }
@@ -421,6 +447,12 @@ export function ComposerBar({
                 if (event.key === 'Enter' && !event.shiftKey) {
                   event.preventDefault();
                   if (!busy && !actionBusy) void handleSubmitComposer();
+                  return;
+                }
+                if (event.key === 'Escape' && activeSlashOption) {
+                  event.preventDefault();
+                  setActiveSlashOption(null);
+                  updateComposerInput('');
                 }
               }}
               placeholder={workflowMode
@@ -497,6 +529,25 @@ export function ComposerBar({
           />
           </div>
           <div className="composerActions">
+          {opsModeAvailable || currentThreadMode === 'ops' ? <DropdownSelect
+            ariaLabel={config.locale === 'zh' ? '工作模式' : 'Work mode'}
+            className="modeSelect workModeSelect"
+            title={opsModeAvailable ? (config.locale === 'zh' ? '工作模式' : 'Work mode') : opsModeUnavailableHint}
+            value={currentThreadMode === 'ops' && opsModeAvailable ? 'ops' : 'chat'}
+            onChange={(mode) => {
+              if (mode === 'chat') {
+                void onThreadModeChange('chat', null);
+              } else {
+                void onThreadModeChange('ops', mode === 'ops' ? 'ops' : null);
+              }
+            }}
+            options={[
+              { value: 'chat', label: config.locale === 'zh' ? '对话' : 'Chat', icon: <Icon name="message" /> },
+              ...(opsModeAvailable ? [
+                { value: 'ops' as const, label: config.locale === 'zh' ? '运维模式' : 'Ops mode', icon: <Icon name="monitor" /> },
+              ] : []),
+            ]}
+          /> : null}
           <DropdownSelect ariaLabel={config.locale === 'zh' ? '权限模式' : 'Permission mode'} className="modeSelect permissionSelect" title={config.locale === 'zh' ? '权限模式' : 'Permission mode'} value={config.permissions} onChange={(permissions) => updateThreadChoice('permissions', permissions as NonNullable<ThreadConfigOverrides['permissions']>)} options={[{ value: 'read_only', label: config.locale === 'zh' ? '只读审阅' : 'Read only', icon: <IconParkIcon name="lock" /> }, { value: 'workspace', label: config.locale === 'zh' ? '工作区写入' : 'Workspace write', icon: <IconParkIcon name="protect" /> }, { value: 'danger_full_access', label: config.locale === 'zh' ? '完全自主' : 'Full autonomy', icon: <IconParkIcon name="rocket" /> }]} />
           <DropdownSelect ariaLabel={config.locale === 'zh' ? '思考程度' : 'Reasoning effort'} className="modeSelect reasoningSelect" title={config.locale === 'zh' ? '思考程度' : 'Reasoning effort'} value={config.reasoningEffort} onChange={(reasoningEffort) => updateThreadChoice('reasoningEffort', reasoningEffort as NonNullable<ThreadConfigOverrides['reasoningEffort']>)} options={[{ value: 'low', label: config.locale === 'zh' ? '快速' : 'Fast', icon: <IconParkIcon name="lightning" /> }, { value: 'medium', label: config.locale === 'zh' ? '均衡' : 'Balanced', icon: <IconParkIcon name="brain" /> }, { value: 'high', label: config.locale === 'zh' ? '深度' : 'Deep', icon: <IconParkIcon name="magic" /> }]} />
           <DropdownSelect ariaLabel={config.locale === 'zh' ? '运行' : 'Run'} className="modeSelect runProfileSelect" title={config.locale === 'zh' ? '运行' : 'Run'} value={(config.runProfile as string) === 'harness' ? 'runtime_os' : config.runProfile} onChange={(runProfile) => updateThreadChoice('runProfile', runProfile as NonNullable<ThreadConfigOverrides['runProfile']>)} options={[{ value: 'cache_first', label: runProfileLabel('cache_first', config.locale), icon: <IconParkIcon name="speed" /> }, { value: 'runtime_os', label: runProfileLabel('runtime_os', config.locale), icon: <IconParkIcon name="play" /> }]} />
@@ -563,6 +614,13 @@ function clearComposerDraft(): void {
 
 function modelPresetSummary(config: Partial<RunConfig>): string {
   return [config.provider, config.model].filter(Boolean).join(' / ') || 'model';
+}
+
+function modelDisplayName(model?: string): string {
+  const value = model?.trim() ?? '';
+  if (!value) return 'model';
+  const segments = value.split(/\s*\/\s*/).filter(Boolean);
+  return (segments.at(-1) ?? value).replace(/:(?:featherless-ai)$/i, '');
 }
 
 function modelPresetTooltip(config: Partial<RunConfig>): string {

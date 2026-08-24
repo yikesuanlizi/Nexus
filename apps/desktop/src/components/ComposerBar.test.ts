@@ -175,4 +175,36 @@ describe('ComposerBar', () => {
     expect(finalContract).toContain('.appShell .sendButton.busy');
     expect(finalContract).toContain('border-radius: 10px;');
   });
+
+  it('renders localized work-mode choices and routes Ops submissions through the Ops callback', () => {
+    const zh = renderComposer({ currentThreadMode: 'ops', currentTaskPreset: 'ops', onStartOps: vi.fn() });
+    const en = renderComposer({ config: { ...defaultConfig, locale: 'en' }, currentThreadMode: 'ops', currentTaskPreset: 'ops' });
+    const source = readFileSync(join(here, 'ComposerBar.tsx'), 'utf-8');
+
+    expect(zh).toContain('运维模式');
+    expect(en).toContain('Work mode');
+    expect(en).toContain('Ops mode');
+    expect(source).toContain("label: config.locale === 'zh' ? '运维模式' : 'Ops mode'");
+    expect(source).toContain("currentThreadMode === 'ops'");
+    expect(source).toContain('const isSlashFlow = Boolean(activeSlashOption) || text.startsWith(\'/\')');
+    expect(source).toContain("onStartOps('ops', text, {");
+    expect(source).toContain("onThreadModeChange('chat', null)");
+    expect(source).toContain('imageNames: images.map((image) => image.name)');
+    expect(source).toContain('opsModeAvailable');
+    const mainSource = readFileSync(join(here, '..', 'main.tsx'), 'utf-8');
+    expect(mainSource).toContain('startOpsTask(command.preset, command.args, attachments)');
+    expect(mainSource).toContain('runSlashCommand(command, { fileReferences: composerFileReferences');
+  });
+
+  it('keeps narrow columns from overflowing the composer controls', () => {
+    const source = readFileSync(join(here, '..', 'styles.css'), 'utf-8');
+
+    expect(source).toContain('.composerBottom:not(.workflowMode)');
+    expect(source).toContain('flex-wrap: wrap !important;');
+    expect(source).toContain('.composerActions > .modeSelect');
+    expect(source).toContain('width: auto !important;');
+    expect(source).toContain('width: 100% !important;');
+    expect(source).toContain('.composerMeta .modelPresetSelect');
+    expect(source).toContain('overflow: hidden !important;');
+  });
 });

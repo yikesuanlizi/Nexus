@@ -25,15 +25,14 @@ describe('settings navigation', () => {
     expect(css).not.toMatch(/\.settingsLayer\s*,\s*\.settingsDrawer\s*\{/);
   });
 
-  it('only exposes admin token management when deployment enables it', () => {
+  it('does not expose multiplayer or administrator controls', () => {
     const source = readFileSync(join(here, 'components', 'SettingsDrawer.tsx'), 'utf-8');
     const main = readFileSync(join(here, 'main.tsx'), 'utf-8');
 
-    expect(source).toContain('showAdminControls = false');
-    expect(source).toContain('...(showAdminControls ?');
-    expect(source).toContain("if (activeSection === 'admin' && !showAdminControls) setActiveSection('agent')");
-    expect(main).toContain("deploymentStatus?.deploymentMode === 'multi' && deploymentStatus?.authMode === 'token'");
-    expect(main).toContain('showAdminControls={showAdminControls}');
+    expect(source).not.toContain('showAdminControls');
+    expect(source).not.toContain("id: 'admin'");
+    expect(main).not.toContain('deploymentStatus');
+    expect(main).not.toContain('showAdminControls');
   });
 
   it('offers built-in and custom user avatar controls in appearance settings', () => {

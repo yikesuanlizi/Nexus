@@ -1,21 +1,11 @@
-import type { IncomingHttpHeaders, IncomingMessage } from 'node:http';
-
 export const DEFAULT_TENANT_ID = 'default';
-const TENANT_HEADER = 'x-nexus-tenant-id';
 
 export interface TenantContext {
   tenantId: string;
 }
 
-export function parseTenantContext(source: IncomingMessage | IncomingHttpHeaders): TenantContext {
-  const maybeRequest = source as Partial<IncomingMessage>;
-  const headers: IncomingHttpHeaders = maybeRequest.headers && typeof maybeRequest.headers === 'object'
-    ? maybeRequest.headers
-    : source as IncomingHttpHeaders;
-  const raw = headers[TENANT_HEADER];
-  const value = Array.isArray(raw) ? raw[0] : raw;
-  const tenantId = safeTenantId(value);
-  return { tenantId };
+export function parseTenantContext(_source?: unknown): TenantContext {
+  return { tenantId: DEFAULT_TENANT_ID };
 }
 
 export function safeTenantId(value: string | undefined | null): string {

@@ -2,6 +2,15 @@ import { describe, expect, it, vi } from 'vitest';
 import { ActiveRunRegistry } from './activeRunRegistry.js';
 
 describe('ActiveRunRegistry', () => {
+  it('reserves global top-level task slots atomically', () => {
+    const registry = new ActiveRunRegistry();
+    expect(registry.tryReserveTopLevel('a', 2)).toBe(true);
+    expect(registry.tryReserveTopLevel('b', 2)).toBe(true);
+    expect(registry.tryReserveTopLevel('c', 2)).toBe(false);
+    registry.releaseTopLevel('a');
+    expect(registry.tryReserveTopLevel('c', 2)).toBe(true);
+    expect(registry.activeTopLevelCount()).toBe(2);
+  });
   it('register stores handle and unregister removes it', () => {
     const registry = new ActiveRunRegistry();
     const interrupt = vi.fn();
@@ -22,6 +31,14 @@ describe('ActiveRunRegistry', () => {
   it('get returns null for unknown runId', () => {
     const registry = new ActiveRunRegistry();
     expect(registry.get('nonexistent')).toBeNull();
+  });
+
+  it('finds the active run handle by thread for control requests', () => {
+    const registry = new ActiveRunRegistry();
+    const handle = { runId: 'run-1', threadId: 'thread-1', turnId: 'turn-1', interrupt: vi.fn() };
+    registry.register(handle);
+    expect(registry.getByThreadId('thread-1')).toBe(handle);
+    expect(registry.getByThreadId('thread-missing')).toBeNull();
   });
 
   it('finish removes handle', () => {

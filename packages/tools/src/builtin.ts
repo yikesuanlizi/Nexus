@@ -846,6 +846,90 @@ export const getSystemStatusTool: ToolDefinition = {
   },
 };
 
+// ─── request_user_decision ────────────────────────────────────────────────
+// 中文注释：由 runtime 接管的只读决策入口；工具本身不执行任何用户内容。
+export const requestUserDecisionTool: ToolDefinition = {
+  name: 'request_user_decision',
+  description: 'Pause the current turn and ask the user to choose one bounded option. This is a readonly, resumable decision request; it does not execute the user response.',
+  parameters: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      prompt: { type: 'string', description: 'Question shown to the user.' },
+      options: {
+        type: 'array',
+        description: 'Bounded choices with stable ids, labels, and optional descriptions.',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            id: { type: 'string' },
+            action: { type: 'string', enum: ['way_one', 'way_two', 'custom_input', 'confirm'] },
+            label: { type: 'string' },
+            description: { type: 'string' },
+          },
+          required: ['id', 'action', 'label'],
+        },
+      },
+      allowCustomInput: { type: 'boolean', description: 'Whether the user may provide bounded custom text.' },
+    },
+    required: ['prompt', 'options', 'allowCustomInput'],
+  },
+  requiredPolicy: 'readonly',
+  supportsParallelToolCalls: false,
+  async execute(args, ctx): Promise<ToolResult> {
+    const keys = Object.keys(args);
+    if (keys.some((key) => !['prompt', 'options', 'allowCustomInput'].includes(key))) {
+      return failedToolResult('request_user_decision accepts only prompt, options, and allowCustomInput', 'INVALID_ARGUMENTS');
+    }
+    const prompt = typeof args.prompt === 'string' ? args.prompt.trim() : '';
+    const rawOptions = Array.isArray(args.options) ? args.options : [];
+    const allowCustomInput = args.allowCustomInput === true;
+    if (!prompt || prompt.length > 8_000 || rawOptions.length < 1 || rawOptions.length > 8 || typeof args.allowCustomInput !== 'boolean') {
+      return failedToolResult('prompt, options (1-8 items), and allowCustomInput are required', 'INVALID_ARGUMENTS');
+    }
+    const options = rawOptions.map((value) => {
+      if (!value || typeof value !== 'object') return null;
+      const option = value as Record<string, unknown>;
+      const optionKeys = Object.keys(option);
+      if (optionKeys.some((key) => !['id', 'action', 'label', 'description'].includes(key))) return null;
+      if (typeof option.id !== 'string' || !option.id.trim() || typeof option.label !== 'string' || !option.label.trim()) return null;
+      if (!['way_one', 'way_two', 'custom_input', 'confirm'].includes(String(option.action))) return null;
+      if (option.description !== undefined && typeof option.description !== 'string') return null;
+      return {
+        id: option.id.trim(),
+        action: option.action as 'way_one' | 'way_two' | 'custom_input' | 'confirm',
+        label: option.label.trim(),
+        ...(typeof option.description === 'string' && option.description.trim() ? { description: option.description.trim() } : {}),
+      };
+    });
+    if (options.some((option) => option === null) || new Set(options.filter(Boolean).map((option) => option!.id)).size !== options.length) {
+      return failedToolResult('Each decision option needs a unique id, action, and label', 'INVALID_ARGUMENTS');
+    }
+    if (!allowCustomInput && options.some((option) => option?.action === 'custom_input')) {
+      return failedToolResult('custom_input options require allowCustomInput=true', 'INVALID_ARGUMENTS');
+    }
+    if (!ctx.requestUserDecision) {
+      return failedToolResult('request_user_decision is unavailable outside an AgentLoop turn', 'DECISION_UNAVAILABLE');
+    }
+    const response = await ctx.requestUserDecision({
+      prompt,
+      options: options as Array<{
+        id: string;
+        action: 'way_one' | 'way_two' | 'custom_input' | 'confirm';
+        label: string;
+        description?: string;
+      }>,
+      allowCustomInput,
+    });
+    return {
+      output: JSON.stringify({ action: response.action, optionId: response.optionId, customInput: response.customInput }),
+      data: response,
+      status: 'completed',
+    };
+  },
+};
+
 // ─── built‑in tool list ─────────────────────────────────────────────────────
 export const BUILTIN_TOOLS: ToolDefinition[] = [
   currentTimeTool,
@@ -860,6 +944,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   webFetchTool,
   applyPatchTool,
   getSystemStatusTool,
+  requestUserDecisionTool,
   ...browserTools,
 ];
 

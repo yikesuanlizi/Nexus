@@ -49,11 +49,11 @@ export function createTenantRuntime(options: {
   approvalBroker: ApprovalHandler;
   publishEvent(event: ThreadEvent, tenantId?: string): void;
 }): TenantRuntime {
-  const configRepos = new Map<string, ReturnType<typeof createConfigRepository>>();
-  const mcpManagers = new Map<string, McpRuntimeManager>();
-  const skillCaches = new Map<string, LocalSkillRegistryCache>();
-  const defaultAgents = new Map<string, AgentLoop>();
   const defaultTenantContext: TenantContext = { tenantId: DEFAULT_TENANT_ID };
+  const configRepo = createConfigRepository(options.rootStore);
+  const mcpManager = new McpRuntimeManager();
+  const skillCache = new LocalSkillRegistryCache();
+  let defaultAgent: AgentLoop | null = null;
   const activeRunRegistry = new ActiveRunRegistry();
 
   function bindAgentToRegistry(agent: AgentLoop): void {
@@ -66,6 +66,7 @@ export function createTenantRuntime(options: {
           interrupt: () => {
             agent.interrupt(event.threadId);
           },
+          resolveDecision: (response) => agent.resolveUserDecision(event.threadId, response),
         });
       } else if (event.type === 'turn.completed' || event.type === 'turn.failed') {
         activeRunRegistry.finish(event.runId);
@@ -73,64 +74,56 @@ export function createTenantRuntime(options: {
     });
   }
 
-  function storeForTenant(tenantContext: TenantContext): ThreadStore {
-    return options.rootStore.scope?.(tenantContext.tenantId) ?? options.rootStore;
+  function storeForTenant(_tenantContext: TenantContext): ThreadStore {
+    return options.rootStore;
   }
 
-  function configRepoForTenant(tenantContext: TenantContext): ReturnType<typeof createConfigRepository> {
-    let repo = configRepos.get(tenantContext.tenantId);
-    if (!repo) {
-      repo = createConfigRepository(storeForTenant(tenantContext));
-      configRepos.set(tenantContext.tenantId, repo);
+  function configRepoForTenant(_tenantContext: TenantContext): ReturnType<typeof createConfigRepository> {
+    return configRepo;
+  }
+
+  function mcpManagerForTenant(_tenantContext: TenantContext): McpRuntimeManager {
+    return mcpManager;
+  }
+
+  function skillCacheForTenant(_tenantContext: TenantContext): LocalSkillRegistryCache {
+    return skillCache;
+  }
+
+  async function getDefaultAgent(_tenantContext: TenantContext = defaultTenantContext): Promise<AgentLoop> {
+    if (!defaultAgent) {
+      defaultAgent = (await createAgent({}, defaultTenantContext)).agent;
     }
-    return repo;
+    return defaultAgent;
   }
 
-  function mcpManagerForTenant(tenantContext: TenantContext): McpRuntimeManager {
-    let manager = mcpManagers.get(tenantContext.tenantId);
-    if (!manager) {
-      manager = new McpRuntimeManager();
-      mcpManagers.set(tenantContext.tenantId, manager);
-    }
-    return manager;
-  }
-
-  function skillCacheForTenant(tenantContext: TenantContext): LocalSkillRegistryCache {
-    let cache = skillCaches.get(tenantContext.tenantId);
-    if (!cache) {
-      cache = new LocalSkillRegistryCache();
-      skillCaches.set(tenantContext.tenantId, cache);
-    }
-    return cache;
-  }
-
-  async function getDefaultAgent(tenantContext: TenantContext = defaultTenantContext): Promise<AgentLoop> {
-    let agent = defaultAgents.get(tenantContext.tenantId);
-    if (!agent) {
-      agent = (await createAgent({}, tenantContext)).agent;
-      defaultAgents.set(tenantContext.tenantId, agent);
-    }
-    return agent;
-  }
-
-  function resetDefaultAgent(tenantContext: TenantContext): void {
-    defaultAgents.delete(tenantContext.tenantId);
+  function resetDefaultAgent(_tenantContext: TenantContext): void {
+    defaultAgent = null;
   }
 
   async function saveDefaultRunConfig(
     configPatch: Partial<AgentRunConfig>,
     tenantContext: TenantContext,
   ): Promise<AgentRunConfig> {
-    const next = await configRepoForTenant(tenantContext).saveDefaultRunConfig(configPatch);
+    const next = await configRepo.saveDefaultRunConfig(configPatch);
     if (configPatch.skillsRoot !== undefined) {
-      skillCacheForTenant(tenantContext).clear();
+      skillCache.clear();
     }
     // 系统监控开关/阈值变更：热更新到当前运行中的 agent
     // — Chinese: system monitor toggle/threshold change: hot-update the currently running agent
-    if (configPatch.systemMonitorEnabled !== undefined) {
-      const currentAgent = defaultAgents.get(tenantContext.tenantId);
+    if (configPatch.systemMonitorEnabled !== undefined
+      || configPatch.systemMonitorSamplingEnabled !== undefined
+      || configPatch.systemMonitorGuardEnabled !== undefined
+      || configPatch.systemMonitorLogRecordingEnabled !== undefined
+      || configPatch.systemMonitorThresholds !== undefined) {
+      const currentAgent = defaultAgent;
       if (currentAgent) {
-        currentAgent.updateSystemMonitorConfig({ enabled: configPatch.systemMonitorEnabled });
+        currentAgent.updateSystemMonitorConfig({
+          enabled: configPatch.systemMonitorSamplingEnabled ?? configPatch.systemMonitorEnabled,
+          guardEnabled: configPatch.systemMonitorGuardEnabled,
+          logRecordingEnabled: configPatch.systemMonitorLogRecordingEnabled,
+          thresholds: configPatch.systemMonitorThresholds,
+        } as never);
       }
     }
     resetDefaultAgent(tenantContext);
@@ -139,10 +132,10 @@ export function createTenantRuntime(options: {
 
   async function createAgent(
     configPatch: AgentCreateConfig = {},
-    tenantContext: TenantContext = defaultTenantContext,
+    _tenantContext: TenantContext = defaultTenantContext,
   ): Promise<{ agent: AgentLoop; model: ModelGateway; config: AgentRunConfig }> {
-    const tenantStore = storeForTenant(tenantContext);
-    const tenantRepo = configRepoForTenant(tenantContext);
+    const tenantStore = options.rootStore;
+    const tenantRepo = configRepo;
     const base = await tenantRepo.getDefaultRunConfig();
     const config = resolveConfig({ ...base, ...configPatch });
     await prepareManagedWorkspaceDirectories(config.workspaceRoot);
@@ -186,11 +179,10 @@ For one-off scripts, generated inspection output, and disposable caches in a pro
         { pattern: ['rm', ['-rf', '-r']], decision: 'forbidden', justification: 'Recursive delete is too dangerous.' },
       ],
     };
-    const skills = await skillCacheForTenant(tenantContext).loadFromDirectory(config.skillsRoot);
+    const skills = await skillCache.loadFromDirectory(config.skillsRoot);
     const hooks = new LocalHookRegistry();
     const webProviderSecrets = await tenantStore.getSetting<WebProviderSecrets>(WEB_PROVIDER_SECRETS_KEY) ?? {};
     const webProvider = resolveWebProviderRuntimeConfig(config, webProviderSecrets);
-    const mcpManager = mcpManagerForTenant(tenantContext);
     await mcpManager.configure(await tenantRepo.listMcpServers(), { startEnabled: false });
     // 已启用的 MCP 服务器预启动，把具体工具直接暴露给 Agent
     // 未启用的 server 不会启动，也不会暴露任何工具
@@ -199,12 +191,12 @@ For one-off scripts, generated inspection output, and disposable caches in a pro
     const mcpTools = await mcpManager.toolDefinitions({ ensureStarted: true });
     // 读取 A2A 客户端配置 — Chinese: read A2A client config
     const a2aConfig = normalizeA2AConfig(await tenantStore.getSetting(A2A_CONFIG_KEY));
-    const agent = new AgentLoop({
+    const agent = new AgentLoop(({
       workspaceRoot: config.workspaceRoot,
       sandbox,
       model,
       store: tenantStore,
-      tenantId: tenantContext.tenantId,
+      tenantId: DEFAULT_TENANT_ID,
       approvalHandler: preset.approval === 'never' ? new AutoApproveHandler() : options.approvalBroker,
       skills,
       hooks,
@@ -228,12 +220,18 @@ For one-off scripts, generated inspection output, and disposable caches in a pro
       },
       a2aClientEnabled: a2aConfig.clientEnabled,
       a2aRemotes: a2aConfig.remotes.map(r => r.url),
-      // 中文注释：从设置面板的开关读取，启用后 agent 会收到主机压力通知并自动限流
-      // — Chinese: read from settings panel toggle; when enabled agent receives host pressure notifications and auto-throttles
-      systemMonitor: { enabled: config.systemMonitorEnabled === true },
+      // 中文注释：采样、轨迹记录和阈值 guard 分别由设置字段控制；guard 只在采样开启时生效。
+      maxSubagentDepth: config.maxSubagentDepth ?? 1,
+      maxParallelReadonlyTools: config.maxParallelReadonlyTools ?? 2,
+      systemMonitor: ({
+        enabled: config.systemMonitorSamplingEnabled === true,
+        guardEnabled: config.systemMonitorGuardEnabled === true,
+        logRecordingEnabled: config.systemMonitorLogRecordingEnabled === true,
+        thresholds: config.systemMonitorThresholds,
+      } as never),
       skillsDirs: [config.skillsRoot],
-    });
-    agent.onEvent((event) => options.publishEvent(event, tenantContext.tenantId));
+    } as AgentConfig));
+    agent.onEvent((event) => options.publishEvent(event, DEFAULT_TENANT_ID));
     bindAgentToRegistry(agent);
     await agent.loadSkillsFromConfiguredDirs();
     return { agent, model, config };

@@ -19,6 +19,10 @@ import { AgentInspector } from './AgentInspector.js';
 import { AgentStagePanel } from '../AgentStagePanel.js';
 import { BrowserWorkbench } from '../BrowserWorkbench.js';
 import { TerminalPanel } from './TerminalPanel.js';
+import { OpsTaskInspector, type OpsTaskTimelineEvent } from './OpsTaskInspector.js';
+import { OpsKnowledgeStatus } from './OpsKnowledgeStatus.js';
+import type { KnowledgeScopeSelection } from '../../api/knowledgeClient.js';
+import type { OpsTaskSession } from '@nexus/protocol';
 
 export function WorkspaceWorkbench({
   activeThread,
@@ -49,6 +53,15 @@ export function WorkspaceWorkbench({
   responsiveMode,
   onCloseRequest,
   suspendBrowser = false,
+  showOps = false,
+  opsTask = null,
+  opsTaskEvents = [],
+  opsTaskBusy = false,
+  opsKnowledgeScope = null,
+  onOpsKnowledgeScopeChange,
+  onOpsTaskAction,
+  onOpsRunTest,
+  onOpsSaveIncident,
 }: {
   activeThread?: ThreadMeta | null;
   activeThreadId: string;
@@ -78,6 +91,15 @@ export function WorkspaceWorkbench({
   responsiveMode?: 'side' | 'overlay' | 'sheet';
   onCloseRequest?(): void;
   suspendBrowser?: boolean;
+  showOps?: boolean;
+  opsTask?: OpsTaskSession | null;
+  opsTaskEvents?: OpsTaskTimelineEvent[];
+  opsTaskBusy?: boolean;
+  opsKnowledgeScope?: KnowledgeScopeSelection | null;
+  onOpsKnowledgeScopeChange?(selection: KnowledgeScopeSelection | null): void;
+  onOpsTaskAction?(action: 'pause' | 'resume' | 'cancel' | 'confirm' | 'reject_continue' | 'propose_patch' | 'approve_patch' | 'reject_patch'): void;
+  onOpsRunTest?(testId: string): void;
+  onOpsSaveIncident?(): void;
 }) {
   const zh = locale === 'zh';
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
@@ -86,6 +108,7 @@ export function WorkspaceWorkbench({
   const browserNavigationNonceRef = useRef(0);
   const handledPreviewRequestKeyRef = useRef('');
   const hasActiveThread = Boolean(activeThreadId && activeThread);
+  const opsVisible = hasActiveThread && (showOps || activeThread?.mode === 'ops' || Boolean(opsTask));
   const mainAgentThreadId = activeThreadId || 'main';
 
   useEffect(() => {
@@ -94,9 +117,14 @@ export function WorkspaceWorkbench({
 
   useEffect(() => {
     setTerminalRoots({});
-  }, [terminalWorkspaceRoot, workspaceRoot]);
+    if (!hasActiveThread) {
+      setBrowserNavigationRequest(null);
+      handledPreviewRequestKeyRef.current = '';
+    }
+  }, [activeThreadId, hasActiveThread, terminalWorkspaceRoot, workspaceRoot]);
 
   const handleOpenTerminalAt = (directory: string): void => {
+    if (!hasActiveThread) return;
     const tabId = onOpenUtilityTab('terminal');
     setTerminalRoots((current) => ({
       ...current,
@@ -105,7 +133,7 @@ export function WorkspaceWorkbench({
   };
 
   const handleOpenHtmlInBrowser = (path: string): void => {
-    if (!workspaceRoot || !path) return;
+    if (!hasActiveThread || !workspaceRoot || !path) return;
     const url = workspaceFileToUrl(workspaceRoot, path);
     browserNavigationNonceRef.current += 1;
     setBrowserNavigationRequest({ url, nonce: browserNavigationNonceRef.current });
@@ -113,14 +141,15 @@ export function WorkspaceWorkbench({
   };
 
   useEffect(() => {
-    if (!externalPreviewRequest?.path) return;
+    if (!hasActiveThread || !externalPreviewRequest?.path) return;
+    if (externalPreviewRequest.threadId && externalPreviewRequest.threadId !== activeThreadId) return;
     const previewRequestKey = `${externalPreviewRequest.path}\u0000${externalPreviewRequest.nonce ?? ''}\u0000${externalPreviewRequest.pin ? '1' : '0'}`;
     if (handledPreviewRequestKeyRef.current === previewRequestKey) return;
     handledPreviewRequestKeyRef.current = previewRequestKey;
     if (activeTab !== 'files') {
       onOpenUtilityTab('files');
     }
-  }, [externalPreviewRequest?.nonce, externalPreviewRequest?.path, externalPreviewRequest?.pin, activeTab, onOpenUtilityTab]);
+  }, [externalPreviewRequest?.nonce, externalPreviewRequest?.path, externalPreviewRequest?.pin, externalPreviewRequest?.threadId, activeThreadId, activeTab, hasActiveThread, onOpenUtilityTab]);
 
   const workbench = useMemo(() => buildAgentWorkbench({
     mainThreadId: mainAgentThreadId,
@@ -151,9 +180,9 @@ export function WorkspaceWorkbench({
   }, [workbench.nodes, selectedAgentId]);
 
   const memoryExcluded = activeThread?.tags?.memoryExcluded === 'true';
-  const shouldRenderFilesPanel = openUtilityTabs.includes('files');
-  const shouldRenderBrowserWorkbench = openUtilityTabs.includes('browser');
-  const terminalTabs = openUtilityTabs.filter(isTerminalUtilityWorkbenchTab);
+  const shouldRenderFilesPanel = hasActiveThread && openUtilityTabs.includes('files');
+  const shouldRenderBrowserWorkbench = hasActiveThread && openUtilityTabs.includes('browser');
+  const terminalTabs = hasActiveThread ? openUtilityTabs.filter(isTerminalUtilityWorkbenchTab) : [];
 
   const handleTabChange = (tab: WorkbenchTab) => {
     onTabChange(tab);
@@ -176,10 +205,12 @@ export function WorkspaceWorkbench({
       <WorkbenchTabs
         activeTab={activeTab}
         onTabChange={handleTabChange}
-        openUtilityTabs={openUtilityTabs}
+        openUtilityTabs={hasActiveThread ? openUtilityTabs : []}
         onOpenUtilityTab={onOpenUtilityTab}
         onCloseUtilityTab={onCloseUtilityTab}
-        runningAgentCount={runningAgentCount}
+        runningAgentCount={hasActiveThread ? runningAgentCount : 0}
+        utilitiesEnabled={hasActiveThread}
+        showOps={opsVisible}
         locale={locale}
       />
 
@@ -229,16 +260,47 @@ export function WorkspaceWorkbench({
               onSelectAgent={handleSelectAgent}
             />
           </div> : null}
-          {hasActiveThread && selectedNode ? (
-            <div className="workbenchAgentInspectorWrap">
-              <AgentInspector
-                node={selectedNode}
-                onJumpToMonitor={handleJumpToAgentMonitor}
-                locale={locale}
-              />
-            </div>
+          {selectedNode ? (
+            hasActiveThread ? (
+              <div className="workbenchAgentInspectorWrap">
+                <AgentInspector
+                  node={selectedNode}
+                  onJumpToMonitor={handleJumpToAgentMonitor}
+                  locale={locale}
+                />
+              </div>
+            ) : null
           ) : null}
         </div>
+
+        {opsVisible ? (
+          <div
+            className={workbenchPanelClassName('ops', activeTab)}
+            data-state={activeTab === 'ops' ? 'active' : 'inactive'}
+            data-testid="ops-workbench-panel"
+            aria-hidden={activeTab !== 'ops'}
+            inert={activeTab !== 'ops'}
+          >
+            <OpsKnowledgeStatus locale={locale} mode="select" value={opsKnowledgeScope} onChange={onOpsKnowledgeScopeChange} />
+            {hasActiveThread && opsTask ? (
+              <OpsTaskInspector
+                locale={locale}
+                task={opsTask}
+                events={opsTaskEvents}
+                busy={opsTaskBusy}
+                onAction={onOpsTaskAction}
+                onRunTest={onOpsRunTest}
+                onSaveIncident={onOpsSaveIncident}
+              />
+            ) : (
+              <div className="opsWorkbenchEmpty">
+                <Icon name="monitor" />
+                <strong>{zh ? '运维工作台' : 'Ops workbench'}</strong>
+                <span>{zh ? '启动一次 Ops 运维调查后，任务详情会显示在这里。' : 'Start an Ops investigation to see task details here.'}</span>
+              </div>
+            )}
+          </div>
+        ) : null}
 
         {shouldRenderFilesPanel ? (
           <div
@@ -249,7 +311,7 @@ export function WorkspaceWorkbench({
           >
             <WorkspaceFilesPanel
               locale={locale}
-              workspaceRoot={workspaceRoot}
+              workspaceRoot={hasActiveThread ? workspaceRoot : ''}
               externalPreviewRequest={externalPreviewRequest}
               onOpenTerminalAt={handleOpenTerminalAt}
               onOpenSystemLocation={onOpenSystemLocation}
@@ -284,7 +346,7 @@ export function WorkspaceWorkbench({
             <TerminalPanel
               active={activeTab === tabId}
               locale={locale}
-              workspaceRoot={terminalRoots[tabId] ?? terminalWorkspaceRoot ?? workspaceRoot}
+              workspaceRoot={terminalRoots[tabId] ?? (hasActiveThread ? terminalWorkspaceRoot ?? workspaceRoot : '')}
             />
           </div>
         ))}
@@ -320,7 +382,7 @@ export function WorkspaceWorkbench({
 }
 
 function workbenchPanelClassName(tab: WorkbenchTab, activeTab: WorkbenchTab): string {
-  const base = tab === 'activity' ? 'workbenchActivity' : tab === 'agents' ? 'workbenchAgents' : tab === 'browser' ? 'workbenchBrowser' : isTerminalUtilityWorkbenchTab(tab) ? 'workbenchTerminal' : 'workbenchFiles';
+  const base = tab === 'activity' ? 'workbenchActivity' : tab === 'agents' ? 'workbenchAgents' : tab === 'ops' ? 'workbenchOps' : tab === 'browser' ? 'workbenchBrowser' : isTerminalUtilityWorkbenchTab(tab) ? 'workbenchTerminal' : 'workbenchFiles';
   return `${base} workbenchPanel${tab === activeTab ? ' active' : ' inactive'}`;
 }
 

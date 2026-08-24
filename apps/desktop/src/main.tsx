@@ -7,12 +7,17 @@ import { ComposerBar, type PaletteOption } from './components/ComposerBar.js';
 import { AssistantTurnView, ItemView } from './components/ItemView.js';
 import { TranscriptTurnRail, type TranscriptTurnRailEntry } from './components/TranscriptTurnRail.js';
 import { ApprovalPanel } from './components/ApprovalPanel.js';
+import { AgentDecisionCard } from './components/AgentDecisionCard.js';
+import { ConversationIdleAnimation } from './components/ConversationIdleAnimation.js';
+import { OpsTaskAnchorCard, type OpsAnchorAction, type OpsTaskAnchor } from './components/OpsTaskAnchorCard.js';
+import type { OpsTaskTimelineEvent } from './components/workbench/OpsTaskInspector.js';
 import { SettingsDrawer } from './components/SettingsDrawer.js';
 import { WeixinConnectDialog } from './components/WeixinConnectDialog.js';
 import { RightPane } from './components/RightPane.js';
 import { readStoredWorkbenchState } from './components/workbench/workbenchState.js';
 import type { ExternalPreviewRequest } from './components/WorkspaceFilesPanel.js';
 import { openInSystemEditor } from './api/desktopBridge.js';
+import type { KnowledgeScopeSelection } from './api/knowledgeClient.js';
 import { WorkflowPanel } from './components/WorkflowPanel.js';
 import { RunMonitorDrawer } from './components/RunMonitorDrawer.js';
 import { WorkspaceThreadList } from './components/WorkspaceThreadList.js';
@@ -40,7 +45,6 @@ import {
 import { rollbackCountForTurn } from './features/chat/rollback.js';
 import { useRunMonitor } from './features/monitor/runMonitor.js';
 import { useTaskRuntimeMonitor, isTaskRuntimeEvent } from './features/monitor/taskRuntimeMonitor.js';
-import { authEventSourceUrl } from './api/authClient.js';
 import { useWebProviderSettings, type SettingsResponseWithWebProvider } from './api/webProviderClient.js';
 import { fetchThreadConfigOverrides, patchThreadConfigOverrides, type ThreadConfigOverrides } from './api/threadConfigClient.js';
 import { createLatestRequestGuard } from './features/chat/latestRequestGuard.js';
@@ -51,9 +55,14 @@ import { forgetWorkspaceRoot, pickWorkspaceRoot, readRememberedWorkspaceRoots, r
 import { controlThreadWorkflow, createWorkflowDraftErrorItem, createWorkflowDraftReplyItem, createWorkflowDraftUserItem, createWorkflowThread, isUntitledWorkflowProjectTitle, isWorkflowProjectThread, loadThreadWorkflow, parseThreadWorkflow, parseWorkflowCheckpointItems, planWorkflowDraft, saveThreadWorkflow, workflowThreadTitleFromGoal, type WorkflowBlueprintCompileResult, type WorkflowComponentDefinition, type WorkflowPlanDraft, type WorkflowSnapshot, type WorkflowRuntimeAction } from './features/workflow/workflow.js';
 import { applyAgentMessageDelta, describeEvent, groupTranscriptItems, removeThreadItem, withSyntheticUserMessages, type EventDraft } from './features/chat/threadView.js';
 import type { ApiKeyState, ApprovalRequest, EventLine, McpConfig, McpServerStatus, ModelPreset, ProviderEntry, SkillDraft, SkillEntry, ThreadChildInfo, ThreadItem, ThreadMeta, ThreadUsage, TurnMeta } from './shared/types.js';
-import type { ModelPresetConfig, PersistentAccessScope, TemporaryAccessScope } from '@nexus/protocol';
+import type { AgentDecisionRequest, AgentDecisionResponse, ModelPresetConfig, OpsTaskSession, PersistentAccessScope, TemporaryAccessScope } from '@nexus/protocol';
 import './styles.css';
+import './knowledgeBaseVisualization.css';
+import './components/settings/ModelsPage.css';
 type ComposerImage = { name: string; dataUrl: string };
+type RuntimeStateSnapshot = { executionStatus?: string; decisionRequest?: AgentDecisionRequest | null };
+type OpsTaskAction = OpsAnchorAction | 'pause' | 'resume' | 'propose_patch' | 'approve_patch' | 'reject_patch';
+type ThreadModeSelection = { threadId: string; mode: 'chat' | 'ops'; taskPreset: 'ops' | null };
 type BrowserDesktopRequestEvent = { type: 'agent-browser-requested'; taskId: string };
 type BrowserDesktopRequestApi = {
   hasPendingAgentRequest(): Promise<boolean>;
@@ -113,6 +122,7 @@ function App() {
     ...readStored<Partial<RunConfig>>(RUN_CONFIG_STORAGE_KEY, {}),
   }));
   const [configHydrated, setConfigHydrated] = useState(false);
+  const [apiUnavailable, setApiUnavailable] = useState(false);
   const systemTheme = useSystemTheme();
   const [threads, setThreads] = useState<ThreadMeta[]>([]);
   const [rememberedWorkspaceRoots, setRememberedWorkspaceRoots] = useState<string[]>(() => readRememberedWorkspaceRoots());
@@ -132,6 +142,8 @@ function App() {
   const [, setEvents] = useState<EventLine[]>([]);
   const [runningTurnIds, setRunningTurnIds] = useState<Set<string>>(() => new Set());
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false), [threadFilter, setThreadFilter] = useState(''), [input, setInput] = useState('');
+  const activeThread = threads.find((thread) => thread.threadId === threadId);
+  const hasActiveThread = Boolean(threadId && activeThread);
   const [composerFileReferences, setComposerFileReferences] = useState<string[]>([]);
   // 窄屏 sidebar 抽屉开关 — Chinese: narrow-screen sidebar drawer toggle
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -150,6 +162,21 @@ function App() {
   const [rightPaneSizingMode, setRightPaneSizingMode] = useState<'standard' | 'files' | 'browser' | 'terminal'>(() => readStoredRightPaneSizingMode());
   const [browserRequestVersion, setBrowserRequestVersion] = useState(0);
   const [pendingApprovals, setPendingApprovals] = useState<ApprovalRequest[]>([]);
+  const [pendingDecision, setPendingDecision] = useState<AgentDecisionRequest | null>(null);
+  const [opsTaskAnchor, setOpsTaskAnchor] = useState<OpsTaskAnchor | null>(null);
+  const [opsTaskAnchorBusy, setOpsTaskAnchorBusy] = useState(false);
+  const [opsTaskDetail, setOpsTaskDetail] = useState<{ threadId: string; task: OpsTaskSession; events: OpsTaskTimelineEvent[] } | null>(null);
+  const [opsKnowledgeScope, setOpsKnowledgeScope] = useState<KnowledgeScopeSelection | null>(null);
+  const [pendingThreadMode, setPendingThreadMode] = useState<'chat' | 'ops'>('chat');
+  const [pendingTaskPreset, setPendingTaskPreset] = useState<'ops' | null>(null);
+  const [threadModeOverride, setThreadModeOverride] = useState<ThreadModeSelection | null>(null);
+  const [modePatchPending, setModePatchPending] = useState(false);
+
+  useEffect(() => {
+    // A preview belongs to the thread that requested it. Do not carry its
+    // path into an unselected or newly selected conversation.
+    setPreviewRequest(null);
+  }, [threadId]);
   const taskRuntimeMonitor = useTaskRuntimeMonitor();
   const [providers, setProviders] = useState<ProviderEntry[]>([]);
   const [keyStates, setKeyStates] = useState<ApiKeyState[]>([]), [modelPresets, setModelPresets] = useState<ModelPreset[]>([]), [skillsList, setSkillsList] = useState<SkillEntry[]>([]);
@@ -163,16 +190,26 @@ function App() {
   const transcriptAutoScrollFrameRef = useRef<number | null>(null);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const activeTurnThreadIdRef = useRef<string>('');
+  const activeTurnIdRef = useRef<string>('');
   const threadLoadGuardRef = useRef(createLatestRequestGuard());
   const sendMessageGuardRef = useRef(createLatestRequestGuard());
   const threadEventSourceGenerationRef = useRef(0);
+  const modePatchGenerationRef = useRef(0);
+  const modePatchQueueRef = useRef(Promise.resolve());
+  const opsStartGenerationRef = useRef(0);
+  const opsActionOwnerRef = useRef<number | null>(null);
+  const opsStartLoadTargetRef = useRef<string | null>(null);
   const isWorkflowView = workspaceView === 'workflow';
-  const { rightPaneGridTemplateColumns, startRightPaneResize } = useRightPaneSizing(rightPaneVisible, isWorkflowView ? 'workflow' : rightPaneSizingMode);
+  const showRightPane = rightPaneVisible && hasActiveThread;
+  const { rightPaneGridTemplateColumns, startRightPaneResize } = useRightPaneSizing(showRightPane, isWorkflowView ? 'workflow' : rightPaneSizingMode);
   const { toast, showToast } = useToastNotice();
   const { botConfig, botStatus, bindRemoteAssistant, refreshBotStatus, saveBotConfig, connectWeixin, logoutWeixin, startDingtalkStream, stopDingtalkStream, testDingtalkMessage } = useBotControls();
   const { applyWebProviderState, clearWebProviderKey, saveWebProviderKey, webProviderState } = useWebProviderSettings();
-  const activeThread = threads.find((thread) => thread.threadId === threadId);
-  const hasActiveThread = Boolean(threadId && activeThread);
+  const activeModeOverride = threadModeOverride?.threadId === threadId ? threadModeOverride : null;
+  const currentThreadMode: 'chat' | 'ops' = activeModeOverride?.mode ?? activeThread?.mode ?? (!threadId ? pendingThreadMode : 'chat');
+  const currentTaskPreset: 'ops' | null = activeModeOverride?.taskPreset ?? activeThread?.taskPreset ?? (!threadId ? pendingTaskPreset : null);
+  const currentOpsTaskDetail = opsTaskDetail?.task.spec.threadId === threadId ? opsTaskDetail : null;
+  const currentOpsTaskAnchor = opsTaskAnchor?.threadId === threadId ? opsTaskAnchor : null;
 
   useEffect(() => {
     const browser = (window as unknown as { nexusDesktop?: { browser?: BrowserDesktopRequestApi } }).nexusDesktop?.browser;
@@ -246,7 +283,13 @@ function App() {
   const subagentRows = useMemo(() => buildSubagentStatusRows(threadChildren, config.locale), [config.locale, threadChildren]);
   void subagentRows; // 保留以维持现有 import；新工作台直接消费 threadChildren
   // Agent 工作台直接消费 threadChildren + runtimeItems + busy，不再需要 buildAgentStageRows 派生
-  const activeWorkspaceRoot = activeThread?.tags?.conversationKind === 'chat' ? '' : (activeThread?.workspaceRoot || config.workspaceRoot || '');
+  const activeWorkspaceRoot = threadId
+    ? (activeThread?.tags?.conversationKind === 'chat' ? '' : (activeThread?.workspaceRoot || ''))
+    : '';
+  const opsModeAvailable = Boolean(activeWorkspaceRoot.trim());
+  // Personal knowledge selection is independent of the active project/thread.
+  // A task freezes its own ids on creation; this is only the user's next-task
+  // selection and must not disappear when they switch conversations.
   const childActivityByThread = useMemo(() => buildChildActivityByThread(threadChildren), [threadChildren]);
   const tokenUsage = useMemo(() => {
     return buildTokenUsageSummary(threadUsage, config.locale);
@@ -614,6 +657,16 @@ function App() {
       config?: Partial<RunConfig>;
       usage?: ThreadUsage;
     };
+    let runtimeState: RuntimeStateSnapshot | null = null;
+    try {
+      const stateResponse = await fetch(`/api/threads/${id}/state`, guard?.signal ? { signal: guard.signal } : undefined);
+      if (stateResponse.ok) {
+        const stateData = (await stateResponse.json()) as { state?: RuntimeStateSnapshot | null };
+        runtimeState = stateData.state ?? null;
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+    }
     if (guard && !guard.isCurrent()) return;
     if (data.thread) {
       setThreads((current) => current.map((thread) => thread.threadId === id ? data.thread! : thread));
@@ -624,6 +677,12 @@ function App() {
       .filter((turn) => turn.status === 'running')
       .map((turn) => turn.turnId)));
     setItems(withSyntheticUserMessages(data.turns ?? [], data.items ?? []) as ThreadItem[]);
+    setPendingDecision(runtimeState?.decisionRequest ?? null);
+    if (runtimeState?.executionStatus === 'running' || runtimeState?.executionStatus === 'stopping' || runtimeState?.executionStatus === 'waiting_user_input') {
+      setBusy(true);
+    } else {
+      setBusy(false);
+    }
     if (data.config) {
       const { workspaceRoot, themeMode, userAvatarId, customUserAvatarDataUrl, ...threadConfig } = data.config;
       void themeMode;
@@ -679,7 +738,7 @@ function App() {
       let targetThreadId = threadId;
       if (!targetThreadId) {
         const thread = await createWorkflowThread(workflowPlanDraft.goal, config.workspaceRoot);
-        targetThreadId = thread.threadId; setThreadId(targetThreadId);
+        targetThreadId = thread.threadId; opsStartGenerationRef.current += 1; setThreadId(targetThreadId);
         await refreshThreads();
       }
       const data = await saveThreadWorkflow(targetThreadId, workflowPlanDraft.workflow);
@@ -717,6 +776,12 @@ function App() {
   const loadThread = useCallback(
     async (id: string) => {
       if (!id) return;
+      if (threadIdRef.current !== id) {
+        modePatchGenerationRef.current += 1;
+        if (opsStartLoadTargetRef.current !== id) opsStartGenerationRef.current += 1;
+        setModePatchPending(false);
+        setThreadModeOverride(null);
+      }
       const request = threadLoadGuardRef.current.begin();
       eventSourceRef.current?.close();
       eventSourceRef.current = null;
@@ -750,15 +815,28 @@ function App() {
       })();
       const sourceGeneration = request.generation;
       threadEventSourceGenerationRef.current = sourceGeneration;
-      const source = new EventSource(authEventSourceUrl(`/api/events/${id}`));
+      const source = new EventSource(`/api/events/${id}`);
       source.onmessage = (message) => {
         if (!threadLoadGuardRef.current.isCurrent(sourceGeneration)) return;
         try {
           const event = JSON.parse(message.data) as Record<string, unknown>;
           if (event.type === 'connected') return;
+          if ((event.type === 'ops.task.updated' || event.type === 'ops.task.state.updated') && event.threadId === id && typeof event.taskId === 'string') {
+            const nextState = event.state === 'waiting_confirmation' || event.state === 'blocked' ? event.state : null;
+            setOpsTaskAnchor(nextState ? {
+              threadId: id,
+              taskId: event.taskId,
+              state: nextState,
+              phase: typeof event.currentPhase === 'string' ? event.currentPhase : undefined,
+              target: typeof event.targetLabel === 'string' ? event.targetLabel : undefined,
+              reason: typeof event.reason === 'string' ? event.reason : undefined,
+              summary: typeof event.summary === 'string' ? event.summary : undefined,
+            } : null);
+          }
           const described = describeEvent(event, config.locale);
           if (described) addEvent(described);
           if (event.type === 'turn.started' && typeof event.turnId === 'string') {
+            activeTurnIdRef.current = event.turnId;
             setRunningTurnIds((current) => new Set([...current, event.turnId as string]));
           }
           if (
@@ -770,8 +848,35 @@ function App() {
               next.delete(event.turnId as string);
               return next;
             });
+            if (!activeTurnIdRef.current || activeTurnIdRef.current === event.turnId) {
+              setBusy(false);
+              activeTurnIdRef.current = '';
+              activeTurnThreadIdRef.current = '';
+            }
+            setPendingDecision(null);
+            setStatus(event.type === 'turn.failed' ? (config.locale === 'zh' ? '失败' : 'Failed') : t(config.locale, 'idle'));
             void refreshThreadChildren(id);
             if (runMonitor.open) void runMonitor.refresh(runMonitor.selectedRunId || undefined);
+          }
+          if (event.type === 'agent.decision.requested' && event.request && typeof event.request === 'object') {
+            setPendingDecision(event.request as AgentDecisionRequest);
+            setBusy(true);
+            setStatus(config.locale === 'zh' ? '等待你的选择' : 'Waiting for your decision');
+          }
+          if (event.type === 'agent.decision.resolved' && typeof event.requestId === 'string') {
+            setPendingDecision((current: AgentDecisionRequest | null) => current?.requestId === event.requestId ? null : current);
+          }
+          if (event.type === 'thread.runtime.updated' && typeof event.status === 'string') {
+            if (event.status === 'waiting_user_input' && event.decisionRequest && typeof event.decisionRequest === 'object') {
+              setPendingDecision(event.decisionRequest as AgentDecisionRequest);
+              setBusy(true);
+              setStatus(config.locale === 'zh' ? '等待你的选择' : 'Waiting for your decision');
+            } else if (event.status === 'stopping') {
+              setBusy(true);
+              setStatus(config.locale === 'zh' ? '停止中' : 'Stopping');
+            } else if (event.status === 'terminal') {
+              setPendingDecision(null);
+            }
           }
           if (event.type === 'approval.required' && typeof event.requestId === 'string') {
             mergeApproval(event as unknown as ApprovalRequest);
@@ -850,43 +955,60 @@ function App() {
     },
     [addEvent, config.locale, mergeApproval, refreshThreadChildren, reloadThreadSnapshot, runMonitor, taskRuntimeMonitor],
   );
-  const selectThreadFromSidebar = useCallback((id: string) => { resetWorkflowState(); setWorkspaceView(isWorkflowProjectThread(threads.find((thread) => thread.threadId === id)) ? 'workflow' : 'chat'); void loadThread(id); }, [loadThread, threads]); const createWorkflowProjectDraft = useCallback(async () => {
+  const selectThreadFromSidebar = useCallback((id: string) => {
+    modePatchGenerationRef.current += 1;
+    opsStartGenerationRef.current += 1;
+    setModePatchPending(false);
+    setThreadModeOverride(null);
+    resetWorkflowState();
+    setWorkspaceView(isWorkflowProjectThread(threads.find((thread) => thread.threadId === id)) ? 'workflow' : 'chat');
+    void loadThread(id);
+  }, [loadThread, threads]); const createWorkflowProjectDraft = useCallback(async () => {
     eventSourceRef.current?.close(); eventSourceRef.current = null; setWorkspaceView('workflow'); setTurns([]); setItems([]); setThreadUsage(null); setThreadChildren([]); setRunningTurnIds(new Set());
     setEvents([]); resetWorkflowState(); setStatus(config.locale === 'zh' ? '正在创建工作流项目' : 'Creating workflow project');
-    try { const title = config.locale === 'zh' ? '未命名工作流项目' : 'Untitled workflow project'; const thread = await createWorkflowThread(title, config.workspaceRoot); setThreadId(thread.threadId); setThreads((current) => current.some((candidate) => candidate.threadId === thread.threadId) ? current.map((candidate) => candidate.threadId === thread.threadId ? thread : candidate) : [thread, ...current]); setStatus(config.locale === 'zh' ? '准备创建工作流' : 'Ready to plan workflow'); }
-    catch (error) { setThreadId(''); setStatus(t(config.locale, 'idle')); addEvent({ kind: 'workflow', title: config.locale === 'zh' ? '创建工作流失败' : 'Workflow create failed', detail: error instanceof Error ? error.message : String(error), tone: 'danger' }); }
+    try { const title = config.locale === 'zh' ? '未命名工作流项目' : 'Untitled workflow project'; const thread = await createWorkflowThread(title, config.workspaceRoot); opsStartGenerationRef.current += 1; setThreadId(thread.threadId); setThreads((current) => current.some((candidate) => candidate.threadId === thread.threadId) ? current.map((candidate) => candidate.threadId === thread.threadId ? thread : candidate) : [thread, ...current]); setStatus(config.locale === 'zh' ? '准备创建工作流' : 'Ready to plan workflow'); }
+    catch (error) { opsStartGenerationRef.current += 1; setThreadId(''); setStatus(t(config.locale, 'idle')); addEvent({ kind: 'workflow', title: config.locale === 'zh' ? '创建工作流失败' : 'Workflow create failed', detail: error instanceof Error ? error.message : String(error), tone: 'danger' }); }
   }, [addEvent, config.locale, config.workspaceRoot]);
 
   useEffect(() => {
-    fetch('/api/settings')
-      .then((response) => response.json())
-      .then((data: { config?: Partial<RunConfig>; stored?: boolean } & SettingsResponseWithWebProvider) => {
-        setConfig((current) => {
-          if (data.stored || !hasStoredRunConfig) {
-            return { ...defaultConfig, ...data.config };
-          }
-          return mergeRunConfigDefaults(data.config, current);
-        });
+    let disposed = false;
+    let hydrated = false;
+    const hydrate = async () => {
+      try {
+        const response = await fetch('/api/settings');
+        if (!response.ok) throw new Error(`API unavailable (${response.status})`);
+        const data = await response.json() as { config?: Partial<RunConfig>; stored?: boolean } & SettingsResponseWithWebProvider;
+        if (disposed) return;
+        setConfig((current) => data.stored || !hasStoredRunConfig ? { ...defaultConfig, ...data.config } : mergeRunConfigDefaults(data.config, current));
         applyWebProviderState(data);
+        setApiUnavailable(false);
         setConfigHydrated(true);
-      })
-      .catch(() => setConfigHydrated(true));
-    void refreshThreads();
-    void refreshProviders();
-    void refreshModelPresets();
-    void refreshSkills();
-    void refreshBotStatus();
-    fetch('/api/mcp')
-      .then((response) => response.ok ? response.json() : null)
-      .then((data: { servers?: McpConfig[] } | null) => {
-        if (data?.servers) {
-          setMcps(normalizeStoredMcps(data.servers));
+        if (hydrated) return;
+        hydrated = true;
+        void refreshThreads();
+        void refreshProviders();
+        void refreshModelPresets();
+        void refreshSkills();
+        void refreshBotStatus();
+        try {
+          const mcpResponse = await fetch('/api/mcp');
+          const mcpData = mcpResponse.ok ? await mcpResponse.json() as { servers?: McpConfig[] } : null;
+          if (mcpData?.servers) setMcps(normalizeStoredMcps(mcpData.servers));
+          setMcpHydrated(true);
+          void refreshMcpStatus('light');
+        } catch { setMcpHydrated(true); }
+      } catch {
+        if (!disposed) {
+          setApiUnavailable(true);
+          setConfigHydrated(false);
         }
-        setMcpHydrated(true);
-        void refreshMcpStatus('light');
-      })
-      .catch(() => setMcpHydrated(true));
+      }
+    };
+    void hydrate();
+    const retryTimer = window.setInterval(() => { if (!hydrated) void hydrate(); }, 1500);
     return () => {
+      disposed = true;
+      window.clearInterval(retryTimer);
       eventSourceRef.current?.close();
       threadLoadGuardRef.current.dispose();
       sendMessageGuardRef.current.dispose();
@@ -897,6 +1019,86 @@ function App() {
     const timer = window.setInterval(() => void refreshApprovals(), 2000);
     return () => window.clearInterval(timer);
   }, [refreshApprovals]);
+  useEffect(() => {
+    setOpsTaskAnchor(null);
+    setOpsTaskDetail(null);
+    if (!threadId) return undefined;
+    let disposed = false;
+    const refreshOpsAnchor = async (): Promise<void> => {
+      try {
+        const response = await fetch(`/api/ops/tasks?threadId=${encodeURIComponent(threadId)}&limit=20`);
+        if (!response.ok || disposed) return;
+        const data = await response.json() as { tasks?: Array<Record<string, unknown>> };
+        const task = (data.tasks ?? []).find((candidate) => ['queued', 'running', 'paused', 'waiting_confirmation', 'verifying', 'blocked'].includes(String(candidate.state)))
+          ?? (data.tasks ?? [])[0];
+        if (!task || typeof task.taskId !== 'string' || !task.spec) {
+          setOpsTaskAnchor(null);
+          setOpsTaskDetail(null);
+          return;
+        }
+        const detailResponse = await fetch(`/api/ops/tasks/${encodeURIComponent(task.taskId)}`);
+        if (disposed) return;
+        if (detailResponse.ok && !disposed) {
+          const detail = await detailResponse.json() as { task?: OpsTaskSession; events?: OpsTaskTimelineEvent[] };
+          if (detail.task && detail.task.spec.threadId === threadId && !disposed) {
+            setOpsTaskDetail({ threadId, task: detail.task, events: detail.events ?? [] });
+            const scope = detail.task.spec.knowledgeScope;
+            if (scope?.knowledgeBaseIds?.length && scope.snapshotIds?.length) {
+              setOpsKnowledgeScope({ knowledgeBaseIds: scope.knowledgeBaseIds, snapshotIds: scope.snapshotIds, indexVersion: scope.indexVersion });
+            }
+          }
+        }
+        if (disposed) return;
+        if (task.state !== 'waiting_confirmation' && task.state !== 'blocked') {
+          setOpsTaskAnchor(null);
+          return;
+        }
+        const spec = task.spec && typeof task.spec === 'object' ? task.spec as Record<string, unknown> : {};
+        const target = spec.target && typeof spec.target === 'object' ? spec.target as Record<string, unknown> : {};
+        const targetLabel = [
+          ...(Array.isArray(target.hostIds) ? target.hostIds : []),
+          ...(Array.isArray(target.serviceNames) ? target.serviceNames : []),
+          ...(Array.isArray(target.containerNames) ? target.containerNames : []),
+        ].filter((value): value is string => typeof value === 'string' && Boolean(value.trim())).join(' / ');
+        const payload = task.lastError ?? task.reason;
+        setOpsTaskAnchor({
+          threadId,
+          taskId: task.taskId,
+          state: task.state as OpsTaskAnchor['state'],
+          phase: typeof task.currentPhase === 'string' ? task.currentPhase : undefined,
+          target: targetLabel || undefined,
+          reason: typeof payload === 'string' ? payload : undefined,
+          summary: typeof task.finalConclusion === 'object' && task.finalConclusion && typeof (task.finalConclusion as Record<string, unknown>).summary === 'string'
+            ? (task.finalConclusion as Record<string, string>).summary
+            : undefined,
+        });
+      } catch {
+        // Ops task polling is auxiliary; the regular thread remains usable if it is unavailable.
+      }
+    };
+    void refreshOpsAnchor();
+    const timer = window.setInterval(() => void refreshOpsAnchor(), 2000);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+    };
+  }, [threadId]);
+  useEffect(() => {
+    const detailForThread = opsTaskDetail?.threadId === threadId ? opsTaskDetail : null;
+    const taskId = detailForThread?.task.spec.taskId;
+    if (!taskId) return undefined;
+    let disposed = false;
+    const source = new EventSource(`/api/ops/tasks/${encodeURIComponent(taskId)}/events?afterSequence=-1`);
+    source.onmessage = () => {
+      void fetch(`/api/ops/tasks/${encodeURIComponent(taskId)}`)
+        .then((response) => response.ok ? response.json() : null)
+        .then((detail: { task?: OpsTaskSession; events?: OpsTaskTimelineEvent[] } | null) => {
+          if (!disposed && detail?.task?.spec.threadId === threadId) setOpsTaskDetail({ threadId, task: detail.task, events: detail.events ?? [] });
+        })
+        .catch(() => undefined);
+    };
+    return () => { disposed = true; source.close(); };
+  }, [opsTaskDetail?.threadId, opsTaskDetail?.task.spec.taskId, threadId]);
   useEffect(() => {
     if (!configHydrated) return;
     localStorage.setItem(RUN_CONFIG_STORAGE_KEY, JSON.stringify(config));
@@ -979,6 +1181,109 @@ function App() {
       distanceFromBottom,
       source: 'user',
     }));
+  }
+  async function handleOpsTaskAction(action: OpsTaskAction): Promise<void> {
+    const taskId = currentOpsTaskDetail?.task.spec.taskId ?? currentOpsTaskAnchor?.taskId;
+    if (!taskId || opsTaskAnchorBusy) return;
+    let actionBody: Record<string, unknown> = { action };
+    if (action === 'update_scope') {
+      const currentWorkspace = currentOpsTaskDetail?.task.spec.workspaceRoot ?? activeWorkspaceRoot ?? config.workspaceRoot;
+      const scope = await requestTextDialog({
+        title: config.locale === 'zh' ? '补充运维范围' : 'Update Ops scope',
+        message: config.locale === 'zh'
+          ? '输入工作区路径；留空则继续使用当前路径。'
+          : 'Enter a workspace path, or leave it empty to keep the current path.',
+        value: currentWorkspace,
+        actionLabel: config.locale === 'zh' ? '重新排队' : 'Requeue task',
+        cancelLabel: config.locale === 'zh' ? '取消' : 'Cancel',
+      });
+      if (scope === null) return;
+      actionBody = {
+        action,
+        workspaceRoot: scope.trim() || currentWorkspace,
+      };
+    }
+    setOpsTaskAnchorBusy(true);
+    try {
+      const response = await fetch(`/api/ops/tasks/${encodeURIComponent(taskId)}/actions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': `desktop-${taskId}-${action}-${Date.now()}` },
+        body: JSON.stringify(actionBody),
+      });
+      if (!response.ok) {
+        const detail = await response.text().catch(() => '');
+        throw new Error(detail || `HTTP ${response.status}`);
+      }
+      if (action === 'cancel' || action === 'confirm' || action === 'reject_continue') setOpsTaskAnchor(null);
+      const detailResponse = await fetch(`/api/ops/tasks/${encodeURIComponent(taskId)}`);
+      if (detailResponse.ok) {
+        const detail = await detailResponse.json() as { task?: OpsTaskSession; events?: OpsTaskTimelineEvent[] };
+        if (detail.task?.spec.threadId === threadId) setOpsTaskDetail({ threadId, task: detail.task, events: detail.events ?? [] });
+      }
+    } catch (error) {
+      addEvent({
+        kind: 'ops',
+        title: config.locale === 'zh' ? '运维任务操作失败' : 'Ops task action failed',
+        detail: error instanceof Error ? error.message : String(error),
+        tone: 'warning',
+      });
+    } finally {
+      setOpsTaskAnchorBusy(false);
+    }
+  }
+  async function handleOpsRunTest(testId: string): Promise<void> {
+    const taskId = currentOpsTaskDetail?.task.spec.taskId;
+    if (!taskId || opsTaskAnchorBusy) return;
+    setOpsTaskAnchorBusy(true);
+    try {
+      const response = await fetch(`/api/ops/tasks/${encodeURIComponent(taskId)}/tests`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': `desktop-test-${taskId}-${testId}-${Date.now()}`,
+        },
+        body: JSON.stringify({ testId }),
+      });
+      const data = await response.json() as { task?: OpsTaskSession; error?: { message?: string } };
+      if (!response.ok || !data.task) throw new Error(data.error?.message ?? `HTTP ${response.status}`);
+      if (data.task.spec.threadId === threadId) {
+        setOpsTaskDetail((current) => current?.threadId === threadId ? { ...current, task: data.task! } : { threadId, task: data.task!, events: [] });
+      }
+      addEvent({
+        kind: 'ops',
+        title: config.locale === 'zh' ? '本地测试已排队' : 'Local test queued',
+        detail: testId,
+        tone: 'neutral',
+      });
+    } catch (error) {
+      addEvent({
+        kind: 'ops',
+        title: config.locale === 'zh' ? '本地测试启动失败' : 'Local test failed to start',
+        detail: error instanceof Error ? error.message : String(error),
+        tone: 'warning',
+      });
+    } finally {
+      setOpsTaskAnchorBusy(false);
+    }
+  }
+  async function saveOpsIncident(): Promise<void> {
+    const taskId = currentOpsTaskDetail?.task.spec.taskId;
+    if (!taskId || opsTaskAnchorBusy) return;
+    setOpsTaskAnchorBusy(true);
+    try {
+      const response = await fetch(`/api/ops/tasks/${encodeURIComponent(taskId)}/incidents`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': `desktop-incident-${taskId}` },
+        body: JSON.stringify({}),
+      });
+      const data = await response.json() as { incident?: { incidentId: string }; error?: { message?: string } };
+      if (!response.ok) throw new Error(data.error?.message ?? `HTTP ${response.status}`);
+      addEvent({ kind: 'ops', title: config.locale === 'zh' ? '事故已保存' : 'Incident saved', detail: data.incident?.incidentId ?? taskId, tone: 'success' });
+    } catch (error) {
+      addEvent({ kind: 'ops', title: config.locale === 'zh' ? '事故保存失败' : 'Incident save failed', detail: error instanceof Error ? error.message : String(error), tone: 'warning' });
+    } finally {
+      setOpsTaskAnchorBusy(false);
+    }
   }
   function handleReturnToBottom() {
     setTranscriptFollow(nextTranscriptFollowState({
@@ -1088,7 +1393,187 @@ function App() {
       setDialog({ ...options, kind: 'text', resolve });
     });
   }
-  async function runSlashCommand(command: SlashCommand) {
+  async function handleThreadModeChange(mode: 'chat' | 'ops', taskPreset: 'ops' | null): Promise<void> {
+    const preset = mode === 'ops' ? 'ops' : null;
+    if (mode === 'ops' && !activeWorkspaceRoot.trim()) {
+      addEvent({
+        kind: 'error',
+        title: config.locale === 'zh' ? '运维模式需要工作区' : 'Ops mode needs a workspace',
+        detail: config.locale === 'zh' ? '当前是无工作区对话，请切换到项目对话或先选择工作区。' : 'This chat has no workspace. Switch to a project chat or choose a workspace first.',
+        tone: 'warning',
+      });
+      return;
+    }
+    setPendingThreadMode(mode);
+    setPendingTaskPreset(preset);
+    if (!threadId) return;
+    const requestThreadId = threadId;
+    const generation = ++modePatchGenerationRef.current;
+    setThreadModeOverride({ threadId: requestThreadId, mode, taskPreset: preset });
+    setModePatchPending(true);
+    const request = modePatchQueueRef.current.then(async () => {
+      const response = await fetch(`/api/threads/${encodeURIComponent(requestThreadId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode, taskPreset: preset }),
+      });
+      const data = await response.json().catch(() => ({})) as { thread?: ThreadMeta; error?: string };
+      if (!response.ok || !data.thread) throw new Error(data.error ?? 'Failed to update work mode');
+      if (generation !== modePatchGenerationRef.current || requestThreadId !== threadId) return;
+      setThreads((current) => current.map((thread) => thread.threadId === requestThreadId ? data.thread! : thread));
+      setModePatchPending(false);
+    });
+    modePatchQueueRef.current = request.catch(() => undefined);
+    try {
+      await request;
+    } catch (error) {
+      if (generation !== modePatchGenerationRef.current) return;
+      setThreadModeOverride(null);
+      setModePatchPending(false);
+      addEvent({
+        kind: 'error',
+        title: config.locale === 'zh' ? '工作模式保存失败' : 'Work mode save failed',
+        detail: error instanceof Error ? error.message : String(error),
+        tone: 'danger',
+      });
+    }
+  }
+  async function startOpsTask(preset: 'ops', args: string, attachments?: { fileReferences?: string[]; imageNames?: string[] }): Promise<boolean> {
+    const startGeneration = ++opsStartGenerationRef.current;
+    let requestThreadId = threadIdRef.current;
+    const isCurrentStart = (): boolean => (
+      opsStartGenerationRef.current === startGeneration
+      && threadIdRef.current === requestThreadId
+    );
+    const reportStartError = (detail: string, tone: 'warning' | 'danger' = 'danger'): boolean => {
+      if (!isCurrentStart()) return false;
+      addEvent({ kind: 'error', title: config.locale === 'zh' ? '运维任务启动失败' : 'Ops task failed to start', detail, tone });
+      setItems((current) => mergeIncomingItems(current, [{
+        id: `ops_error_${Date.now()}`,
+        type: 'error',
+        text: detail,
+        error: { message: detail },
+        status: 'failed',
+        timestamp: new Date().toISOString(),
+      }]));
+      return true;
+    };
+    const criteria = args.trim() || '持续收集工作区、目标环境和日志的只读证据并给出可复核结论';
+    const workspaceRoot = requestThreadId ? activeWorkspaceRoot : config.workspaceRoot.trim();
+    if (requestThreadId && !opsKnowledgeScope?.knowledgeBaseIds.length) {
+      const detail = config.locale === 'zh' ? '请先在右侧“知识依据”中选择至少一个个人知识库。' : 'Select at least one personal knowledge base in the Knowledge sources panel first.';
+      reportStartError(detail, 'warning');
+      return false;
+    }
+    if (!workspaceRoot) {
+      const detail = config.locale === 'zh' ? '当前对话没有工作区。请切换到项目对话或先选择工作区。' : 'The current chat has no workspace. Switch to a project chat or choose a workspace first.';
+      reportStartError(detail, 'warning');
+      return false;
+    }
+    if ((attachments?.imageNames?.length ?? 0) > 0) {
+      const detail = config.locale === 'zh' ? '运维模式暂不支持图片附件，请切换对话模式或移除图片后重试。' : 'Ops mode does not support image attachments yet. Switch to chat mode or remove the images.';
+      reportStartError(detail, 'warning');
+      return false;
+    }
+    const referencedFiles = attachments?.fileReferences?.filter(Boolean) ?? [];
+    const effectiveCriteria = referencedFiles.length > 0
+      ? `${criteria}\n\n${config.locale === 'zh' ? '参考文件：' : 'Referenced files:'}\n${referencedFiles.map((path) => `- ${path}`).join('\n')}`
+      : criteria;
+    setActionBusy(true);
+    opsActionOwnerRef.current = startGeneration;
+    setStatus(config.locale === 'zh' ? '正在启动运维调查' : 'Starting Ops investigation');
+    try {
+      let activeId = requestThreadId;
+      if (!activeId) {
+        const response = await fetch('/api/threads', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: effectiveCriteria.slice(0, 60), config: threadApiConfig, conversationKind: 'project' }),
+        });
+        const data = await response.json() as { thread?: ThreadMeta; error?: string };
+        if (!response.ok || !data.thread) throw new Error(data.error ?? 'Create thread failed');
+        if (!isCurrentStart()) return false;
+        activeId = data.thread.threadId;
+        requestThreadId = activeId;
+        threadIdRef.current = activeId;
+        await refreshThreads();
+        if (!isCurrentStart()) return false;
+        opsStartLoadTargetRef.current = activeId;
+        try {
+          await loadThread(activeId);
+        } finally {
+          if (opsStartLoadTargetRef.current === activeId) opsStartLoadTargetRef.current = null;
+        }
+      }
+      if (!isCurrentStart() || !activeId) return false;
+      const metadataResponse = await fetch(`/api/threads/${encodeURIComponent(activeId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'ops', taskPreset: preset }),
+      });
+      if (!metadataResponse.ok) throw new Error('Failed to persist Ops thread mode');
+      const metadata = await metadataResponse.json().catch(() => ({})) as { thread?: ThreadMeta };
+      if (!isCurrentStart()) return false;
+      const updatedThread = metadata.thread;
+      if (updatedThread) {
+        setThreads((current) => current.some((thread) => thread.threadId === activeId)
+          ? current.map((thread) => thread.threadId === activeId ? updatedThread : thread)
+          : [updatedThread, ...current]);
+      }
+      if (!opsKnowledgeScope?.knowledgeBaseIds.length) {
+        const detail = config.locale === 'zh' ? '线程已切换到 Ops。请先在右侧“知识依据”中选择至少一个个人知识库，然后再次启动任务。' : 'The thread is now in Ops mode. Select at least one personal knowledge base in the right panel, then start the task again.';
+        reportStartError(detail, 'warning');
+        return false;
+      }
+      setPendingThreadMode('ops');
+      setPendingTaskPreset(preset);
+      setThreadModeOverride({ threadId: activeId, mode: 'ops', taskPreset: preset });
+      const response = await fetch('/api/ops/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': `desktop-ops-${activeId}-${Date.now()}` },
+        body: JSON.stringify({
+          threadId: activeId,
+          presetId: preset,
+          workspaceRoot,
+          environmentId: 'local',
+          target: { hostIds: ['local'] },
+          policyProfile: 'ops_readonly',
+          acceptanceCriteria: [effectiveCriteria],
+          allowLocalPatchProposal: false,
+          // 本地验证只允许服务端注册的 testId，不会开放任意命令执行。
+          allowLocalTest: true,
+          knowledgeScope: opsKnowledgeScope,
+          start: true,
+        }),
+      });
+      const data = await response.json() as { task?: OpsTaskSession; events?: OpsTaskTimelineEvent[]; error?: { message?: string } };
+      if (!response.ok || !data.task) throw new Error(data.error?.message ?? 'Create Ops task failed');
+      if (!isCurrentStart()) return false;
+      setOpsTaskDetail({ threadId: data.task.spec.threadId, task: data.task, events: data.events ?? [] });
+      setInput('');
+      setActiveSlashOption(null);
+      setComposerFileReferences([]);
+      setImages([]);
+      addEvent({ kind: 'ops', title: config.locale === 'zh' ? '运维任务已启动' : 'Ops task started', detail: effectiveCriteria, tone: 'success' });
+      setStatus(config.locale === 'zh' ? '运维调查已启动' : 'Ops investigation started');
+      await refreshThreads();
+      if (!isCurrentStart()) return false;
+      return true;
+    } catch (error) {
+      if (!isCurrentStart()) return false;
+      setStatus(error instanceof Error ? error.message : String(error));
+      const detail = error instanceof Error ? error.message : String(error);
+      addEvent({ kind: 'error', title: config.locale === 'zh' ? '运维任务启动失败' : 'Ops task failed to start', detail, tone: 'danger' });
+      setItems((current) => mergeIncomingItems(current, [{ id: `ops_error_${Date.now()}`, type: 'error', text: detail, error: { message: detail }, status: 'failed', timestamp: new Date().toISOString() }]));
+      return false;
+    } finally {
+      if (opsActionOwnerRef.current === startGeneration) {
+        opsActionOwnerRef.current = null;
+        setActionBusy(false);
+      }
+    }
+  }
+  async function runSlashCommand(command: SlashCommand, attachments?: { fileReferences?: string[]; imageNames?: string[] }) {
     switch (command.kind) {
       case 'skills.list':
         setInput('/skills ');
@@ -1128,6 +1613,13 @@ function App() {
         setInput('');
         if (threadId && !busy && !actionBusy) await threadAction('compact');
         return;
+      case 'ops':
+        if (!command.args.trim()) {
+          setInput(`/ops ${command.preset} `);
+          window.requestAnimationFrame(() => composerInputRef.current?.focus());
+          return true;
+        }
+        return startOpsTask(command.preset, command.args, attachments);
       case 'task.mode':
         if (!command.args.trim()) {
           setInput(`/${command.mode} `);
@@ -1174,37 +1666,42 @@ function App() {
     setInput('');
     void runSlashCommand(parseSlashCommand(option.command));
   }
-  async function submitComposer() {
+  async function submitComposer(): Promise<boolean> {
     if (workspaceView === 'workflow') {
       const goal = input.trim();
-      if (!goal) return;
+      if (!goal) return true;
       setInput('');
       setStatus(config.locale === 'zh' ? '正在更新工作流' : 'Updating workflow');
       await requestWorkflowPlan(goal);
       setStatus(t(config.locale, 'idle'));
-      return;
+      return true;
     }
     if (activeSlashOption) {
-      if (!input.trim()) return;
+      if (!input.trim()) return true;
       const command = parseSlashCommand(activeSlashOption.command + input);
       setActiveSlashOption(null);
-      await runSlashCommand(command);
-      return;
+      return (await runSlashCommand(command, { fileReferences: composerFileReferences, imageNames: images.map((image) => image.name) })) !== false;
+    }
+    if (input.trim().startsWith('/')) {
+      const command = parseSlashCommand(input);
+      if (command.kind !== 'none') {
+        return (await runSlashCommand(command, { fileReferences: composerFileReferences, imageNames: images.map((image) => image.name) })) !== false;
+      }
     }
     if (slashVisible && images.length === 0 && composerFileReferences.length === 0) {
       if (filteredSlashOptions.length > 0) {
         const exactOption = filteredSlashOptions.find((option) => option.command.trim() === input.trim());
         selectSlashOption(exactOption ?? filteredSlashOptions[0]);
-        return;
+        return true;
       }
       const command = parseSlashCommand(input);
       if (command.kind !== 'none') {
-        await runSlashCommand(command);
-        return;
+        return (await runSlashCommand(command, { fileReferences: composerFileReferences, imageNames: images.map((image) => image.name) })) !== false;
       }
     }
     await sendMessage(mergeComposerFileReferences(input, composerFileReferences));
     setComposerFileReferences([]);
+    return true;
   }
   function setWebSearchMode(mode: WebSearchMode) {
     setConfig((current) => ({ ...current, webSearchMode: mode }));
@@ -1469,9 +1966,7 @@ function App() {
   }
   async function stopTurn() {
     const targetThreadId = activeTurnThreadIdRef.current || threadId; if (!targetThreadId) return;
-    setBusy(false);
-    setRunningTurnIds(new Set());
-    setStatus(config.locale === 'zh' ? '已停止' : 'Interrupted');
+    setStatus(config.locale === 'zh' ? '停止中' : 'Stopping');
     showToast(config.locale === 'zh' ? '已请求停止当前回复' : 'Stop requested');
     try {
       const response = await fetch(`/api/threads/${targetThreadId}/interrupt`, {
@@ -1479,21 +1974,42 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ config: threadApiConfig }),
       });
-      const data = (await response.json()) as { interrupted?: boolean };
-      if (!response.ok || !data.interrupted) {
+      const data = (await response.json()) as { interrupted?: boolean; accepted?: boolean; status?: string };
+      if (!response.ok || (!data.interrupted && !data.accepted)) {
         await reloadThreadSnapshot(targetThreadId);
       }
     } catch {
       await reloadThreadSnapshot(targetThreadId);
     } finally {
-      setBusy(false);
-      setRunningTurnIds(new Set());
       addEvent({
         kind: 'interrupt',
-        title: config.locale === 'zh' ? '已停止' : 'Interrupted',
-        detail: config.locale === 'zh' ? '当前回复已请求中断。' : 'The current turn was interrupted.',
+        title: config.locale === 'zh' ? '正在停止' : 'Stopping',
+        detail: config.locale === 'zh' ? '等待服务端确认当前回合已收口。' : 'Waiting for the server to confirm the turn has stopped.',
         tone: 'warning',
       });
+    }
+  }
+  async function submitAgentDecision(response: AgentDecisionResponse) {
+    if (!threadId || !pendingDecision) return;
+    try {
+      const result = await fetch(`/api/threads/${encodeURIComponent(threadId)}/decision`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(response),
+      });
+      if (!result.ok) {
+        const data = (await result.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error ?? 'Decision request is no longer pending');
+      }
+      setStatus(config.locale === 'zh' ? '继续执行中' : 'Continuing');
+    } catch (error) {
+      addEvent({
+        kind: 'error',
+        title: config.locale === 'zh' ? '决策提交失败' : 'Decision failed',
+        detail: error instanceof Error ? error.message : String(error),
+        tone: 'danger',
+      });
+      await reloadThreadSnapshot(threadId);
     }
   }
   async function decideApproval(
@@ -1673,7 +2189,7 @@ function App() {
   function previewFileFromItem(path: string) {
     if (!path) return;
     setRightPaneSizingMode('files');
-    setPreviewRequest({ path, pin: true, openedBy: 'user', nonce: Date.now() });
+    setPreviewRequest({ path, threadId: threadId || undefined, pin: true, openedBy: 'user', nonce: Date.now() });
   }
   function addWorkspaceFileToComposer(path: string) {
     const normalized = path.trim();
@@ -1720,6 +2236,7 @@ function App() {
         setEvents([]);
         void loadThread(nextState.nextThreadId);
       } else {
+        opsStartGenerationRef.current += 1;
         setThreadId('');
         setTurns([]);
         setItems([]);
@@ -1781,11 +2298,11 @@ function App() {
     if (name === null) return null;
     return name.trim() || defaultName;
   }
-  async function saveModelPreset(name: string, presetConfig: ModelPresetConfig): Promise<void> {
+  async function saveModelPreset(name: string, presetConfig: ModelPresetConfig, presetId?: string, status: 'draft' | 'published' = 'published'): Promise<void> {
     const response = await fetch('/api/model-presets', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, config: presetConfig }),
+      body: JSON.stringify({ ...(presetId ? { id: presetId } : {}), name, status, config: presetConfig }),
     });
     if (!response.ok) throw new Error('Model preset save failed');
     const data = (await response.json()) as { presets?: ModelPreset[] };
@@ -1879,6 +2396,12 @@ function App() {
         : '236px minmax(0, 1fr)',
       gridTemplateRows: 'minmax(0, 1fr)',
       }}>
+      {apiUnavailable ? (
+        <div className="apiUnavailableNotice" role="status">
+          <span>{config.locale === 'zh' ? 'API 正在启动或暂时不可用，界面会自动重试。' : 'The API is starting or temporarily unavailable. Retrying automatically.'}</span>
+          <button type="button" onClick={() => window.location.reload()}>{config.locale === 'zh' ? '立即重试' : 'Retry now'}</button>
+        </div>
+      ) : null}
       {/* 窄屏 sidebar scrim 遮罩 — Chinese: narrow sidebar scrim */}
       <button type="button" className={`sidebarScrim${sidebarOpen ? ' mobileOpen' : ''}`} aria-label={config.locale === 'zh' ? '关闭侧栏' : 'Close sidebar'} onClick={() => setSidebarOpen(false)} />
       <aside className={[sidebarCollapsed ? 'conversationPane collapsed' : 'conversationPane', sidebarOpen ? 'mobileOpen' : ''].filter(Boolean).join(' ')}>
@@ -1900,7 +2423,7 @@ function App() {
       <section
         className={[
           'workspace',
-          rightPaneVisible ? '' : 'rightPaneHidden',
+          showRightPane ? '' : 'rightPaneHidden',
           isWorkflowView ? 'workflowSplit' : '',
         ].filter(Boolean).join(' ')}
         style={{
@@ -1938,17 +2461,22 @@ function App() {
               <Icon name={themeShortcutIcon} />
             </button>
             <button className="iconButton" onClick={() => void threadAction('compact')} disabled={!threadId || busy || actionBusy} title={t(config.locale, 'compact')} aria-label={t(config.locale, 'compact')}><Icon name="refresh" /></button>
-            <button className={monitorButtonActive ? 'iconButton panelButton active' : 'iconButton panelButton'} onClick={openUnifiedMonitor} title={config.locale === 'zh' ? '任务监控' : 'Task monitor'} aria-label={config.locale === 'zh' ? '任务监控' : 'Task monitor'}><Icon name="activity" /></button>
+            {config.monitorPanelVisible !== false ? <button className={monitorButtonActive ? 'iconButton panelButton active' : 'iconButton panelButton'} onClick={openUnifiedMonitor} title={config.locale === 'zh' ? '任务监控' : 'Task monitor'} aria-label={config.locale === 'zh' ? '任务监控' : 'Task monitor'}><Icon name="activity" /></button> : null}
             <button className="iconButton helpButton" onClick={() => setSettingsHelpOpen(true)} title={config.locale === 'zh' ? '设置说明' : 'Settings guide'} aria-label={config.locale === 'zh' ? '设置说明' : 'Settings guide'}><Icon name="question" /></button>
-            <button className={rightPaneVisible ? 'iconButton panelButton rightPaneToggleButton active' : 'iconButton panelButton rightPaneToggleButton'} onClick={() => setRightPaneVisible((value) => !value)} title={config.locale === 'zh' ? '显示/隐藏右侧栏' : 'Show/hide right panel'} aria-label={config.locale === 'zh' ? '显示/隐藏右侧栏' : 'Show/hide right panel'}><Icon name="panel" /></button>
+            <button className={showRightPane ? 'iconButton panelButton rightPaneToggleButton active' : 'iconButton panelButton rightPaneToggleButton'} onClick={() => { if (hasActiveThread) setRightPaneVisible((value) => !value); }} disabled={!hasActiveThread} title={config.locale === 'zh' ? '显示/隐藏右侧栏' : 'Show/hide right panel'} aria-label={config.locale === 'zh' ? '显示/隐藏右侧栏' : 'Show/hide right panel'}><Icon name="panel" /></button>
           </div>
         </header>
         <div className="contentGrid">
           <section className="transcript" ref={transcriptRef} onScroll={handleTranscriptScroll}>
-            {items.length === 0 ? (
-              <div className="empty">{workspaceView === 'workflow'
-                ? (config.locale === 'zh' ? '从下方输入工作流目标，或描述节点修改要求。' : 'Describe a workflow goal or node change below.')
-                : t(config.locale, 'empty')}</div>
+            {!hasActiveThread ? (
+              <ConversationIdleAnimation theme={shortcutThemeMode === 'light' ? 'light' : 'dark'} />
+            ) : items.length === 0 ? (
+              <>
+                <div className="empty">{workspaceView === 'workflow'
+                  ? (config.locale === 'zh' ? '从下方输入工作流目标，或描述节点修改要求。' : 'Describe a workflow goal or node change below.')
+                  : t(config.locale, 'empty')}</div>
+                {currentOpsTaskAnchor && hasActiveThread ? <OpsTaskAnchorCard locale={config.locale} task={currentOpsTaskAnchor} busy={opsTaskAnchorBusy} onAction={handleOpsTaskAction} /> : null}
+              </>
             ) : (
               <>
                 <TranscriptTurnRail entries={transcriptTurnSummaries} transcriptRef={transcriptRef} onSelect={scrollToTranscriptTurn} />
@@ -1981,10 +2509,18 @@ function App() {
                     />
                   )
                 ))}
+                {currentOpsTaskAnchor && hasActiveThread ? (
+                  <OpsTaskAnchorCard
+                    locale={config.locale}
+                    task={currentOpsTaskAnchor}
+                    busy={opsTaskAnchorBusy}
+                    onAction={handleOpsTaskAction}
+                  />
+                ) : null}
               </>
             )}
           </section>
-          {rightPaneVisible ? (
+          {showRightPane ? (
             <>
               <button
                 type="button"
@@ -1993,7 +2529,74 @@ function App() {
                 title={config.locale === 'zh' ? '拖拽调整右侧栏宽度' : 'Drag to resize right panel'}
                 onPointerDown={startRightPaneResize}
               />
-              {workspaceView === 'workflow' ? <section className="workflowSidePane"><WorkflowPanel locale={config.locale} workflow={activeWorkflow} blueprint={workflowBlueprint} components={workflowComponents} planDraft={workflowPlanDraft} saving={workflowSaving} runtimeBusy={workflowRuntimeBusy} onSave={(workflow) => void saveWorkflow(workflow)} onCancelPlan={() => setWorkflowPlanDraft(null)} onCommitPlan={() => void commitWorkflowPlan()} onSelectionChange={setWorkflowSelectedNodeIds} onRunWorkflow={() => void controlWorkflowRuntime('run')} onTestWorkflow={() => void controlWorkflowRuntime('test_run')} onPublishWorkflow={() => void controlWorkflowRuntime('publish')} onResumeWorkflow={() => void controlWorkflowRuntime('resume')} onCancelWorkflow={() => void controlWorkflowRuntime('cancel')} onRetryWorkflowNode={(nodeId) => void controlWorkflowRuntime('retry_node', nodeId)} runEvents={runMonitor.events} /></section> : <RightPane activeThread={hasActiveThread ? activeThread : null} activeThreadId={hasActiveThread ? threadId : ''} activeThreadTitle={hasActiveThread ? activeThread?.title ?? '' : ''} busy={hasActiveThread && busy} threadChildren={hasActiveThread ? threadChildren : []} externalPreviewRequest={previewRequest} locale={config.locale} runtimeItems={hasActiveThread ? items : []} workspaceRoot={activeWorkspaceRoot} browserRequestVersion={browserRequestVersion} suspendBrowser={suspendNativeBrowser} onTabChange={(tab) => setRightPaneSizingMode(rightPaneSizingModeForTab(tab))} onJumpToMonitor={jumpToMonitor} onToggleMemoryExcluded={(excluded) => void toggleThreadMemoryExcluded(excluded)} onAddFileToConversation={addWorkspaceFileToComposer} traceSummary={hasActiveThread ? workbenchTraceSummary as Parameters<typeof RightPane>[0]['traceSummary'] : null} currentRunId={hasActiveThread ? workbenchCurrentRunId : undefined} controlCapabilities={hasActiveThread && workbenchSelectedRun?.controlCapabilities ? { interrupt: workbenchSelectedRun.controlCapabilities.interrupt, resume: workbenchSelectedRun.controlCapabilities.resume, rollback: { enabled: workbenchSelectedRun.controlCapabilities.rollback.enabled, checkpointIds: workbenchSelectedRun.controlCapabilities.rollback.checkpointIds ?? [], reason: workbenchSelectedRun.controlCapabilities.rollback.reason } } : undefined} recentTraces={hasActiveThread ? runMonitor.traces.slice(-10) : []} onInterrupt={handleControlInterrupt} onResume={handleControlResume} onRollback={handleControlRollback} responsiveMode={responsiveMode === 'side' ? undefined : responsiveMode} onCloseRequest={handleCloseWorkbench} />}
+              {workspaceView === 'workflow' ? (
+                <section className="workflowSidePane">
+                  <WorkflowPanel
+                    locale={config.locale}
+                    workflow={activeWorkflow}
+                    blueprint={workflowBlueprint}
+                    components={workflowComponents}
+                    planDraft={workflowPlanDraft}
+                    saving={workflowSaving}
+                    runtimeBusy={workflowRuntimeBusy}
+                    onSave={(workflow) => void saveWorkflow(workflow)}
+                    onCancelPlan={() => setWorkflowPlanDraft(null)}
+                    onCommitPlan={() => void commitWorkflowPlan()}
+                    onSelectionChange={setWorkflowSelectedNodeIds}
+                    onRunWorkflow={() => void controlWorkflowRuntime('run')}
+                    onTestWorkflow={() => void controlWorkflowRuntime('test_run')}
+                    onPublishWorkflow={() => void controlWorkflowRuntime('publish')}
+                    onResumeWorkflow={() => void controlWorkflowRuntime('resume')}
+                    onCancelWorkflow={() => void controlWorkflowRuntime('cancel')}
+                    onRetryWorkflowNode={(nodeId) => void controlWorkflowRuntime('retry_node', nodeId)}
+                    runEvents={runMonitor.events}
+                  />
+                </section>
+              ) : (
+                <RightPane
+                  activeThread={hasActiveThread ? activeThread : null}
+                  activeThreadId={hasActiveThread ? threadId : ''}
+                  activeThreadTitle={hasActiveThread ? activeThread?.title ?? '' : ''}
+                  busy={hasActiveThread && busy}
+                  threadChildren={hasActiveThread ? threadChildren : []}
+                  externalPreviewRequest={previewRequest}
+                  locale={config.locale}
+                  runtimeItems={hasActiveThread ? items : []}
+                  workspaceRoot={activeWorkspaceRoot}
+                  browserRequestVersion={browserRequestVersion}
+                  suspendBrowser={suspendNativeBrowser}
+                  onTabChange={(tab) => setRightPaneSizingMode(rightPaneSizingModeForTab(tab))}
+                  onJumpToMonitor={jumpToMonitor}
+                  onToggleMemoryExcluded={(excluded) => void toggleThreadMemoryExcluded(excluded)}
+                  onAddFileToConversation={addWorkspaceFileToComposer}
+                  traceSummary={hasActiveThread ? workbenchTraceSummary as Parameters<typeof RightPane>[0]['traceSummary'] : null}
+                  currentRunId={hasActiveThread ? workbenchCurrentRunId : undefined}
+                  controlCapabilities={hasActiveThread && workbenchSelectedRun?.controlCapabilities ? {
+                    interrupt: workbenchSelectedRun.controlCapabilities.interrupt,
+                    resume: workbenchSelectedRun.controlCapabilities.resume,
+                    rollback: {
+                      enabled: workbenchSelectedRun.controlCapabilities.rollback.enabled,
+                      checkpointIds: workbenchSelectedRun.controlCapabilities.rollback.checkpointIds ?? [],
+                      reason: workbenchSelectedRun.controlCapabilities.rollback.reason,
+                    },
+                  } : undefined}
+                  recentTraces={hasActiveThread ? runMonitor.traces.slice(-10) : []}
+                  onInterrupt={handleControlInterrupt}
+                  onResume={handleControlResume}
+                  onRollback={handleControlRollback}
+                  responsiveMode={responsiveMode === 'side' ? undefined : responsiveMode}
+                  onCloseRequest={handleCloseWorkbench}
+                  showOps={hasActiveThread && (currentThreadMode === 'ops' || Boolean(currentOpsTaskDetail))}
+                  opsTask={hasActiveThread ? currentOpsTaskDetail?.task ?? null : null}
+                  opsTaskEvents={hasActiveThread ? currentOpsTaskDetail?.events ?? [] : []}
+                  opsTaskBusy={opsTaskAnchorBusy}
+                  opsKnowledgeScope={opsKnowledgeScope}
+                  onOpsKnowledgeScopeChange={setOpsKnowledgeScope}
+                  onOpsTaskAction={handleOpsTaskAction}
+                  onOpsRunTest={handleOpsRunTest}
+                  onOpsSaveIncident={saveOpsIncident}
+                />
+              )}
             </>
           ) : null}
         </div>
@@ -2003,7 +2606,10 @@ function App() {
             <Icon name="chevronDown" />
           </button>
         ) : null}
-        <ComposerBar activeSlashOption={activeSlashOption} activeThreadId={threadId} actionBusy={actionBusy} addFileReference={(path) => setComposerFileReferences((current) => current.includes(path) ? current : [...current, path])} applyModelPreset={applyModelPreset} botConfig={botConfig} botStatus={botStatus} busy={busy} composerInputRef={composerInputRef} config={config} draggingImage={draggingImage} filteredSlashOptions={filteredSlashOptions} handleDrop={handleDrop} handleFileSelect={handleFileSelect} handlePaste={handlePaste} images={images} input={input} fileReferences={composerFileReferences} modelPresets={modelPresets} openRemoteAssistants={openRemoteAssistants} persistThreadConfigOverrides={saveThreadModelOverrides} removeImage={removeImage} removeFileReference={(path) => setComposerFileReferences((current) => current.filter((item) => item !== path))} rightPaneVisible={rightPaneVisible} selectSlashOption={selectSlashOption} setActiveSlashOption={setActiveSlashOption} setConfig={setConfig} setDraggingImage={setDraggingImage} setInput={setInput} slashVisible={slashVisible} stopTurn={stopTurn} submitComposer={submitComposer} workflowMode={workspaceView === 'workflow'} workflowPlanning={workflowPlanning} workspaceRoot={activeWorkspaceRoot} />
+        {pendingDecision && pendingDecision.threadId === threadId ? (
+          <AgentDecisionCard request={pendingDecision} locale={config.locale} busy={actionBusy || modePatchPending} onSubmit={submitAgentDecision} />
+        ) : null}
+        <ComposerBar activeSlashOption={activeSlashOption} activeThreadId={threadId} actionBusy={actionBusy || modePatchPending} addFileReference={(path) => setComposerFileReferences((current) => current.includes(path) ? current : [...current, path])} applyModelPreset={applyModelPreset} botConfig={botConfig} botStatus={botStatus} busy={busy} composerInputRef={composerInputRef} config={config} currentThreadMode={currentThreadMode} currentTaskPreset={currentTaskPreset} draggingImage={draggingImage} filteredSlashOptions={filteredSlashOptions} handleDrop={handleDrop} handleFileSelect={handleFileSelect} handlePaste={handlePaste} images={images} input={input} fileReferences={composerFileReferences} modelPresets={modelPresets} onStartOps={startOpsTask} onThreadModeChange={handleThreadModeChange} openRemoteAssistants={openRemoteAssistants} opsModeAvailable={opsModeAvailable} opsModeUnavailableHint={config.locale === 'zh' ? '当前对话没有工作区，请切换到项目对话或先选择工作区。' : 'Choose a workspace or switch to a project chat to use Ops mode.'} persistThreadConfigOverrides={saveThreadModelOverrides} removeImage={removeImage} removeFileReference={(path) => setComposerFileReferences((current) => current.filter((item) => item !== path))} rightPaneVisible={showRightPane} selectSlashOption={selectSlashOption} setActiveSlashOption={setActiveSlashOption} setConfig={setConfig} setDraggingImage={setDraggingImage} setInput={setInput} slashVisible={slashVisible} stopTurn={stopTurn} submitComposer={submitComposer} workflowMode={workspaceView === 'workflow'} workflowPlanning={workflowPlanning} workspaceRoot={activeWorkspaceRoot} />
       </section>
       {settingsOpen ? (
         <SettingsDrawer
@@ -2020,6 +2626,7 @@ function App() {
           consumePendingMcpDraft={() => setPendingMcpDraft(null)}
           startDingtalkStream={startDingtalkStream} stopDingtalkStream={stopDingtalkStream} testDingtalkMessage={testDingtalkMessage}
           activeThreadId={threadId}
+          workspaceRoots={rememberedWorkspaceRoots}
           saveThreadModelOverrides={saveThreadModelOverrides}
           saveGlobalModelConfig={saveGlobalModelConfig}
         />
@@ -2028,8 +2635,6 @@ function App() {
       <RunMonitorDrawer
         threadId={threadId}
         open={runMonitor.open}
-        adminMode={runMonitor.adminMode}
-        adminToken={runMonitor.adminToken}
         runs={runMonitor.runs}
         traces={runMonitor.traces}
         visibleTraces={runMonitor.visibleTraces}
@@ -2063,7 +2668,6 @@ function App() {
         onSetErrorsOnly={runMonitor.setErrorsOnly}
         onAutoRefreshChange={runMonitor.setAutoRefresh}
         onAutoRefreshIntervalChange={runMonitor.setAutoRefreshInterval}
-        onAdminTokenChange={runMonitor.setAdminToken}
         onLoadOlder={() => void runMonitor.loadOlder()}
       />
       {dialog ? <AppDialog dialog={dialog} onClose={() => setDialog(null)} /> : null}

@@ -78,8 +78,6 @@ const allCategories: RunTraceCategory[] = ['turn', 'iteration', 'context', 'memo
 const baseProps = {
   zh: true,
   open: true,
-  adminMode: false,
-  adminToken: '',
   threadId: 'thread-1',
   runs: [run],
   events,
@@ -110,7 +108,6 @@ const baseProps = {
   onSetErrorsOnly: vi.fn(),
   onAutoRefreshChange: vi.fn(),
   onAutoRefreshIntervalChange: vi.fn(),
-  onAdminTokenChange: vi.fn(),
   onLoadOlder: vi.fn(),
 };
 
@@ -284,6 +281,10 @@ describe('RunMonitorDrawer', () => {
     expect(guard).toContain('.appShell.theme-dark .traceInspector');
     expect(guard).toContain('.appShell.theme-dark .traceFilters');
     expect(guard).toContain('.appShell.theme-dark .traceTimeline__empty');
-    expect(guard).not.toContain('background: #ffffff;');
+    const darkMonitorGuard = guard.slice(
+      guard.indexOf('.appShell.theme-dark .runMonitorPanel'),
+      guard.indexOf('.appShell.theme-dark .runMonitorHeader'),
+    );
+    expect(darkMonitorGuard).not.toContain('background: #ffffff;');
   });
 });

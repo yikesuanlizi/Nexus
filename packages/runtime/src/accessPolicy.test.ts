@@ -152,4 +152,64 @@ describe('evaluateAccessRequest', () => {
       target: { kind: 'tool', toolName: 'browser_act:click' },
     }).decision).toBe('prompt');
   });
+
+  it('matches typed Ops host, service and workspace targets by scope', () => {
+    const policy: AccessPolicyConfig = {
+      mode: 'chat',
+      workspaceRoot: 'E:\\langchain\\Nexus',
+      persistentRules: [
+        {
+          id: 'ops-host',
+          effect: 'allow',
+          access: 'read',
+          target: { kind: 'host', environmentId: 'prod', hostId: 'api-01' },
+          scope: 'thread',
+          threadId: 'thread-1',
+        },
+        {
+          id: 'ops-workspace',
+          effect: 'allow',
+          access: 'read',
+          target: { kind: 'workspace', workspaceRoot: 'E:\\langchain\\Nexus', relativePath: 'src' },
+          scope: 'global',
+        },
+      ],
+      temporaryGrants: [],
+    };
+
+    expect(evaluateAccessRequest(policy, {
+      ...baseRequest,
+      target: { kind: 'host', environmentId: 'prod', hostId: 'api-01' },
+    }).decision).toBe('allow');
+    expect(evaluateAccessRequest(policy, {
+      ...baseRequest,
+      target: { kind: 'host', environmentId: 'prod', hostId: 'db-01' },
+    }).decision).toBe('prompt');
+    expect(evaluateAccessRequest(policy, {
+      ...baseRequest,
+      target: { kind: 'workspace', workspaceRoot: 'E:\\langchain\\Nexus', relativePath: 'src/components/App.tsx' },
+    }).decision).toBe('allow');
+    expect(evaluateAccessRequest(policy, {
+      ...baseRequest,
+      target: { kind: 'workspace', workspaceRoot: 'E:\\langchain\\Nexus', relativePath: 'docs/design.md' },
+    }).decision).toBe('prompt');
+  });
+
+  it('hard-denies writes and commands against typed Ops remote targets', () => {
+    const policy: AccessPolicyConfig = {
+      mode: 'danger_full_access',
+      workspaceRoot: 'E:\\langchain\\Nexus',
+      persistentRules: [],
+      temporaryGrants: [],
+    };
+    for (const target of [
+      { kind: 'host' as const, environmentId: 'prod', hostId: 'api-01' },
+      { kind: 'container' as const, environmentId: 'prod', containerName: 'api' },
+      { kind: 'service' as const, environmentId: 'prod', serviceName: 'nginx' },
+      { kind: 'log' as const, environmentId: 'prod', serviceName: 'nginx' },
+    ]) {
+      const decision = evaluateAccessRequest(policy, { ...baseRequest, access: 'write', target });
+      expect(decision).toMatchObject({ decision: 'deny', source: 'hard_deny' });
+    }
+  });
 });

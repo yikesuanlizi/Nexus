@@ -316,6 +316,8 @@ function renderPreviewContent(preview: WorkspaceFilePreview, locale: Locale, pre
 
 export interface ExternalPreviewRequest {
   path: string;
+  /** 所属线程；线程切换时禁止复用旧线程的预览请求。 */
+  threadId?: string;
   pin?: boolean;
   openedBy?: 'user' | 'agent';
   /** 用于触发同一文件的重复请求 — 每次自增的序号 */

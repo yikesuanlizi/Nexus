@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { ThreadId, ThreadMeta } from '@nexus/protocol';
+import type { ThreadId, ThreadMeta, ThreadMode, ThreadTaskPreset } from '@nexus/protocol';
 import type { ThreadStore } from '@nexus/storage';
 import { readJson, sendError, sendJson } from '../shared/http.js';
 
@@ -36,11 +36,23 @@ export async function updateThreadTitle(store: ThreadStore, threadId: ThreadId, 
 // 处理 PATCH /api/threads/:id — 更新线程标题和/或标签
 // — Chinese: handle PATCH /api/threads/:id — update thread title and/or tags
 export async function handlePatchThread(req: IncomingMessage, res: ServerResponse, store: ThreadStore, threadId: ThreadId): Promise<void> {
-  const body = await readJson<{ title?: unknown; tags?: unknown }>(req);
+  const body = await readJson<{ title?: unknown; tags?: unknown; mode?: unknown; taskPreset?: unknown }>(req);
   const title = normalizeThreadTitlePatch(body);
   const tags = normalizeThreadTagsPatch(body);
-  if (!title && !tags) {
-    sendError(res, 400, 'Thread title or tags are required');
+  const mode = body.mode === 'chat' || body.mode === 'ops' ? body.mode as ThreadMode : undefined;
+  const taskPreset = body.taskPreset === null || body.taskPreset === 'ops' || body.taskPreset === 'diagnose' || body.taskPreset === 'log_analysis'
+    ? (body.taskPreset === null ? null : 'ops') as ThreadTaskPreset | null
+    : undefined;
+  if (!title && !tags && !mode && body.taskPreset === undefined) {
+    sendError(res, 400, 'Thread title, tags, mode, or taskPreset are required');
+    return;
+  }
+  if (body.mode !== undefined && !mode) {
+    sendError(res, 400, 'mode must be chat or ops');
+    return;
+  }
+  if (body.taskPreset !== undefined && taskPreset === undefined) {
+    sendError(res, 400, 'taskPreset must be ops or null');
     return;
   }
   const current = await store.getThread(threadId);
@@ -51,6 +63,8 @@ export async function handlePatchThread(req: IncomingMessage, res: ServerRespons
   await store.updateThreadMetadata(threadId, {
     ...(title ? { title } : {}),
     ...(tags ? { tags: { ...(current.tags ?? {}), ...tags } } : {}),
+    ...(mode ? { mode } : {}),
+    ...(body.taskPreset !== undefined ? { taskPreset } : {}),
   });
   const thread = await store.getThread(threadId);
   if (!thread) {

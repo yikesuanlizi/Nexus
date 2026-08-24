@@ -13,6 +13,7 @@
     { "path": "packages/bot" },
     { "path": "packages/runtime" },
     { "path": "packages/browser-runtime" },
+    { "path": "packages/wiki-core" },
     { "path": "apps/api" },
     { "path": "apps/web" },
     { "path": "apps/desktop" }

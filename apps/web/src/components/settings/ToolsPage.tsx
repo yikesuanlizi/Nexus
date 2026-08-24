@@ -142,7 +142,7 @@ export function ToolsPage({
   return (
     <section className="settingsSection pluginCatalogShell" id="settings-plugins">
       <SettingsPageHeader
-        eyebrow="EXTENSIONS"
+        eyebrow={text(locale, '扩展', 'Extensions')}
         title={locale === 'zh' ? '插件中心' : 'Plugins'}
         actions={[
           {

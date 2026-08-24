@@ -11,6 +11,7 @@ import {
   listFilesTool,
   readDocumentTool,
   readFileTool,
+  requestUserDecisionTool,
   searchContentTool,
   shellCommandTool,
   webFetchTool,
@@ -62,11 +63,40 @@ describe('builtin tool parallel safety', () => {
     expect(searchContentTool.supportsParallelToolCalls).toBe(true);
     expect(webSearchTool.supportsParallelToolCalls).toBe(true);
     expect(webFetchTool.supportsParallelToolCalls).toBe(true);
+    expect(requestUserDecisionTool.requiredPolicy).toBe('readonly');
+    expect(requestUserDecisionTool.supportsParallelToolCalls).not.toBe(true);
 
     expect(writeFileTool.supportsParallelToolCalls).not.toBe(true);
     expect(shellCommandTool.supportsParallelToolCalls).not.toBe(true);
     expect(applyPatchTool.supportsParallelToolCalls).not.toBe(true);
     expect(gitNexusAnalyzeTool.supportsParallelToolCalls).not.toBe(true);
+  });
+});
+
+describe('requestUserDecisionTool', () => {
+  it('waits through the runtime-owned callback and rejects out-of-contract fields', async () => {
+    const requestUserDecision = vi.fn(async () => ({ requestId: 'decision-1', action: 'way_one' as const, optionId: 'one' }));
+    const result = await requestUserDecisionTool.execute({
+      prompt: '选择方案',
+      options: [{ id: 'one', action: 'way_one', label: '方案一' }],
+      allowCustomInput: false,
+    }, { workspaceRoot: process.cwd(), threadId: 'thread', turnId: 'turn', approved: false, requestUserDecision });
+    expect(requestUserDecision).toHaveBeenCalledWith({
+      prompt: '选择方案',
+      options: [{ id: 'one', action: 'way_one', label: '方案一' }],
+      allowCustomInput: false,
+    });
+    expect(result.status).toBe('completed');
+    expect(result.data).toMatchObject({ action: 'way_one', optionId: 'one' });
+
+    const rejected = await requestUserDecisionTool.execute({
+      prompt: '选择方案',
+      options: [{ id: 'one', action: 'way_one', label: '方案一' }],
+      allowCustomInput: false,
+      threadId: 'forbidden',
+    }, { workspaceRoot: process.cwd(), threadId: 'thread', turnId: 'turn', approved: false, requestUserDecision });
+    expect(rejected.error?.code).toBe('INVALID_ARGUMENTS');
+    expect(requestUserDecision).toHaveBeenCalledTimes(1);
   });
 });
 

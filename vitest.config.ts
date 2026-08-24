@@ -28,6 +28,7 @@ export default defineConfig({
       '@nexus/bot': resolve(__dirname, 'packages/bot/src/index.ts'),
       '@nexus/runtime': resolve(__dirname, 'packages/runtime/src/index.ts'),
       '@nexus/browser-runtime': resolve(__dirname, 'packages/browser-runtime/src/index.ts'),
+      '@nexus/wiki-core': resolve(__dirname, 'packages/wiki-core/src/index.ts'),
     },
   },
   test: {

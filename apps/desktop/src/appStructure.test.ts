@@ -20,7 +20,8 @@ describe('app module structure', () => {
     const source = readFileSync(join(here, 'main.tsx'), 'utf-8');
     expect(source).toContain('<section className="transcript"');
     expect(source).toContain('workflowSidePane');
-    expect(source).toContain('workspaceView === \'workflow\' ? <section className="workflowSidePane">');
+    expect(source).toContain("workspaceView === 'workflow' ? (");
+    expect(source).toContain('<section className="workflowSidePane">');
     expect(source).not.toContain('<section className="workflowWorkspace">');
   });
 
@@ -84,6 +85,28 @@ describe('app module structure', () => {
     expect(stopTurn).toContain('const targetThreadId = activeTurnThreadIdRef.current || threadId');
     expect(stopTurn).toContain('`/api/threads/${targetThreadId}/interrupt`');
     expect(stopTurn).not.toContain('if (!threadId) return;');
+  });
+
+  it('keeps an Ops start bound to its originating thread and generation', () => {
+    const source = readFileSync(join(here, 'main.tsx'), 'utf-8');
+    const startOpsTask = source.match(/async function startOpsTask[\s\S]*?async function runSlashCommand/)?.[0] ?? '';
+
+    expect(startOpsTask).toContain('let requestThreadId = threadIdRef.current;');
+    expect(startOpsTask).toContain('opsStartGenerationRef.current === startGeneration');
+    expect(startOpsTask).toContain('threadIdRef.current === requestThreadId');
+    expect(startOpsTask).toContain('const workspaceRoot = requestThreadId ? activeWorkspaceRoot : config.workspaceRoot.trim();');
+    expect(startOpsTask).toContain('if (!isCurrentStart()) return false;');
+    expect(startOpsTask).toContain('const reportStartError =');
+  });
+
+  it('does not expose Ops without a thread workspace or global workspace', () => {
+    const source = readFileSync(join(here, 'main.tsx'), 'utf-8');
+
+    expect(source).toContain("const activeWorkspaceRoot = threadId");
+    expect(source).toContain("activeThread?.tags?.conversationKind === 'chat' ? ''");
+    expect(source).toContain('const opsModeAvailable = Boolean(activeWorkspaceRoot.trim())');
+    expect(source).toContain('opsModeAvailable={opsModeAvailable}');
+    expect(source).toContain("if (mode === 'ops' && !activeWorkspaceRoot.trim())");
   });
 
   it('uses stable transcript keys so streaming updates do not remount messages', () => {

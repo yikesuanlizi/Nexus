@@ -7,6 +7,7 @@ import {
   temporaryAccessScopeSchema,
 } from './accessPolicySchemas.js';
 import { knowledgeCheckpointSummarySchema } from './fileKnowledgeSchemas.js';
+import { opsTaskPresetSchema } from './opsTask.js';
 
 // ─── Primitives ──────────────────────────────────────────────────────────────
 // 基础 ID schema：threadId/turnId/itemId 都要求非空字符串
@@ -17,10 +18,14 @@ export const itemIdSchema = z.string().min(1);
 // ─── Thread ──────────────────────────────────────────────────────────────────
 // 线程状态枚举
 export const threadStatusSchema = z.enum(['active', 'archived', 'compacted']);
+export const threadModeSchema = z.enum(['chat', 'ops']);
+export const threadTaskPresetSchema = opsTaskPresetSchema;
 
 // 线程元信息 schema
 export const threadMetaSchema = z.object({
   threadId: threadIdSchema,
+  mode: threadModeSchema.optional(),
+  taskPreset: threadTaskPresetSchema.nullable().optional(),
   tenantId: z.string().optional(),
   title: z.string(),
   workspaceRoot: z.string(),
@@ -51,7 +56,13 @@ export const threadSpawnEdgeSchema = z.object({
 
 // ─── Turn ────────────────────────────────────────────────────────────────────
 // 回合状态枚举
-export const turnStatusSchema = z.enum(['running', 'completed', 'failed', 'cancelled', 'interrupted']);
+export const turnStatusSchema = z.enum([
+  'running',
+  'completed',
+  'failed',
+  'cancelled',
+  'interrupted',
+]);
 
 // 纯文本输入 schema
 export const textInputSchema = z.object({
@@ -190,12 +201,16 @@ export const agentMessageItemSchema = z.object({
   // 实施点 2：harness turn 产生的普通 items 打 harnessRunId 标记
   harnessRunId: z.string().optional(),
   harnessIteration: z.number().int().min(0).optional(),
-  attachments: z.array(z.object({
-    name: z.string(),
-    path: z.string(),
-    mimeType: z.string().optional(),
-    url: z.string().optional(),
-  })).optional(),
+  attachments: z
+    .array(
+      z.object({
+        name: z.string(),
+        path: z.string(),
+        mimeType: z.string().optional(),
+        url: z.string().optional(),
+      }),
+    )
+    .optional(),
 });
 
 // 用户消息条目 schema
@@ -293,12 +308,14 @@ export const rollbackConflictItemSchema = z.object({
   turnId: turnIdSchema,
   turnCount: z.number().int().min(0),
   message: z.string(),
-  conflicts: z.array(z.object({
-    path: z.string(),
-    reason: z.string(),
-    expectedHash: z.string().nullable().optional(),
-    actualHash: z.string().nullable().optional(),
-  })),
+  conflicts: z.array(
+    z.object({
+      path: z.string(),
+      reason: z.string(),
+      expectedHash: z.string().nullable().optional(),
+      actualHash: z.string().nullable().optional(),
+    }),
+  ),
   timestamp: z.string().optional(),
   harnessRunId: z.string().optional(),
   harnessIteration: z.number().int().min(0).optional(),
@@ -374,7 +391,17 @@ export const collabToolCallItemSchema = z.object({
   id: itemIdSchema,
   type: z.literal('collab_tool_call'),
   turnId: turnIdSchema,
-  tool: z.enum(['spawn_agent', 'send_input', 'send_message', 'followup_task', 'resume_agent', 'wait', 'wait_agent', 'list_agents', 'close_agent']),
+  tool: z.enum([
+    'spawn_agent',
+    'send_input',
+    'send_message',
+    'followup_task',
+    'resume_agent',
+    'wait',
+    'wait_agent',
+    'list_agents',
+    'close_agent',
+  ]),
   modelToolCallId: z.string().optional(),
   modelToolName: z.string().optional(),
   providerToolCall: providerToolCallFrameSchema.optional(),
@@ -545,7 +572,9 @@ export const usageSchema = z.object({
   cachedInputTokens: z.number().int().min(0),
   outputTokens: z.number().int().min(0),
   reasoningOutputTokens: z.number().int().min(0),
-  cacheStrategy: z.enum(['deepseek-native', 'openai-compatible', 'anthropic-cache-control', 'mixed']).optional(),
+  cacheStrategy: z
+    .enum(['deepseek-native', 'openai-compatible', 'anthropic-cache-control', 'mixed'])
+    .optional(),
 });
 
 // 单回合用量记录 schema
@@ -588,6 +617,33 @@ export const turnCompletedEventSchema = z.object({
   runId: z.string(),
   usage: usageSchema.nullable(),
   status: z.enum(['completed', 'interrupted']).optional(),
+});
+
+export const threadRuntimeUpdatedEventSchema = z.object({
+  type: z.literal('thread.runtime.updated'),
+  threadId: threadIdSchema,
+  turnId: turnIdSchema.optional(),
+  runId: z.string().optional(),
+  status: z.enum(['idle', 'running', 'stopping', 'waiting_user_input', 'terminal']),
+  terminalStatus: z.enum(['completed', 'failed', 'interrupted']).optional(),
+  decisionRequest: z.unknown().optional(),
+});
+
+export const agentDecisionRequestedEventSchema = z.object({
+  type: z.literal('agent.decision.requested'),
+  threadId: threadIdSchema,
+  turnId: turnIdSchema,
+  request: z.unknown(),
+});
+
+export const agentDecisionResolvedEventSchema = z.object({
+  type: z.literal('agent.decision.resolved'),
+  threadId: threadIdSchema,
+  turnId: turnIdSchema,
+  requestId: z.string().min(1),
+  action: z.enum(['way_one', 'way_two', 'custom_input', 'cancel', 'confirm']),
+  optionId: z.string().optional(),
+  customInput: z.string().optional(),
 });
 
 // 回合失败事件 schema
@@ -751,10 +807,12 @@ export const contextCompactionPressureEventSchema = z.object({
     hardThreshold: z.number().nonnegative(),
     ratio: z.number().nonnegative(),
     status: z.enum(['ok', 'soft', 'hard']),
-    window: z.object({
-      ordinal: z.number().int().positive(),
-      prefillInputTokens: z.number().int().nonnegative().nullable(),
-    }).optional(),
+    window: z
+      .object({
+        ordinal: z.number().int().positive(),
+        prefillInputTokens: z.number().int().nonnegative().nullable(),
+      })
+      .optional(),
   }),
 });
 
@@ -782,15 +840,21 @@ export const approvalRequiredEventSchema = z.object({
   decision: z.enum(['prompt', 'forbidden']),
   justification: z.string().optional(),
   accessRequest: accessRequestSchema.optional(),
-  temporaryGrantOptions: z.array(z.object({
-    scope: temporaryAccessScopeSchema,
-    label: z.string(),
-  })).optional(),
-  matchedRule: z.object({
-    id: z.string(),
-    scope: z.union([accessRuleScopeSchema, temporaryAccessScopeSchema]),
-    effect: accessEffectSchema,
-  }).optional(),
+  temporaryGrantOptions: z
+    .array(
+      z.object({
+        scope: temporaryAccessScopeSchema,
+        label: z.string(),
+      }),
+    )
+    .optional(),
+  matchedRule: z
+    .object({
+      id: z.string(),
+      scope: z.union([accessRuleScopeSchema, temporaryAccessScopeSchema]),
+      effect: accessEffectSchema,
+    })
+    .optional(),
 });
 
 // 上下文压缩完成事件 schema（旧版）
@@ -896,14 +960,16 @@ export const taskContextUpdatedEventSchema = z.object({
   type: z.literal('task.context.updated'),
   threadId: threadIdSchema,
   turnId: turnIdSchema,
-  chunks: z.array(z.object({
-    id: z.string(),
-    source: z.string(),
-    tokens: z.number().int().min(0),
-    priority: z.number(),
-    truncated: z.boolean(),
-    summary: z.string(),
-  })),
+  chunks: z.array(
+    z.object({
+      id: z.string(),
+      source: z.string(),
+      tokens: z.number().int().min(0),
+      priority: z.number(),
+      truncated: z.boolean(),
+      summary: z.string(),
+    }),
+  ),
   usedTokens: z.number().int().min(0),
   remainingTokens: z.number().int().min(0),
   timestamp: z.string(),
@@ -929,6 +995,9 @@ export const threadEventSchema = z.discriminatedUnion('type', [
   turnStartedEventSchema,
   turnCompletedEventSchema,
   turnFailedEventSchema,
+  threadRuntimeUpdatedEventSchema,
+  agentDecisionRequestedEventSchema,
+  agentDecisionResolvedEventSchema,
   warningEventSchema,
   streamErrorEventSchema,
   modelOutputRejectedEventSchema,
@@ -1008,19 +1077,34 @@ export const approvalRequestSchema = z.object({
   decision: z.enum(['prompt', 'forbidden']),
   justification: z.string().optional(),
   accessRequest: accessRequestSchema.optional(),
-  temporaryGrantOptions: z.array(z.object({
-    scope: temporaryAccessScopeSchema,
-    label: z.string(),
-  })).optional(),
-  matchedRule: z.object({
-    id: z.string(),
-    scope: z.union([accessRuleScopeSchema, temporaryAccessScopeSchema]),
-    effect: accessEffectSchema,
-  }).optional(),
+  temporaryGrantOptions: z
+    .array(
+      z.object({
+        scope: temporaryAccessScopeSchema,
+        label: z.string(),
+      }),
+    )
+    .optional(),
+  matchedRule: z
+    .object({
+      id: z.string(),
+      scope: z.union([accessRuleScopeSchema, temporaryAccessScopeSchema]),
+      effect: accessEffectSchema,
+    })
+    .optional(),
 });
 
 // 检查点状态 schema
-export const checkpointStatusSchema = z.enum(['running', 'completed', 'interrupted', 'failed', 'stale']);
+export const checkpointStatusSchema = z.enum([
+  'running',
+  'stopping',
+  'waiting_user_input',
+  'terminal',
+  'completed',
+  'interrupted',
+  'failed',
+  'stale',
+]);
 
 // 审批响应 schema
 export const approvalResponseSchema = z.object({

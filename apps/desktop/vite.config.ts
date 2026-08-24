@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const appDir = fileURLToPath(new URL('.', import.meta.url));
+const apiTarget = (process.env.NEXUS_API_URL || 'http://127.0.0.1:4127').replace(/\/+$/, '');
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
@@ -24,7 +25,7 @@ export default defineConfig({
       ignored: ['**/node_modules/**', '**/node_modules.*/**', '**/dist/**', '**/dist-types/**'],
     },
     proxy: {
-      '/api': 'http://127.0.0.1:4127',
+      '/api': apiTarget,
     },
   },
 });

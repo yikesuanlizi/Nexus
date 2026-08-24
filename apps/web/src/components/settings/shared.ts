@@ -99,11 +99,13 @@ export async function saveModelPresetDraft(input: {
   ensureProvider: () => Promise<string | null>;
   saveProviderKey: (providerId?: string) => Promise<void>;
   saveProviderEnvVar: (providerId?: string) => Promise<void>;
-  savePreset: (name: string, config: ModelPresetConfig) => Promise<void>;
+  savePreset: (name: string, config: ModelPresetConfig, presetId?: string, status?: 'draft' | 'published') => Promise<void>;
   presetConfig: ModelPresetConfig;
-}): Promise<void> {
+  presetId?: string;
+  status?: 'draft' | 'published';
+}): Promise<boolean> {
   const name = await input.requestName();
-  if (name === null) return;
+  if (name === null) return false;
   const targetProviderId = await input.ensureProvider();
   const resolvedProviderId = targetProviderId ?? input.presetConfig.provider;
   await input.saveProviderKey(resolvedProviderId);
@@ -112,7 +114,8 @@ export async function saveModelPresetDraft(input: {
     provider: resolvedProviderId,
     model: input.presetConfig.model,
     baseUrl: input.presetConfig.baseUrl || '',
-  });
+  }, input.presetId, input.status ?? 'published');
+  return true;
 }
 
 // 插件中心顶部 tab 图标

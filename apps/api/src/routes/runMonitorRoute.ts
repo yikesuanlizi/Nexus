@@ -45,7 +45,6 @@ async function handleRunScopedRoutes(options: {
   subPath: string;
   activeRunRegistry?: ActiveRunRegistry;
   onControlRun?: (action: RunControlAction, request: RunControlHandlerRequest) => Promise<unknown>;
-  isAdmin?: boolean;
 }): Promise<boolean> {
   const { req, res, url, store, tenantId, runId, subPath, activeRunRegistry, onControlRun } = options;
 
@@ -57,7 +56,7 @@ async function handleRunScopedRoutes(options: {
       beforeSequence: url.searchParams.get('before') ? Number(url.searchParams.get('before')) : undefined,
       limit: Number(url.searchParams.get('limit') ?? 500),
     }) ?? [];
-    sendJson(res, 200, { events, ...(options.isAdmin ? { admin: true } : {}) });
+    sendJson(res, 200, { events });
     return true;
   }
 
@@ -83,7 +82,6 @@ async function handleRunScopedRoutes(options: {
       runId,
       threadId: run.threadId,
       page,
-      ...(options.isAdmin ? { admin: true } : {}),
     });
     return true;
   }
@@ -116,7 +114,6 @@ async function handleRunScopedRoutes(options: {
       total,
       limit,
       nextCursor,
-      ...(options.isAdmin ? { admin: true } : {}),
     });
     return true;
   }
@@ -135,7 +132,6 @@ async function handleRunScopedRoutes(options: {
       turns: runTurns,
       runId,
       threadId: run.threadId,
-      ...(options.isAdmin ? { admin: true } : {}),
     });
     return true;
   }
@@ -260,8 +256,6 @@ export async function handleRunMonitorRoute(options: {
   segments: string[];
   store: ThreadStore;
   tenantContext: TenantContext;
-  isAdmin?: boolean;
-  adminToken?: string;
   activeRunRegistry?: ActiveRunRegistry;
   onControlRun?: (action: RunControlAction, request: RunControlHandlerRequest) => Promise<unknown>;
 }): Promise<boolean> {
@@ -310,54 +304,7 @@ export async function handleRunMonitorRoute(options: {
     }
   }
 
-  if (segments[0] === 'api' && segments[1] === 'admin' && segments[2] === 'runs') {
-    if (!options.isAdmin && !isAdminMonitorRequest(req, options.adminToken)) {
-      sendError(res, 403, 'Admin monitor token is required');
-      return true;
-    }
-    if (req.method === 'GET' && segments.length === 3) {
-      const runs = await store.listRunRecords?.({
-        threadId: url.searchParams.get('threadId') ?? undefined,
-        status: url.searchParams.get('status') as never || undefined,
-        limit: Number(url.searchParams.get('limit') ?? 200),
-      }) ?? [];
-      sendJson(res, 200, { runs, admin: true });
-      return true;
-    }
-
-    if (req.method === 'GET' && segments.length === 4 && segments[3] === 'threads') {
-      const limit = Number(url.searchParams.get('limit') ?? 100);
-      const threads = await listThreadsWithRuns(store, limit);
-      sendJson(res, 200, { threads, admin: true });
-      return true;
-    }
-
-    if (segments.length === 5) {
-      const runId = segments[3];
-      const subPath = segments[4];
-      return handleRunScopedRoutes({
-        req,
-        res,
-        url,
-        store,
-        tenantId: tenantContext.tenantId,
-        runId,
-        subPath,
-        activeRunRegistry: options.activeRunRegistry,
-        onControlRun: options.onControlRun,
-        isAdmin: true,
-      });
-    }
-  }
-
   return false;
-}
-
-export function isAdminMonitorRequest(req: IncomingMessage, adminToken = process.env.NEXUS_ADMIN_TOKEN): boolean {
-  if (!adminToken) return false;
-  const raw = req.headers['x-nexus-admin-token'];
-  const value = Array.isArray(raw) ? raw[0] : raw;
-  return value === adminToken;
 }
 
 function numberSearchParam(url: URL, name: string): number | undefined {

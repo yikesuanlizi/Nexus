@@ -32,10 +32,10 @@ import { defaultConfig, hiddenChatWorkspaceRoot, resolveConfig, type AgentRunCon
 import { createTenantRuntime } from './runtime/tenantRuntime.js';
 import { applyCorsHeaders, resolveCorsOptions } from './shared/cors.js';
 import { handleRequestGate } from './routes/requestGate.js';
-import { resolveDeploymentConfig } from './config/deployment.js';
-import { handleDeploymentRoute } from './routes/deploymentRoute.js';
 import { handleStatusRoute } from './routes/statusRoute.js';
 import { handleKeysRoute } from './routes/keysRoute.js';
+import { handleOpsRoute, recoverOpsTasks } from './routes/opsRoute.js';
+import { handleKnowledgeRoute } from './routes/knowledgeRoute.js';
 
 const storageOptions = resolveStorageOptions();
 const { store: rootStore } = createStore(defaultConfig.dataDir);
@@ -132,15 +132,12 @@ function resolveA2ABaseUrl(req: IncomingMessage): string {
 }
 
 /**
- * 获取或创建指定租户的 A2A handler（单例）。
+ * 获取或创建本地 A2A handler（单例）。
  * 装配 AgentCard、TaskStore、AgentExecutor，并注入 agentFactory。
- * authMode 用于在 AgentCard 中声明认证要求（token → Bearer JWT，off → 无需认证）。
  */
-// — Chinese: get or create A2A handler singleton per tenant. authMode declares the security scheme.
 function getA2AHandler(
   tenantContext: TenantContext,
   req: IncomingMessage,
-  authMode: 'token' | 'off',
 ): A2AHandler {
   const cached = a2aHandlers.get(tenantContext.tenantId);
   if (cached) return cached;
@@ -152,9 +149,8 @@ function getA2AHandler(
     description: 'Nexus Agent OS — A2A endpoint powered by AgentLoop runtime',
     url: `${baseUrl}/api/a2a`,
     version: '0.3.0',
-    // 根据 Nexus 部署的认证模式声明 AgentCard 的 security scheme
-    // — Chinese: declare AgentCard security scheme based on deployment auth mode
-    securityScheme: authMode === 'token' ? 'bearer' : 'none',
+    // 本地实例不启用远程认证。
+    securityScheme: 'none',
   });
 
   const handler = createA2AHandler({
@@ -176,6 +172,8 @@ export function serializeThreadState(state: ThreadState): unknown {
     generation: state.generation,
     pendingInterrupts: state.pendingInterrupts,
     pendingRollback: state.pendingRollback,
+    pendingDecision: state.pendingDecision,
+    terminalStatus: state.terminalStatus,
     lastCheckpoint: state.lastCheckpoint,
     lastTerminalTurnId: state.lastTerminalTurnId,
     hasCancelController: Boolean(state.cancelController),
@@ -361,17 +359,14 @@ function generateServerId(): string {
 async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url ?? '/', 'http://localhost');
   const segments = url.pathname.split('/').filter(Boolean);
-  const deployment = await resolveDeploymentConfig(rootStore, storageOptions.mode);
-  const corsOptions = resolveCorsOptions(process.env, deployment.authMode === 'token');
+  const corsOptions = resolveCorsOptions(process.env, false);
   applyCorsHeaders(req, res, corsOptions);
 
-  if (await handleStatusRoute({ req, res, pathname: url.pathname, deployment, storageOptions, getDefaultRunConfig: () => tenantRuntime.configRepoForTenant({ tenantId: DEFAULT_TENANT_ID }).getDefaultRunConfig() })) return;
+  if (await handleStatusRoute({ req, res, pathname: url.pathname, storageOptions, getDefaultRunConfig: () => tenantRuntime.configRepoForTenant({ tenantId: DEFAULT_TENANT_ID }).getDefaultRunConfig() })) return;
 
-  if (await handleDeploymentRoute({ req, res, pathname: url.pathname, store: rootStore, storageMode: storageOptions.mode })) return;
-
-  const gate = await handleRequestGate({ req, res, url, segments, rootStore, storageOptions, authConfig: deployment.authConfig, corsOptions });
+  const gate = handleRequestGate({ req, res, corsOptions });
   if (gate.handled) return;
-  const { tenantContext, authIdentity } = gate;
+  const { tenantContext } = gate;
 
   const store = tenantRuntime.storeForTenant(tenantContext);
   const configRepo = tenantRuntime.configRepoForTenant(tenantContext);
@@ -408,17 +403,28 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     getThreadRunConfig,
     createAgent: async (config) => ({ agent: (await createTenantAgent(config)).agent }),
     tenantId: tenantContext.tenantId,
-    storageMode: storageOptions.mode,
+    activeRunRegistry: tenantRuntime.activeRunRegistry,
     publishEvent: publishTenantEvent,
   })) return;
   if (await handleWorkspaceFilesRoute({ req, res, url })) return;
   if (await handleTerminalRoute({ req, res, url })) return;
+  if (await handleKnowledgeRoute({ req, res, url, segments, store, tenantContext })) return;
+  if (await handleOpsRoute({
+    req,
+    res,
+    url,
+    segments,
+    store,
+    tenantContext,
+    // Ops 的模型调查始终使用只读权限，避免复用用户当前的写入预设。
+    getAgent: async () => (await createTenantAgent({ permissions: 'read_only' })).agent,
+  })) return;
 
   // A2A 标准发现路径 — /.well-known/agent-card.json
   // A2A 规范要求 Agent Card 在此路径暴露，SDK 的 ClientFactory.createFromUrl 默认查找此路径
   // — Chinese: A2A standard discovery path required by the spec
   if (req.method === 'GET' && url.pathname === '/.well-known/agent-card.json') {
-    const a2aHandler = getA2AHandler(tenantContext, req, deployment.authConfig.mode);
+    const a2aHandler = getA2AHandler(tenantContext, req);
     sendJson(res, 200, a2aHandler.agentCard);
     return;
   }
@@ -426,7 +432,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   // A2A (Agent2Agent) JSON-RPC 路由 — Chinese: A2A JSON-RPC route
   // Agent Card 始终可访问（用于发现），JSON-RPC 调用需要启用配置
   if (segments[0] === 'api' && segments[1] === 'a2a') {
-    const a2aHandler = getA2AHandler(tenantContext, req, deployment.authConfig.mode);
+    const a2aHandler = getA2AHandler(tenantContext, req);
     const isCardRequest = req.method === 'GET' && segments[2] === 'card';
     const a2aConfig = normalizeA2AConfig(await store.getSetting(A2A_CONFIG_KEY));
     if (!isCardRequest && !a2aConfig.enabled) {
@@ -592,6 +598,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       id?: string;
       name?: string;
       config?: Partial<AgentRunConfig>;
+      status?: 'draft' | 'published';
     }>(req);
     sendJson(res, 200, await upsertModelPreset(body));
     return;
@@ -631,8 +638,6 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     segments,
     store,
     tenantContext,
-    isAdmin: authIdentity?.role === 'admin',
-    adminToken: process.env.NEXUS_ADMIN_TOKEN,
     activeRunRegistry: tenantRuntime.activeRunRegistry,
     onControlRun: (action, request) => handleRunControlAction(action, request, getTenantDefaultAgent),
   })) return;
@@ -663,6 +668,10 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
         sendError(res, 400, 'This approval cannot be persisted as an access rule');
         return;
       }
+      if (persistentScope === 'workspace' && !accessRequest.workspaceRoot?.trim()) {
+        sendError(res, 400, 'This approval is not bound to a workspace');
+        return;
+      }
       const rule = persistentRuleFromApproval(accessRequest, persistentScope);
       if (persistentScope === 'thread') {
         const current = await getThreadAccessPolicy(accessRequest.threadId);
@@ -686,7 +695,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   }
 
   if (req.method === 'POST' && url.pathname === '/api/threads') {
-    const body = await readJson<{ title?: string; config?: Partial<AgentRunConfig>; conversationKind?: 'chat' | 'project'; workflowProject?: boolean }>(req);
+    const body = await readJson<{ title?: string; config?: Partial<AgentRunConfig>; conversationKind?: 'chat' | 'project'; workflowProject?: boolean; mode?: 'chat' | 'ops'; taskPreset?: 'ops' | null }>(req);
     const conversationKind = body.conversationKind === 'chat' ? 'chat' : 'project';
     const effectiveConfig = body.config
       ? resolveConfig({ ...await getDefaultRunConfig(), ...body.config })
@@ -702,11 +711,17 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const threadConfigPatch: Partial<AgentRunConfig> = body.config ? { ...body.config } : {};
     if (conversationKind === 'chat') threadConfigPatch.workspaceRoot = '';
     const config = await saveThreadRunConfig(thread.threadId, threadConfigPatch);
+    if (body.mode || body.taskPreset !== undefined) {
+      await store.updateThreadMetadata(thread.threadId, {
+        ...(body.mode ? { mode: body.mode } : {}),
+        ...(body.taskPreset !== undefined ? { taskPreset: body.taskPreset } : {}),
+      });
+    }
     sendJson(res, 200, { thread: await store.getThread(thread.threadId), config: publicThreadRunConfig(config, await store.getThread(thread.threadId)) });
     return;
   }
 
-  if (await handleThreadRoutes(req, res, url, segments, { store, tenantContext, createTenantAgent, getTenantDefaultAgent, publishTenantEvent, getThreadRunConfig, saveThreadRunConfig, getThreadConfigOverrides, updateThreadConfigOverrides, getThreadAccessPolicy, saveThreadAccessPolicy, publicThreadRunConfig, closeThreadEventClients })) return;
+  if (await handleThreadRoutes(req, res, url, segments, { store, tenantContext, createTenantAgent, getTenantDefaultAgent, publishTenantEvent, getThreadRunConfig, saveThreadRunConfig, getThreadConfigOverrides, updateThreadConfigOverrides, getThreadAccessPolicy, saveThreadAccessPolicy, publicThreadRunConfig, closeThreadEventClients, activeRunRegistry: tenantRuntime.activeRunRegistry })) return;
 
   if (req.method === 'GET' && segments[0] === 'api' && segments[1] === 'events' && segments[2]) {
     const threadId = segments[2];
@@ -806,23 +821,43 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       const config = body.config
         ? await saveThreadRunConfig(threadId, body.config)
         : await getThreadRunConfig(threadId);
-      const thread = await store.getThread(threadId);
-      const nextTitle = titleFromInput(body.input);
-      if (thread && nextTitle && shouldRetitleThread(thread.title)) {
-        await store.updateThreadMetadata(threadId, { title: nextTitle });
-        publishEvent({
-          type: 'thread.metadata.updated',
-          threadId,
-          title: nextTitle,
-        }, tenantContext.tenantId);
+      const topLevelReservation = `turn:${threadId}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+      const maxActiveTasks = config.maxActiveTasks ?? 4;
+      if (!tenantRuntime.activeRunRegistry.tryReserveTopLevel(topLevelReservation, maxActiveTasks)) {
+        sendJson(res, 429, {
+          error: {
+            code: 'MAX_ACTIVE_TASKS_REACHED',
+            message: `Maximum active top-level tasks reached (${maxActiveTasks}).`,
+          },
+        });
+        return;
       }
-      const agent = (await createTenantAgent(config)).agent;
-      const result = await agent.runTurn(threadId, await buildUserInputFromTurnRequest(body, {
-        threadId,
-        workspaceRoot: config.workspaceRoot,
-        dataDir: config.dataDir,
-      }));
-      sendJson(res, 200, result);
+      try {
+        const thread = await store.getThread(threadId);
+        const nextTitle = titleFromInput(body.input);
+        if (thread && nextTitle && shouldRetitleThread(thread.title)) {
+          await store.updateThreadMetadata(threadId, { title: nextTitle });
+          publishEvent({
+            type: 'thread.metadata.updated',
+            threadId,
+            title: nextTitle,
+          }, tenantContext.tenantId);
+        }
+        const agent = (await createTenantAgent(config)).agent;
+        const runtimeState = await agent.getRuntimeState(threadId);
+        if (runtimeState.executionStatus === 'running' || runtimeState.executionStatus === 'stopping' || runtimeState.executionStatus === 'waiting_user_input') {
+          sendError(res, 409, `Thread ${threadId} is ${runtimeState.executionStatus}`);
+          return;
+        }
+        const result = await agent.runTurn(threadId, await buildUserInputFromTurnRequest(body, {
+          threadId,
+          workspaceRoot: config.workspaceRoot,
+          dataDir: config.dataDir,
+        }));
+        sendJson(res, 200, result);
+      } finally {
+        tenantRuntime.activeRunRegistry.releaseTopLevel(topLevelReservation);
+      }
       return;
     }
 
@@ -830,7 +865,17 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       const body = await readJson<{ config?: Partial<AgentRunConfig> }>(req);
       const config = body.config ? await saveThreadRunConfig(threadId, body.config) : await getThreadRunConfig(threadId);
       const agent = (await createTenantAgent(config)).agent;
-      sendJson(res, 200, { interrupted: agent.interrupt(threadId) });
+      const activeHandle = tenantRuntime.activeRunRegistry.getByThreadId(threadId);
+      const interrupted = activeHandle
+        ? (await activeHandle.interrupt(), true)
+        : agent.interrupt(threadId);
+      const state = await agent.getRuntimeState(threadId);
+      sendJson(res, 200, {
+        interrupted,
+        accepted: interrupted,
+        status: state.executionStatus ?? (interrupted ? 'stopping' : 'terminal'),
+        turnId: state.checkpoint?.turnId ?? null,
+      });
       return;
     }
 
@@ -909,6 +954,13 @@ server.listen(port, () => {
     publishEvent: (event) => publishEvent(event, DEFAULT_TENANT_ID),
   }).catch((err) => {
     console.warn('[dingtalk] default tenant auto-start failed:', err instanceof Error ? err.message : String(err));
+  });
+  void recoverOpsTasks({
+    store: defaultTenantStore,
+    tenantId: DEFAULT_TENANT_ID,
+    getAgent: async () => tenantRuntime.getDefaultAgent({ tenantId: DEFAULT_TENANT_ID }),
+  }).catch((err) => {
+    console.warn('[ops] task recovery failed:', err instanceof Error ? err.message : String(err));
   });
 });
 

@@ -17,7 +17,7 @@ const ALL_CATEGORIES: RunTraceCategory[] = [
 
 function buildTraceUrl(
   runId: string,
-  params: { limit?: number; before?: number; after?: number; categories?: RunTraceCategory[]; errorsOnly?: boolean; adminMode?: boolean },
+  params: { limit?: number; before?: number; after?: number; categories?: RunTraceCategory[]; errorsOnly?: boolean },
 ): string {
   const search = new URLSearchParams();
   if (params.limit) search.set('limit', String(params.limit));
@@ -28,8 +28,7 @@ function buildTraceUrl(
   }
   if (params.errorsOnly) search.set('errorsOnly', '1');
   const qs = search.toString();
-  const basePath = params.adminMode ? '/api/admin/runs' : '/api/runs';
-  return `${basePath}/${encodeURIComponent(runId)}/trace${qs ? `?${qs}` : ''}`;
+  return `/api/runs/${encodeURIComponent(runId)}/trace${qs ? `?${qs}` : ''}`;
 }
 
 interface TraceFetchResult {
@@ -39,10 +38,10 @@ interface TraceFetchResult {
 
 async function fetchTraces(
   runId: string,
-  params: { limit?: number; before?: number; after?: number; categories?: RunTraceCategory[]; errorsOnly?: boolean; adminMode?: boolean; headers?: Record<string, string>; signal?: AbortSignal },
+  params: { limit?: number; before?: number; after?: number; categories?: RunTraceCategory[]; errorsOnly?: boolean; signal?: AbortSignal },
 ): Promise<TraceFetchResult> {
   const url = buildTraceUrl(runId, params);
-  const response = await fetch(url, { headers: params.headers, signal: params.signal });
+  const response = await fetch(url, { signal: params.signal });
   if (!response.ok) return { traces: [], page: { hasMoreBefore: false, hasMoreAfter: false } };
   const data = (await response.json()) as { page?: { events?: RunTraceEnvelope[]; hasMoreBefore?: boolean; hasMoreAfter?: boolean; nextBefore?: number; nextAfter?: number } };
   const page = data.page;
@@ -77,8 +76,6 @@ export function useRunMonitor(options: {
       return v > 0 ? v : DEFAULT_REFRESH_INTERVAL;
     } catch { return DEFAULT_REFRESH_INTERVAL; }
   });
-  const [adminToken, setAdminTokenState] = useState(() => localStorage.getItem('nexus.adminMonitorToken') ?? '');
-  const adminMode = Boolean(adminToken.trim());
   const autoRefreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const requestIdRef = useRef(0);
@@ -88,12 +85,6 @@ export function useRunMonitor(options: {
 
   const filtersRef = useRef({ categoryFilter: state.categoryFilter, errorsOnly: state.errorsOnly });
   filtersRef.current = { categoryFilter: state.categoryFilter, errorsOnly: state.errorsOnly };
-
-  const setAdminToken = useCallback((value: string) => {
-    setAdminTokenState(value);
-    if (value.trim()) localStorage.setItem('nexus.adminMonitorToken', value.trim());
-    else localStorage.removeItem('nexus.adminMonitorToken');
-  }, []);
 
   const setAutoRefresh = useCallback((value: boolean) => {
     setAutoRefreshState(value);
@@ -142,18 +133,13 @@ export function useRunMonitor(options: {
   }, []);
 
   const fetchRunsData = useCallback(async (requestId: number, controller: AbortController): Promise<RunRecord[]> => {
-    const headers = adminMode ? { 'x-nexus-admin-token': adminToken.trim() } : undefined;
     try {
-      const threadsUrl = adminMode ? '/api/admin/runs/threads' : '/api/runs/threads';
-      const threadsResponse = await fetch(threadsUrl, { headers, signal: controller.signal });
-      let scopedThreadIds: Set<string> | null = !adminMode && threadId
-        ? new Set([threadId, ...threadIds])
-        : null;
+      const threadsResponse = await fetch('/api/runs/threads', { signal: controller.signal });
+      const scopedThreadIds: Set<string> | null = threadId ? new Set([threadId, ...threadIds]) : null;
       let nextThreads: ThreadWithRuns[] = [];
       if (threadsResponse.ok && !controller.signal.aborted) {
         const threadsData = (await threadsResponse.json()) as { threads?: ThreadWithRuns[] };
         const allThreads = threadsData.threads ?? [];
-        // 普通对话只展示当前主任务及其子 Agent；管理员监控仍保留全局线程视图。
         if (scopedThreadIds) {
           let changed = true;
           while (changed) {
@@ -175,50 +161,45 @@ export function useRunMonitor(options: {
 
       const validThreadIds = new Set(nextThreads.map((t) => t.threadId));
       const scopedRunIds = scopedThreadIds ? [...scopedThreadIds] : [];
-      const runsUrl = adminMode
-        ? '/api/admin/runs?limit=200'
-        : scopedRunIds.length > 0
+      const runsUrl = scopedRunIds.length > 0
           ? ''
           : threadId
           ? `/api/runs?threadId=${encodeURIComponent(threadId)}&limit=80`
           : '/api/runs?limit=20';
       let allRuns: RunRecord[] = [];
-      if (!adminMode && scopedRunIds.length > 0) {
+      if (scopedRunIds.length > 0) {
         const responses = await Promise.all(scopedRunIds.map((id) =>
-          fetch(`/api/runs?threadId=${encodeURIComponent(id)}&limit=80`, { headers, signal: controller.signal }),
+          fetch(`/api/runs?threadId=${encodeURIComponent(id)}&limit=80`, { signal: controller.signal }),
         ));
         const data = await Promise.all(responses.filter((response) => response.ok).map((response) => response.json() as Promise<{ runs?: RunRecord[] }>));
         allRuns = [...new Map(data.flatMap((entry) => entry.runs ?? []).map((run) => [run.runId, run])).values()];
       } else {
-        const runsResponse = await fetch(runsUrl, { headers, signal: controller.signal });
+        const runsResponse = await fetch(runsUrl, { signal: controller.signal });
         if (!runsResponse.ok || controller.signal.aborted) return [];
         const runsData = (await runsResponse.json()) as { runs?: RunRecord[] };
         allRuns = runsData.runs ?? [];
       }
       if (controller.signal.aborted) return [];
-      const nextRuns = (adminMode || !threadId) ? allRuns.filter((run) => validThreadIds.has(run.threadId)) : allRuns;
+      const nextRuns = threadId ? allRuns : allRuns.filter((run) => validThreadIds.has(run.threadId));
       dispatch({ type: 'runs.loaded', requestId, runs: nextRuns });
       return nextRuns;
     } catch {
       if (controller.signal.aborted) return [];
       return [];
     }
-  }, [adminMode, adminToken, threadId, threadIdsKey]);
+  }, [threadId, threadIdsKey]);
 
   const loadTraceInitial = useCallback(async (runId: string, requestId: number, controller: AbortController) => {
-    const headers = adminMode ? { 'x-nexus-admin-token': adminToken.trim() } : undefined;
     const { categoryFilter, errorsOnly } = filtersRef.current;
     const result = await fetchTraces(runId, {
       limit: TRACE_FETCH_LIMIT,
       categories: categoryFilter.length > 0 ? categoryFilter : undefined,
       errorsOnly: errorsOnly || undefined,
-      adminMode,
-      headers,
       signal: controller.signal,
     });
     if (controller.signal.aborted) return;
     dispatch({ type: 'traces.loaded', requestId, runId, traces: result.traces, page: result.page });
-  }, [adminMode, adminToken]);
+  }, []);
 
   const loadOlder = useCallback(async () => {
     const current = stateRef.current;
@@ -229,15 +210,12 @@ export function useRunMonitor(options: {
     const requestId = ++requestIdRef.current;
     dispatch({ type: 'refresh.begin', requestId });
     try {
-      const headers = adminMode ? { 'x-nexus-admin-token': adminToken.trim() } : undefined;
       const { categoryFilter, errorsOnly } = filtersRef.current;
       const result = await fetchTraces(current.selectedRunId, {
         limit: TRACE_FETCH_LIMIT,
         before: firstSeq,
         categories: categoryFilter.length > 0 ? categoryFilter : undefined,
         errorsOnly: errorsOnly || undefined,
-        adminMode,
-        headers,
         signal: controller.signal,
       });
       dispatch({ type: 'traces.prepend', requestId, runId: current.selectedRunId, traces: result.traces, page: result.page });
@@ -246,7 +224,7 @@ export function useRunMonitor(options: {
     } finally {
       dispatch({ type: 'refresh.done', requestId });
     }
-  }, [adminMode, adminToken]);
+  }, []);
 
   const refresh = useCallback(async (runId?: string, opts?: { autoExpandThread?: boolean }): Promise<RunRecord[]> => {
     abortControllerRef.current?.abort();
@@ -313,15 +291,12 @@ export function useRunMonitor(options: {
     const requestId = ++requestIdRef.current;
     dispatch({ type: 'refresh.begin-silent', requestId });
     try {
-      const headers = adminMode ? { 'x-nexus-admin-token': adminToken.trim() } : undefined;
       const { categoryFilter, errorsOnly } = filtersRef.current;
       if (lastSeq == null) {
         const result = await fetchTraces(current.selectedRunId, {
           limit: TRACE_FETCH_LIMIT,
           categories: categoryFilter.length > 0 ? categoryFilter : undefined,
           errorsOnly: errorsOnly || undefined,
-          adminMode,
-          headers,
           signal: controller.signal,
         });
         if (result.traces.length > 0 && !controller.signal.aborted) {
@@ -333,8 +308,6 @@ export function useRunMonitor(options: {
           after: lastSeq,
           categories: categoryFilter.length > 0 ? categoryFilter : undefined,
           errorsOnly: errorsOnly || undefined,
-          adminMode,
-          headers,
           signal: controller.signal,
         });
         if (result.traces.length > 0 && !controller.signal.aborted) {
@@ -345,7 +318,7 @@ export function useRunMonitor(options: {
     } catch {
       // ignore
     }
-  }, [adminMode, adminToken, fetchRunsData]);
+  }, [fetchRunsData]);
 
   const openDrawer = useCallback(() => {
     if (open) {
@@ -377,12 +350,9 @@ export function useRunMonitor(options: {
   ) => {
     const body: Record<string, unknown> = { action };
     if (opts?.checkpointId) body.checkpointId = opts.checkpointId;
-    const basePath = adminMode ? '/api/admin/runs' : '/api/runs';
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (adminMode) headers['x-nexus-admin-token'] = adminToken.trim();
-    const response = await fetch(`${basePath}/${encodeURIComponent(run.runId)}/control`, {
+    const response = await fetch(`/api/runs/${encodeURIComponent(run.runId)}/control`, {
       method: 'POST',
-      headers,
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
     if (!response.ok) {
@@ -392,7 +362,7 @@ export function useRunMonitor(options: {
     }
     addEvent({ kind: 'monitor', title: zh ? '控制动作已记录' : 'Control recorded', detail: action, tone: 'success' });
     await refresh(run.runId);
-  }, [addEvent, zh, refresh, adminMode, adminToken]);
+  }, [addEvent, zh, refresh]);
 
   useEffect(() => {
     if (open) {
@@ -458,13 +428,10 @@ export function useRunMonitor(options: {
     errorsOnly: state.errorsOnly,
     tracePage: state.tracePage,
     expandedThreadId: state.expandedThreadId,
-    adminMode,
-    adminToken,
     autoRefresh,
     autoRefreshInterval,
     allCategories: ALL_CATEGORIES,
     zh,
-    setAdminToken,
     setAutoRefresh,
     setAutoRefreshInterval,
     setOpen,

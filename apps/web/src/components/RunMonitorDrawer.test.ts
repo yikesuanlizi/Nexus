@@ -78,8 +78,6 @@ const allCategories: RunTraceCategory[] = ['turn', 'iteration', 'context', 'memo
 const baseProps = {
   zh: true,
   open: true,
-  adminMode: false,
-  adminToken: '',
   threadId: 'thread-1',
   runs: [run],
   events,
@@ -110,7 +108,6 @@ const baseProps = {
   onSetErrorsOnly: vi.fn(),
   onAutoRefreshChange: vi.fn(),
   onAutoRefreshIntervalChange: vi.fn(),
-  onAdminTokenChange: vi.fn(),
   onLoadOlder: vi.fn(),
 };
 

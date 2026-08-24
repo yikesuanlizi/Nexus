@@ -1,5 +1,5 @@
 // 设置面板入口薄壳：注册 Shell 与各 page；状态/handler 通过 useSettingsController 管理
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { AccessPolicyConfig } from '@nexus/protocol';
 import type { Locale, RunConfig } from '../config/config.js';
 import { emptyMcp } from '../config/defaults.js';
@@ -11,21 +11,17 @@ import { ModelsPage } from './settings/ModelsPage.js';
 import { AgentsPage } from './settings/AgentsPage.js';
 import { ToolsPage } from './settings/ToolsPage.js';
 import { MonitorPage } from './settings/MonitorPage.js';
+import { RuntimePage } from './settings/RuntimePage.js';
+import { SshProfilesPage } from './settings/SshProfilesPage.js';
 import { MemoryPage } from './settings/MemoryPage.js';
 import { AccessPolicyPage, type AccessPolicySettingsScope } from './settings/AccessPolicyPage.js';
-import { AboutPage, AdminPage, type AuthTokenPublic } from './settings/AboutPage.js';
+import { AboutPage } from './settings/AboutPage.js';
 import { McpConfigDialog } from './settings/McpConfigDialog.js';
 import { FirecrawlKeyDialog } from './settings/FirecrawlKeyDialog.js';
 import { useSettingsController } from '../features/settings/useSettingsController.js';
 import { saveGlobalAccessPolicy } from '../features/settings/settingsClient.js';
 import { fetchThreadAccessPolicy, patchThreadAccessPolicy } from '../api/threadConfigClient.js';
-
-interface AuthTokenDraft {
-  name: string;
-  role: 'admin' | 'tenant' | 'bot';
-  tenantId: string;
-  scopes: string;
-}
+import { compactWorkspaceRoots, normalizeWorkspaceRoot } from '../features/workspaces/workspaces.js';
 
 const defaultBotConfig: BotConfig = {
   weixin: {
@@ -120,12 +116,12 @@ export function SettingsDrawer({
   clearWebProviderKey,
   consumePendingMcpDraft,
   webProviderState,
-  showAdminControls = false,
   startDingtalkStream,
   stopDingtalkStream,
   testDingtalkMessage,
-  activeThreadId,
-  saveThreadModelOverrides,
+    activeThreadId,
+    workspaceRoots,
+    saveThreadModelOverrides,
   saveGlobalModelConfig,
   refreshKeyStates,
 }: {
@@ -147,7 +143,7 @@ export function SettingsDrawer({
   refreshBotStatus: () => void;
   refreshProviders: () => Promise<void>;
   requestModelPresetName: (defaultName: string) => Promise<string | null>;
-  saveModelPreset: (name: string, presetConfig: import('../shared/types.js').ModelPresetConfig) => Promise<void>;
+  saveModelPreset: (name: string, presetConfig: import('../shared/types.js').ModelPresetConfig, presetId?: string, status?: 'draft' | 'published') => Promise<void>;
   deleteModelPreset: (presetId: string) => Promise<void>;
   saveSkillDraft: (draft: import('../shared/types.js').SkillDraft) => Promise<void>;
   saveBotConfig: (config: BotConfig) => Promise<void>;
@@ -160,11 +156,11 @@ export function SettingsDrawer({
   setOpen: (open: boolean) => void;
   consumePendingMcpDraft?: () => void;
   webProviderState: WebProviderPublicConfig | null;
-  showAdminControls?: boolean;
   startDingtalkStream?: () => Promise<{ ok?: boolean; error?: string }>;
   stopDingtalkStream?: () => Promise<void>;
   testDingtalkMessage?: (conversationId: string, conversationType: 'dm' | 'group', text?: string) => Promise<{ ok?: boolean; error?: string }>;
   activeThreadId: string;
+  workspaceRoots?: string[];
   saveThreadModelOverrides: (overrides: { provider: string; model: string; baseUrl: string }) => Promise<void>;
   saveGlobalModelConfig: (config: RunConfig) => void;
   refreshKeyStates: () => Promise<void>;
@@ -201,31 +197,32 @@ export function SettingsDrawer({
   const [firecrawlDialogOpen, setFirecrawlDialogOpen] = useState(false);
   const [activeSection, setActiveSection] = useState('agent');
   const [accessPolicyScope, setAccessPolicyScope] = useState<AccessPolicySettingsScope>('global');
+  const [accessPolicyWorkspaceRoot, setAccessPolicyWorkspaceRoot] = useState(() => normalizeWorkspaceRoot(config.workspaceRoot));
   const [accessPolicyDraft, setAccessPolicyDraft] = useState<AccessPolicyConfig>(() => accessPolicyFromConfig(config));
   const [accessPolicySaving, setAccessPolicySaving] = useState(false);
   const [accessPolicyNotice, setAccessPolicyNotice] = useState('');
   const [pluginNotice, setPluginNotice] = useState('');
   const [memoryRecords, setMemoryRecords] = useState<MemoryRecord[]>([]);
   const [memoryNotice, setMemoryNotice] = useState('');
-  const [authTokens, setAuthTokens] = useState<AuthTokenPublic[]>([]);
-  const [authTokenNotice, setAuthTokenNotice] = useState('');
-  const [adminBootstrapToken, setAdminBootstrapToken] = useState('');
-  const [newAuthToken, setNewAuthToken] = useState<AuthTokenDraft>({
-    name: '',
-    role: 'tenant',
-    tenantId: 'tenantA',
-    scopes: '*',
-  });
+  const modelCloseGuardRef = useRef<(() => boolean) | null>(null);
+  const availableWorkspaceRoots = compactWorkspaceRoots([config.workspaceRoot, ...(workspaceRoots ?? [])]);
+  const workspaceRootsKey = (workspaceRoots ?? []).join('\u0000');
 
+  function handleSettingsClose() {
+    if (activeSection === 'agent' && modelCloseGuardRef.current?.()) return;
+    void controller.handleCancel();
+  }
   const settingsTabs = [
     { id: 'agent', label: locale === 'zh' ? '模型' : 'Model' },
+    { id: 'accessPolicy', label: locale === 'zh' ? '权限' : 'Access' },
     { id: 'appearance', label: locale === 'zh' ? '外观' : 'Appearance' },
     { id: 'memory', label: locale === 'zh' ? '记忆' : 'Memory' },
+    { id: 'runtime', label: locale === 'zh' ? '运行参数' : 'Runtime' },
+    { id: 'ssh', label: locale === 'zh' ? 'SSH 配置' : 'SSH profiles' },
     { id: 'monitor', label: locale === 'zh' ? '监控' : 'Monitor' },
     { id: 'plugins', label: locale === 'zh' ? '插件中心' : 'Plugins' },
     { id: 'remote', label: locale === 'zh' ? '远程助手' : 'Remote bots' },
     { id: 'about', label: locale === 'zh' ? '关于' : 'About' },
-    ...(showAdminControls ? [{ id: 'admin', label: locale === 'zh' ? '管理员' : 'Admin' }] : []),
   ];
 
   useEffect(() => {
@@ -248,17 +245,32 @@ export function SettingsDrawer({
   }, [consumePendingMcpDraft, pendingMcpDraft]);
 
   useEffect(() => {
-    if (activeSection === 'admin' && showAdminControls) void refreshAuthTokens();
-    if (activeSection === 'admin' && !showAdminControls) setActiveSection('agent');
     if (activeSection === 'memory') void refreshMemories();
     if (activeSection === 'accessPolicy') void loadAccessPolicy(accessPolicyScope);
-  }, [activeSection, showAdminControls]);
+  }, [activeSection]);
 
   useEffect(() => {
-    if (accessPolicyScope === 'global') {
-      setAccessPolicyDraft(accessPolicyFromConfig(config));
+    setAccessPolicyWorkspaceRoot((current) => {
+      const normalizedCurrent = normalizeWorkspaceRoot(current);
+      return normalizedCurrent && availableWorkspaceRoots.some((root) => normalizeWorkspaceRoot(root).toLowerCase() === normalizedCurrent.toLowerCase())
+        ? normalizedCurrent
+        : (availableWorkspaceRoots[0] ?? '');
+    });
+  }, [config.workspaceRoot, workspaceRootsKey]);
+
+  useEffect(() => {
+    if (accessPolicyScope === 'global' || accessPolicyScope === 'workspace') {
+      const globalPolicy = accessPolicyFromConfig(config);
+      if (accessPolicyScope === 'workspace') {
+        const root = normalizeWorkspaceRoot(accessPolicyWorkspaceRoot || config.workspaceRoot).toLowerCase();
+        setAccessPolicyDraft({
+          ...globalPolicy,
+          workspaceRoot: normalizeWorkspaceRoot(accessPolicyWorkspaceRoot || config.workspaceRoot),
+          persistentRules: globalPolicy.persistentRules.filter((rule) => rule.scope === 'workspace' && normalizeWorkspaceRoot(rule.workspaceRoot ?? globalPolicy.workspaceRoot).toLowerCase() === root),
+        });
+      } else setAccessPolicyDraft(globalPolicy);
     }
-  }, [config.accessPolicy, config.workspaceRoot, config.permissions, accessPolicyScope]);
+  }, [config.accessPolicy, config.workspaceRoot, config.permissions, accessPolicyScope, accessPolicyWorkspaceRoot]);
 
   async function ensureSkillsRoot() {
     const response = await fetch('/api/settings');
@@ -275,7 +287,7 @@ export function SettingsDrawer({
     controller.markDirty('skillsRoot', false);
   }
 
-  async function loadAccessPolicy(nextScope: AccessPolicySettingsScope) {
+  async function loadAccessPolicy(nextScope: AccessPolicySettingsScope, workspaceRootOverride?: string) {
     setAccessPolicyNotice('');
     if (nextScope === 'currentThread' && activeThreadId) {
       const threadPolicy = await fetchThreadAccessPolicy(activeThreadId);
@@ -287,12 +299,29 @@ export function SettingsDrawer({
       });
       return;
     }
-    setAccessPolicyDraft(accessPolicyFromConfig(config));
+    const globalPolicy = accessPolicyFromConfig(config);
+    if (nextScope === 'workspace') {
+      const selectedRoot = normalizeWorkspaceRoot(workspaceRootOverride || accessPolicyWorkspaceRoot || config.workspaceRoot);
+      const root = selectedRoot.toLowerCase();
+      setAccessPolicyDraft({
+        ...globalPolicy,
+        workspaceRoot: selectedRoot,
+        persistentRules: globalPolicy.persistentRules.filter((rule) => rule.scope === 'workspace' && normalizeWorkspaceRoot(rule.workspaceRoot ?? globalPolicy.workspaceRoot).toLowerCase() === root),
+      });
+      return;
+    }
+    setAccessPolicyDraft(globalPolicy);
   }
 
   function handleAccessPolicyScopeChange(nextScope: AccessPolicySettingsScope) {
     setAccessPolicyScope(nextScope);
-    void loadAccessPolicy(nextScope);
+    void loadAccessPolicy(nextScope, nextScope === 'workspace' ? accessPolicyWorkspaceRoot : undefined);
+  }
+
+  function handleAccessPolicyWorkspaceChange(workspaceRoot: string) {
+    const normalizedRoot = normalizeWorkspaceRoot(workspaceRoot);
+    setAccessPolicyWorkspaceRoot(normalizedRoot);
+    if (accessPolicyScope === 'workspace') void loadAccessPolicy('workspace', normalizedRoot);
   }
 
   async function handleSaveAccessPolicy() {
@@ -302,6 +331,23 @@ export function SettingsDrawer({
       if (accessPolicyScope === 'currentThread' && activeThreadId) {
         const saved = await patchThreadAccessPolicy(activeThreadId, accessPolicyDraft);
         setAccessPolicyDraft(saved ?? { ...accessPolicyDraft, temporaryGrants: [] });
+      } else if (accessPolicyScope === 'workspace') {
+        const base = accessPolicyFromConfig(config);
+        const root = normalizeWorkspaceRoot(accessPolicyWorkspaceRoot || config.workspaceRoot);
+        if (!root) {
+          setAccessPolicyNotice(locale === 'zh' ? '请先选择工作区。' : 'Select a workspace first.');
+          return;
+        }
+        const normalizedRoot = root.toLowerCase();
+        const retained = base.persistentRules.filter((rule) => !(rule.scope === 'workspace' && normalizeWorkspaceRoot(rule.workspaceRoot ?? base.workspaceRoot).toLowerCase() === normalizedRoot));
+        const saved = await saveGlobalAccessPolicy({
+          ...base,
+          mode: accessPolicyDraft.mode,
+          persistentRules: [...retained, ...accessPolicyDraft.persistentRules.map((rule) => ({ ...rule, scope: 'workspace' as const, workspaceRoot: root }))],
+          temporaryGrants: [],
+        });
+        setAccessPolicyDraft({ ...saved, workspaceRoot: root, persistentRules: saved.persistentRules.filter((rule) => rule.scope === 'workspace' && normalizeWorkspaceRoot(rule.workspaceRoot ?? saved.workspaceRoot).toLowerCase() === normalizedRoot) });
+        setConfig((current) => ({ ...current, accessPolicy: saved }));
       } else {
         const saved = await saveGlobalAccessPolicy(accessPolicyDraft);
         setAccessPolicyDraft(saved);
@@ -482,66 +528,6 @@ export function SettingsDrawer({
     }
   }
 
-  function adminHeaders(): Record<string, string> {
-    return adminBootstrapToken.trim() ? { 'x-nexus-admin-bootstrap-token': adminBootstrapToken.trim() } : {};
-  }
-
-  async function refreshAuthTokens() {
-    const response = await fetch('/api/admin/tokens', { headers: adminHeaders() });
-    if (!response.ok) {
-      setAuthTokenNotice(locale === 'zh' ? '需要管理员 JWT 或 Bootstrap Token。' : 'Admin JWT or bootstrap token is required.');
-      return;
-    }
-    const data = (await response.json()) as { tokens?: AuthTokenPublic[] };
-    setAuthTokens(data.tokens ?? []);
-    setAuthTokenNotice('');
-  }
-
-  async function createAuthToken() {
-    const response = await fetch('/api/admin/tokens', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...adminHeaders() },
-      body: JSON.stringify({
-        ...newAuthToken,
-        scopes: newAuthToken.scopes.split(',').map((s) => s.trim()).filter(Boolean),
-      }),
-    });
-    const data = (await response.json()) as { token?: string; record?: AuthTokenPublic; error?: string };
-    if (!response.ok || !data.record) {
-      setAuthTokenNotice(data.error ?? (locale === 'zh' ? '创建失败。' : 'Create failed.'));
-      return;
-    }
-    setAuthTokens((current) => [data.record!, ...current.filter((item) => item.id !== data.record!.id)]);
-    setAuthTokenNotice(data.token
-      ? (locale === 'zh' ? `新 Token 仅显示一次：${data.token}` : `New token, shown once: ${data.token}`)
-      : '');
-  }
-
-  async function deleteAuthToken(id: string) {
-    const response = await fetch(`/api/admin/tokens/${encodeURIComponent(id)}`, {
-      method: 'DELETE',
-      headers: adminHeaders(),
-    });
-    if (!response.ok) return;
-    setAuthTokens((current) => current.filter((item) => item.id !== id));
-  }
-
-  async function rotateAuthToken(id: string) {
-    const response = await fetch(`/api/admin/tokens/${encodeURIComponent(id)}/rotate`, {
-      method: 'POST',
-      headers: adminHeaders(),
-    });
-    const data = (await response.json()) as { token?: string; record?: AuthTokenPublic; error?: string };
-    if (!response.ok || !data.record) {
-      setAuthTokenNotice(data.error ?? (locale === 'zh' ? '轮换失败。' : 'Rotate failed.'));
-      return;
-    }
-    setAuthTokens((current) => current.map((item) => item.id === id ? data.record! : item));
-    setAuthTokenNotice(data.token
-      ? (locale === 'zh' ? `轮换后的 Token 仅显示一次：${data.token}` : `Rotated token, shown once: ${data.token}`)
-      : '');
-  }
-
   const refreshBotStatusAsync = useCallback(async () => {
     refreshBotStatus();
   }, [refreshBotStatus]);
@@ -630,6 +616,8 @@ export function SettingsDrawer({
             onReset={controller.resetModelDraft}
             markDirty={controller.markDirty}
             dirtyFields={controller.dirtyFields}
+            registerCloseGuard={(handler) => { modelCloseGuardRef.current = handler; }}
+            onForceClose={() => setOpen(false)}
           />
         );
       case 'appearance':
@@ -648,10 +636,16 @@ export function SettingsDrawer({
             locale={locale}
             value={accessPolicyDraft}
             scope={accessPolicyScope}
+            currentWorkspaceAvailable={availableWorkspaceRoots.length > 0}
+            currentWorkspaceRoot={accessPolicyWorkspaceRoot}
+            workspaceRoots={availableWorkspaceRoots}
+            selectedWorkspaceRoot={accessPolicyWorkspaceRoot}
             currentThreadAvailable={Boolean(activeThreadId)}
+            currentThreadId={activeThreadId}
             saving={accessPolicySaving}
             notice={accessPolicyNotice}
             onScopeChange={handleAccessPolicyScopeChange}
+            onWorkspaceChange={handleAccessPolicyWorkspaceChange}
             onChange={setAccessPolicyDraft}
             onSave={handleSaveAccessPolicy}
             onReload={() => void loadAccessPolicy(accessPolicyScope)}
@@ -680,23 +674,20 @@ export function SettingsDrawer({
             onSave={controller.handleSave}
           />
         );
-      case 'about':
+      case 'runtime':
         return (
-          <AboutPage
+          <RuntimePage
             locale={locale}
-            showAdminControls={showAdminControls}
-            adminBootstrapToken={adminBootstrapToken}
-            setAdminBootstrapToken={setAdminBootstrapToken}
-            newAuthToken={newAuthToken}
-            setNewAuthToken={setNewAuthToken}
-            authTokens={authTokens}
-            authTokenNotice={authTokenNotice}
-            refreshAuthTokens={refreshAuthTokens}
-            createAuthToken={createAuthToken}
-            deleteAuthToken={deleteAuthToken}
-            rotateAuthToken={rotateAuthToken}
+            config={config}
+            setConfig={setConfig}
+            markDirty={controller.markDirty}
+            onSave={controller.handleSave}
           />
         );
+      case 'ssh':
+        return <SshProfilesPage locale={locale} />;
+      case 'about':
+        return <AboutPage locale={locale} />;
       case 'plugins':
         return (
           <ToolsPage
@@ -752,23 +743,6 @@ export function SettingsDrawer({
             refreshBotStatus={refreshBotStatusAsync}
           />
         );
-      case 'admin':
-        return (
-          <AdminPage
-            locale={locale}
-            showAdminControls={showAdminControls}
-            adminBootstrapToken={adminBootstrapToken}
-            setAdminBootstrapToken={setAdminBootstrapToken}
-            newAuthToken={newAuthToken}
-            setNewAuthToken={setNewAuthToken}
-            authTokens={authTokens}
-            authTokenNotice={authTokenNotice}
-            refreshAuthTokens={refreshAuthTokens}
-            createAuthToken={createAuthToken}
-            deleteAuthToken={deleteAuthToken}
-            rotateAuthToken={rotateAuthToken}
-          />
-        );
       default:
         return null;
     }
@@ -791,7 +765,7 @@ export function SettingsDrawer({
       <SettingsShell
         locale={locale}
         open={true}
-        onClose={() => setOpen(false)}
+        onClose={handleSettingsClose}
         settingsTabs={settingsTabs}
         activeSection={activeSection}
         setActiveSection={setActiveSection}

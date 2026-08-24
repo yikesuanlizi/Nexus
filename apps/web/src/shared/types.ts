@@ -1,5 +1,5 @@
 import type { EventDraft } from '../features/chat/threadView.js';
-import type { AccessRequest, ModelPresetConfig, TemporaryAccessScope } from '@nexus/protocol';
+import type { AccessRequest, ModelPresetConfig, ModelPresetStatus, TemporaryAccessScope } from '@nexus/protocol';
 
 export type { ModelPresetConfig } from '@nexus/protocol';
 
@@ -350,6 +350,7 @@ export interface ModelPreset {
   id: string;
   name: string;
   config: ModelPresetConfig;
+  status?: ModelPresetStatus;
   createdAt: string;
   updatedAt: string;
 }

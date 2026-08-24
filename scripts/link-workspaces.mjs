@@ -17,6 +17,7 @@ const packages = [
   'bot',
   'runtime',
   'browser-runtime',
+  'wiki-core',
 ];
 
 fs.mkdirSync(scopeDir, { recursive: true });

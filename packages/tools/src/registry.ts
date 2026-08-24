@@ -4,6 +4,8 @@ import type {
   AccessDecision,
   AccessPolicyConfig,
   AccessRequest,
+  AgentDecisionOption,
+  AgentDecisionResponse,
   CommandStatus,
   SystemMonitorInterface,
 } from '@nexus/protocol';
@@ -84,6 +86,12 @@ export interface ToolContext {
   /** 系统监控模块引用（可选），启用后 agent 可查询主机 CPU/内存/磁盘状态 */
   // — Chinese: system monitor reference (optional), enables agent to query host CPU/memory/disk
   systemMonitor?: SystemMonitorInterface;
+  /** Runtime-owned, durable user decision request. */
+  requestUserDecision?: (input: {
+    prompt: string;
+    options: AgentDecisionOption[];
+    allowCustomInput: boolean;
+  }) => Promise<AgentDecisionResponse>;
 }
 
 /** Result of a tool execution. */

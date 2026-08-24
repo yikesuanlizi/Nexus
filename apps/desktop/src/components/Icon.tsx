@@ -21,6 +21,7 @@ import {
 } from './fontAwesomeBrandIcons.js';
 import {
   faAtom,
+  faBookOpen,
   faBolt,
   faBrain,
   faChartLine,
@@ -70,6 +71,7 @@ export type IconName =
   | 'branch'
   | 'calendar'
   | 'calculator'
+  | 'check'
   | 'chevron'
   | 'chevronDown'
   | 'chevronLeft'
@@ -119,6 +121,7 @@ export type IconName =
   | 'layers'
   | 'link'
   | 'memoryChip'
+  | 'knowledge'
   | 'mermaid'
   | 'menu'
   | 'message'
@@ -149,6 +152,7 @@ export type IconName =
   | 'workflow'
   | 'wrench'
   | 'palette'
+  | 'pause'
   | 'shield'
   | 'settingsSliders'
   | 'stopCircle'
@@ -214,6 +218,7 @@ export function Icon({ className, name }: { className?: string; name: IconName }
     fileShell: faTerminal,
     fileSql: faDatabase,
     fileDocker: faDocker,
+    knowledge: faBookOpen,
     fileMarkdown: faMarkdown,
     fileGit: faGitAlt,
     fileNpm: faNpm,
@@ -275,6 +280,7 @@ export function Icon({ className, name }: { className?: string; name: IconName }
     chevronDown: <path d="m7 9 5 5 5-5" />,
     chevronLeft: <path d="m15 6-6 6 6 6" />,
     chevronRight: <path d="m9 6 6 6-6 6" />,
+    check: <path d="m5 12 4 4L19 6" />,
     clip: <path d="m21.4 11.6-8.6 8.6a5 5 0 0 1-7.1-7.1l9.2-9.2a3.5 3.5 0 0 1 5 5l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5" />,
     copy: <path d="M8 8h11v11H8zM5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" />,
     database: (
@@ -375,6 +381,7 @@ export function Icon({ className, name }: { className?: string; name: IconName }
     panel: <path d="M4 5h16v14H4zM15 5v14" />,
     pen: <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4 11.5-11.5Z" />,
     paintbrush: <><path d="m14 4 6 6-8.5 8.5a3 3 0 0 1-4.2-4.2L16 5.6" /><path d="M5 19c-1.3 1.3-1.3 2.7 0 2.7 2.2 0 3.3-1.2 3.3-2.7 0-1.1-.8-1.7-1.7-1.7" /></>,
+    pause: <><path d="M8 5v14M16 5v14" /></>,
     play: <path d="M8 5v14l11-7L8 5Z" />,
     plus: <path d="M12 5v14M5 12h14" />,
     puppet: (

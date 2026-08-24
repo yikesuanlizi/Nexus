@@ -14,7 +14,7 @@ packages/
 ├── model-gateway/    Ollama / LM Studio / vLLM / OpenAI-compatible 适配层
 ├── tools/            Shell、文件系统、patch、搜索、git、GitNexus 等本地工具
 ├── sandbox/          权限预设、执行策略、审批 handler
-├── storage/          单机 SQLite + JSONL；可选 Postgres 多租户存储
+├── storage/          单机 SQLite + JSONL 持久化
 ├── context/          Cognitive Context Layer：Provider 体系 + ProjectBrain + Task Cognition + Experience Engine
 ├── runtime/          Agent 主循环、工具调用、状态机、checkpoint/resume、workflow 蓝图引擎、Task Harness Engine、Skill Executor
 ├── memory/           上下文压缩、恢复、分支、回滚
@@ -39,7 +39,7 @@ npm start
 - Web 控制台：http://127.0.0.1:5177
 - API 服务：http://127.0.0.1:4127
 
-默认启动是 **单机模式**，使用 SQLite + 本地 rollout 文件，适合个人桌面使用。首次打开 Web 控制台可选择单人/多人模式。
+默认启动是 **单机模式**，使用 SQLite + 本地 rollout 文件，面向个人桌面使用。
 
 ## 桌面端启动
 
@@ -194,25 +194,6 @@ Nexus 把"做什么"（**会话类型**）和"怎么跑"（**runProfile**）分�
 | **次选 profile** | `runtime_os` | `runtime_os` |
 | **核心能力** | 文档问答、内容生产、压缩对话 | 文件操作、工具调用、GitNexus、自主循环 |
 | **不涉及** | 本地文件 | 跨项目跨用户 |
-
-## 多租户部署
-
-多租户模式使用 Postgres 存储 + JWT 鉴权，storage 层强制按 `tenant_id` 过滤，API / runtime 按 tenant 缓存 Agent 实例。
-
-快速启动：
-
-```bash
-NEXUS_STORAGE_MODE=multi \
-NEXUS_STORAGE_BACKEND=postgres \
-DATABASE_URL=postgresql://nexus:nexus@localhost:5432/nexus \
-npm start
-```
-
-或使用 Docker Compose：
-
-```bash
-docker compose -f docker-compose.multi-tenant.yml up
-```
 
 ## 微信远程助手
 

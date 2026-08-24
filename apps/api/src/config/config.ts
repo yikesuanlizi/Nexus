@@ -15,6 +15,7 @@ import {
   redactAccessPolicyForPublicConfig,
   type AccessPolicyConfig,
   type ModelPresetConfig,
+  type ModelPresetStatus,
   type PermissionPresetId,
   type ReasoningEffort,
   type RunProfile,
@@ -77,6 +78,14 @@ export interface AgentRunConfig {
   reasoningEffort: ReasoningEffort;
   /** 每个回合允许 Agent 循环的最大迭代次数。 */
   maxIterations: number;
+  /** 全局同时运行的顶层任务数；同一线程仍由 runtime 保证串行。 */
+  maxActiveTasks?: number;
+  /** Legacy desktop alias; normalized to maxActiveTasks. */
+  maxConcurrency?: number;
+  /** 每个 Agent 步骤允许并行的只读工具数；写入和浏览器工具始终串行。 */
+  maxParallelReadonlyTools?: number;
+  /** 子 Agent 最大嵌套深度，服务端硬上限为 2。 */
+  maxSubagentDepth?: number;
   /** Optional explicit context window override for the selected model. */
   /** 中文：当前模型上下文窗口的显式覆盖；为空时按 provider/model 自动推导 */
   modelContextTokens?: number;
@@ -105,6 +114,22 @@ export interface AgentRunConfig {
   /** Whether system monitor (CPU/memory/disk) throttling is enabled. */
   /** 中文：是否启用系统监控（CPU/内存/磁盘）限流 */
   systemMonitorEnabled: boolean;
+  /** 是否采集性能样本。旧 systemMonitorEnabled=true 会迁移为 true。 */
+  systemMonitorSamplingEnabled?: boolean;
+  /** 是否把监控事件写入运行轨迹。 */
+  systemMonitorLogRecordingEnabled?: boolean;
+  /** 是否根据阈值对工具和子 Agent 自动限流。仅在采样开启时生效。 */
+  systemMonitorGuardEnabled?: boolean;
+  /** 系统监控阈值；字段保持稳定以便桌面/接口直接传输。 */
+  systemMonitorThresholds?: {
+    cpuLight: number;
+    cpuModerate: number;
+    cpuSevere: number;
+    memLight: number;
+    memModerate: number;
+    memSevere: number;
+    diskSevereBytes: number;
+  };
   themeMode: ThemeMode;
   locale?: Locale;
 }
@@ -132,6 +157,7 @@ export interface ModelPreset {
   id: string;
   name: string;
   config: ModelPresetConfig;
+  status?: ModelPresetStatus;
   createdAt: string;
   updatedAt: string;
 }
@@ -247,6 +273,10 @@ export const defaultConfig: AgentRunConfig = {
   webProviderKeySource: 'config',
   reasoningEffort: 'medium',
   maxIterations: 100,
+  maxActiveTasks: 4,
+  maxConcurrency: 4,
+  maxParallelReadonlyTools: 2,
+  maxSubagentDepth: 1,
   runProfile: 'runtime_os',
   themeMode: 'light',
   agentRoles: {},
@@ -264,6 +294,18 @@ export const defaultConfig: AgentRunConfig = {
   episodeFtsCandidateLimit: DEFAULT_EPISODE_MEMORY_SETTINGS.episodeFtsCandidateLimit,
   episodeRerankEnabled: DEFAULT_EPISODE_MEMORY_SETTINGS.episodeRerankEnabled,
   systemMonitorEnabled: false,
+  systemMonitorSamplingEnabled: false,
+  systemMonitorLogRecordingEnabled: false,
+  systemMonitorGuardEnabled: false,
+  systemMonitorThresholds: {
+    cpuLight: 85,
+    cpuModerate: 92,
+    cpuSevere: 97,
+    memLight: 82,
+    memModerate: 90,
+    memSevere: 95,
+    diskSevereBytes: 500 * 1024 * 1024,
+  },
 };
 
 export function hiddenChatWorkspaceRoot(dataDir: string): string {
@@ -294,6 +336,19 @@ export function resolveConfig(patch: Partial<AgentRunConfig> = {}): AgentRunConf
   merged.maxIterations = Number.isFinite(maxIterations)
     ? Math.max(1, Math.min(1000, Math.floor(maxIterations)))
     : defaultConfig.maxIterations;
+  const maxActiveTasks = Number(merged.maxActiveTasks ?? (patch as Partial<AgentRunConfig> & { maxConcurrency?: number }).maxConcurrency);
+  merged.maxActiveTasks = Number.isFinite(maxActiveTasks)
+    ? Math.max(1, Math.min(64, Math.floor(maxActiveTasks)))
+    : defaultConfig.maxActiveTasks;
+  merged.maxConcurrency = merged.maxActiveTasks;
+  const maxParallelReadonlyTools = Number(merged.maxParallelReadonlyTools);
+  merged.maxParallelReadonlyTools = Number.isFinite(maxParallelReadonlyTools)
+    ? Math.max(1, Math.min(16, Math.floor(maxParallelReadonlyTools)))
+    : defaultConfig.maxParallelReadonlyTools;
+  const maxSubagentDepth = Number(merged.maxSubagentDepth);
+  merged.maxSubagentDepth = Number.isFinite(maxSubagentDepth)
+    ? Math.max(1, Math.min(2, Math.floor(maxSubagentDepth)))
+    : defaultConfig.maxSubagentDepth;
   normalizeOptionalPositiveIntegerField(merged, 'modelContextTokens');
   normalizeOptionalPositiveIntegerField(merged, 'modelMaxOutputTokens');
   // harness 不再是有效 RunProfile，旧值自动降级为 runtime_os
@@ -339,8 +394,39 @@ export function resolveConfig(patch: Partial<AgentRunConfig> = {}): AgentRunConf
   merged.episodeColdAfterDays = episode.episodeColdAfterDays;
   merged.episodeFtsCandidateLimit = episode.episodeFtsCandidateLimit;
   merged.episodeRerankEnabled = episode.episodeRerankEnabled;
-  // 系统监控开关强制为布尔值 — Chinese: coerce system monitor flag to boolean
-  merged.systemMonitorEnabled = merged.systemMonitorEnabled === true;
+  // 兼容旧版单一开关：旧值只在新字段不存在时迁移，避免覆盖用户已关闭的 guard。
+  const legacyMonitorEnabled = merged.systemMonitorEnabled === true;
+  merged.systemMonitorSamplingEnabled = (patch.systemMonitorSamplingEnabled === undefined
+    ? legacyMonitorEnabled
+    : merged.systemMonitorSamplingEnabled === true);
+  merged.systemMonitorLogRecordingEnabled = merged.systemMonitorLogRecordingEnabled === true;
+  merged.systemMonitorGuardEnabled = (patch.systemMonitorGuardEnabled === undefined
+    ? legacyMonitorEnabled
+    : merged.systemMonitorGuardEnabled === true);
+  const defaultThresholds = defaultConfig.systemMonitorThresholds ?? {
+    cpuLight: 85,
+    cpuModerate: 92,
+    cpuSevere: 97,
+    memLight: 82,
+    memModerate: 90,
+    memSevere: 95,
+    diskSevereBytes: 500 * 1024 * 1024,
+  };
+  if (!merged.systemMonitorThresholds || typeof merged.systemMonitorThresholds !== 'object') {
+    merged.systemMonitorThresholds = { ...defaultThresholds };
+  } else {
+    const thresholds = merged.systemMonitorThresholds;
+    merged.systemMonitorThresholds = {
+      cpuLight: boundedThreshold(thresholds.cpuLight, defaultThresholds.cpuLight),
+      cpuModerate: boundedThreshold(thresholds.cpuModerate, defaultThresholds.cpuModerate),
+      cpuSevere: boundedThreshold(thresholds.cpuSevere, defaultThresholds.cpuSevere),
+      memLight: boundedThreshold(thresholds.memLight, defaultThresholds.memLight),
+      memModerate: boundedThreshold(thresholds.memModerate, defaultThresholds.memModerate),
+      memSevere: boundedThreshold(thresholds.memSevere, defaultThresholds.memSevere),
+      diskSevereBytes: boundedThreshold(thresholds.diskSevereBytes, defaultThresholds.diskSevereBytes, 1, 1024 ** 5),
+    };
+  }
+  merged.systemMonitorEnabled = merged.systemMonitorSamplingEnabled;
   const inputPolicy = normalizeAccessPolicyConfig(merged.accessPolicy);
   const modeFromPermissions = merged.permissions === 'danger_full_access'
     ? 'danger_full_access'
@@ -366,6 +452,11 @@ function normalizeOptionalPositiveIntegerField(
     return;
   }
   config[field] = Math.floor(value);
+}
+
+function boundedThreshold(value: unknown, fallback: number, min = 1, max = 100): number {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(min, Math.min(max, number)) : fallback;
 }
 
 export function publicRunConfig(config: AgentRunConfig): AgentRunConfig {
@@ -462,16 +553,19 @@ export function createConfigRepository(store: ThreadStore) {
     id?: string;
     name?: string;
     config?: Record<string, unknown>;
+    status?: ModelPresetStatus;
   }): Promise<{ preset: ModelPreset; presets: ModelPreset[] }> {
     const safeConfig = modelPresetConfigFrom(input.config ?? {});
     const presets = await listModelPresets();
     const id = input.id?.trim() || randomUUID();
     const existing = presets.find((preset) => preset.id === id);
     const now = new Date().toISOString();
+    const status: ModelPresetStatus = input.status === 'draft' ? 'draft' : (input.status === 'published' ? 'published' : (existing?.status ?? 'published'));
     const preset: ModelPreset = {
       id,
       name: input.name?.trim() || existing?.name || modelPresetName(safeConfig),
       config: safeConfig,
+      status,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
     };

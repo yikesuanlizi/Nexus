@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ComponentProps, type WheelEvent } fro
 import type { Locale } from '../../config/config.js';
 import { Icon } from '../Icon.js';
 
-export type PrimaryWorkbenchTab = 'activity' | 'agents';
+export type PrimaryWorkbenchTab = 'activity' | 'agents' | 'ops';
 export type UtilityWorkbenchTabKind = 'files' | 'browser' | 'terminal';
 export type TerminalUtilityWorkbenchTab = `terminal:${string}`;
 export type UtilityWorkbenchTab = 'files' | 'browser' | TerminalUtilityWorkbenchTab;
@@ -32,6 +32,8 @@ export function WorkbenchTabs({
   onOpenUtilityTab,
   onCloseUtilityTab,
   runningAgentCount,
+  utilitiesEnabled = true,
+  showOps = false,
   locale,
 }: {
   activeTab: WorkbenchTab;
@@ -40,6 +42,8 @@ export function WorkbenchTabs({
   onOpenUtilityTab(tab: UtilityWorkbenchTabKind): UtilityWorkbenchTab;
   onCloseUtilityTab(tab: UtilityWorkbenchTab): void;
   runningAgentCount: number;
+  utilitiesEnabled?: boolean;
+  showOps?: boolean;
   locale: Locale;
 }) {
   const zh = locale === 'zh';
@@ -51,6 +55,7 @@ export function WorkbenchTabs({
   const tabs: Array<{ id: PrimaryWorkbenchTab; icon: ComponentProps<typeof Icon>['name']; label: string; badge?: number }> = [
     { id: 'activity', icon: 'pulse', label: zh ? '活动' : 'Activity' },
     { id: 'agents', icon: 'agentGroup', label: zh ? '智能体' : 'Agents', badge: runningAgentCount > 0 ? runningAgentCount : undefined },
+    ...(showOps ? [{ id: 'ops' as const, icon: 'monitor' as const, label: zh ? '运维' : 'Ops' }] : []),
   ];
   const utilityTabs: Array<{ id: Exclude<UtilityWorkbenchTabKind, 'terminal'>; icon: ComponentProps<typeof Icon>['name']; label: string }> = [
     { id: 'browser', icon: 'browser', label: zh ? '浏览器' : 'Browser' },
@@ -62,6 +67,7 @@ export function WorkbenchTabs({
   ];
 
   const selectUtilityTab = (tab: UtilityWorkbenchTabKind): void => {
+    if (!utilitiesEnabled) return;
     setUtilityOpen(false);
     onOpenUtilityTab(tab);
   };
@@ -77,6 +83,10 @@ export function WorkbenchTabs({
       top: buttonRect.bottom - paneRect.top + 6,
     });
   };
+
+  useEffect(() => {
+    if (!utilitiesEnabled) setUtilityOpen(false);
+  }, [utilitiesEnabled]);
 
   useEffect(() => {
     if (!utilityOpen) return undefined;
@@ -110,6 +120,7 @@ export function WorkbenchTabs({
   };
 
   const toggleUtilityMenu = (): void => {
+    if (!utilitiesEnabled) return;
     const nextOpen = !utilityOpen;
     if (nextOpen) updateUtilityMenuPosition();
     setUtilityOpen(nextOpen);
@@ -182,6 +193,8 @@ export function WorkbenchTabs({
           className={utilityOpen || isTerminalUtilityWorkbenchTab(activeTab) || utilityTabs.some((tab) => tab.id === activeTab) ? 'active' : ''}
           aria-label={zh ? '打开浏览器、文件或终端' : 'Open browser, files, or terminal'}
           aria-expanded={utilityOpen}
+          aria-disabled={!utilitiesEnabled}
+          disabled={!utilitiesEnabled}
           title={zh ? '浏览器、文件与终端' : 'Browser, files, and terminal'}
           onClick={toggleUtilityMenu}
         >
@@ -189,7 +202,7 @@ export function WorkbenchTabs({
         </button>
       </div>
     </div>
-    {utilityOpen ? (
+    {utilitiesEnabled && utilityOpen ? (
       <div ref={utilityMenuRef} className="workbenchUtilityMenu" role="menu" style={utilityMenuPosition}>
         {utilityMenuTabs.map((tab) => (
           <button

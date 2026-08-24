@@ -73,6 +73,23 @@ export type { SystemMonitorConfig, SystemMonitorListener } from './systemMonitor
 // — Chinese: Run Trace V2 primitives for redaction, projection, and session writing
 export { redactTracePayload } from './runTraceRedaction.js';
 export type { TraceRedactionOptions } from './runTraceRedaction.js';
+export {
+  SECRET_REDACTION_VERSION,
+  SecretRedactor,
+  redactSecrets,
+} from './secretRedactor.js';
+export type {
+  EvidenceAttempt,
+  RedactionSource,
+  SecretRedactionContext,
+  SecretRedactionFailure,
+  SecretRedactionFailureCode,
+  SecretRedactionMetadata,
+  SecretRedactionResult,
+  SecretRedactionSuccess,
+  SecretRedactorOptions,
+  SecretRuleId,
+} from './secretRedactor.js';
 export { projectRunTrace } from './runTraceProjector.js';
 export { RunTraceSession } from './runTraceSession.js';
 export type { RunTraceSink } from './runTraceSession.js';

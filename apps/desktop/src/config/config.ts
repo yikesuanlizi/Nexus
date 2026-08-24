@@ -43,6 +43,9 @@ export interface RunConfig {
   webProviderKeySource: SecretSource;
   reasoningEffort: ReasoningEffort;
   maxIterations: number;
+  maxActiveTasks: number;
+  maxParallelReadonlyTools: number;
+  maxSubagentDepth: number;
   modelContextTokens?: number;
   modelMaxOutputTokens?: number;
   runProfile: RunProfile;
@@ -62,6 +65,20 @@ export interface RunConfig {
   /** Whether system monitor (CPU/memory/disk) throttling is enabled. */
   /** 中文：是否启用系统监控（CPU/内存/磁盘）限流 */
   systemMonitorEnabled: boolean;
+  /** 仅控制桌面监控抽屉是否可见，不会传给 runtime 作为采样开关。 */
+  monitorPanelVisible: boolean;
+  systemMonitorSamplingEnabled: boolean;
+  systemMonitorLogRecordingEnabled: boolean;
+  systemMonitorGuardEnabled: boolean;
+  systemMonitorThresholds: {
+    cpuLight: number;
+    cpuModerate: number;
+    cpuSevere: number;
+    memLight: number;
+    memModerate: number;
+    memSevere: number;
+    diskSevereBytes: number;
+  };
   maxConcurrency: number;
   toolTimeoutSeconds: number;
   memoryThresholdPercent: number;
@@ -88,6 +105,9 @@ const USER_FIELDS: Array<keyof RunConfig> = [
   'webProviderKeySource',
   'reasoningEffort',
   'maxIterations',
+  'maxActiveTasks',
+  'maxParallelReadonlyTools',
+  'maxSubagentDepth',
   'modelContextTokens',
   'modelMaxOutputTokens',
   'runProfile',
@@ -105,6 +125,11 @@ const USER_FIELDS: Array<keyof RunConfig> = [
   'episodeFtsCandidateLimit',
   'episodeRerankEnabled',
   'systemMonitorEnabled',
+  'monitorPanelVisible',
+  'systemMonitorSamplingEnabled',
+  'systemMonitorLogRecordingEnabled',
+  'systemMonitorGuardEnabled',
+  'systemMonitorThresholds',
   'maxConcurrency',
   'toolTimeoutSeconds',
   'memoryThresholdPercent',
@@ -133,7 +158,23 @@ export function mergeRunConfigDefaults(
     episodeFtsCandidateLimit: 40,
     episodeRerankEnabled: false,
     systemMonitorEnabled: false,
+    monitorPanelVisible: true,
+    systemMonitorSamplingEnabled: false,
+    systemMonitorLogRecordingEnabled: false,
+    systemMonitorGuardEnabled: false,
+    systemMonitorThresholds: {
+      cpuLight: 85,
+      cpuModerate: 92,
+      cpuSevere: 97,
+      memLight: 82,
+      memModerate: 90,
+      memSevere: 95,
+      diskSevereBytes: 500 * 1024 * 1024,
+    },
     maxIterations: 100,
+    maxActiveTasks: 4,
+    maxParallelReadonlyTools: 2,
+    maxSubagentDepth: 1,
     maxConcurrency: 4,
     toolTimeoutSeconds: 120,
     memoryThresholdPercent: 85,
@@ -141,6 +182,9 @@ export function mergeRunConfigDefaults(
     ...current,
     ...serverDefaults,
   } as RunConfig;
+  if (current.maxActiveTasks === undefined && (current.maxConcurrency ?? serverDefaults?.maxConcurrency) !== undefined) {
+    merged.maxActiveTasks = current.maxConcurrency ?? serverDefaults?.maxConcurrency ?? merged.maxActiveTasks;
+  }
   for (const key of USER_FIELDS) {
     const value = current[key];
     if (value !== '' && value !== undefined) {

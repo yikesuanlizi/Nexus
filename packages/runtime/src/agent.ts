@@ -28,6 +28,10 @@ import type {
   PersistentAccessScope,
   TemporaryAccessGrant,
   TemporaryAccessScope,
+  AgentDecisionAction,
+  AgentDecisionRequest,
+  AgentDecisionResponse,
+  ThreadExecutionStatus,
 } from '@nexus/protocol';
 import { RUN_TRACE_VERSION } from '@nexus/protocol';
 import { ModelGateway, type ChatMessage, type ToolCall } from '@nexus/model-gateway';
@@ -237,6 +241,10 @@ export interface AgentConfig {
   // 中文注释：每个回合 agent 循环的最大迭代次数。
   /** Max agent loop iterations per turn. */
   maxIterations?: number;
+  /** Maximum top-level tasks is enforced by the API registry; this value is retained for runtime diagnostics. */
+  maxActiveTasks?: number;
+  /** Maximum explicitly parallel-safe readonly tools per agent step. */
+  maxParallelReadonlyTools?: number;
   // 中文注释：系统提示覆盖。
   /** System prompt override. */
   systemPrompt?: string;
@@ -403,6 +411,13 @@ export class AgentLoop {
   // 实施点 2：per-thread harness 字段标记，用于给 harness turn 产生的 items 打 harnessRunId
   // — English: per-thread harness fields marker, used to tag items produced by harness turns
   private harnessFieldsByThread = new Map<ThreadId, HarnessItemFields>();
+  private pendingDecisionResolvers = new Map<ThreadId, {
+    request: AgentDecisionRequest;
+    resolve: (response: AgentDecisionResponse) => void;
+    reject: (error: unknown) => void;
+  }>();
+  /** Child runtime handles owned by each parent turn for cancellation propagation. */
+  private childAgentsByParent = new Map<ThreadId, Map<ThreadId, AgentLoop>>();
   private _contextEngine: ContextEngine;
   private agentContextByThread = new Map<ThreadId, AgentContext>();
   private envContextProvider: EnvironmentContextProvider;
@@ -442,6 +457,7 @@ export class AgentLoop {
       mcpTools: config.mcpTools ?? [],
       approvalHandler: config.approvalHandler ?? new DenyAllApprovalHandler(),
       maxIterations: config.maxIterations ?? 100,
+      maxActiveTasks: Math.max(1, Math.floor(config.maxActiveTasks ?? 4)),
       systemPrompt: config.systemPrompt ?? this.i18n.t(systemPromptKey(locale)),
       skills: config.skills ?? new LocalSkillRegistry(),
       hooks: config.hooks ?? new LocalHookRegistry(),
@@ -459,7 +475,8 @@ export class AgentLoop {
       initialTools: config.initialTools ?? [],
       maxToolSearchResults: config.maxToolSearchResults ?? 8,
       toolGovernance: config.toolGovernance ?? {},
-      maxSubagentDepth: config.maxSubagentDepth ?? Number.POSITIVE_INFINITY,
+      maxSubagentDepth: Math.max(1, Math.min(2, Math.floor(config.maxSubagentDepth ?? 1))),
+      maxParallelReadonlyTools: Math.max(1, Math.min(16, Math.floor(config.maxParallelReadonlyTools ?? 2))),
       spawnModelFactory: config.spawnModelFactory ?? (() => config.model),
       agentRoles: normalizeAgentRoleProfiles(config.agentRoles),
       activeAgentRoleProfile: config.activeAgentRoleProfile ?? null,
@@ -694,7 +711,7 @@ export class AgentLoop {
   /** 获取当前系统监控级别（未启用时返回 'none'）。 */
   // — Chinese: get current system monitor level (returns 'none' if disabled)
   private get systemMonitorLevel(): SystemMonitorLevel {
-    if (!this._systemMonitor || !this._systemMonitor.isEnabled()) return 'none';
+    if (!this._systemMonitor || !this._systemMonitor.isGuardEnabled()) return 'none';
     return this._systemMonitor.getStatus().level;
   }
 
@@ -1231,35 +1248,152 @@ export class AgentLoop {
     const stale = Boolean(checkpoint?.status === 'running' && checkpoint.expiresAt && checkpoint.expiresAt < new Date().toISOString());
     const status = stale
       ? 'stale'
-      : state.status === 'idle' && checkpoint?.status === 'running'
+      : state.status === 'idle' && (checkpoint?.executionStatus === 'running' || checkpoint?.status === 'running')
         ? 'running'
-        : state.status;
+        : state.status === 'idle' && (checkpoint?.executionStatus === 'stopping' || checkpoint?.status === 'stopping')
+          ? 'stopping'
+          : state.status === 'idle' && (checkpoint?.executionStatus === 'waiting_user_input' || checkpoint?.status === 'waiting_user_input')
+            ? 'waiting_user_input'
+        : state.status === 'idle' && checkpoint?.executionStatus === 'terminal'
+          ? 'terminal'
+          : state.status === 'terminal'
+            ? state.terminalStatus ?? 'completed'
+            : state.status;
+    const executionStatus: ThreadExecutionStatus = stale
+      ? 'terminal'
+      : state.status === 'running' || state.status === 'stopping' || state.status === 'waiting_user_input'
+        ? state.status
+        : state.status === 'terminal'
+          ? 'terminal'
+          : checkpoint?.executionStatus ?? (checkpoint?.status === 'running' ? 'running' : checkpoint?.status === 'stopping' ? 'stopping' : checkpoint?.status === 'waiting_user_input' ? 'waiting_user_input' : checkpoint?.status === 'terminal' ? 'terminal' : 'idle');
     return {
       threadId,
       status,
       checkpoint: checkpoint ? { ...checkpoint, status: stale ? 'stale' : checkpoint.status } : null,
-      resumable: Boolean(checkpoint && checkpoint.status === 'running' && !stale),
+      resumable: Boolean(checkpoint && (checkpoint.status === 'running' || checkpoint.status === 'waiting_user_input') && !stale),
       stale,
+      executionStatus,
+      terminalStatus: state.terminalStatus ?? undefined,
+      decisionRequest: state.pendingDecision ?? checkpoint?.decisionRequest ?? null,
     };
   }
 
-  /** Interrupt a running turn. */
+  /** Request interruption; terminal state is emitted only after the run observes cancellation. */
   interrupt(threadId: ThreadId, requestId?: string): boolean {
     const state = this.stateManager.get(threadId);
-    if (state.status !== 'running' || !state.activeTurnId) return false;
+    if (!this.stateManager.isRunning(threadId) || !state.activeTurnId) return false;
     const turnId = state.activeTurnId;
     this.stateManager.interruptTurn(threadId, turnId, requestId ?? generateId());
+    const pendingDecision = this.pendingDecisionResolvers.get(threadId);
+    if (pendingDecision) {
+      this.pendingDecisionResolvers.delete(threadId);
+      pendingDecision.reject(new Error('Turn cancelled'));
+    }
+    for (const [childThreadId, childAgent] of this.childAgentsByParent.get(threadId)?.entries() ?? []) {
+      childAgent.interrupt(childThreadId);
+    }
     const session = this.runMonitorSessions.get(turnId);
     const runId = session?.runId ?? `run_${turnId}`;
-    this.emit({
-      type: 'turn.completed',
-      threadId,
-      turnId,
-      runId,
-      usage: null,
-      status: 'interrupted',
-    });
+    this.emit({ type: 'thread.runtime.updated', threadId, turnId, runId, status: 'stopping' });
+    // A state-only caller (mostly recovery/tests) has no active promise that
+    // can publish the terminal event. Real runs publish it from runTurn's
+    // cancellation path after the provider has actually stopped.
+    if (!session && state.lastCheckpoint?.status !== 'running') {
+      this.emit({ type: 'turn.completed', threadId, turnId, runId, usage: null, status: 'interrupted' });
+    }
+    const checkpoint = state.lastCheckpoint;
+    if (checkpoint) {
+      const stoppingCheckpoint: Checkpoint = {
+        ...checkpoint,
+        timestamp: new Date().toISOString(),
+        status: 'stopping',
+        executionStatus: 'stopping',
+      };
+      void this.writeCheckpoint(threadId, stoppingCheckpoint).catch(() => undefined);
+    }
     return true;
+  }
+
+  /** Ask the user for a durable, resumable decision inside the current turn. */
+  async waitForUserDecision(
+    threadId: ThreadId,
+    input: Omit<AgentDecisionRequest, 'requestId' | 'threadId' | 'turnId' | 'runId' | 'createdAt' | 'status'>,
+  ): Promise<AgentDecisionResponse> {
+    const state = this.stateManager.get(threadId);
+    if (!state.activeTurnId || !['running', 'waiting_user_input'].includes(state.status)) {
+      throw new Error(`Thread ${threadId} has no active turn to wait for a decision`);
+    }
+    if (this.pendingDecisionResolvers.has(threadId)) {
+      throw new Error(`Thread ${threadId} already has a pending decision`);
+    }
+    const request: AgentDecisionRequest = {
+      ...input,
+      requestId: `decision_${generateId()}`,
+      threadId,
+      turnId: state.activeTurnId,
+      createdAt: new Date().toISOString(),
+      status: 'pending',
+    };
+    this.stateManager.waitForUserInput(threadId, state.activeTurnId, request);
+    const checkpoint = this.withCheckpointState(threadId, state.activeTurnId, await this.config.store.getItems(threadId).then((items) => items.length), 'waiting_user_input');
+    checkpoint.decisionRequest = request;
+    checkpoint.executionStatus = 'waiting_user_input';
+    await this.writeCheckpoint(threadId, checkpoint);
+    const runId = this.runMonitorSessions.get(state.activeTurnId)?.runId;
+    const pending = new Promise<AgentDecisionResponse>((resolve, reject) => {
+      this.pendingDecisionResolvers.set(threadId, { request: { ...request, runId }, resolve, reject });
+    });
+    this.emit({ type: 'agent.decision.requested', threadId, turnId: state.activeTurnId, request: { ...request, runId } });
+    this.emit({ type: 'thread.runtime.updated', threadId, turnId: state.activeTurnId, runId, status: 'waiting_user_input', decisionRequest: { ...request, runId } });
+    return pending;
+  }
+
+  /** Stable public alias used by tool/extension integrations. */
+  requestDecision(
+    threadId: ThreadId,
+    input: Omit<AgentDecisionRequest, 'requestId' | 'threadId' | 'turnId' | 'runId' | 'createdAt' | 'status'>,
+  ): Promise<AgentDecisionResponse> {
+    return this.waitForUserDecision(threadId, input);
+  }
+
+  /** Resolve an in-process decision; cold-start callers can use resumeRunning with the same checkpoint. */
+  async resolveUserDecision(threadId: ThreadId, response: AgentDecisionResponse): Promise<{ accepted: boolean; resumed: boolean }> {
+    const state = this.stateManager.get(threadId);
+    const pending = this.pendingDecisionResolvers.get(threadId);
+    const persistedCheckpoint = await this.config.store.getLastCheckpoint(threadId);
+    const request = pending?.request ?? state.pendingDecision ?? persistedCheckpoint?.decisionRequest;
+    if (!request || request.requestId !== response.requestId) return { accepted: false, resumed: false };
+    const persistedWaiting = persistedCheckpoint?.status === 'waiting_user_input' || persistedCheckpoint?.executionStatus === 'waiting_user_input';
+    if (!['waiting_user_input', 'running'].includes(state.status) && !pending && !persistedWaiting) return { accepted: false, resumed: false };
+    const resolved: AgentDecisionRequest = {
+      ...request,
+      status: response.action === 'cancel' ? 'cancelled' : 'resolved',
+      resolvedAt: new Date().toISOString(),
+      selectedAction: response.action,
+      selectedOptionId: response.optionId,
+      customInput: response.customInput,
+    };
+    if (pending) {
+      this.pendingDecisionResolvers.delete(threadId);
+      this.stateManager.resumeAfterUserInput(threadId, request.turnId);
+      pending.resolve(response);
+    }
+    const checkpoint = this.withCheckpointState(threadId, request.turnId, (await this.config.store.getItems(threadId)).length, 'running');
+    checkpoint.decisionRequest = resolved;
+    checkpoint.executionStatus = pending ? 'running' : 'waiting_user_input';
+    await this.writeCheckpoint(threadId, checkpoint);
+    this.emit({ type: 'agent.decision.resolved', threadId, turnId: request.turnId, requestId: response.requestId, action: response.action, optionId: response.optionId, customInput: response.customInput });
+    this.emit({ type: 'thread.runtime.updated', threadId, turnId: request.turnId, status: pending ? 'running' : 'waiting_user_input', decisionRequest: resolved });
+    if (!pending) {
+      await this.resumeRunning(threadId, { type: 'text', text: decisionResponseText(response) });
+      return { accepted: true, resumed: true };
+    }
+    return { accepted: true, resumed: false };
+  }
+
+  /** Stable public alias for API/control adapters. */
+  submitDecision(threadId: ThreadId, response: AgentDecisionResponse): Promise<{ accepted: boolean; resumed: boolean }> {
+    return this.resolveUserDecision(threadId, response);
   }
 
   /**
@@ -1309,7 +1443,7 @@ export class AgentLoop {
     // 清除中断并重启
     this.stateManager.clearPendingInterrupts(threadId);
     const cancelController = this.stateManager.startTurn(threadId, turnId);
-    const effectiveSignal = signal ?? cancelController.signal;
+    const effectiveSignal = combineAbortSignals(signal, cancelController.signal);
 
     this.emit({
       type: 'thread.resumed',
@@ -1364,6 +1498,7 @@ export class AgentLoop {
       }
       await this.writeCheckpoint(threadId, this.withCheckpointState(threadId, turnId, collectedItems.length, 'completed'));
       this.stateManager.completeTurn(threadId, turnId);
+      this.emit({ type: 'thread.runtime.updated', threadId, turnId, runId: resumeRunId, status: 'terminal', terminalStatus: 'completed' });
       if (result.usage) await this.recordUsage(threadId, turnId, result.usage);
       this.emit({ type: 'turn.completed', threadId, turnId, runId: resumeRunId, usage: result.usage });
       this.emitTaskRuntimeUpdated(threadId, turnId, 'after_turn', 'completed');
@@ -1387,6 +1522,7 @@ export class AgentLoop {
         }
         await this.writeCheckpoint(threadId, this.withCheckpointState(threadId, turnId, collectedItems.length, 'interrupted'));
         this.stateManager.completeInterruptedTurn(threadId, turnId);
+        this.emit({ type: 'thread.runtime.updated', threadId, turnId, runId: resumeRunId, status: 'terminal', terminalStatus: 'interrupted' });
         this.emit({ type: 'turn.completed', threadId, turnId, runId: resumeRunId, usage: null, status: 'interrupted' });
         this.emitTaskRuntimeUpdated(threadId, turnId, 'after_turn', 'interrupted');
         this.emitTaskRuntimeUpdated(threadId, turnId, 'idle', 'interrupted');
@@ -1407,6 +1543,7 @@ export class AgentLoop {
         }
         await this.writeCheckpoint(threadId, this.withCheckpointState(threadId, turnId, collectedItems.length, 'interrupted'));
         this.stateManager.completeInterruptedTurn(threadId, turnId);
+        this.emit({ type: 'thread.runtime.updated', threadId, turnId, runId: resumeRunId, status: 'terminal', terminalStatus: 'interrupted' });
         this.emit({
           type: 'stream.error',
           threadId,
@@ -1436,6 +1573,7 @@ export class AgentLoop {
         message: errorMsg,
         timestamp: new Date().toISOString(),
       });
+      this.emit({ type: 'thread.runtime.updated', threadId, turnId, runId: resumeRunId, status: 'terminal', terminalStatus: 'failed' });
       await this.writeCheckpoint(threadId, this.withCheckpointState(threadId, turnId, collectedItems.length, 'failed'));
       this.emit({
         type: 'turn.failed',
@@ -1476,6 +1614,18 @@ export class AgentLoop {
 
   /** Emit an event to all listeners. */
   private emit(event: ThreadEvent): void {
+    // Provider/tool callbacks can resolve after cancellation. Once a turn is
+    // terminal, discard late item/delta events so they cannot enter a later turn.
+    if ('threadId' in event && typeof event.threadId === 'string' && 'turnId' in event && typeof event.turnId === 'string') {
+      const state = this.stateManager.get(event.threadId);
+      const lifecycle = event.type === 'turn.completed'
+        || event.type === 'turn.failed'
+        || event.type === 'thread.runtime.updated'
+        || event.type === 'task.runtime.updated'
+        || event.type === 'stream.error'
+        || event.type === 'agent.decision.resolved';
+      if (state.activeTurnId !== event.turnId && state.lastTerminalTurnId === event.turnId && !lifecycle) return;
+    }
     for (const listener of this.eventListeners) {
       try {
         listener(event);
@@ -1656,6 +1806,7 @@ export class AgentLoop {
   }): Promise<void> {
     const session = this.runMonitorSessions.get(turnId);
     if (!session) return;
+    if (event.type.startsWith('middleware.system_monitor') && !this._systemMonitor?.isLogRecordingEnabled()) return;
     session.sequence += 1;
     if (event.category === 'model') session.modelCallCount += event.type === 'model.started' ? 1 : 0;
     if (event.category === 'tool') session.toolCallCount += event.type.endsWith('.started') ? 1 : 0;
@@ -2322,7 +2473,8 @@ export class AgentLoop {
 
     // Check if already running
     // 检查是否已在运行
-    if (this.stateManager.isRunning(threadId)) {
+    const persistedRuntimeState = await this.getRuntimeState(threadId);
+    if (this.stateManager.isRunning(threadId) || ['running', 'stopping', 'waiting_user_input'].includes(persistedRuntimeState.executionStatus ?? '')) {
       throw new Error(`Thread ${threadId} already has an active turn`);
     }
 
@@ -2357,7 +2509,7 @@ export class AgentLoop {
     // State machine: start turn
     // 状态机：启动回合
     const cancelController = this.stateManager.startTurn(threadId, turnId);
-    const effectiveSignal = signal ?? cancelController.signal;
+    const effectiveSignal = combineAbortSignals(signal, cancelController.signal);
 
     // Write initial checkpoint
     // 写入初始检查点
@@ -2445,6 +2597,7 @@ export class AgentLoop {
       await this.config.store.saveTurn(turn);
       await this.writeCheckpoint(threadId, this.withCheckpointState(threadId, turnId, collectedItems.length, 'completed'));
       this.stateManager.completeTurn(threadId, turnId);
+      this.emit({ type: 'thread.runtime.updated', threadId, turnId, runId, status: 'terminal', terminalStatus: 'completed' });
       if (result.usage) await this.recordUsage(threadId, turnId, result.usage);
       this.emit({ type: 'turn.completed', threadId, turnId, runId, usage: result.usage });
       this.emitTaskRuntimeUpdated(threadId, turnId, 'after_turn', 'completed');
@@ -2468,6 +2621,7 @@ export class AgentLoop {
         await this.config.store.saveTurn(turn);
         await this.writeCheckpoint(threadId, this.withCheckpointState(threadId, turnId, collectedItems.length, 'interrupted'));
         this.stateManager.completeInterruptedTurn(threadId, turnId);
+        this.emit({ type: 'thread.runtime.updated', threadId, turnId, runId, status: 'terminal', terminalStatus: 'interrupted' });
         this.emit({ type: 'turn.completed', threadId, turnId, runId, usage: null, status: 'interrupted' });
         this.emitTaskRuntimeUpdated(threadId, turnId, 'after_turn', 'interrupted');
         this.emitTaskRuntimeUpdated(threadId, turnId, 'idle', 'interrupted');
@@ -2495,6 +2649,7 @@ export class AgentLoop {
         await this.persistItems(threadId, [errorItem]);
         await this.writeCheckpoint(threadId, this.withCheckpointState(threadId, turnId, collectedItems.length, 'interrupted'));
         this.stateManager.completeInterruptedTurn(threadId, turnId);
+        this.emit({ type: 'thread.runtime.updated', threadId, turnId, runId, status: 'terminal', terminalStatus: 'interrupted' });
         this.emit({
           type: 'stream.error',
           threadId,
@@ -2539,6 +2694,7 @@ export class AgentLoop {
         message: errorMsg,
         timestamp: new Date().toISOString(),
       });
+      this.emit({ type: 'thread.runtime.updated', threadId, turnId, runId, status: 'terminal', terminalStatus: 'failed' });
       this.emit({
         type: 'turn.failed',
         threadId,
@@ -3386,10 +3542,10 @@ export class AgentLoop {
       case 'moderate':
         return 1; // 全串行
       case 'light':
-        return 2; // 并发数减半（限制为 2）
+        return Math.min(this.config.maxParallelReadonlyTools, 2); // 并发数减半（不超过用户上限）
       case 'none':
       default:
-        return Number.POSITIVE_INFINITY; // 不限制
+        return this.config.maxParallelReadonlyTools;
     }
   }
 
@@ -3425,6 +3581,7 @@ export class AgentLoop {
       // 中文注释：注入系统监控引用，工具内部可调用 get_system_status 查询主机状态
       // — Chinese: inject system monitor reference so tools can query host status
       systemMonitor: this._systemMonitor ?? undefined,
+      requestUserDecision: (input) => this.waitForUserDecision(threadId, input),
     };
 
     // Check sandbox policy
@@ -4220,6 +4377,7 @@ export class AgentLoop {
       agentNickname,
     });
     const childAgent = this.createChildAgent(agentRole, agentNickname, envelope, spawnOverrides, roleProfile);
+    this.trackChildAgent(parentThreadId, childThreadId, childAgent);
     this.forwardChildEvents({
       childAgent,
       parentThreadId,
@@ -4230,6 +4388,7 @@ export class AgentLoop {
     const run = childAgent.runTurn(childThreadId, { type: 'text', text: prompt });
     this.subagentRuns.set(childThreadId, run);
     void run.catch(() => undefined);
+    void run.finally(() => this.untrackChildAgent(parentThreadId, childThreadId)).catch(() => undefined);
 
     return {
       childThreadId,
@@ -4270,6 +4429,7 @@ export class AgentLoop {
       agentNickname,
     });
     const childAgent = this.createChildAgent(agentRole, agentNickname, envelope);
+    this.trackChildAgent(parentThreadId, childThreadId, childAgent);
     this.forwardChildEvents({
       childAgent,
       parentThreadId,
@@ -4280,6 +4440,7 @@ export class AgentLoop {
     const run = childAgent.runTurn(childThreadId, { type: 'text', text: prompt });
     this.subagentRuns.set(childThreadId, run);
     void run.catch(() => undefined);
+    void run.finally(() => this.untrackChildAgent(parentThreadId, childThreadId)).catch(() => undefined);
     await this.waitForSubagentPromptPersisted(childThreadId, prompt);
     return { childThreadId, status: 'running', envelope };
   }
@@ -4324,6 +4485,7 @@ export class AgentLoop {
       agentNickname,
     });
     const childAgent = this.createChildAgent(agentRole, agentNickname, envelope);
+    this.trackChildAgent(parentThreadId, childThreadId, childAgent);
     this.forwardChildEvents({
       childAgent,
       parentThreadId,
@@ -4334,6 +4496,7 @@ export class AgentLoop {
     const run = childAgent.runTurn(childThreadId, { type: 'text', text: message });
     this.subagentRuns.set(childThreadId, run);
     void run.catch(() => undefined);
+    void run.finally(() => this.untrackChildAgent(parentThreadId, childThreadId)).catch(() => undefined);
     await this.waitForSubagentPromptPersisted(childThreadId, message);
     return { childThreadId, status: 'running', triggerTurn: true, envelope };
   }
@@ -4376,6 +4539,11 @@ export class AgentLoop {
     agentRole: string | null | undefined;
   }): void {
     options.childAgent.onEvent((event) => {
+      if ('turnId' in event && typeof event.turnId === 'string') {
+        const childState = options.childAgent.getThreadState(options.childThreadId);
+        const lifecycle = event.type === 'turn.completed' || event.type === 'turn.failed' || event.type === 'thread.runtime.updated';
+        if (childState.activeTurnId !== event.turnId && childState.lastTerminalTurnId === event.turnId && !lifecycle) return;
+      }
       this.emit(event);
       if (!('threadId' in event) || event.threadId !== options.childThreadId) return;
       this.emit({
@@ -4387,6 +4555,19 @@ export class AgentLoop {
         event: event as unknown as Record<string, unknown>,
       });
     });
+  }
+
+  private trackChildAgent(parentThreadId: ThreadId, childThreadId: ThreadId, childAgent: AgentLoop): void {
+    const children = this.childAgentsByParent.get(parentThreadId) ?? new Map<ThreadId, AgentLoop>();
+    children.set(childThreadId, childAgent);
+    this.childAgentsByParent.set(parentThreadId, children);
+  }
+
+  private untrackChildAgent(parentThreadId: ThreadId, childThreadId: ThreadId): void {
+    const children = this.childAgentsByParent.get(parentThreadId);
+    if (!children) return;
+    children.delete(childThreadId);
+    if (children.size === 0) this.childAgentsByParent.delete(parentThreadId);
   }
 
   private async resumeSubagent(
@@ -4401,12 +4582,20 @@ export class AgentLoop {
     if (runtimeState.checkpoint) {
       this.stateManager.setCheckpoint(childThreadId, runtimeState.checkpoint);
     }
-    const agentStatus = runtimeState.resumable
+    const agentStatus: CollabToolCallItem['agentStatus'] = runtimeState.resumable
       ? 'running'
       : runtimeState.status === 'idle'
         ? 'open'
-        : runtimeState.status;
-    item.agentStatus = agentStatus === 'stale' ? 'interrupted' : agentStatus;
+        : runtimeState.status === 'stale'
+          ? 'interrupted'
+          : runtimeState.status === 'terminal'
+            ? runtimeState.terminalStatus ?? 'completed'
+            : runtimeState.status === 'stopping'
+              ? 'interrupted'
+              : runtimeState.status === 'waiting_user_input'
+                ? 'running'
+                : runtimeState.status;
+    item.agentStatus = agentStatus;
     return {
       childThreadId,
       status: item.agentStatus,
@@ -4482,6 +4671,15 @@ export class AgentLoop {
     const activeTurnId = state.activeTurnId;
     if (activeTurnId && state.status === 'running') {
       this.interrupt(childThreadId);
+      const activeRun = this.subagentRuns.get(childThreadId);
+      if (activeRun) {
+        try {
+          await activeRun;
+        } catch {
+          // The child turn persists its terminal cancellation state.
+        }
+        return;
+      }
     }
 
     const checkpoint = state.lastCheckpoint ?? await this.config.store.getLastCheckpoint(childThreadId);
@@ -4649,6 +4847,7 @@ export class AgentLoop {
         tools: this.tools,
         approvalHandler: this.config.approvalHandler,
         maxIterations: this.config.maxIterations,
+        maxActiveTasks: this.config.maxActiveTasks,
         systemPrompt: `${this.config.systemPrompt}\n\n${roleLine}${roleProfileLine}${envelopeLine}`,
         skills: scopedSkillsForRole(this.config.skills, activeRoleProfile),
         hooks: this.config.hooks,
@@ -4668,6 +4867,7 @@ export class AgentLoop {
         toolBindingMode: this.config.toolBindingMode,
         initialTools: this.config.initialTools,
         maxToolSearchResults: this.config.maxToolSearchResults,
+        maxParallelReadonlyTools: this.config.maxParallelReadonlyTools,
         toolGovernance: this.config.toolGovernance,
         guardian: this.config.guardian,
         memory: this.config.memory,
@@ -5537,6 +5737,13 @@ export class AgentLoop {
       timestamp,
       generation: state.generation,
       status,
+      executionStatus: status === 'waiting_user_input'
+        ? 'waiting_user_input'
+        : status === 'stopping'
+          ? 'stopping'
+          : ['completed', 'failed', 'interrupted', 'terminal', 'stale'].includes(status)
+            ? 'terminal'
+            : 'running',
     };
     if (status === 'running') {
       checkpoint.expiresAt = new Date(Date.now() + RUNNING_CHECKPOINT_TTL_MS).toISOString();
@@ -5556,6 +5763,7 @@ export class AgentLoop {
     checkpoint.generation = next.generation;
     checkpoint.status = next.status;
     checkpoint.expiresAt = next.expiresAt;
+    checkpoint.executionStatus = next.executionStatus;
   }
 
   private async writeCheckpoint(threadId: ThreadId, checkpoint: Checkpoint): Promise<void> {
@@ -6853,6 +7061,25 @@ function safeRuntimeTenantId(value: string | null | undefined): string {
     throw new Error(`Invalid tenant id: ${value ?? ''}`);
   }
   return tenantId;
+}
+
+function decisionResponseText(response: AgentDecisionResponse): string {
+  if (response.action === 'cancel') return '用户拒绝了当前决策；请继续处理本轮任务，不要将此决定当作取消整个任务。';
+  if (response.action === 'custom_input') return response.customInput?.trim() || '用户选择了自定义输入，但未提供内容。';
+  if (response.optionId) return `用户选择了 ${response.optionId}。`;
+  if (response.action === 'way_one') return '用户选择方式一。';
+  if (response.action === 'way_two') return '用户选择方式二。';
+  return '用户确认继续。';
+}
+
+function combineAbortSignals(external: AbortSignal | undefined, internal: AbortSignal): AbortSignal {
+  if (!external) return internal;
+  if (external.aborted || internal.aborted) return AbortSignal.abort();
+  const controller = new AbortController();
+  const abort = (): void => controller.abort();
+  external.addEventListener('abort', abort, { once: true });
+  internal.addEventListener('abort', abort, { once: true });
+  return controller.signal;
 }
 
 function positiveInteger(value: number | undefined): number | undefined {

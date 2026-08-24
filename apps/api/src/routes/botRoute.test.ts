@@ -156,7 +156,7 @@ describe('bot route', () => {
     });
   });
 
-  it('rejects personal desktop Weixin bridge in multi-tenant mode', async () => {
+  it('accepts the personal desktop Weixin bridge in local mode', async () => {
     const store = new BotRouteStore();
     const response = res();
     const path = routePath('/api/bot/config');
@@ -169,20 +169,13 @@ describe('bot route', () => {
       store: store as unknown as ThreadStore,
       getDefaultRunConfig: async () => runConfig,
       createAgent: vi.fn(),
-      tenantId: 'tenantA',
-      storageMode: 'multi',
     });
 
-    expect(response.status).toBe(400);
-    expect(response.body).toMatchObject({
-      ok: false,
-      code: 'PersonalWeixinBridgeUnsupported',
-      error: expect.stringContaining('single-user default tenant'),
-    });
-    expect(store.settings.get('bot.config.v1')).toBeUndefined();
+    expect(response.status).toBe(200);
+    expect(store.settings.get('bot.config.v1')).toMatchObject({ weixin: { enabled: true, bridgeMode: 'desktop_managed' } });
   });
 
-  it('allows external RPC Weixin mode in multi-tenant mode', async () => {
+  it('allows external RPC Weixin mode', async () => {
     const store = new BotRouteStore();
     const response = res();
     const path = routePath('/api/bot/config');
@@ -203,8 +196,6 @@ describe('bot route', () => {
       store: store as unknown as ThreadStore,
       getDefaultRunConfig: async () => runConfig,
       createAgent: vi.fn(),
-      tenantId: 'tenantA',
-      storageMode: 'multi',
     });
 
     expect(response.status).toBe(200);
@@ -294,7 +285,7 @@ describe('bot route', () => {
     });
   });
 
-  it('reports desktop Weixin bridge as unsupported for non-default tenants without touching the bridge', async () => {
+  it('reports desktop Weixin bridge status in local mode', async () => {
     const store = new BotRouteStore();
     store.settings.set('bot.config.v1', {
       ...DEFAULT_BOT_CONFIG,
@@ -317,20 +308,17 @@ describe('bot route', () => {
       getDefaultRunConfig: async () => runConfig,
       createAgent: vi.fn(),
       createWeixinClient: () => ({ health } as never),
-      tenantId: 'tenantA',
-      storageMode: 'multi',
     });
 
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
       status: {
         weixin: {
-          bridge: 'unsupported',
-          error: expect.stringContaining('single-user default tenant'),
+          bridge: 'online',
         },
       },
     });
-    expect(health).not.toHaveBeenCalled();
+    expect(health).toHaveBeenCalled();
   });
 
   it('restores a desktop-managed Weixin account from bridge status', async () => {

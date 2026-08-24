@@ -1,4 +1,3 @@
-// 设置面板：监控页（系统监控限流开关与运行控制）
 import React from 'react';
 import type { Locale, RunConfig } from '../../config/config.js';
 import { SettingsPageHeader } from './SettingsPageHeader.js';
@@ -13,125 +12,37 @@ export interface MonitorPageProps {
   onSave?: () => void;
 }
 
-function text(locale: Locale, zh: string, en: string): string {
-  return locale === 'zh' ? zh : en;
+function text(locale: Locale, zh: string, en: string): string { return locale === 'zh' ? zh : en; }
+
+function ToggleRow({ checked, disabled, onChange, label }: { checked: boolean; disabled?: boolean; onChange: (value: boolean) => void; label: string }) {
+  return <label className={`settingsToggleRow ${disabled ? 'disabled' : ''}`}>
+    <input type="checkbox" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} aria-label={label} />
+    <div className="settingsToggleContent"><strong>{label}</strong></div>
+    <span className={`settingsToggleTrack${checked ? ' on' : ''}`} aria-hidden="true"><span className="settingsToggleThumb" /></span>
+  </label>;
 }
 
-function ToggleRow({
-  checked,
-  disabled,
-  onChange,
-  label,
-  description,
-}: {
-  checked: boolean;
-  disabled?: boolean;
-  onChange: (checked: boolean) => void;
-  label: string;
-  description?: string;
-}) {
-  return (
-    <label className={`settingsToggleRow ${disabled ? 'disabled' : ''}`}>
-      <input type="checkbox" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
-      <div className="settingsToggleContent">
-        <strong>{label}</strong>
-        {description ? <span>{description}</span> : null}
-      </div>
-      <span className="settingsToggleTrack" aria-hidden="true">
-        <span className="settingsToggleThumb" />
-      </span>
-    </label>
-  );
-}
+const thresholdLabels = {
+  cpuLight: ['CPU 提醒', 'CPU notice'],
+  cpuModerate: ['CPU 限制', 'CPU limit'],
+  cpuSevere: ['CPU 严重', 'CPU severe'],
+  memLight: ['内存提醒', 'Memory notice'],
+  memModerate: ['内存限制', 'Memory limit'],
+  memSevere: ['内存严重', 'Memory severe'],
+} as const;
 
 export function MonitorPage({ locale, config, setConfig, markDirty, onSave }: MonitorPageProps) {
-  function updateConfigField<K extends keyof RunConfig>(field: K, value: RunConfig[K]) {
-    setConfig((current) => ({ ...current, [field]: value }));
-    markDirty(String(field), true);
-  }
-
-  return (
-    <section className="settingsSection" id="settings-monitor">
-      <SettingsPageHeader
-        eyebrow="RUNTIME"
-        title={text(locale, '监控', 'Monitor')}
-        actions={[
-          {
-            label: text(locale, '保存监控设置', 'Save monitor'),
-            primary: true,
-            onClick: () => onSave?.(),
-          },
-        ]}
-      />
-
-      <div className="settingsSectionBlock">
-        <SectionHeader title={text(locale, '运行控制', 'Runtime control')} />
-        <div className="settingsFormGrid three">
-          <label className="settingsField">
-            <span className="settingsFieldLabel">{text(locale, 'Agent 循环上限', 'Agent loop limit')}</span>
-            <input
-              type="number"
-              min={1}
-              max={1000}
-              value={config.maxIterations ?? 100}
-              onChange={(event) => updateConfigField('maxIterations', Number(event.target.value))}
-            />
-          </label>
-          <label className="settingsField">
-            <span className="settingsFieldLabel">{text(locale, '最大并发', 'Max concurrency')}</span>
-            <input
-              type="number"
-              min={1}
-              max={32}
-              value={config.maxConcurrency ?? 4}
-              onChange={(event) => updateConfigField('maxConcurrency', Number(event.target.value))}
-            />
-          </label>
-          <label className="settingsField">
-            <span className="settingsFieldLabel">{text(locale, '单次工具超时', 'Tool timeout')}</span>
-            <div className="settingsInputWithSuffix">
-              <input
-                type="number"
-                min={10}
-                max={600}
-                value={config.toolTimeoutSeconds ?? 120}
-                onChange={(event) => updateConfigField('toolTimeoutSeconds', Number(event.target.value))}
-              />
-              <span className="settingsInputSuffix">s</span>
-            </div>
-          </label>
-          <label className="settingsField">
-            <span className="settingsFieldLabel">{text(locale, '内存阈值', 'Memory threshold')}</span>
-            <div className="settingsInputWithSuffix">
-              <input
-                type="number"
-                min={10}
-                max={100}
-                value={config.memoryThresholdPercent ?? 85}
-                onChange={(event) => updateConfigField('memoryThresholdPercent', Number(event.target.value))}
-              />
-              <span className="settingsInputSuffix">%</span>
-            </div>
-          </label>
-        </div>
-      </div>
-
-      <div className="settingsSectionBlock">
-        <SectionHeader title={text(locale, '资源保护', 'Resource guard')} />
-        <div className="settingsToggleList">
-          <ToggleRow
-            checked={config.systemMonitorEnabled === true}
-            onChange={(checked) => updateConfigField('systemMonitorEnabled', checked)}
-            label={text(locale, '启用系统监控跟踪', 'Enable system monitor tracking')}
-          />
-          <ToggleRow
-            checked={config.throttleNewTasks ?? true}
-            disabled={!config.systemMonitorEnabled}
-            onChange={(checked) => updateConfigField('throttleNewTasks', checked)}
-            label={text(locale, '达到阈值后暂停新子任务', 'Pause new subtasks after threshold')}
-          />
-        </div>
-      </div>
-    </section>
-  );
+  function update<K extends keyof RunConfig>(field: K, value: RunConfig[K]) { setConfig((current) => ({ ...current, [field]: value })); markDirty(String(field), true); }
+  return <section className="settingsSection" id="settings-monitor">
+    <SettingsPageHeader eyebrow={text(locale, '运行时', 'Runtime')} title={text(locale, '监控', 'Monitor')} />
+    <div className="settingsSectionBlock"><SectionHeader title={text(locale, '监控策略', 'Monitoring policy')} /><div className="settingsToggleList">
+      <ToggleRow checked={config.monitorPanelVisible !== false} onChange={(value) => update('monitorPanelVisible', value)} label={text(locale, '监控面板显示', 'Monitor panel')} />
+      <ToggleRow checked={config.systemMonitorSamplingEnabled === true} onChange={(value) => update('systemMonitorSamplingEnabled', value)} label={text(locale, '系统性能采样', 'System performance sampling')} />
+      <ToggleRow checked={config.systemMonitorLogRecordingEnabled === true} onChange={(value) => update('systemMonitorLogRecordingEnabled', value)} label={text(locale, '运行日志记录', 'Runtime log recording')} />
+      <ToggleRow checked={config.systemMonitorGuardEnabled === true} disabled={!config.systemMonitorSamplingEnabled} onChange={(value) => update('systemMonitorGuardEnabled', value)} label={text(locale, '性能阈值保护', 'Performance threshold guard')} />
+    </div></div>
+    <div className="settingsSectionBlock"><SectionHeader title={text(locale, '阈值', 'Thresholds')} /><div className="settingsFormGrid three">
+      {(['cpuLight', 'cpuModerate', 'cpuSevere', 'memLight', 'memModerate', 'memSevere'] as const).map((field) => <label className="settingsField" key={field}><span className="settingsFieldLabel">{text(locale, thresholdLabels[field][0], thresholdLabels[field][1])}</span><div className="settingsInputWithSuffix"><input type="number" min={1} max={100} value={config.systemMonitorThresholds[field]} onChange={(e) => update('systemMonitorThresholds', { ...config.systemMonitorThresholds, [field]: Number(e.target.value) })} /><span className="settingsInputSuffix">%</span></div></label>)}
+    </div><div className="settingsThresholdActions"><button type="button" className="solidButton settingsThresholdSave" onClick={() => onSave?.()}>{text(locale, '保存监控设置', 'Save monitor settings')}</button></div></div>
+  </section>;
 }

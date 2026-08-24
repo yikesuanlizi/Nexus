@@ -7,11 +7,18 @@ export type TemporaryAccessScope = 'tool_call' | 'turn' | 'session';
 export type AccessDecisionKind = 'allow' | 'prompt' | 'deny';
 
 export interface AccessTarget {
-  kind: 'path' | 'command' | 'network' | 'tool';
+  kind: 'path' | 'workspace' | 'command' | 'network' | 'tool' | 'host' | 'container' | 'service' | 'log';
   path?: string;
   command?: string;
   host?: string;
   toolName?: string;
+  workspaceRoot?: string;
+  relativePath?: string;
+  environmentId?: string;
+  hostId?: string;
+  serviceName?: string;
+  containerName?: string;
+  timeRange?: { from: string; to: string };
 }
 
 export interface AccessRule {
@@ -108,13 +115,30 @@ export function normalizeAccessTarget(target: AccessTarget): AccessTarget {
   if (target.kind === 'path') {
     return { kind: 'path', path: target.path?.trim() ?? '' };
   }
+  if (target.kind === 'workspace') {
+    return {
+      kind: 'workspace',
+      workspaceRoot: target.workspaceRoot?.trim() ?? '',
+      relativePath: target.relativePath?.trim() || undefined,
+    };
+  }
   if (target.kind === 'command') {
     return { kind: 'command', command: target.command?.trim() ?? '' };
   }
   if (target.kind === 'network') {
     return { kind: 'network', host: target.host?.trim().toLowerCase() ?? '' };
   }
-  return { kind: 'tool', toolName: target.toolName?.trim() ?? '' };
+  if (target.kind === 'tool') {
+    return { kind: 'tool', toolName: target.toolName?.trim() ?? '' };
+  }
+  return {
+    kind: target.kind,
+    environmentId: target.environmentId?.trim() || undefined,
+    hostId: target.hostId?.trim() || undefined,
+    serviceName: target.serviceName?.trim() || undefined,
+    containerName: target.containerName?.trim() || undefined,
+    ...(target.kind === 'log' && target.timeRange ? { timeRange: target.timeRange } : {}),
+  };
 }
 
 export function redactAccessPolicyForPublicConfig(config: AccessPolicyConfig): AccessPolicyConfig {

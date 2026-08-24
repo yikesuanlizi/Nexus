@@ -89,7 +89,7 @@ export function AgentsPage({
   return (
     <section className="settingsSection remoteBots" id="settings-remote">
       <SettingsPageHeader
-        eyebrow="CHANNELS"
+        eyebrow={text(locale, '渠道', 'Channels')}
         title={text(locale, '远程助手', 'Remote bots')}
         actions={[
           {

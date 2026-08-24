@@ -14,6 +14,9 @@ import {
 } from './workbench/WorkbenchTabs.js';
 import { readStoredWorkbenchState, writeStoredWorkbenchState } from './workbench/workbenchState.js';
 import { showItemInSystemFolder } from '../api/desktopBridge.js';
+import type { OpsTaskSession } from '@nexus/protocol';
+import type { OpsTaskTimelineEvent } from './workbench/OpsTaskInspector.js';
+import type { KnowledgeScopeSelection } from '../api/knowledgeClient.js';
 
 export type RightPaneTab = WorkbenchTab;
 
@@ -45,6 +48,15 @@ export function RightPane({
   onAddFileToConversation,
   browserRequestVersion = 0,
   suspendBrowser = false,
+  showOps = false,
+  opsTask = null,
+  opsTaskEvents = [],
+  opsTaskBusy = false,
+  opsKnowledgeScope = null,
+  onOpsKnowledgeScopeChange,
+  onOpsTaskAction,
+  onOpsRunTest,
+  onOpsSaveIncident,
 }: {
   activeTab?: RightPaneTab;
   activeThreadId: string;
@@ -73,18 +85,52 @@ export function RightPane({
   onAddFileToConversation?(path: string): void;
   browserRequestVersion?: number;
   suspendBrowser?: boolean;
+  showOps?: boolean;
+  opsTask?: OpsTaskSession | null;
+  opsTaskEvents?: OpsTaskTimelineEvent[];
+  opsTaskBusy?: boolean;
+  opsKnowledgeScope?: KnowledgeScopeSelection | null;
+  onOpsKnowledgeScopeChange?(selection: KnowledgeScopeSelection | null): void;
+  onOpsTaskAction?(action: 'pause' | 'resume' | 'cancel' | 'confirm' | 'reject_continue' | 'propose_patch' | 'approve_patch' | 'reject_patch'): void;
+  onOpsRunTest?(testId: string): void;
+  onOpsSaveIncident?(): void;
 }) {
   void activeThreadTitle;
   void taskRuntimeState;
-  const [activeTab, setActiveTab] = useState<RightPaneTab>(() => initialActiveTab ?? readStoredRightPaneTab());
+  const hasActiveThread = Boolean(activeThreadId && activeThread);
+  const [activeTab, setActiveTab] = useState<RightPaneTab>(() => (
+    hasActiveThread ? (initialActiveTab ?? readStoredRightPaneTab()) : 'activity'
+  ));
   const [openUtilityTabs, setOpenUtilityTabs] = useState<UtilityWorkbenchTab[]>(() => {
+    if (!hasActiveThread) return [];
     const stored = readStoredWorkbenchState();
     const initialUtility = initialActiveTab && isUtilityWorkbenchTab(initialActiveTab) ? [initialActiveTab] : [];
     return [...new Set([...stored.openUtilityTabs, ...initialUtility])];
   });
   const handledBrowserRequestVersion = useRef(0);
+  const opsVisible = hasActiveThread && (showOps || activeThread?.mode === 'ops' || Boolean(opsTask));
+
+  useEffect(() => {
+    if (hasActiveThread) return;
+    setActiveTab('activity');
+    setOpenUtilityTabs([]);
+    writeStoredWorkbenchState({ activeTab: 'activity', openUtilityTabs: [] });
+    try {
+      localStorage.setItem('nexus.rightPane.tab', 'activity');
+    } catch { /* best-effort local UI preference */ }
+  }, [hasActiveThread]);
+
+  useEffect(() => {
+    if (opsVisible || activeTab !== 'ops') return;
+    setActiveTab('activity');
+    const stored = readStoredWorkbenchState();
+    writeStoredWorkbenchState({ ...stored, activeTab: 'activity' });
+    try { localStorage.setItem('nexus.rightPane.tab', 'activity'); } catch { /* best-effort local UI preference */ }
+    onTabChange?.('activity');
+  }, [activeTab, onTabChange, opsVisible]);
 
   const handleTabChange = useCallback((tab: RightPaneTab) => {
+    if (!hasActiveThread && isUtilityWorkbenchTab(tab)) return;
     if (isUtilityWorkbenchTab(tab)) {
       setOpenUtilityTabs((tabs) => tabs.includes(tab) ? tabs : [...tabs, tab]);
     }
@@ -102,7 +148,7 @@ export function RightPane({
       }
     } catch { /* best-effort local UI preference */ }
     onTabChange?.(tab);
-  }, [onTabChange]);
+  }, [hasActiveThread, onTabChange]);
 
   useEffect(() => {
     if (browserRequestVersion === 0 || browserRequestVersion === handledBrowserRequestVersion.current) return;
@@ -112,6 +158,7 @@ export function RightPane({
 
   const handleOpenUtilityTab = useCallback((kind: UtilityWorkbenchTabKind): UtilityWorkbenchTab => {
     const tab = kind === 'terminal' ? createTerminalUtilityWorkbenchTab() : kind;
+    if (!hasActiveThread) return tab;
     setOpenUtilityTabs((tabs) => tabs.includes(tab) ? tabs : [...tabs, tab]);
     setActiveTab(tab);
     const stored = readStoredWorkbenchState();
@@ -124,7 +171,7 @@ export function RightPane({
     } catch { /* best-effort local UI preference */ }
     onTabChange?.(tab);
     return tab;
-  }, [onTabChange]);
+  }, [hasActiveThread, onTabChange]);
 
   const handleCloseUtilityTab = useCallback((tab: UtilityWorkbenchTab) => {
     const tabIndex = openUtilityTabs.indexOf(tab);
@@ -162,12 +209,12 @@ export function RightPane({
       currentRunId={currentRunId}
       controlCapabilities={controlCapabilities}
       locale={locale}
-      workspaceRoot={workspaceRoot}
-      terminalWorkspaceRoot={terminalWorkspaceRoot}
+      workspaceRoot={hasActiveThread ? workspaceRoot : ''}
+      terminalWorkspaceRoot={hasActiveThread ? terminalWorkspaceRoot : undefined}
       externalPreviewRequest={externalPreviewRequest}
       activeTab={activeTab}
       onTabChange={handleTabChange}
-      openUtilityTabs={openUtilityTabs}
+      openUtilityTabs={hasActiveThread ? openUtilityTabs : []}
       onOpenUtilityTab={handleOpenUtilityTab}
       onCloseUtilityTab={handleCloseUtilityTab}
       onOpenSystemLocation={(path) => { void showItemInSystemFolder(path); }}
@@ -180,6 +227,15 @@ export function RightPane({
       responsiveMode={responsiveMode}
       onCloseRequest={onCloseRequest}
       suspendBrowser={suspendBrowser}
+      showOps={opsVisible}
+      opsTask={opsTask}
+      opsTaskEvents={opsTaskEvents}
+      opsTaskBusy={opsTaskBusy}
+      opsKnowledgeScope={opsKnowledgeScope}
+      onOpsKnowledgeScopeChange={onOpsKnowledgeScopeChange}
+      onOpsTaskAction={onOpsTaskAction}
+      onOpsRunTest={onOpsRunTest}
+      onOpsSaveIncident={onOpsSaveIncident}
     />
   );
 }

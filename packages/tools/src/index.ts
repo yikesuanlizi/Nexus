@@ -21,7 +21,14 @@ export {
   webFetchTool,
   applyPatchTool,
   getSystemStatusTool,
+  requestUserDecisionTool,
 } from './builtin.js';
+export {
+  DOCUMENT_EXTRACTOR_VERSION,
+  extractDocumentText,
+  extractorForDocumentPath,
+} from './documentExtractors.js';
+export type { ExtractedDocumentText } from './documentExtractors.js';
 export {
   artifactRecordForResult,
   assessArtifactFreshness,

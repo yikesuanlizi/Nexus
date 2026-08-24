@@ -4,6 +4,7 @@ export * from './types.js';
 export * from './schemas.js';
 export * from './runConfig.js';
 export * from './runControl.js';
+export * from './threadInteraction.js';
 export * from './runTrace.js';
 export * from './runTraceSchemas.js';
 export * from './fileKnowledge.js';
@@ -11,6 +12,8 @@ export * from './fileKnowledgeSchemas.js';
 export * from './modelCapabilities.js';
 export * from './accessPolicy.js';
 export * from './accessPolicySchemas.js';
+export * from './opsTask.js';
+export * from './sshProfile.js';
 export * from './browser/index.js';
 export * from './a2a/index.js';
 

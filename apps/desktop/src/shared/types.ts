@@ -1,5 +1,5 @@
 import type { EventDraft } from '../features/chat/threadView.js';
-import type { AccessRequest, ModelPresetConfig, TemporaryAccessScope } from '@nexus/protocol';
+import type { AccessRequest, AgentDecisionRequest, ModelPresetConfig, ModelPresetStatus, TemporaryAccessScope, ThreadMode, ThreadTaskPreset, ThreadExecutionStatus } from '@nexus/protocol';
 
 export type { ModelPresetConfig } from '@nexus/protocol';
 
@@ -28,6 +28,8 @@ export interface McpServerStatus {
 
 export interface ThreadMeta {
   threadId: string;
+  mode?: ThreadMode;
+  taskPreset?: ThreadTaskPreset | null;
   title: string;
   workspaceRoot?: string;
   status: string;
@@ -67,10 +69,13 @@ export interface ThreadSpawnEdge {
 
 export interface ThreadRuntimeState {
   threadId: string;
-  status: 'idle' | 'running' | 'completed' | 'interrupted' | 'failed' | 'stale';
+  status: 'idle' | 'running' | 'stopping' | 'waiting_user_input' | 'terminal' | 'completed' | 'interrupted' | 'failed' | 'stale';
   checkpoint: unknown | null;
   resumable: boolean;
   stale: boolean;
+  executionStatus?: ThreadExecutionStatus;
+  terminalStatus?: 'completed' | 'failed' | 'interrupted';
+  decisionRequest?: AgentDecisionRequest | null;
 }
 
 export interface ThreadItem {
@@ -350,6 +355,7 @@ export interface ModelPreset {
   id: string;
   name: string;
   config: ModelPresetConfig;
+  status?: ModelPresetStatus;
   createdAt: string;
   updatedAt: string;
 }
